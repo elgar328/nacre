@@ -554,7 +554,7 @@ fn a_cross_above_a_stud_is_two_solids() {
 /// **An oblique cross above the stud** — the same, with the upper axis `(0, 3, 4)`. The pair
 /// rule would clear it too (`lateral_reach`'s `d·m ≠ 0` arm), but the upper cylinder's caps are
 /// planes oblique to the lower axis, so the plane–cylinder gate asks first — of the *faces*
-/// (`oblique_plane_clears`): does every lateral face of the stud miss that infinite plane?
+/// (`laterals_clear_plane`): does every lateral face of the stud miss that infinite plane?
 ///
 /// Both answers, one axis apart in height. At `z = 3` the lower cap's plane `3y + 4z = 9` stands
 /// past the stud's whole reach along its normal (`3·0.2 + 4·2 = 8.6`): cleared, and the fuse is two

@@ -571,16 +571,16 @@ fn pocket_beside_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<So
     (a, turn(m, t, 8, [44.0, -17.0, 0.0]))
 }
 
-/// **A pocket floor beside the fillet's quarter** — the pocket's wall `y = −17` crosses the fillet
-/// cylinder, and its face clears the fillet's quarter but not the whole circle the wall test reads
-/// (`face_clears_footprint` asks the footprint's span only). The record it writes meets the turned
-/// box's walls, which have no world statement, and the gate's line test asks the carriers
-/// (`line_off_lateral`): refused.
+/// **A pocket wall beside the fillet's quarter** — the pocket's wall `y = −17` crosses the fillet
+/// cylinder off its quarter: the plane misses the lateral face though it cuts the infinite cylinder
+/// (`laterals_clear_plane`, asked before the faces), so the pair writes nothing. A record there
+/// would meet the turned box's walls, which have no world statement, at a line on the cylinder's
+/// surface, and the gate's line test asks the carriers (`line_off_lateral`).
 #[test]
-fn a_pocket_wall_beside_the_fillet_quarter_is_refused_by_the_gate() {
+fn a_pocket_wall_beside_the_fillet_quarter_builds() {
     every_kind(
         |m| pocket_beside_the_fillet(m, -17.0),
-        refused(RejectReason::CylinderGateUndecided),
+        one_body(PLATE - 168.0, 300.0, 210.0),
     );
 }
 

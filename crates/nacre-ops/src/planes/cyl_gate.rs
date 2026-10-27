@@ -13,14 +13,16 @@ use super::*;
 /// - `n × m = 0` — a perpendicular cut. Passes, a cap seated flush on the other body included.
 /// - `n · m = 0` — a wall parallel to the axis. It must provably miss the **rectangle** the
 ///   cylinder occupies in that plane. The infinite plane clearing the axis by more than `r`
-///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; otherwise each face on
-///   the class answers for itself, across the strip or along a lateral face's span
+///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; so does the plane
+///   missing every lateral **face**, read on the faces' arcs ([`laterals_clear_plane`] — a plane
+///   that cuts the infinite cylinder only off a fillet's quarter). Otherwise each face on the
+///   class answers for itself, across the strip or along a lateral face's span
 ///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
 ///   wall's plane within the radius (`0 ≤ d < r`, through the axis or offset from it), the
 ///   pair **recorded and passed** — or, the plane exactly `r` from the axis, **passes and is
 ///   recorded as a [`Tangency`] instead**: a tangency divides nothing, so it earns no crossing.
 ///
-///   **One clearance call, three records, and that is the whole rule.** `Positive` clears
+///   **One clearance call, three records.** Past the lateral faces' question, `Positive` clears
 ///   and writes nothing; `Negative` writes a crossing (two rulings); `Zero` writes a tangency (one
 ///   grazing line). The third arm does not refuse on the spot, and it does not `crossings.insert`
 ///   either: that would put the
@@ -34,7 +36,7 @@ use super::*;
 ///   name), before anything is arranged.
 /// - anything else — an oblique plane. It passes when every lateral face of the cylinder
 ///   provably misses the plane — the face's reach along `n` against the plane's station
-///   ([`lateral_reach`], [`oblique_plane_clears`]) — and is otherwise recorded and refused as
+///   ([`lateral_reach`], [`laterals_clear_plane`]) — and is otherwise recorded and refused as
 ///   [`RejectReason::ObliqueCylinderCut`] (an ellipse). Every one of the
 ///   gate's four sites speaks about faces; a gusset whose slanted plane runs past a plate's holes
 ///   is not refused here for the plane alone.
@@ -253,7 +255,7 @@ pub(crate) fn cylinder_gate(
                     // two units from a plate's fillet while its plane, extended, cuts it — the
                     // boolean is refused one step later as `DeclineKind::CurvedRingWall`.
                     let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
-                    if !oblique_plane_clears(&cyl.def, fps, &coeffs) {
+                    if !laterals_clear_plane(&cyl.def, fps, &coeffs) {
                         oblique.insert((c, ci));
                     }
                     continue;
@@ -261,16 +263,36 @@ pub(crate) fn cylinder_gate(
                 // A parallel wall must provably miss the lateral surface. **The question is
                 // about the wall's *faces*, not its plane** — the uniform-slab theorem this feeds
                 // says so in its own words ("the other operand's **boundary** does not meet the
-                // open cylinder slab"). Judging the infinite plane is a cheaper *sufficient*
-                // condition, so it is asked first and still decides most inputs; when it fails,
-                // the faces on this class get to answer for themselves. Refusing on the plane
-                // alone turned away a whole family the engine serves — a boss standing far away
-                // whose wall plane, extended, happens to pass through a hole.
+                // open cylinder slab"). Two cheaper *sufficient* conditions come first, the
+                // surface's and then the lateral faces': the infinite plane clearing the axis by
+                // more than the radius, and the plane missing every lateral **face** — each face's
+                // reach along `n`, which reads the face's arc ([`laterals_clear_plane`], the
+                // question the oblique arm asks, and the one the cylinder pair rule asks of two
+                // laterals after the surface distance). A plane that cuts the infinite cylinder
+                // only off a fillet's quarter is the second. Either passes the pair with nothing
+                // recorded: the class's arrangement gets nothing from this cylinder, whose rim arcs
+                // bound its faces and so miss the plane too. When both fail, the faces on this
+                // class get to answer for themselves. Refusing on the plane alone turned away a
+                // whole family the engine serves — a boss standing far away whose wall plane,
+                // extended, happens to pass through a hole.
                 //
                 // What a face is asked is whether it misses the **rectangle** this cylinder
                 // occupies in that plane: the strip across, the lateral face's span along. See
-                // [`face_clears_footprint`].
+                // [`face_clears_footprint`]. Its strip is the whole circle's, and past the second
+                // question that decides no record wrongly: a plane that cuts a lateral face is
+                // recorded below whatever its faces answer, a tangent plane that reaches a face's
+                // arc has that tangent line for its strip, and a cylinder with no usable footprint
+                // has no arc to read.
                 let clearance = nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2);
+                if clearance != Orient::Positive
+                    && laterals_clear_plane(
+                        &cyl.def,
+                        footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf)),
+                        &coeffs,
+                    )
+                {
+                    continue;
+                }
                 // **The classes holding a tangent line, asked once for the pair** — the rows
                 // below read it (`line_in_another_plane`) and so does [`SharedRuling`]. It is
                 // asked here, before any face is: the rows are written only for faces that fail
@@ -357,15 +379,16 @@ pub(crate) fn cylinder_gate(
                         } else {
                             crossings.insert((c, ci));
                         }
-                    } else if clearance == Orient::Negative && {
-                        // Only a footprint that can be **stated** proves a cut; an
-                        // unstatable one (a rotated class, no span) proves nothing either way
-                        // and records nothing — recording on it draws rulings no face has
-                        // (measured, the rigid-motion oracle).
-                        let fps =
-                            footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
-                        !fps.is_empty() && !oblique_plane_clears(&cyl.def, fps, &coeffs)
-                    } {
+                    } else if clearance == Orient::Negative
+                        // Only a footprint that can be **stated** proves a cut — the plane did not
+                        // clear the faces above, so a stated one is cut; an unstatable one (a
+                        // rotated class, no span) proves nothing either way and records nothing —
+                        // recording on it draws rulings no face has (measured, the rigid-motion
+                        // oracle).
+                        && !footprints
+                            .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
+                            .is_empty()
+                    {
                         // **The class cuts this lateral face though no face of the other solid touches
                         // it**: the refusal question is face against face and it is clear, but
                         // the arrangement on this class still needs the ruling — every face of *this* solid
@@ -1923,11 +1946,12 @@ fn reach_clears(reach: &Reach, lo: nacre_exact::Rat, hi: nacre_exact::Rat) -> Op
     )
 }
 
-/// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — the oblique
-/// arm's face question. The plane's station in `n·p` units is `−d`; a face clears when
-/// its reach along `n` ([`lateral_reach`]) is disjoint from that one point. An empty span list is
-/// "unusable" ([`lateral_spans`]'s doc), never clear; so is overflow.
-fn oblique_plane_clears(
+/// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — whatever
+/// the plane's tilt: the oblique arm's whole face question, and the parallel arm's second. The
+/// plane's station in `n·p` units is `−d`; a face clears when its reach along `n`
+/// ([`lateral_reach`], which reads the face's arc) is disjoint from that one point. An empty span
+/// list is "unusable" ([`lateral_spans`]'s doc), never clear; so is overflow.
+fn laterals_clear_plane(
     def: &nacre_topo::CylinderDef,
     footprints: &[Footprint],
     coeffs: &[nacre_exact::Rat; 4],
