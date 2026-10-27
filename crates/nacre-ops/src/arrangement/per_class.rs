@@ -62,10 +62,10 @@ pub(super) fn per_class(
         .iter()
         .enumerate()
         .filter_map(|(i, p)| {
-            let OnCurve::Ruling { cyl, def, side, .. } = &p.on else {
+            let OnCurve::Ruling { cyl, side, .. } = p.on else {
                 return None;
             };
-            let (cyl, side) = (*cyl, *side);
+            let def = &cyls[cyl].def;
             // A sectioned class's ruling is not a line of the lateral's chart: no face of the class
             // reaches the lateral, so it splits no cell there (see the check above).
             if sectioned(cyl) {
@@ -202,8 +202,9 @@ fn circle_crosses_ruling(
     ruling: &MergedRuling,
 ) -> Option<bool> {
     let coeffs = jd.world_rat(wc)?;
-    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
-    let (o, m, r2) = (ruling.def.origin(), ruling.def.dir(), ruling.def.r2());
+    let (circle_def, ruling_def) = (&cyls[circle.cyl].def, &cyls[ruling.cyl].def);
+    let centre = combinatorics::circle_centre_rat(jd, wc, circle_def)?;
+    let (o, m, r2) = (ruling_def.origin(), ruling_def.dir(), ruling_def.r2());
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     // The predicate's own precondition, asked rather than assumed: a class that is not parallel
     // to the axis carries no ruling of it, and the decomposition would be about other geometry.
@@ -213,23 +214,23 @@ fn circle_crosses_ruling(
     // The ruling as a piece: its two ends' axis parameters (rational — each end's other plane is
     // ⊥ the axis), the whole circle round. The arc's axis parameter is the class's own.
     let ruling_piece = (|| {
-        let t0 = node_axis_param(jd, &ruling.def, ruling.end[0])?;
-        let t1 = node_axis_param(jd, &ruling.def, ruling.end[1])?;
+        let t0 = node_axis_param(jd, ruling_def, ruling.end[0])?;
+        let t1 = node_axis_param(jd, ruling_def, ruling.end[1])?;
         Some(crate::planes::Footprint {
             span: Some([t0.min(t1), t0.max(t1)]),
             theta: crate::planes::Theta::Whole,
         })
     })();
-    let circle_t = crate::planes::axis_param_of_plane(&coeffs, &circle.def);
+    let circle_t = crate::planes::axis_param_of_plane(&coeffs, circle_def);
     let apart = |theta: crate::planes::Theta| -> bool {
         match (&ruling_piece, circle_t) {
             (Some(rp), Some(t)) => crate::planes::pieces_clear(
-                &circle.def,
+                circle_def,
                 &crate::planes::Footprint {
                     span: Some([t, t]),
                     theta,
                 },
-                &ruling.def,
+                ruling_def,
                 rp,
             ),
             _ => false,
@@ -239,7 +240,7 @@ fn circle_crosses_ruling(
     let e = nacre_exact::cross3_rat(&n, &m)?;
     let ask = |theta: &crate::planes::Theta| -> Option<bool> {
         let (lo, hi) =
-            crate::planes::arc_ends_along(&centre, circle.def.r2(), &circle.def.dir(), theta, &e)?;
+            crate::planes::arc_ends_along(&centre, circle_def.r2(), &circle_def.dir(), theta, &e)?;
         Some(nacre_exact::cylinder_ruling_reached_extent(
             &coeffs,
             &nacre_exact::StripReach {
@@ -313,7 +314,7 @@ impl<'a> ClassEdges<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn of(
         jd: &Judge<'_, WorkingPlane>,
-        cyls: &[crate::planes::WorkingCyl],
+        cyls: &'a [crate::planes::WorkingCyl],
         faces: &[FaceRow],
         wc: usize,
         segs: &'a [MergedSeg],
@@ -426,6 +427,7 @@ impl<'a> ClassEdges<'a> {
             .collect();
         Ok(ClassEdges {
             pieces,
+            cyls,
             circles: circles2,
             cut_rims,
             wc,
@@ -472,7 +474,7 @@ impl<'a> ClassEdges<'a> {
         combinatorics::RingEdge {
             node: self.origin(he),
             to: self.origin(he ^ 1),
-            carrier: p.carrier(he % 2 == 0, self.wc),
+            carrier: p.carrier(self.cyls, he % 2 == 0, self.wc),
             from_h: pins[he % 2],
             to_h: pins[1 - he % 2],
         }

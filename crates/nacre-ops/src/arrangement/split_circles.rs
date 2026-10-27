@@ -80,7 +80,8 @@ pub(super) fn split_circles(
         .map(|s| s.end.map(|t| combinatorics::node_coords_rat(jd, t)))
         .collect();
     for (ci, circ) in circles.iter().enumerate() {
-        let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());
+        let def = &cyls[circ.cyl].def;
+        let (o, m, r2) = (def.origin(), def.dir(), def.r2());
         for (si, sg) in segs.iter().enumerate() {
             // A segment whose two ends are one point cuts nothing. Asked by **name**, which is the
             // identity: two spellings of one point are refused upstream, not tolerated here.
@@ -102,7 +103,7 @@ pub(super) fn split_circles(
             {
                 continue;
             }
-            let Some(xs) = circle_crossings(jd, wc, circ, sg) else {
+            let Some(xs) = circle_crossings(jd, wc, circ, def, sg) else {
                 return Err(undecided());
             };
             for n in xs {
@@ -222,7 +223,7 @@ pub(super) fn split_circles(
             nodes.retain(|&x| {
                 let off = !is_end(x)
                     && extents.iter().all(|&[p, q]| {
-                        combinatorics::theta_between(jd, circ.cyl, &circ.def, p, q, x)
+                        combinatorics::theta_between(jd, circ.cyl, &cyls[circ.cyl].def, p, q, x)
                             == Some(false)
                     });
                 if off {
@@ -235,7 +236,7 @@ pub(super) fn split_circles(
             }
         }
         // ---- the circle → arcs, in θ order about the seam ----
-        let order = combinatorics::circular_order(jd, circ.cyl, &circ.def, &nodes)
+        let order = combinatorics::circular_order(jd, circ.cyl, &cyls[circ.cyl].def, &nodes)
             .map_err(|e| reject(e.reason()))?;
         // θ position of each node, so an extent can be tested against an arc by rank alone.
         let mut at = vec![0usize; order.len()];
@@ -282,10 +283,7 @@ pub(super) fn split_circles(
                 continue;
             }
             arcs.push(Piece {
-                on: OnCurve::Arc {
-                    cyl: circ.cyl,
-                    def: circ.def.clone(),
-                },
+                on: OnCurve::Arc { cyl: circ.cyl },
                 end: [nodes[order[k]], nodes[order[(k + 1) % order.len()]]],
                 merged,
             });
@@ -533,13 +531,14 @@ fn circle_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     circ: &MergedCircle,
+    def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
 ) -> Option<Vec<combinatorics::NodeId>> {
     use crate::combinatorics::QuadRoot;
     use nacre_exact::quad::{CylinderMeet, QuadVal};
     let w = jd.world_rat(wc)?;
     let v = jd.world_rat(sg.wall)?;
-    let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let roots = match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
         CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
         // `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.

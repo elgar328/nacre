@@ -278,7 +278,6 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
     let edges = |aliases: &Aliases| {
         let circle = MergedCircle {
             cyl: 0,
-            def: def.clone(),
             merged: vec![(
                 SolidSide::B,
                 SegKind::Seated { body_above: true },
@@ -489,12 +488,12 @@ fn the_armed_wall_class_walks_to_closed_cells() {
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
     let split = drop_newsless(split).unwrap();
-    let circles = merge_circles(&tr.circles, &setup.cyls, &Aliases::default()).unwrap();
+    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
     // This fixture's class is parallel to the only cylinder in it, so it traces rulings and
     // no circle. Not a general law: a class may carry both, when the circle
     // belongs to a *different*, perpendicular cylinder.
     assert!(circles.is_empty(), "this class meets no ⊥ cylinder");
-    let rulings = merge_rulings(&tr.rulings, &setup.cyls, &Aliases::default());
+    let rulings = merge_rulings(&tr.rulings, &Aliases::default());
     assert_eq!(rulings.len(), 2);
     let edges = ClassEdges::of(
         &jd,
@@ -548,7 +547,7 @@ fn armed_class_edges<'a>(
     jd: &Judge<'a, WorkingPlane>,
     wc: usize,
     crossings: &std::collections::HashSet<(usize, usize)>,
-) -> ClassEdges<'static> {
+) -> ClassEdges<'a> {
     let tr = trace_on_class_of(
         m,
         plate,
@@ -567,8 +566,8 @@ fn armed_class_edges<'a>(
     let merged = merge_coincident(jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
     let split = drop_newsless(split).unwrap();
-    let circles = merge_circles(&tr.circles, &setup.cyls, &Aliases::default()).unwrap();
-    let rulings = merge_rulings(&tr.rulings, &setup.cyls, &Aliases::default());
+    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
+    let rulings = merge_rulings(&tr.rulings, &Aliases::default());
     let e = ClassEdges::of(
         jd,
         &setup.cyls,
@@ -583,6 +582,7 @@ fn armed_class_edges<'a>(
     // Owned copies so the borrows above may end — a test convenience, not a production shape.
     ClassEdges {
         pieces: e.pieces,
+        cyls: &setup.cyls,
         circles: std::borrow::Cow::Owned(e.circles.into_owned()),
         cut_rims: e.cut_rims,
         wc: e.wc,
@@ -1595,7 +1595,7 @@ fn with_cut_rings(
         let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()) else {
             continue;
         };
-        let Ok(circles) = merge_circles(&tr.circles, &cyls, &Aliases::default()) else {
+        let Ok(circles) = merge_circles(&tr.circles, &Aliases::default()) else {
             continue;
         };
         let Ok(edges) = ClassEdges::of(
@@ -1873,7 +1873,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
         let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()) else {
             continue;
         };
-        let Ok(circles) = merge_circles(&tr.circles, &cyls, &Aliases::default()) else {
+        let Ok(circles) = merge_circles(&tr.circles, &Aliases::default()) else {
             continue;
         };
         let Ok(edges) = ClassEdges::of(
@@ -2064,7 +2064,7 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
         tr.circles
     );
 
-    let circles = merge_circles(&tr.circles, &cyls, &Aliases::default()).unwrap();
+    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
     let edges =
         ClassEdges::of(&jd, &cyls, &[], wc, &[], &circles, &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
@@ -2167,7 +2167,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
     );
 
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
-    let circles = merge_circles(&tr.circles, &cyls, &Aliases::default()).unwrap();
+    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
     let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()).unwrap();
     assert_eq!(
         split.len(),

@@ -410,8 +410,8 @@ pub(super) fn trace_result_faces(
             let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
-            let circles = merge_circles(&tr.circles, cyls, &local)?;
-            let rulings = merge_rulings(&tr.rulings, cyls, &local);
+            let circles = merge_circles(&tr.circles, &local)?;
+            let rulings = merge_rulings(&tr.rulings, &local);
             Ok(((split, circles, rulings), local))
         })?;
         splits.clear();

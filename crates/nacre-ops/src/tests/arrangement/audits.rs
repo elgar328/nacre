@@ -837,8 +837,8 @@ pub(crate) fn frame_audit(
                 let merged = merge_coincident(&jd, &tr.segs, wc, &local);
                 let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
-                let circles = merge_circles(&tr.circles, &cyls, &local)?;
-                let rulings = merge_rulings(&tr.rulings, &cyls, &local);
+                let circles = merge_circles(&tr.circles, &local)?;
+                let rulings = merge_rulings(&tr.rulings, &local);
                 // **The same edges the boolean uses.** This copy of the pipeline is what
                 // makes the audit an instrument; feeding it un-split edges would let it run to
                 // the end and report `failed_at: None` for an input the boolean refuses —

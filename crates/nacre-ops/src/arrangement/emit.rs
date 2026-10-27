@@ -150,9 +150,10 @@ pub(super) fn emit_faces(
         .iter()
         .enumerate()
         .filter_map(|(i, ma)| {
-            let OnCurve::Arc { cyl, def } = &ma.on else {
+            let OnCurve::Arc { cyl } = ma.on else {
                 return None;
             };
+            let def = &edges.cyls[cyl].def;
             // `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
             // here would be that function's second spelling.
             let axis_up = crate::planes::plus_t_is_above(
@@ -188,7 +189,7 @@ pub(super) fn emit_faces(
             // The label and the trace that made it, **from one visit to one arc** — see
             // [`ArcLabel`] for why they may not become two maps.
             Some((
-                *cyl,
+                cyl,
                 ArcLabel {
                     ends: ma.end,
                     label: labels[c],

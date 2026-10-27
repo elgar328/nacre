@@ -214,7 +214,8 @@ pub(super) fn nest_cells(
     let circle_ix: Vec<Option<usize>> = cells.iter().map(circle_of).collect();
     // The nesting engine asks a circle for its exact statement and nothing else, so it is
     // handed the defs rather than this pass's merged circles.
-    let circle_defs: Vec<&nacre_topo::CylinderDef> = circles.iter().map(|c| &c.def).collect();
+    let circle_defs: Vec<&nacre_topo::CylinderDef> =
+        circles.iter().map(|c| &cyls[c.cyl].def).collect();
     let mut holes: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut roots: Vec<usize> = Vec::new();
     for c in (0..n).filter(|&i| cells[i].winding == -1) {

@@ -889,32 +889,58 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         // `r` is the radius; the truth takes its square.
         nacre_topo::CylinderDef::new(o, dir, e, nacre_exact::BigRat::square_of(r)).unwrap()
     };
+    // A class table for hand-stated cylinders: the pieces index it for their statement. Its
+    // surfaces live in a scratch model — only `def` is read on this road.
+    let table = |defs: &[nacre_topo::CylinderDef]| -> Vec<crate::planes::WorkingCyl> {
+        let mut scratch = Model::new();
+        defs.iter()
+            .map(|d| {
+                let f = |x: [nacre_exact::Rat; 3]| x.map(|c| c.to_f64());
+                let figure = nacre_geom::Cylinder::from_axis(
+                    Point3::from_array(f(d.origin())),
+                    nacre_math::Vector3::from_array(f(d.dir())),
+                    nacre_math::Vector3::from_array(f(d.ref_dir())),
+                    d.radius_f64(),
+                )
+                .expect("a well-formed cylinder");
+                crate::planes::WorkingCyl {
+                    surf: scratch.push_cylinder_unregistered(figure, d.clone(), None),
+                    def: d.clone(),
+                    realized: figure,
+                    owner: SolidSide::A,
+                    shared: Vec::new(),
+                    silent: Vec::new(),
+                    boxes: Vec::new(),
+                }
+            })
+            .collect()
+    };
     // ⊥ the shared cap: a circle of radius 6/5 about `(3/2, 3/2)` on that plane.
     //
     // The contribution is stated **whole** rather than left empty: the check reads
     // the arc a contribution covers, and an empty list is its fallback path. Carrying a real
     // contribution keeps this test on the road a model takes.
     let whole = vec![(SolidSide::A, SegKind::Seated { body_above: true }, None)];
+    let circle_def = def(
+        [q(3, 2), q(3, 2), z(0)],
+        [z(0), z(0), z(1)],
+        [z(1), z(0), z(0)],
+        q(6, 5),
+    );
     let circle = MergedCircle {
         cyl: 0,
-        def: def(
-            [q(3, 2), q(3, 2), z(0)],
-            [z(0), z(0), z(1)],
-            [z(1), z(0), z(0)],
-            q(6, 5),
-        ),
         merged: whole.clone(),
     };
     // ∥ it, and near enough (`1/2 < 1`) that both caps carry its rulings — at
     // `y = 3/2 ± √(3)/2`, which the circle above reaches past on either side.
+    let ruling_def = def(
+        [z(0), q(3, 2), q(1, 2)],
+        [z(1), z(0), z(0)],
+        [z(0), z(0), z(1)],
+        z(1),
+    );
     let ruling = MergedRuling {
         cyl: 1,
-        def: def(
-            [z(0), q(3, 2), q(1, 2)],
-            [z(1), z(0), z(0)],
-            [z(0), z(0), z(1)],
-            z(1),
-        ),
         side: 1,
         end: [
             crate::combinatorics::NodeId::three_planes(crate::combinatorics::Canon3::three([
@@ -927,9 +953,10 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         merged: Vec::new(),
         orient: 1,
     };
+    let crossing = table(&[circle_def, ruling_def.clone()]);
     let out = ClassEdges::of(
         &jd,
-        NO_CYLS,
+        &crossing,
         &[],
         wc,
         &split,
@@ -949,13 +976,16 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
     );
     // And a circle that stays clear of both rulings is not refused — without this the check
     // could be a constant and still be green.
-    let clear = MergedCircle {
-        def: def(
+    let clear_table = table(&[
+        def(
             [q(3, 2), z(10), z(0)],
             [z(0), z(0), z(1)],
             [z(1), z(0), z(0)],
             q(1, 10),
         ),
+        ruling_def,
+    ]);
+    let clear = MergedCircle {
         merged: whole,
         ..circle
     };
@@ -966,7 +996,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         !matches!(
             ClassEdges::of(
                 &jd,
-                NO_CYLS,
+                &clear_table,
                 &[],
                 wc,
                 &split,

@@ -85,12 +85,13 @@ pub(crate) struct CircleTrace {
 }
 
 /// One circle of the class's arrangement after merging: both operands' contributions on one
-/// cylinder class, plus the cylinder's exact statement (the containment predicates read it).
-/// The circle twin of [`MergedSeg`].
+/// cylinder class. The circle twin of [`MergedSeg`]. The cylinder's exact statement is the class
+/// table's (`cyls[cyl].def`): a `ClassIx::Cyl` index is an index *into that table*, built from the
+/// same map that issued it ("rebuilt from the same map so the two cannot drift", `dense_planes`),
+/// so every reader indexes it rather than carrying a copy.
 #[derive(Clone, Debug)]
 pub(crate) struct MergedCircle {
     pub cyl: usize,
-    pub def: nacre_topo::CylinderDef,
     /// Each contribution with the **angular extent** it covers — see [`CircleTrace::arc`]. `None`
     /// is the whole circle.
     pub merged: Vec<(SolidSide, SegKind, Option<[NodeId; 2]>)>,
@@ -126,7 +127,6 @@ impl MergedCircle {
 #[derive(Clone, Debug)]
 pub(crate) struct MergedRuling {
     pub cyl: usize,
-    pub def: nacre_topo::CylinderDef,
     pub side: i8,
     pub end: [NodeId; 2],
     /// The `(solid, kind)` contributions, like a segment's — `edge_mask` reads it unchanged.
@@ -142,7 +142,6 @@ pub(crate) struct MergedRuling {
 /// `ClassIx::Cyl` index indexes directly.
 pub(super) fn merge_circles(
     circles: &[CircleTrace],
-    cyls: &[crate::planes::WorkingCyl],
     aliases: &Aliases,
 ) -> Result<Vec<MergedCircle>, BoolError> {
     // The merge layer is where names become canonical — `merge_coincident` for a
@@ -159,14 +158,8 @@ pub(super) fn merge_circles(
                 continue;
             }
         }
-        // The class table answers directly, without scanning the face rows for a lateral face of
-        // the same class and `expect`ing one — that would be a runtime claim where the truth is
-        // structural: a `ClassIx::Cyl` index is an index *into this table*, built from the same map
-        // that issued it ("rebuilt from the same map so the two cannot drift", `dense_planes`).
-        let def = cyls[c.cyl].def.clone();
         out.push(MergedCircle {
             cyl: c.cyl,
-            def,
             merged: vec![(c.solid, c.kind, c.arc.map(canon))],
         });
     }
@@ -217,11 +210,7 @@ pub(crate) struct RulingTrace {
 /// fold below never actually fires. Both facts are written for
 /// a population that does not exist yet — a cylinder belongs to one operand, so two statements
 /// of one ruling need a shape nothing builds.
-pub(super) fn merge_rulings(
-    rulings: &[RulingTrace],
-    cyls: &[crate::planes::WorkingCyl],
-    aliases: &Aliases,
-) -> Vec<MergedRuling> {
+pub(super) fn merge_rulings(rulings: &[RulingTrace], aliases: &Aliases) -> Vec<MergedRuling> {
     let mut out: Vec<MergedRuling> = Vec::new();
     // Canonical ends (see `merge_circles`) — the key below is by name.
     let mut sorted: Vec<(&RulingTrace, [NodeId; 2])> = rulings
@@ -243,7 +232,6 @@ pub(super) fn merge_rulings(
         }
         out.push(MergedRuling {
             cyl: r.cyl,
-            def: cyls[r.cyl].def.clone(),
             side: r.side,
             end,
             merged: vec![(r.solid, r.kind)],

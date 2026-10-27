@@ -206,7 +206,7 @@ pub(super) fn split_rulings(
     let ruling_ends: Vec<[AxisCoord; 2]> = rulings
         .iter()
         .map(|r| {
-            let coord = |n| AxisCoord::of(jd, r.cyl, &r.def, n);
+            let coord = |n| AxisCoord::of(jd, r.cyl, &cyls[r.cyl].def, n);
             match (coord(r.end[0]), coord(r.end[1])) {
                 (Some(a), Some(b)) => Ok([a, b]),
                 _ => Err(undecided()),
@@ -217,7 +217,7 @@ pub(super) fn split_rulings(
     let mut cyl_list: Vec<(usize, &nacre_topo::CylinderDef)> = Vec::new();
     for r in rulings {
         if !cyl_list.iter().any(|&(c, _)| c == r.cyl) {
-            cyl_list.push((r.cyl, &r.def));
+            cyl_list.push((r.cyl, &cyls[r.cyl].def));
         }
     }
     // The lines on this class that lie on a cylinder and that this class states as a ruling —
@@ -354,7 +354,7 @@ pub(super) fn split_rulings(
         let mut keyed: Vec<(AxisCoord, combinatorics::NodeId)> = Vec::new();
         for &n in &nodes {
             keyed.push((
-                AxisCoord::of(jd, r.cyl, &r.def, n).ok_or_else(undecided)?,
+                AxisCoord::of(jd, r.cyl, &cyls[r.cyl].def, n).ok_or_else(undecided)?,
                 n,
             ));
         }
@@ -363,11 +363,14 @@ pub(super) fn split_rulings(
         keyed.push((hi, r.end[1]));
         let mut order: Vec<usize> = (0..keyed.len()).collect();
         combinatorics::try_sort_by(&mut order, |&i, &j| {
-            keyed[i].0.cmp(&keyed[j].0, jd, &r.def).ok_or(())
+            keyed[i].0.cmp(&keyed[j].0, jd, &cyls[r.cyl].def).ok_or(())
         })
         .map_err(|()| undecided())?;
         for pair in order.windows(2) {
-            match keyed[pair[0]].0.cmp(&keyed[pair[1]].0, jd, &r.def) {
+            match keyed[pair[0]]
+                .0
+                .cmp(&keyed[pair[1]].0, jd, &cyls[r.cyl].def)
+            {
                 Some(core::cmp::Ordering::Equal) => {
                     return Err(reject(RejectReason::CoincidentNodes));
                 }
@@ -381,7 +384,6 @@ pub(super) fn split_rulings(
         for pair in order.windows(2) {
             out_rulings.push(MergedRuling {
                 cyl: r.cyl,
-                def: r.def.clone(),
                 side: r.side,
                 end: [keyed[pair[0]].1, keyed[pair[1]].1],
                 merged: r.merged.clone(),

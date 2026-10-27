@@ -261,17 +261,14 @@ pub(crate) enum OnCurve {
         end_h: [combinatorics::EndPin; 2],
         sense: Option<i8>,
     },
-    /// The class's circle on cylinder class `cyl`.
-    Arc {
-        cyl: usize,
-        def: nacre_topo::CylinderDef,
-    },
+    /// The class's circle on cylinder class `cyl` (its statement is the class table's,
+    /// `cyls[cyl].def` — see [`MergedCircle`]).
+    Arc { cyl: usize },
     /// One of the class's two rulings on cylinder class `cyl`: `side` names which
     /// ([`combinatorics::RulingCarrier::side`] — the sign of `(x − o) · (m × n̂)` against the
     /// class's canonical coefficients), `0` the tangent one.
     Ruling {
         cyl: usize,
-        def: nacre_topo::CylinderDef,
         side: i8,
         /// The lateral's `orient_sign` (`+1` material inside the cylinder, `−1` outside — a boss or
         /// a bore), for the vertical answer's content check; an instrument's field, like the label.
@@ -283,23 +280,28 @@ pub(crate) enum OnCurve {
 impl Piece {
     /// The ring-edge carrier of the half-edge that travels `end[0] → end[1]` when `forward`, and
     /// the other way otherwise, on class `wc` — the one place the travel convention above is read.
-    pub(super) fn carrier(&self, forward: bool, wc: usize) -> combinatorics::Carrier {
+    pub(super) fn carrier(
+        &self,
+        cyls: &[crate::planes::WorkingCyl],
+        forward: bool,
+        wc: usize,
+    ) -> combinatorics::Carrier {
         match &self.on {
             OnCurve::Segment { wall, sense, .. } => combinatorics::Carrier::Plane {
                 wall: *wall,
                 sense: sense.map(|s| if forward { s } else { -s }),
             },
-            OnCurve::Arc { cyl, def } => {
+            OnCurve::Arc { cyl } => {
                 combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
                     cyl: *cyl,
-                    def: def.clone(),
+                    def: cyls[*cyl].def.clone(),
                     ccw: forward,
                 }))
             }
-            OnCurve::Ruling { cyl, def, side, .. } => {
+            OnCurve::Ruling { cyl, side, .. } => {
                 combinatorics::Carrier::Ruling(Box::new(combinatorics::RulingCarrier {
                     cyl: *cyl,
-                    def: def.clone(),
+                    def: cyls[*cyl].def.clone(),
                     side: *side,
                     up: forward,
                     plane: wc,
@@ -356,7 +358,6 @@ impl From<MergedRuling> for Piece {
         Piece {
             on: OnCurve::Ruling {
                 cyl: r.cyl,
-                def: r.def,
                 side: r.side,
                 #[cfg(test)]
                 orient: r.orient,
@@ -389,6 +390,9 @@ impl From<MergedRuling> for Piece {
 /// use.
 struct ClassEdges<'a> {
     pieces: Vec<Piece>,
+    /// The cylinder class table the pieces' `cyl` index — where an arc's or a ruling's statement
+    /// is read.
+    cyls: &'a [crate::planes::WorkingCyl],
     circles: std::borrow::Cow<'a, [MergedCircle]>,
     /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
     /// (keyed by plane class where the per-class products are aggregated).
