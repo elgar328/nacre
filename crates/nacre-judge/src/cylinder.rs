@@ -292,13 +292,14 @@ pub enum CylPoint<'p> {
 }
 
 /// **A coordinate along a cylinder's axis** (`m · x`) — stated exactly (`a + b√c`, for a point
-/// with an exact meet or on a plane across the axis), or the point whose interval box gives it.
+/// with exact coordinates, an exact meet or on a plane across the axis), or the point whose
+/// interval box gives it.
 #[derive(Clone, Copy)]
 pub enum AxisValue<'p> {
     /// The coordinate, exact.
     Stated(&'p QuadVal),
-    /// A point with no exact meet.
-    Point(&'p PiercePoint),
+    /// A point with no exact statement of the coordinate — three planes' meet or a pierce point.
+    Point(CylPoint<'p>),
 }
 
 impl<W: PlaneWitness> Judge<'_, W> {
@@ -396,7 +397,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         let hp = |v: AxisValue<'_>| match v {
             AxisValue::Stated(q) => nacre_exact::quad_hp(q, prec),
             AxisValue::Point(p) => {
-                let at = p.point_hp_at(self, prec)?;
+                let at = self.point_box(p, prec)?;
                 Some(
                     at[0]
                         .mul(&m[0], prec)

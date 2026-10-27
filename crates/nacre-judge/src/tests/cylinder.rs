@@ -106,7 +106,7 @@ fn the_ruling_a_point_is_on_is_one_per_crossing_on_either_road() {
 fn value<'p>(p: &'p PiercePoint, q: &'p Option<QuadVal>) -> AxisValue<'p> {
     match q {
         Some(q) => AxisValue::Stated(q),
-        None => AxisValue::Point(p),
+        None => AxisValue::Point(CylPoint::Pierce(p)),
     }
 }
 

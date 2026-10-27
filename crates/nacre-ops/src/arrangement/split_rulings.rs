@@ -97,64 +97,101 @@ fn lateral_crossings(
 /// side and extent tests read it without re-solving).
 type LateralCrossing = (combinatorics::NodeId, combinatorics::PiercePoint);
 
-/// **A point's coordinate along a cylinder's axis** (`m · x`) — exact (`a + b√c`) where the point has
-/// an exact meet or lies on a plane across the axis, else the point itself, whose interval box the
-/// judge reads ([`Judge::axis_order`]).
+/// `x · y`, checked.
+fn dot(x: &[Rat; 3], y: &[Rat; 3]) -> Option<Rat> {
+    x[0].checked_mul(y[0])?
+        .checked_add(x[1].checked_mul(y[1])?)?
+        .checked_add(x[2].checked_mul(y[2])?)
+}
+
+/// **A point's coordinate along a cylinder's axis** (`m · x`), for either kind of name — the one
+/// reader the ruling split and the fold both order by. Exact where the point states it: three
+/// planes with exact coordinates, a plane of the name across the axis, a pierce point's exact meet
+/// (`a + b√c`); else the point itself, whose interval box the judge reads ([`Judge::axis_order`]).
+/// **Exact comes first** because an interval cannot prove two coordinates equal — two ends on one
+/// cap must compare as `Equal`, which only a stated value can say.
 #[derive(Clone)]
 enum AxisCoord {
     Exact(nacre_exact::quad::QuadVal),
-    Bounded(Box<combinatorics::PiercePoint>),
+    Pierce(Box<combinatorics::PiercePoint>),
+    Three([usize; 3]),
 }
 
 impl AxisCoord {
-    /// The coordinate of pierce point `n` of cylinder `cyl`.
+    /// The coordinate of point `n` along cylinder `cyl`'s axis. A pierce point is solved on its own
+    /// name's cylinder, which need not be `cyl` (a segment's end where another cylinder cut it).
     fn of(
         jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
         cyl: usize,
-        def: &nacre_topo::CylinderDef,
         n: combinatorics::NodeId,
     ) -> Option<Self> {
-        Self::of_meet(jd, def, n, &combinatorics::pierce_meet(jd, cyl, def, n)?)
+        let def = &cyls[cyl].def;
+        match n.kind() {
+            NodeKind::ThreePlane(t) => {
+                if let Some(p) = combinatorics::node_coords_rat(jd, n) {
+                    return Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(dot(
+                        &p,
+                        &def.dir(),
+                    )?)));
+                }
+                Some(Self::across_axis(jd, def, &t)?.unwrap_or(Self::Three(t)))
+            }
+            NodeKind::Pierce { cyl: own, .. } => Self::of_meet(
+                jd,
+                def,
+                n,
+                &combinatorics::pierce_meet(jd, own, &cyls[own].def, n)?,
+            ),
+        }
     }
 
+    /// The coordinate of pierce point `n` already solved as `meet`.
     fn of_meet(
         jd: &Judge<'_, WorkingPlane>,
         def: &nacre_topo::CylinderDef,
         n: combinatorics::NodeId,
         meet: &combinatorics::PiercePoint,
     ) -> Option<Self> {
-        use nacre_exact::quad::QuadVal;
-        let m = def.dir();
-        let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-            x[0].checked_mul(y[0])?
-                .checked_add(x[1].checked_mul(y[1])?)?
-                .checked_add(x[2].checked_mul(y[2])?)
-        };
         if meet.exact().is_some() {
             return Some(Self::Exact(meet.stated_axis(def)?));
         }
-        // A plane of the name across the axis holds every point of it at one axis coordinate,
-        // `m·o + t·|m|²` with `t` where the axis meets it — stated exactly, so two points on one
-        // cap compare as equal.
         let (planes, _, _) = combinatorics::pierce_name(n)?;
-        for c in planes {
+        Some(
+            Self::across_axis(jd, def, &planes)?
+                .unwrap_or_else(|| Self::Pierce(Box::new(meet.clone()))),
+        )
+    }
+
+    /// A plane of the name across the axis holds every point of it at one axis coordinate,
+    /// `m·o + t·|m|²` with `t` where the axis meets it — stated exactly, so two points on one cap
+    /// compare as equal. `Some(None)` where no plane of the name is across the axis; `None` on
+    /// overflow.
+    fn across_axis(
+        jd: &Judge<'_, WorkingPlane>,
+        def: &nacre_topo::CylinderDef,
+        planes: &[usize],
+    ) -> Option<Option<Self>> {
+        let m = def.dir();
+        for &c in planes {
             if let Some(w) = jd.world_rat(c)
                 && nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m)
             {
                 let t = crate::planes::axis_param_of_plane(&w, def)?;
-                return Some(Self::Exact(QuadVal::from_rat(
+                return Some(Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(
                     dot(&def.origin(), &m)?.checked_add(t.checked_mul(dot(&m, &m)?)?)?,
-                )));
+                ))));
             }
         }
-        Some(Self::Bounded(Box::new(meet.clone())))
+        Some(None)
     }
 
     fn value(&self) -> nacre_judge::cylinder::AxisValue<'_> {
-        use nacre_judge::cylinder::AxisValue;
+        use nacre_judge::cylinder::{AxisValue, CylPoint};
         match self {
             Self::Exact(q) => AxisValue::Stated(q),
-            Self::Bounded(p) => AxisValue::Point(p),
+            Self::Pierce(p) => AxisValue::Point(CylPoint::Pierce(p)),
+            Self::Three(t) => AxisValue::Point(CylPoint::Three(*t)),
         }
     }
 
@@ -206,7 +243,7 @@ pub(super) fn split_rulings(
     let ruling_ends: Vec<[AxisCoord; 2]> = rulings
         .iter()
         .map(|r| {
-            let coord = |n| AxisCoord::of(jd, r.cyl, &cyls[r.cyl].def, n);
+            let coord = |n| AxisCoord::of(jd, cyls, r.cyl, n);
             match (coord(r.end[0]), coord(r.end[1])) {
                 (Some(a), Some(b)) => Ok([a, b]),
                 _ => Err(undecided()),
@@ -353,10 +390,7 @@ pub(super) fn split_rulings(
         nodes.dedup();
         let mut keyed: Vec<(AxisCoord, combinatorics::NodeId)> = Vec::new();
         for &n in &nodes {
-            keyed.push((
-                AxisCoord::of(jd, r.cyl, &cyls[r.cyl].def, n).ok_or_else(undecided)?,
-                n,
-            ));
+            keyed.push((AxisCoord::of(jd, cyls, r.cyl, n).ok_or_else(undecided)?, n));
         }
         let [lo, hi] = ruling_ends[ri].clone();
         keyed.push((lo, r.end[0]));
@@ -425,29 +459,11 @@ fn fold_onto_rulings(
     shared_here: &[(usize, usize, i8)],
     aliases: &Aliases,
 ) -> Result<Vec<MergedSeg>, BoolError> {
-    use nacre_exact::quad::QuadVal;
     let undecided = || reject(RejectReason::WitnessNotRational);
     let canon = |e: [combinatorics::NodeId; 2]| {
         let mut x = [aliases.canon_point(e[0]), aliases.canon_point(e[1])];
         x.sort_unstable();
         x
-    };
-    // A point's coordinate along the cylinder's axis, exact for either kind of name.
-    let axis_at = |cyl: usize, n: combinatorics::NodeId| -> Option<QuadVal> {
-        let m = cyls.get(cyl)?.def.dir();
-        let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-            x[0].checked_mul(y[0])?
-                .checked_add(x[1].checked_mul(y[1])?)?
-                .checked_add(x[2].checked_mul(y[2])?)
-        };
-        if let Some(p) = combinatorics::node_coords_rat(jd, n) {
-            return Some(QuadVal::from_rat(dot(&p, &m)?));
-        }
-        let (_, own, _) = combinatorics::pierce_name(n)?;
-        let (line, s) =
-            combinatorics::pierce_meet(jd, own, &cyls.get(own)?.def, n)?.into_exact()?;
-        QuadVal::from_rat(dot(&line.base(), &m)?)
-            .checked_add(&s.checked_mul_rat(dot(&line.dir(), &m)?)?)
     };
     let mut kept = Vec::with_capacity(segs.len());
     for sg in segs {
@@ -471,20 +487,22 @@ fn fold_onto_rulings(
             continue;
         }
         // No piece end for end: off the lateral, or a stretch the splits left uncut.
-        let (Some(a), Some(b)) = (axis_at(cyl, sg.end[0]), axis_at(cyl, sg.end[1])) else {
+        let def = &cyls[cyl].def;
+        let coord = |n| AxisCoord::of(jd, cyls, cyl, n);
+        let (Some(a), Some(b)) = (coord(sg.end[0]), coord(sg.end[1])) else {
             return Err(undecided());
         };
-        let (a, b) = match a.cmp_value(&b).ok_or_else(undecided)? {
+        let (a, b) = match a.cmp(&b, jd, def).ok_or_else(undecided)? {
             core::cmp::Ordering::Greater => (b, a),
             _ => (a, b),
         };
         for r in rulings.iter().filter(|r| r.cyl == cyl && r.side == side) {
-            let (Some(lo), Some(hi)) = (axis_at(cyl, r.end[0]), axis_at(cyl, r.end[1])) else {
+            let (Some(lo), Some(hi)) = (coord(r.end[0]), coord(r.end[1])) else {
                 return Err(undecided());
             };
             use core::cmp::Ordering::Less;
-            if a.cmp_value(&hi).ok_or_else(undecided)? == Less
-                && lo.cmp_value(&b).ok_or_else(undecided)? == Less
+            if a.cmp(&hi, jd, def).ok_or_else(undecided)? == Less
+                && lo.cmp(&b, jd, def).ok_or_else(undecided)? == Less
             {
                 return Err(reject(RejectReason::RulingBoundNotYet));
             }
