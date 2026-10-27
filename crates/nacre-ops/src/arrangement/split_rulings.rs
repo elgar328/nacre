@@ -31,28 +31,16 @@ fn lateral_crossings(
     // crosses no ruling: it misses the surface, which `C ≠ 0` shows, or lies on it, which no record
     // states here. Against any other wall the meet's shape is read off the boxes.
     if jd.planes[wc].world.is_none() {
-        let prec = jd.standard.prec;
         let undecided = || reject(RejectReason::CylinderGateUndecided);
-        let line = nacre_exact::quad::plane_plane_cylinder_hp(
-            &jd.canon_hp(wc, prec),
-            &jd.canon_hp(sg.wall, prec),
-            &o,
-            &m,
-            r2,
-            prec,
-        )
-        .ok_or_else(undecided)?;
         if nacre_exact::dot_sign_rat(&[v[0], v[1], v[2]], &m) == nacre_exact::Orient::Zero {
-            return match line.c.sign() {
-                Some(_) => Ok(Some(Vec::new())),
-                None => Err(undecided()),
+            return if jd.parallel_line_off(wc, sg.wall, def) {
+                Ok(Some(Vec::new()))
+            } else {
+                Err(undecided())
             };
         }
-        if line.a.sign() != Some(true) || !line.disc(prec).sign().ok_or_else(undecided)? {
-            return match line.a.sign() {
-                Some(true) => Ok(Some(Vec::new())), // the discriminant is negative: a miss
-                _ => Err(undecided()),
-            };
+        if !jd.line_crosses(wc, sg.wall, def).ok_or_else(undecided)? {
+            return Ok(Some(Vec::new())); // the discriminant is negative: a miss
         }
         let mut out = Vec::with_capacity(2);
         for root in [QuadRoot::Lo, QuadRoot::Hi] {

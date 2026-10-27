@@ -68,7 +68,7 @@ pub(crate) fn plane_index_setup(
             &setup.planes,
             &setup.plane_ix,
             setup.n_a,
-            setup.standard.prec,
+            &Judge::new(&setup.geom, setup.standard, &setup.notes),
         )?;
         setup.cyls = cyls;
         setup.crossings = crossings;
@@ -114,7 +114,7 @@ pub(crate) fn plane_index_setup_inner(
     t.charge(Sub::Classes);
     let t = Watch::new();
     let (geom, plane_ix, cyl_surfs) = dense_planes(&planes, &canon);
-    // The premise a class with no world statement is read by (`WorkingPlane::stored_hp`): the
+    // The premise a class with no world statement is read by (`Judge::stored_hp`): the
     // witness triangle turned by `frame_sign` faces the way the stored normal does. Checked on
     // every class that can be checked — the ones whose world statement says it independently.
     #[cfg(debug_assertions)]

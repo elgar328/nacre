@@ -787,19 +787,39 @@ pub(crate) fn pierce_meet(
     jd.pierce(planes, cyl, def, root)
 }
 
-/// **A node as an interval, for a question about cylinder `cyl`** — a three-plane corner
-/// ([`three_point_hp`]) or a pierce point of that cylinder ([`PiercePoint::point_hp`]); `None` for a
-/// pierce point of another cylinder or a box the precision cannot form.
-pub(crate) fn node_hp_on(
-    jd: &Judge<'_, WorkingPlane>,
-    cyl: usize,
-    def: &nacre_topo::CylinderDef,
-    n: NodeId,
-) -> Option<[nacre_exact::HpBounded; 3]> {
-    match n.kind() {
-        NodeKind::ThreePlane(t) => three_point_hp(jd, t),
-        NodeKind::Pierce { cyl: c, .. } if c == cyl => pierce_meet(jd, cyl, def, n)?.point_hp(jd),
-        NodeKind::Pierce { .. } => None,
+/// **A node as a point of a question about cylinder `cyl`** — a three-plane corner or a pierce
+/// point of that cylinder ([`pierce_meet`]); `None` for a pierce point of another cylinder or one no
+/// meet states.
+// Built and read within one question; boxing the wide arm would allocate per question for nothing.
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum NodeOn {
+    Three([usize; 3]),
+    Pierce(PiercePoint),
+}
+
+impl NodeOn {
+    pub(crate) fn of(
+        jd: &Judge<'_, WorkingPlane>,
+        cyl: usize,
+        def: &nacre_topo::CylinderDef,
+        n: NodeId,
+    ) -> Option<NodeOn> {
+        match n.kind() {
+            NodeKind::ThreePlane(t) => Some(NodeOn::Three(t)),
+            NodeKind::Pierce { cyl: c, .. } if c == cyl => {
+                pierce_meet(jd, cyl, def, n).map(NodeOn::Pierce)
+            }
+            NodeKind::Pierce { .. } => None,
+        }
+    }
+
+    /// The point the judge reads.
+    pub(crate) fn point(&self) -> nacre_judge::cylinder::CylPoint<'_> {
+        use nacre_judge::cylinder::CylPoint;
+        match self {
+            NodeOn::Three(t) => CylPoint::Three(*t),
+            NodeOn::Pierce(p) => CylPoint::Pierce(p),
+        }
     }
 }
 
@@ -828,37 +848,15 @@ pub(crate) fn between_on_circle_hp(
     hi: NodeId,
     n: NodeId,
 ) -> Option<bool> {
-    let prec = jd.standard.prec;
-    let (a, b) = (node_hp_on(jd, cyl, def, lo)?, node_hp_on(jd, cyl, def, n)?);
+    let (a, b) = (NodeOn::of(jd, cyl, def, lo)?, NodeOn::of(jd, cyl, def, n)?);
     if lo == hi {
         if n == lo {
             return Some(false);
         }
-        return (0..3)
-            .any(|k| b[k].sub(&a[k], prec).sign().is_some())
-            .then_some(true);
+        return jd.points_apart(a.point(), b.point())?.then_some(true);
     }
-    let c = node_hp_on(jd, cyl, def, hi)?;
-    let m = def.dir().map(|x| nacre_exact::HpBounded::of_rat(x, prec));
-    let e1 = [
-        b[0].sub(&a[0], prec),
-        b[1].sub(&a[1], prec),
-        b[2].sub(&a[2], prec),
-    ];
-    let e2 = [
-        c[0].sub(&a[0], prec),
-        c[1].sub(&a[1], prec),
-        c[2].sub(&a[2], prec),
-    ];
-    let x = [
-        e1[1].mul(&e2[2], prec).sub(&e1[2].mul(&e2[1], prec), prec),
-        e1[2].mul(&e2[0], prec).sub(&e1[0].mul(&e2[2], prec), prec),
-        e1[0].mul(&e2[1], prec).sub(&e1[1].mul(&e2[0], prec), prec),
-    ];
-    m[0].mul(&x[0], prec)
-        .add(&m[1].mul(&x[1], prec), prec)
-        .add(&m[2].mul(&x[2], prec), prec)
-        .sign()
+    let c = NodeOn::of(jd, cyl, def, hi)?;
+    jd.circle_turn(def, a.point(), b.point(), c.point())
 }
 
 /// **Where the line `p ∩ q` crosses the arc `a → b` strictly inside it**, for a pair one of whose
@@ -878,19 +876,7 @@ pub(crate) fn arc_crossings_hp(
     [a, b]: [NodeId; 2],
     on_end: Option<NodeId>,
 ) -> Option<Vec<NodeId>> {
-    let prec = jd.standard.prec;
-    let line = nacre_exact::quad::plane_plane_cylinder_hp(
-        &jd.canon_hp(p, prec),
-        &jd.canon_hp(q, prec),
-        &def.origin(),
-        &def.dir(),
-        def.r2(),
-        prec,
-    )?;
-    if line.a.sign() != Some(true) {
-        return None;
-    }
-    if !line.disc(prec).sign()? {
+    if !jd.line_crosses(p, q, def)? {
         return Some(Vec::new()); // the line misses the circle
     }
     let (lo, hi) = if ccw { (a, b) } else { (b, a) };
@@ -904,10 +890,10 @@ pub(crate) fn arc_crossings_hp(
             // Two names, one point: an interval cannot say so, and the exact road's `Coincident`
             // answer has no twin here — the boxes must prove the two apart.
             let (x, y) = (
-                node_hp_on(jd, cyl, def, e)?,
-                node_hp_on(jd, cyl, def, node)?,
+                NodeOn::of(jd, cyl, def, e)?,
+                NodeOn::of(jd, cyl, def, node)?,
             );
-            if !(0..3).any(|k| x[k].sub(&y[k], prec).sign().is_some()) {
+            if !jd.points_apart(x.point(), y.point())? {
                 return None;
             }
         }

@@ -57,7 +57,7 @@ pub(crate) fn cylinder_gate(
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     n_a: usize,
-    prec: usize,
+    jd: &Judge<'_, WorkingPlane>,
 ) -> Result<
     (
         Vec<WorkingCyl>,
@@ -188,7 +188,7 @@ pub(crate) fn cylinder_gate(
                 if wp.world.is_some() {
                     return Err(reject(RejectReason::WitnessNotRational));
                 }
-                let stance = nameless_stance(model, wp, cyl, prec);
+                let stance = nameless_stance(model, jd, c, cyl);
                 if let Stance::Beside(side) = stance {
                     silent[ci].push((c, Silence::Beside(side)));
                     continue;
@@ -431,7 +431,7 @@ pub(crate) fn cylinder_gate(
                     .map(|&(x, _)| x),
             );
         for x in others {
-            if !line_off_lateral(geom, c, x, &cyls[ci].def, prec) {
+            if !line_off_lateral(jd, c, x, &cyls[ci].def) {
                 return Err(undecided());
             }
         }
@@ -1707,21 +1707,27 @@ enum Stance {
 ///   then on that side;
 /// * a plane along the axis — exact through the two motions (`Model::plane_cylinder_relation`; a
 ///   turn about the axis leaves the axis alone) — whose distance from the axis is beyond the radius
-///   ([`plane_cuts_lateral`]): the whole infinite cylinder is on the side of any point of its axis.
+///   ([`Judge::plane_cuts`]): the whole infinite cylinder is on the side of any point of its axis.
 ///   This is what a box cannot say when the plane passes through the box beside the arc — a
 ///   bore's box at its corner, a slot end concave from the material.
 ///
 /// Within the radius such a plane cuts the lateral in two rulings, the one shape the ruling road
 /// draws. Asked before the class's faces are: a cylinder beside the class has nothing on it,
 /// whatever else that cylinder records.
-fn nameless_stance(model: &Model, wp: &WorkingPlane, cyl: &WorkingCyl, prec: usize) -> Stance {
+fn nameless_stance(
+    model: &Model,
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+    cyl: &WorkingCyl,
+) -> Stance {
+    let wp = &jd.planes[c];
     if let Some(side) = cyl.clear_of(wp) {
         return Stance::Beside(side);
     }
     if model.plane_cylinder_relation(wp.surf, cyl.surf) != Some(nacre_exact::AxisRelation::Along) {
         return Stance::Unknown;
     }
-    match plane_cuts_lateral(wp, &cyl.def, prec) {
+    match jd.plane_cuts(c, &cyl.def) {
         Some(false) => {
             let axis_point = nacre_judge::WitnessPoint::at(cyl.def.origin());
             wp.misses(std::slice::from_ref(&axis_point))
@@ -1732,32 +1738,6 @@ fn nameless_stance(model: &Model, wp: &WorkingPlane, cyl: &WorkingCyl, prec: usi
     }
 }
 
-/// **Does a plane along the axis cut the lateral?** — for a class with no world statement: the
-/// axis's offset from the plane `n·o + d`, squared, against `r²|n|²`, on the class's interval plane
-/// ([`WorkingPlane::outward_hp`]). `Some(true)` within the radius (two rulings), `Some(false)`
-/// beyond it (the whole cylinder on one side), `None` where the intervals cannot say.
-fn plane_cuts_lateral(
-    wp: &WorkingPlane,
-    def: &nacre_topo::CylinderDef,
-    prec: usize,
-) -> Option<bool> {
-    use nacre_exact::HpBounded;
-    let pl = wp.outward_hp(prec);
-    let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
-    let off = pl[0]
-        .mul(&o[0], prec)
-        .add(&pl[1].mul(&o[1], prec), prec)
-        .add(&pl[2].mul(&o[2], prec), prec)
-        .add(&pl[3], prec);
-    let nn = pl[0]
-        .mul(&pl[0], prec)
-        .add(&pl[1].mul(&pl[1], prec), prec)
-        .add(&pl[2].mul(&pl[2], prec), prec);
-    let r2 = HpBounded::of_bigint(def.r2().numer(), prec)
-        .div(&HpBounded::of_bigint(def.r2().denom(), prec), prec)?;
-    Some(!off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec).sign()?)
-}
-
 /// **Is the line `p ∩ x` off the lateral surface of `def`?** — `p` a sectioned class (along the
 /// axis), `x` another class recorded on the same cylinder. A named `x` not along the axis meets `p`
 /// in a line that crosses the axis direction, which no ruling does. A named `x` along it meets `p`
@@ -1766,27 +1746,18 @@ fn plane_cuts_lateral(
 /// ([`nacre_exact::quad::plane_plane_cylinder_hp`]). Two classes with no world statement are not
 /// asked: `false`.
 fn line_off_lateral(
-    geom: &[WorkingPlane],
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     x: usize,
     def: &nacre_topo::CylinderDef,
-    prec: usize,
 ) -> bool {
-    let Some(w) = geom[x].world_rat() else {
+    let Some(w) = jd.planes[x].world_rat() else {
         return false;
     };
     if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) != nacre_exact::Orient::Zero {
         return true;
     }
-    nacre_exact::quad::plane_plane_cylinder_hp(
-        &geom[p].canon_hp(prec),
-        &geom[x].canon_hp(prec),
-        &def.origin(),
-        &def.dir(),
-        def.r2(),
-        prec,
-    )
-    .is_some_and(|line| line.c.sign().is_some())
+    jd.parallel_line_off(p, x, def)
 }
 
 /// **Do the faces on class `c` stand apart from every lateral box?** — every face's edges are

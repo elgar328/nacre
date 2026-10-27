@@ -330,6 +330,113 @@ impl<W: PlaneWitness> Judge<'_, W> {
     }
 }
 
+impl<W: PlaneWitness> Judge<'_, W> {
+    /// The line `p ∩ q` against cylinder `def`, as intervals at this operation's precision — the
+    /// two planes as a pierce name orders them ([`Self::canon_hp`]).
+    fn meet_line_hp(
+        &self,
+        p: usize,
+        q: usize,
+        def: &CylinderDef,
+    ) -> Option<nacre_exact::quad::LineQuadHp> {
+        let prec = self.standard.prec;
+        nacre_exact::quad::plane_plane_cylinder_hp(
+            &self.canon_hp(p, prec),
+            &self.canon_hp(q, prec),
+            &def.origin(),
+            &def.dir(),
+            def.r2(),
+            prec,
+        )
+    }
+
+    /// **Does the line `p ∩ q` cross cylinder `def` in two points?** — `Some(true)` two crossings,
+    /// `Some(false)` a miss, both read off the discriminant's sign once the line is proved not
+    /// parallel to the axis (`A > 0`). `None` where the intervals cannot say: a tangency or an
+    /// axis-parallel line is a statement an interval cannot make.
+    pub fn line_crosses(&self, p: usize, q: usize, def: &CylinderDef) -> Option<bool> {
+        let line = self.meet_line_hp(p, q, def)?;
+        if line.a.sign() != Some(true) {
+            return None;
+        }
+        line.disc(self.standard.prec).sign()
+    }
+
+    /// **Is the line `p ∩ q`, exactly parallel to the axis, off cylinder `def`'s surface?** — its
+    /// constant term `C ≠ 0` proved (inside the solid or outside it, never on the surface). `false`
+    /// where it is not proved; the caller states the parallelism.
+    pub fn parallel_line_off(&self, p: usize, q: usize, def: &CylinderDef) -> bool {
+        self.meet_line_hp(p, q, def)
+            .is_some_and(|line| line.c.sign().is_some())
+    }
+
+    /// **Does plane `k`, along cylinder `def`'s axis, cut its lateral?** — the axis's offset from
+    /// the plane `n·o + d`, squared, against `r²|n|²`, on the plane's outward interval
+    /// ([`Self::outward_hp`]). `Some(true)` within the radius (two rulings), `Some(false)` beyond it
+    /// (the whole cylinder on one side), `None` where the intervals cannot say.
+    pub fn plane_cuts(&self, k: usize, def: &CylinderDef) -> Option<bool> {
+        let prec = self.standard.prec;
+        let pl = self.outward_hp(k, prec);
+        let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
+        let off = pl[0]
+            .mul(&o[0], prec)
+            .add(&pl[1].mul(&o[1], prec), prec)
+            .add(&pl[2].mul(&o[2], prec), prec)
+            .add(&pl[3], prec);
+        let nn = pl[0]
+            .mul(&pl[0], prec)
+            .add(&pl[1].mul(&pl[1], prec), prec)
+            .add(&pl[2].mul(&pl[2], prec), prec);
+        let r2 = HpBounded::of_bigint(def.r2().numer(), prec)
+            .div(&HpBounded::of_bigint(def.r2().denom(), prec), prec)?;
+        Some(!off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec).sign()?)
+    }
+
+    /// **Are two points proved apart?** — some coordinate of their interval boxes separated.
+    /// `None` where a box cannot be formed; `Some(false)` is «not shown», never «one point».
+    pub fn points_apart(&self, a: CylPoint<'_>, b: CylPoint<'_>) -> Option<bool> {
+        let (x, y) = (self.point_box(a)?, self.point_box(b)?);
+        let prec = self.standard.prec;
+        Some((0..3).any(|k| y[k].sub(&x[k], prec).sign().is_some()))
+    }
+
+    /// **Is `n` strictly inside the counter-clockwise arc `lo → hi`**, three points of one circle of
+    /// cylinder `def`, read from their interval boxes: travelling counter-clockwise about the axis
+    /// `m`, `(lo, n, hi)` is in that order exactly when `m · ((n − lo) × (hi − lo)) > 0` — the sign
+    /// of the triangle's turn about the axis. `None` where the boxes cannot say (two names for one
+    /// point among them, or too little precision).
+    pub fn circle_turn(
+        &self,
+        def: &CylinderDef,
+        lo: CylPoint<'_>,
+        n: CylPoint<'_>,
+        hi: CylPoint<'_>,
+    ) -> Option<bool> {
+        let prec = self.standard.prec;
+        let (a, b, c) = (self.point_box(lo)?, self.point_box(n)?, self.point_box(hi)?);
+        let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
+        let e1 = [
+            b[0].sub(&a[0], prec),
+            b[1].sub(&a[1], prec),
+            b[2].sub(&a[2], prec),
+        ];
+        let e2 = [
+            c[0].sub(&a[0], prec),
+            c[1].sub(&a[1], prec),
+            c[2].sub(&a[2], prec),
+        ];
+        let x = [
+            e1[1].mul(&e2[2], prec).sub(&e1[2].mul(&e2[1], prec), prec),
+            e1[2].mul(&e2[0], prec).sub(&e1[0].mul(&e2[2], prec), prec),
+            e1[0].mul(&e2[1], prec).sub(&e1[1].mul(&e2[0], prec), prec),
+        ];
+        m[0].mul(&x[0], prec)
+            .add(&m[1].mul(&x[1], prec), prec)
+            .add(&m[2].mul(&x[2], prec), prec)
+            .sign()
+    }
+}
+
 fn negate(x: &HpBounded, prec: usize) -> HpBounded {
     HpBounded::of_rat(Rat::from_int(0), prec).sub(x, prec)
 }

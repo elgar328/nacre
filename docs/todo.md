@@ -13,7 +13,7 @@
 계산한다. 잰 것(nacre-ops, 비시험 코드):
 
 - «평면의 어느 쪽인가» 철자 8(`Judge::orient3d`·`PiercePoint::side` 의 두 팔·`plane_side_of_rat`·`plane_sign_hp`·
-  `plane_cuts_lateral`·`WorkingPlane::misses`·`WorkingCyl::beside`), 선·축 위 순서는 공용 길(`order_along` 계열) 밖에 독립
+  `Judge::plane_cuts`·`WorkingPlane::misses`·`WorkingCyl::beside`), 선·축 위 순서는 공용 길(`order_along` 계열) 밖에 독립
   재구현 둘(`split_rulings::AxisCoord`·`winding` 의 `CoordKey`), 원 위 순서는 정확(`circular_order`)과 구간(`theta_between` 의
   구간 팔) 둘. 선과 원통의 교차는 `world.is_none()` 갈래가 넷(`pierce_meet`·`arc_crossings`·`crossing_on_ruling`·
   `lateral_crossings`)이고, 두 철자가 어긋나지 않게 묶는 `debug_assert` 가 다섯이다.

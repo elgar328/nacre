@@ -13,14 +13,16 @@ fn cylinder() -> CylinderDef {
     .expect("a cylinder")
 }
 
-/// The wall `x = 1`, the cap `z = 3`, the plane `y = 0` and the cap `z = 5`, each stated in the
-/// world or not.
+/// The wall `x = 1`, the cap `z = 3`, the plane `y = 0`, the cap `z = 5`, the wall `x = 5` (beyond
+/// the radius) and the wall `x = 2` (tangent), each stated in the world or not.
 fn planes(stated: bool) -> Vec<RW> {
     let rows = [
         [[1, 0, 0], [1, 1, 0], [1, 0, 1]],
         [[0, 0, 3], [1, 0, 3], [0, 1, 3]],
         [[0, 0, 0], [0, 0, 1], [1, 0, 0]],
         [[0, 0, 5], [1, 0, 5], [0, 1, 5]],
+        [[5, 0, 0], [5, 1, 0], [5, 0, 1]],
+        [[2, 0, 0], [2, 1, 0], [2, 0, 1]],
     ]
     .map(|pts| RW::moved(pts, |p| p));
     rows.into_iter()
@@ -154,5 +156,51 @@ fn the_orders_read_the_points_where_they_are() {
             Some(core::cmp::Ordering::Less),
             "stated: {stated}"
         );
+    }
+}
+
+/// **The meet's shape and the gate's two readings** on both roads: the cap line on the wall `x = 1`
+/// crosses, on the wall `x = 5` it misses; a line along the axis inside or outside the cylinder is
+/// off its surface, one on the tangent wall is not shown off; the wall `x = 1` cuts the lateral, the
+/// wall `x = 5` does not, the tangent wall cannot be said.
+#[test]
+fn the_meet_and_the_gate_read_where_the_line_is() {
+    let def = cylinder();
+    for stated in [true, false] {
+        let ps = planes(stated);
+        let j = jd(&ps);
+        assert_eq!(j.line_crosses(0, 1, &def), Some(true), "stated: {stated}");
+        assert_eq!(j.line_crosses(4, 1, &def), Some(false), "stated: {stated}");
+        assert!(j.parallel_line_off(0, 2, &def), "inside: {stated}");
+        assert!(j.parallel_line_off(4, 2, &def), "outside: {stated}");
+        assert!(!j.parallel_line_off(5, 2, &def), "on the surface: {stated}");
+        assert_eq!(j.plane_cuts(0, &def), Some(true), "stated: {stated}");
+        assert_eq!(j.plane_cuts(4, &def), Some(false), "stated: {stated}");
+        assert_eq!(j.plane_cuts(5, &def), None, "tangent: {stated}");
+    }
+}
+
+/// **Three points of one circle turn one way or the other**: the cap `z = 3` meets the wall
+/// `x = 1` at `y = ±√3` and the plane `y = 0` at `x = ±2`; any three of the four are in one
+/// counter-clockwise order or its reverse, and two names of distinct points are proved apart.
+#[test]
+fn three_points_of_a_circle_turn_one_way_on_either_road() {
+    let def = cylinder();
+    for stated in [true, false] {
+        let ps = planes(stated);
+        let j = jd(&ps);
+        let at = |pair, root| j.pierce(pair, 0, &def, root).expect("the line crosses");
+        let (a, b) = (at([0, 1], QuadRoot::Lo), at([0, 1], QuadRoot::Hi));
+        let c = at([1, 2], QuadRoot::Lo);
+        let (pa, pb, pc) = (
+            CylPoint::Pierce(&a),
+            CylPoint::Pierce(&b),
+            CylPoint::Pierce(&c),
+        );
+        let turn = j.circle_turn(&def, pa, pc, pb);
+        assert!(turn.is_some(), "stated: {stated}");
+        assert_eq!(j.circle_turn(&def, pb, pc, pa), turn.map(|t| !t));
+        assert_eq!(j.points_apart(pa, pb), Some(true));
+        assert_eq!(j.points_apart(pa, pa), Some(false));
     }
 }
