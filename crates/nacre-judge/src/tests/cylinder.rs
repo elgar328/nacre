@@ -204,3 +204,31 @@ fn three_points_of_a_circle_turn_one_way_on_either_road() {
         assert_eq!(j.points_apart(pa, pa), Some(false));
     }
 }
+
+/// **A point with no exact meet is its definition, so it realizes deeper.** The unstated cap line's
+/// crossing re-solved at twice the precision is a box inside the first one's reach — the two
+/// overlap — and narrower.
+#[test]
+fn a_bounded_point_realizes_deeper_from_its_definition() {
+    let def = cylinder();
+    let ps = planes(false);
+    let j = jd(&ps);
+    let p = j
+        .pierce([0, 1], 0, &def, QuadRoot::Lo)
+        .expect("the line crosses");
+    let prec = j.standard.prec;
+    let (here, deep) = (
+        p.point_hp_at(&j, prec).expect("a box"),
+        p.point_hp_at(&j, 2 * prec).expect("a deeper box"),
+    );
+    for k in 0..3 {
+        assert!(
+            here[k].sub(&deep[k], 2 * prec).sign().is_none(),
+            "the two boxes hold one point"
+        );
+        assert!(
+            !here[k].error.lt(deep[k].error) || deep[k].error.is_zero(),
+            "the deeper box is no wider"
+        );
+    }
+}

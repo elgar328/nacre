@@ -32,13 +32,17 @@ pub enum PiercePoint {
     /// The meet line of the name's two planes and the root along it: `base + s·dir` with
     /// `s = a + b√c`, both planes stated in the world.
     Exact(MeetLine, QuadVal),
-    /// A point one of whose planes has no world statement: an interval box that holds it, with
-    /// the name's two planes and its cylinder — what the questions below answer **by name** where
-    /// an interval cannot (a point on one of its own planes; two points of one ruling).
+    /// A point one of whose planes has no world statement: its definition — the name's two planes,
+    /// its root and its cylinder — and the interval box that holds it at the operation's precision.
+    /// The definition is what the questions below answer **by name** where an interval cannot (a
+    /// point on one of its own planes; two points of one ruling), and what realizes the point
+    /// deeper.
     Bounded {
         at: Box<[HpBounded; 3]>,
         planes: [usize; 2],
+        root: QuadRoot,
         cyl: usize,
+        def: Box<CylinderDef>,
     },
 }
 
@@ -72,24 +76,13 @@ impl<W: PlaneWitness> Judge<'_, W> {
             .iter()
             .any(|&c| self.planes[c].world_name().is_none())
         {
-            let prec = self.standard.prec;
-            let line = nacre_exact::quad::plane_plane_cylinder_hp(
-                &self.canon_hp(planes[0], prec),
-                &self.canon_hp(planes[1], prec),
-                &o,
-                &m,
-                r2,
-                prec,
-            )?;
-            let at = match root {
-                QuadRoot::Lo => line.root(false, prec)?,
-                QuadRoot::Hi => line.root(true, prec)?,
-                QuadRoot::Double => return None,
-            };
+            let at = self.pierce_box(planes, def, root, self.standard.prec)?;
             return Some(PiercePoint::Bounded {
                 at: Box::new(at),
                 planes,
+                root,
                 cyl,
+                def: Box::new(def.clone()),
             });
         }
         let (p1, p2) = (self.world_rat(planes[0])?, self.world_rat(planes[1])?);
@@ -99,6 +92,32 @@ impl<W: PlaneWitness> Judge<'_, W> {
         #[cfg(debug_assertions)]
         self.debug_assert_bounded_holds_exact(planes, def, root, &line, &s);
         Some(PiercePoint::Exact(line, s))
+    }
+
+    /// **The pierce name `(planes, root)` on cylinder `def` as an interval box at `prec`** — the
+    /// interval meet ([`nacre_exact::quad::plane_plane_cylinder_hp`]) of the two planes as the name
+    /// orders them ([`Self::canon_hp`]). `None` for a tangency (an interval proves two roots apart,
+    /// never one double root) or a discriminant it cannot separate from zero.
+    fn pierce_box(
+        &self,
+        planes: [usize; 2],
+        def: &CylinderDef,
+        root: QuadRoot,
+        prec: usize,
+    ) -> Option<[HpBounded; 3]> {
+        let line = nacre_exact::quad::plane_plane_cylinder_hp(
+            &self.canon_hp(planes[0], prec),
+            &self.canon_hp(planes[1], prec),
+            &def.origin(),
+            &def.dir(),
+            def.r2(),
+            prec,
+        )?;
+        match root {
+            QuadRoot::Lo => line.root(false, prec),
+            QuadRoot::Hi => line.root(true, prec),
+            QuadRoot::Double => None,
+        }
     }
 
     /// **The interval road answers for the named population too, where it can be checked.** Every
@@ -117,20 +136,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         s: &QuadVal,
     ) {
         let prec = self.standard.prec;
-        let hi = match root {
-            QuadRoot::Lo => false,
-            QuadRoot::Hi => true,
-            QuadRoot::Double => return,
-        };
-        let Some(at) = nacre_exact::quad::plane_plane_cylinder_hp(
-            &self.canon_hp(planes[0], prec),
-            &self.canon_hp(planes[1], prec),
-            &def.origin(),
-            &def.dir(),
-            def.r2(),
-            prec,
-        )
-        .and_then(|l| l.root(hi, prec)) else {
+        let Some(at) = self.pierce_box(planes, def, root, prec) else {
             return;
         };
         let Some(ex) = PiercePoint::Exact(line.clone(), *s).point_hp(self) else {
@@ -257,11 +263,11 @@ impl<W: PlaneWitness> Judge<'_, W> {
         meet_hp(&t.map(|k| self.witness_hp(k, prec)), prec)
     }
 
-    /// Either kind of point as an interval, at this operation's precision.
-    fn point_box(&self, p: CylPoint<'_>) -> Option<[HpBounded; 3]> {
+    /// Either kind of point as an interval at `prec`.
+    fn point_box(&self, p: CylPoint<'_>, prec: usize) -> Option<[HpBounded; 3]> {
         match p {
-            CylPoint::Three(t) => self.three_hp(t, self.standard.prec),
-            CylPoint::Pierce(m) => m.point_hp(self),
+            CylPoint::Three(t) => self.three_hp(t, prec),
+            CylPoint::Pierce(m) => m.point_hp_at(self, prec),
         }
     }
 
@@ -269,19 +275,38 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// off their interval boxes. `None` where a box cannot be formed or the two cannot be told
     /// apart: these are two distinct names, so an unseparated pair is never read as a tie.
     pub fn world_order(&self, a: CylPoint<'_>, b: CylPoint<'_>, axis: usize) -> Option<i8> {
-        let (x, y) = (self.point_box(a)?, self.point_box(b)?);
-        x[axis]
-            .sub(&y[axis], self.standard.prec)
-            .sign()
-            .map(|pos| if pos { 1 } else { -1 })
+        sign_i8(&self.world_diff(a, b, axis, self.standard.prec)?)
+    }
+
+    /// `x_a − x_b` on world axis `axis`, at `prec`.
+    fn world_diff(
+        &self,
+        a: CylPoint<'_>,
+        b: CylPoint<'_>,
+        axis: usize,
+        prec: usize,
+    ) -> Option<HpBounded> {
+        let (x, y) = (self.point_box(a, prec)?, self.point_box(b, prec)?);
+        Some(x[axis].sub(&y[axis], prec))
     }
 
     /// **`sign((a − b) · d)` for two points on the line `p ∩ q`**, `d` its stored direction
     /// (`n_p × n_q`, [`Self::stored_hp`]) — read off interval boxes. `None` where they cannot
     /// separate the two: distinct names, so never a tie.
     pub fn line_order(&self, p: usize, q: usize, a: &PiercePoint, b: &PiercePoint) -> Option<i8> {
-        let prec = self.standard.prec;
-        let (x, y) = (a.point_hp(self)?, b.point_hp(self)?);
+        sign_i8(&self.line_diff(p, q, a, b, self.standard.prec)?)
+    }
+
+    /// `(a − b) · (n_p × n_q)` at `prec`.
+    fn line_diff(
+        &self,
+        p: usize,
+        q: usize,
+        a: &PiercePoint,
+        b: &PiercePoint,
+        prec: usize,
+    ) -> Option<HpBounded> {
+        let (x, y) = (a.point_hp_at(self, prec)?, b.point_hp_at(self, prec)?);
         let (np, nq) = (self.stored_hp(p, prec), self.stored_hp(q, prec));
         let d = [
             np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
@@ -290,9 +315,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         ];
         (0..3)
             .map(|k| x[k].sub(&y[k], prec).mul(&d[k], prec))
-            .reduce(|s, t| s.add(&t, prec))?
-            .sign()
-            .map(|pos| if pos { 1 } else { -1 })
+            .reduce(|s, t| s.add(&t, prec))
     }
 
     /// **The order of two coordinates along cylinder `def`'s axis.** Two stated ones compare
@@ -309,12 +332,25 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if let (AxisValue::Stated(x), AxisValue::Stated(y)) = (a, b) {
             return x.cmp_value(y);
         }
-        let prec = self.standard.prec;
+        match self.axis_diff(def, a, b, self.standard.prec)?.sign()? {
+            true => Some(Ordering::Greater),
+            false => Some(Ordering::Less),
+        }
+    }
+
+    /// `m · (x_a − x_b)` at `prec`, a stated value realized.
+    fn axis_diff(
+        &self,
+        def: &CylinderDef,
+        a: AxisValue<'_>,
+        b: AxisValue<'_>,
+        prec: usize,
+    ) -> Option<HpBounded> {
         let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
         let hp = |v: AxisValue<'_>| match v {
             AxisValue::Stated(q) => nacre_exact::quad_hp(q, prec),
             AxisValue::Point(p) => {
-                let at = p.point_hp(self)?;
+                let at = p.point_hp_at(self, prec)?;
                 Some(
                     at[0]
                         .mul(&m[0], prec)
@@ -323,10 +359,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 )
             }
         };
-        match hp(a)?.sub(&hp(b)?, prec).sign()? {
-            true => Some(Ordering::Greater),
-            false => Some(Ordering::Less),
-        }
+        Some(hp(a)?.sub(&hp(b)?, prec))
     }
 }
 
@@ -338,8 +371,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
         p: usize,
         q: usize,
         def: &CylinderDef,
+        prec: usize,
     ) -> Option<nacre_exact::quad::LineQuadHp> {
-        let prec = self.standard.prec;
         nacre_exact::quad::plane_plane_cylinder_hp(
             &self.canon_hp(p, prec),
             &self.canon_hp(q, prec),
@@ -355,7 +388,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// parallel to the axis (`A > 0`). `None` where the intervals cannot say: a tangency or an
     /// axis-parallel line is a statement an interval cannot make.
     pub fn line_crosses(&self, p: usize, q: usize, def: &CylinderDef) -> Option<bool> {
-        let line = self.meet_line_hp(p, q, def)?;
+        let line = self.meet_line_hp(p, q, def, self.standard.prec)?;
         if line.a.sign() != Some(true) {
             return None;
         }
@@ -366,7 +399,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// constant term `C ≠ 0` proved (inside the solid or outside it, never on the surface). `false`
     /// where it is not proved; the caller states the parallelism.
     pub fn parallel_line_off(&self, p: usize, q: usize, def: &CylinderDef) -> bool {
-        self.meet_line_hp(p, q, def)
+        self.meet_line_hp(p, q, def, self.standard.prec)
             .is_some_and(|line| line.c.sign().is_some())
     }
 
@@ -375,7 +408,11 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// ([`Self::outward_hp`]). `Some(true)` within the radius (two rulings), `Some(false)` beyond it
     /// (the whole cylinder on one side), `None` where the intervals cannot say.
     pub fn plane_cuts(&self, k: usize, def: &CylinderDef) -> Option<bool> {
-        let prec = self.standard.prec;
+        Some(!self.cut_value(k, def, self.standard.prec)?.sign()?)
+    }
+
+    /// `(n·o + d)² − r²|n|²` on plane `k`'s outward interval at `prec`.
+    fn cut_value(&self, k: usize, def: &CylinderDef, prec: usize) -> Option<HpBounded> {
         let pl = self.outward_hp(k, prec);
         let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
         let off = pl[0]
@@ -389,14 +426,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
             .add(&pl[2].mul(&pl[2], prec), prec);
         let r2 = HpBounded::of_bigint(def.r2().numer(), prec)
             .div(&HpBounded::of_bigint(def.r2().denom(), prec), prec)?;
-        Some(!off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec).sign()?)
+        Some(off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec))
     }
 
     /// **Are two points proved apart?** — some coordinate of their interval boxes separated.
     /// `None` where a box cannot be formed; `Some(false)` is «not shown», never «one point».
     pub fn points_apart(&self, a: CylPoint<'_>, b: CylPoint<'_>) -> Option<bool> {
-        let (x, y) = (self.point_box(a)?, self.point_box(b)?);
         let prec = self.standard.prec;
+        let (x, y) = (self.point_box(a, prec)?, self.point_box(b, prec)?);
         Some((0..3).any(|k| y[k].sub(&x[k], prec).sign().is_some()))
     }
 
@@ -412,8 +449,23 @@ impl<W: PlaneWitness> Judge<'_, W> {
         n: CylPoint<'_>,
         hi: CylPoint<'_>,
     ) -> Option<bool> {
-        let prec = self.standard.prec;
-        let (a, b, c) = (self.point_box(lo)?, self.point_box(n)?, self.point_box(hi)?);
+        self.turn_value(def, lo, n, hi, self.standard.prec)?.sign()
+    }
+
+    /// `m · ((n − lo) × (hi − lo))` at `prec`.
+    fn turn_value(
+        &self,
+        def: &CylinderDef,
+        lo: CylPoint<'_>,
+        n: CylPoint<'_>,
+        hi: CylPoint<'_>,
+        prec: usize,
+    ) -> Option<HpBounded> {
+        let (a, b, c) = (
+            self.point_box(lo, prec)?,
+            self.point_box(n, prec)?,
+            self.point_box(hi, prec)?,
+        );
         let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
         let e1 = [
             b[0].sub(&a[0], prec),
@@ -430,11 +482,17 @@ impl<W: PlaneWitness> Judge<'_, W> {
             e1[2].mul(&e2[0], prec).sub(&e1[0].mul(&e2[2], prec), prec),
             e1[0].mul(&e2[1], prec).sub(&e1[1].mul(&e2[0], prec), prec),
         ];
-        m[0].mul(&x[0], prec)
-            .add(&m[1].mul(&x[1], prec), prec)
-            .add(&m[2].mul(&x[2], prec), prec)
-            .sign()
+        Some(
+            m[0].mul(&x[0], prec)
+                .add(&m[1].mul(&x[1], prec), prec)
+                .add(&m[2].mul(&x[2], prec), prec),
+        )
     }
+}
+
+/// An interval's sign as `±1`, `None` where it straddles zero.
+fn sign_i8(v: &HpBounded) -> Option<i8> {
+    v.sign().map(|pos| if pos { 1 } else { -1 })
 }
 
 fn negate(x: &HpBounded, prec: usize) -> HpBounded {
@@ -466,27 +524,14 @@ impl PiercePoint {
     /// interval boxes — `q`'s outward plane ([`Judge::outward_hp`]) at the point's box, `None` where
     /// the box straddles `q` — and a bounded point is on its own two planes by name.
     pub fn side<W: PlaneWitness>(&self, jd: &Judge<'_, W>, q: usize) -> Option<i8> {
-        let by_box = |at: &[HpBounded; 3]| {
-            let prec = jd.standard.prec;
-            let pl = jd.outward_hp(q, prec);
-            pl[0]
-                .mul(&at[0], prec)
-                .add(&pl[1].mul(&at[1], prec), prec)
-                .add(&pl[2].mul(&at[2], prec), prec)
-                .add(&pl[3], prec)
-                .sign()
-                .map(|pos| if pos { 1 } else { -1 })
-        };
         match self {
-            Self::Bounded { at, planes, .. } => {
-                if planes.contains(&q) {
-                    return Some(0);
-                }
-                by_box(at)
-            }
+            Self::Bounded { planes, .. } if planes.contains(&q) => Some(0),
             // A plane with no world statement has no coefficients for the exact sign; the point's
             // own box is read against its interval plane instead.
-            Self::Exact(..) if jd.planes[q].world_name().is_none() => by_box(&self.point_hp(jd)?),
+            Self::Bounded { .. } => sign_i8(&self.side_value(jd, q, jd.standard.prec)?),
+            Self::Exact(..) if jd.planes[q].world_name().is_none() => {
+                sign_i8(&self.side_value(jd, q, jd.standard.prec)?)
+            }
             Self::Exact(line, s) => {
                 let co = jd.world_rat(q)?;
                 let fix = jd.outward_fix(q)?;
@@ -501,13 +546,43 @@ impl PiercePoint {
         }
     }
 
-    /// **This point as an interval** — `base + s·dir` along its exact meet line, the root realized
-    /// at the operation's precision ([`nacre_exact::quad_hp`]).
-    pub fn point_hp<W>(&self, jd: &Judge<'_, W>) -> Option<[HpBounded; 3]> {
+    /// `n_q · x + d_q` on `q`'s outward interval plane at `prec`.
+    fn side_value<W: PlaneWitness>(
+        &self,
+        jd: &Judge<'_, W>,
+        q: usize,
+        prec: usize,
+    ) -> Option<HpBounded> {
+        let at = self.point_hp_at(jd, prec)?;
+        let pl = jd.outward_hp(q, prec);
+        Some(
+            pl[0]
+                .mul(&at[0], prec)
+                .add(&pl[1].mul(&at[1], prec), prec)
+                .add(&pl[2].mul(&at[2], prec), prec)
+                .add(&pl[3], prec),
+        )
+    }
+
+    /// **This point as an interval** at the operation's precision ([`Self::point_hp_at`]).
+    pub fn point_hp<W: PlaneWitness>(&self, jd: &Judge<'_, W>) -> Option<[HpBounded; 3]> {
+        self.point_hp_at(jd, jd.standard.prec)
+    }
+
+    /// **This point as an interval at `prec`** — `base + s·dir` along its exact meet line, the root
+    /// realized at `prec` ([`nacre_exact::quad_hp`]); a point with no exact meet re-solved from its
+    /// definition, its box at the operation's precision kept from its solve.
+    pub fn point_hp_at<W: PlaneWitness>(
+        &self,
+        jd: &Judge<'_, W>,
+        prec: usize,
+    ) -> Option<[HpBounded; 3]> {
         match self {
-            Self::Bounded { at, .. } => Some((**at).clone()),
+            Self::Bounded { at, .. } if prec == jd.standard.prec => Some((**at).clone()),
+            Self::Bounded {
+                planes, root, def, ..
+            } => jd.pierce_box(*planes, def, *root, prec),
             Self::Exact(line, s) => {
-                let prec = jd.standard.prec;
                 let sb = nacre_exact::quad_hp(s, prec)?;
                 let (b, d) = (line.base(), line.dir());
                 let at = |k: usize| nacre_exact::affine_hp(b[k], d[k], &sb, prec);
@@ -548,8 +623,18 @@ impl PiercePoint {
         {
             return nacre_exact::quad::ruling_side_signed(&jd.world_rat(wall)?, def, (line, s));
         }
-        let prec = jd.standard.prec;
-        let at = self.point_hp(jd)?;
+        sign_i8(&self.ruling_value(jd, wall, def, jd.standard.prec)?)
+    }
+
+    /// `(x − o) · (m × n_wall)` at `prec`.
+    fn ruling_value<W: PlaneWitness>(
+        &self,
+        jd: &Judge<'_, W>,
+        wall: usize,
+        def: &CylinderDef,
+        prec: usize,
+    ) -> Option<HpBounded> {
+        let at = self.point_hp_at(jd, prec)?;
         let n = jd.canon_hp(wall, prec);
         let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
         let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
@@ -563,11 +648,11 @@ impl PiercePoint {
             at[1].sub(&o[1], prec),
             at[2].sub(&o[2], prec),
         ];
-        d[0].mul(&c[0], prec)
-            .add(&d[1].mul(&c[1], prec), prec)
-            .add(&d[2].mul(&c[2], prec), prec)
-            .sign()
-            .map(|pos| if pos { 1 } else { -1 })
+        Some(
+            d[0].mul(&c[0], prec)
+                .add(&d[1].mul(&c[1], prec), prec)
+                .add(&d[2].mul(&c[2], prec), prec),
+        )
     }
 }
 
