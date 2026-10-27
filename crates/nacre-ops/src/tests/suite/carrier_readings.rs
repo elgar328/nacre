@@ -429,37 +429,98 @@ fn corner_above_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<Sol
     (p, b)
 }
 
-/// **Two nameless walls meeting on the fillet's quarter** — the upper box's corner `(43, −24)` is on
-/// the quarter (`(3, −4)` from the axis), so its two walls through it, both sectioning the fillet
-/// cylinder, meet in a line on the lateral face, though their faces stand above it. No record states
-/// that line, and the gate refuses the pair. It is held at the gate: past it, the split refuses the
-/// same shape by the same name.
-#[test]
-fn two_nameless_walls_meeting_on_the_quarter_are_refused_at_the_gate() {
-    every_kind(
-        |m| corner_above_the_fillet(m, -24.0),
-        refused(RejectReason::CylinderGateUndecided),
+/// The plate and a wedge above it, turned `−15°` about `p`: the triangle `p`, `p + (0, 20)`,
+/// `p + (−10, 20)` over `z ∈ [13, 20]`, fused with a leg `[px − 8, px − 5] × [py + 18, py + 20]` over
+/// `z ∈ [5, 14]` that reaches into the plate far from the fillet — `700 + 54 − 6 = 748`, of which the
+/// leg's `42` lies in the plate. The two walls through `p` meet at about `26.6°`. Seen from
+/// `(44, −17)` the quarter's box spans about `72°`, less than a right angle, so two perpendicular
+/// walls through that point cannot both cross it; the wedge's two do, and both pass within the
+/// radius (about `3.1` and `4.5` from the axis), so each sections the fillet cylinder. The third
+/// wall and the leg's walls miss the quarter's box.
+fn wedge_above_the_fillet(m: &mut Model, p: [f64; 2]) -> (Handle<Solid>, Handle<Solid>) {
+    let plate = plate(m);
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let tip = p2(p[0], p[1]);
+    let near = p2(p[0], p[1] + 20.0);
+    let far = p2(p[0] - 10.0, p[1] + 20.0);
+    let profile = stated(vec![line(tip, near), line(near, far), line(far, tip)])
+        .unwrap()
+        .remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 7.0,
+        },
+    )
+    .expect("the wedge extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let w = shift(m, solid, [0.0, 0.0, 13.0]);
+    let leg = bx(
+        m,
+        [p[0] - 8.0, p[1] + 18.0, 5.0],
+        [p[0] - 5.0, p[1] + 20.0, 14.0],
     );
+    let b = op1(m, BoolKind::Fuse, w, leg);
+    (plate, turn(m, b, -15, [p[0], p[1], 0.0]))
+}
+
+/// What the class gate answers for the operands `build` makes: the name it refuses by, or what it
+/// returned instead.
+fn gate_refusal(
+    build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+) -> Result<RejectReason, String> {
     let mut m = Model::new();
-    let (a, b) = corner_above_the_fillet(&mut m, -24.0);
+    let (a, b) = build(&mut m);
     m.rebuild_adjacency();
     match crate::arrangement::plane_index_setup(&m, a, b) {
-        Err(BoolError::Rejected { reason, .. }) => {
-            assert_eq!(reason, RejectReason::CylinderGateUndecided);
-        }
-        other => panic!("the gate refuses: {:?}", other.map(|_| ())),
+        Err(BoolError::Rejected { reason, .. }) => Ok(reason),
+        other => Err(format!("{:?}", other.map(|_| ()))),
     }
 }
 
-/// The control: the same bodies `8` along `y`, the corner at `(43, −16)` — on the fillet's cylinder
-/// at `(3, 4)` from the axis, off its quarter. One wall through that corner stands beside the
-/// quarter's box, so no line of two sectioning walls is asked here: what this holds is that the
-/// refusal above is the corner's place on the quarter.
+/// **Two nameless walls meeting on the fillet's quarter** — two walls through a corner on the
+/// quarter, both sectioning the fillet cylinder, meet in a line on the lateral face, though their
+/// faces stand above it. No record states that line, and the gate refuses the pair. It is held at
+/// the gate: past it, the split refuses the same shape by the same name. Two constructions: the
+/// upper box's corner at `(43, −24)` (`(3, −4)` from the axis) and the wedge's tip at `(44, −23)`
+/// (`(4, −3)`).
+#[test]
+fn two_nameless_walls_meeting_on_the_quarter_are_refused_at_the_gate() {
+    let bx_on = |m: &mut Model| corner_above_the_fillet(m, -24.0);
+    let wedge_on = |m: &mut Model| wedge_above_the_fillet(m, [44.0, -23.0]);
+    every_kind(bx_on, refused(RejectReason::CylinderGateUndecided));
+    every_kind(wedge_on, refused(RejectReason::CylinderGateUndecided));
+    assert_eq!(
+        [gate_refusal(bx_on), gate_refusal(wedge_on)],
+        [
+            Ok(RejectReason::CylinderGateUndecided),
+            Ok(RejectReason::CylinderGateUndecided)
+        ],
+        "the gate refuses both"
+    );
+}
+
+/// The controls: each body with its corner on the fillet's cylinder, off its quarter. The boxes `8`
+/// along `y`, the corner at `(43, −16)` (`(3, 4)` from the axis): one wall through that corner
+/// stands beside the quarter's box, so no line of two sectioning walls is asked here — what this
+/// holds is that the refusal above is the corner's place on the quarter. The wedge's tip at
+/// `(44, −17)` (`(4, 3)`): both walls through it section the cylinder, and the gate shows their
+/// line off the lateral face by its direction against the face's arc (`line_off_lateral`, the
+/// interval body of `line_off_faces`).
 #[test]
 fn two_nameless_walls_meeting_off_the_quarter_build() {
     every_kind(
         |m| corner_above_the_fillet(m, -16.0),
         one_body(PLATE, 3000.0, 175.0),
+    );
+    every_kind(
+        |m| wedge_above_the_fillet(m, [44.0, -17.0]),
+        one_body(PLATE, 748.0, 42.0),
     );
 }
 
