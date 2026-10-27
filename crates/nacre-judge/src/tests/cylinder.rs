@@ -13,12 +13,14 @@ fn cylinder() -> CylinderDef {
     .expect("a cylinder")
 }
 
-/// The wall `x = 1`, the cap `z = 3` and the plane `y = 0`, each stated in the world or not.
+/// The wall `x = 1`, the cap `z = 3`, the plane `y = 0` and the cap `z = 5`, each stated in the
+/// world or not.
 fn planes(stated: bool) -> Vec<RW> {
     let rows = [
         [[1, 0, 0], [1, 1, 0], [1, 0, 1]],
         [[0, 0, 3], [1, 0, 3], [0, 1, 3]],
         [[0, 0, 0], [0, 0, 1], [1, 0, 0]],
+        [[0, 0, 5], [1, 0, 5], [0, 1, 5]],
     ]
     .map(|pts| RW::moved(pts, |p| p));
     rows.into_iter()
@@ -93,5 +95,64 @@ fn the_ruling_a_point_is_on_is_one_per_crossing_on_either_road() {
         let (lo, hi) = (side(QuadRoot::Lo), side(QuadRoot::Hi));
         assert_eq!(lo.map(i8::abs), Some(1), "stated: {stated}");
         assert_eq!(lo, hi.map(|s| -s), "stated: {stated}");
+    }
+}
+
+/// A stated coordinate where there is one, else the point.
+fn value<'p>(p: &'p PiercePoint, q: &'p Option<QuadVal>) -> AxisValue<'p> {
+    match q {
+        Some(q) => AxisValue::Stated(q),
+        None => AxisValue::Point(p),
+    }
+}
+
+/// **The three orders agree with where the points are**, on both roads. On the wall `x = 1` the
+/// cap `z = 3` crosses at `y = ±√3`: their world `y` order is the two roots' and opposite under a
+/// swap; the three-plane corner `(1, 0, 3)` lies between them; along the line `x = 1, z = 3` the
+/// order is the `y` order times the line's direction; and the cap `z = 5`'s crossing is higher up
+/// the axis than the cap `z = 3`'s.
+#[test]
+fn the_orders_read_the_points_where_they_are() {
+    let def = cylinder();
+    for stated in [true, false] {
+        let ps = planes(stated);
+        let j = jd(&ps);
+        let at = |pair, root| j.pierce(pair, 0, &def, root).expect("the line crosses");
+        let (lo, hi) = (at([0, 1], QuadRoot::Lo), at([0, 1], QuadRoot::Hi));
+        let y = j.world_order(CylPoint::Pierce(&lo), CylPoint::Pierce(&hi), 1);
+        assert_eq!(y.map(i8::abs), Some(1), "stated: {stated}");
+        assert_eq!(
+            j.world_order(CylPoint::Pierce(&hi), CylPoint::Pierce(&lo), 1),
+            y.map(|s| -s)
+        );
+        let corner = CylPoint::Three([0, 1, 2]);
+        let c_lo = j.world_order(corner, CylPoint::Pierce(&lo), 1);
+        let c_hi = j.world_order(corner, CylPoint::Pierce(&hi), 1);
+        assert_eq!(c_lo, y.map(|s| -s), "the corner is between: {stated}");
+        assert_eq!(c_hi, y, "the corner is between: {stated}");
+        let along = j.line_order(0, 1, &lo, &hi);
+        assert_eq!(along.map(i8::abs), Some(1), "stated: {stated}");
+        assert_eq!(j.line_order(0, 1, &hi, &lo), along.map(|s| -s));
+        let up = at([0, 3], QuadRoot::Lo);
+        // A stated point's axis coordinate, `m · (base + s·dir)`, as the caller states it.
+        let m = def.dir();
+        let dot = |x: &[Rat; 3]| {
+            (0..3).fold(Rat::from_int(0), |a, k| {
+                a.checked_add(x[k].checked_mul(m[k]).unwrap()).unwrap()
+            })
+        };
+        let stated_value = |p: &PiercePoint| {
+            p.exact().map(|(line, s)| {
+                QuadVal::from_rat(dot(&line.base()))
+                    .checked_add(&s.checked_mul_rat(dot(&line.dir())).unwrap())
+                    .unwrap()
+            })
+        };
+        let (vl, vu) = (stated_value(&lo), stated_value(&up));
+        assert_eq!(
+            j.axis_order(&def, value(&lo, &vl), value(&up, &vu)),
+            Some(core::cmp::Ordering::Less),
+            "stated: {stated}"
+        );
     }
 }

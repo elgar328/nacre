@@ -131,13 +131,12 @@ fn lateral_crossings(
 type LateralCrossing = (combinatorics::NodeId, combinatorics::PiercePoint);
 
 /// **A point's coordinate along a cylinder's axis** (`m · x`) — exact (`a + b√c`) where the point has
-/// an exact meet or lies on a plane across the axis, else an interval. Two exact ones compare
-/// exactly ([`nacre_exact::QuadVal::cmp_value`]); a pair with an interval compares by the boxes
-/// and is never a tie: `None` where they cannot be separated.
+/// an exact meet or lies on a plane across the axis, else the point itself, whose interval box the
+/// judge reads ([`Judge::axis_order`]).
 #[derive(Clone)]
 enum AxisCoord {
     Exact(nacre_exact::quad::QuadVal),
-    Bounded(nacre_exact::HpBounded),
+    Bounded(Box<combinatorics::PiercePoint>),
 }
 
 impl AxisCoord {
@@ -184,30 +183,24 @@ impl AxisCoord {
                 )));
             }
         }
-        let prec = jd.standard.prec;
-        let at = meet.point_hp(jd)?;
-        let mh = m.map(|x| nacre_exact::HpBounded::of_rat(x, prec));
-        Some(Self::Bounded(
-            at[0]
-                .mul(&mh[0], prec)
-                .add(&at[1].mul(&mh[1], prec), prec)
-                .add(&at[2].mul(&mh[2], prec), prec),
-        ))
+        Some(Self::Bounded(Box::new(meet.clone())))
     }
 
-    fn cmp(&self, other: &Self, prec: usize) -> Option<core::cmp::Ordering> {
-        use core::cmp::Ordering;
-        let hp = |c: &Self| match c {
-            Self::Exact(q) => nacre_exact::quad_hp(q, prec),
-            Self::Bounded(b) => Some(b.clone()),
-        };
-        match (self, other) {
-            (Self::Exact(a), Self::Exact(b)) => a.cmp_value(b),
-            _ => match hp(self)?.sub(&hp(other)?, prec).sign()? {
-                true => Some(Ordering::Greater),
-                false => Some(Ordering::Less),
-            },
+    fn value(&self) -> nacre_judge::cylinder::AxisValue<'_> {
+        use nacre_judge::cylinder::AxisValue;
+        match self {
+            Self::Exact(q) => AxisValue::Stated(q),
+            Self::Bounded(p) => AxisValue::Point(p),
         }
+    }
+
+    fn cmp(
+        &self,
+        other: &Self,
+        jd: &Judge<'_, WorkingPlane>,
+        def: &nacre_topo::CylinderDef,
+    ) -> Option<core::cmp::Ordering> {
+        jd.axis_order(def, self.value(), other.value())
     }
 }
 
@@ -245,7 +238,6 @@ pub(super) fn split_rulings(
     if rulings.is_empty() {
         return Ok(None);
     }
-    let prec = jd.standard.prec;
     // Each ruling's end coordinates, re-solved from the names once.
     let ruling_ends: Vec<[AxisCoord; 2]> = rulings
         .iter()
@@ -350,8 +342,8 @@ pub(super) fn split_rulings(
                     }
                     let [lo, hi] = &ruling_ends[ri];
                     let (a, b) = (
-                        c.cmp(lo, prec).ok_or_else(undecided)?,
-                        c.cmp(hi, prec).ok_or_else(undecided)?,
+                        c.cmp(lo, jd, def).ok_or_else(undecided)?,
+                        c.cmp(hi, jd, def).ok_or_else(undecided)?,
                     );
                     use core::cmp::Ordering::*;
                     match (a, b) {
@@ -407,11 +399,11 @@ pub(super) fn split_rulings(
         keyed.push((hi, r.end[1]));
         let mut order: Vec<usize> = (0..keyed.len()).collect();
         combinatorics::try_sort_by(&mut order, |&i, &j| {
-            keyed[i].0.cmp(&keyed[j].0, prec).ok_or(())
+            keyed[i].0.cmp(&keyed[j].0, jd, &r.def).ok_or(())
         })
         .map_err(|()| undecided())?;
         for pair in order.windows(2) {
-            match keyed[pair[0]].0.cmp(&keyed[pair[1]].0, prec) {
+            match keyed[pair[0]].0.cmp(&keyed[pair[1]].0, jd, &r.def) {
                 Some(core::cmp::Ordering::Equal) => {
                     return Err(reject(RejectReason::CoincidentNodes));
                 }

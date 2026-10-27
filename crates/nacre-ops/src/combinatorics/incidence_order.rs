@@ -494,7 +494,7 @@ fn order_located_quad(
                 (Some(m1), Some(m2)) => (m1, m2, (&a1.meet, &a2.meet)),
                 // A point with no exact meet is ordered by its interval box along the line's
                 // stored direction — the same `sign((a − b)·d)` the exact arm reads per axis.
-                _ => return order_by_boxes(jd, p, q, &a1.meet, &a2.meet),
+                _ => return jd.line_order(p, q, &a1.meet, &a2.meet),
             }
         }
     };
@@ -526,33 +526,9 @@ fn order_located_quad(
     // the exact one wherever both answer — the road a pair with a nameless point takes, so a
     // difference between the two would order such a point against its named neighbours wrongly.
     debug_assert!(
-        order_by_boxes(jd, p, q, meets.0, meets.1).is_none_or(|b| b == order),
+        jd.line_order(p, q, meets.0, meets.1)
+            .is_none_or(|b| b == order),
         "the interval order along a line disagrees with the exact one"
     );
     Some(order)
-}
-
-/// `sign((a − b) · d)` for two points on the line `p ∩ q`, `d` its stored direction
-/// (`n_p × n_q`, [`crate::planes::WorkingPlane::stored_hp`]) — read off interval boxes. `None`
-/// where they cannot separate the two: distinct names, so never a tie.
-fn order_by_boxes(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    q: usize,
-    a: &PiercePoint,
-    b: &PiercePoint,
-) -> Option<i8> {
-    let prec = jd.standard.prec;
-    let (x, y) = (a.point_hp(jd)?, b.point_hp(jd)?);
-    let (np, nq) = (jd.stored_hp(p, prec), jd.stored_hp(q, prec));
-    let d = [
-        np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
-        np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),
-        np[0].mul(&nq[1], prec).sub(&np[1].mul(&nq[0], prec), prec),
-    ];
-    (0..3)
-        .map(|k| x[k].sub(&y[k], prec).mul(&d[k], prec))
-        .reduce(|s, t| s.add(&t, prec))?
-        .sign()
-        .map(|pos| if pos { 1 } else { -1 })
 }

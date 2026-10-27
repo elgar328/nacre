@@ -357,12 +357,7 @@ pub(crate) fn three_point_hp(
     jd: &Judge<'_, WorkingPlane>,
     t: [usize; 3],
 ) -> Option<[nacre_exact::HpBounded; 3]> {
-    let prec = jd.standard.prec;
-    let plane = |k: usize| {
-        let w = &jd.planes[k].tri_pt3;
-        nacre_judge::plane_hp(&w[0], &w[1], &w[2], prec)
-    };
-    nacre_judge::meet_hp(&[plane(t[0]), plane(t[1]), plane(t[2])], prec)
+    jd.three_hp(t, jd.standard.prec)
 }
 
 /// **What a question that could not be stated exactly is refused as**, given the classes it read:

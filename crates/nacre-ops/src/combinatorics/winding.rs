@@ -1,4 +1,5 @@
 use super::*;
+use nacre_judge::cylinder::CylPoint;
 /// **A ring node's coordinate, in whichever world names it** — the key
 /// [`loop_winding`]'s lexicographic scan orders by. An arc's own minimum is ordered in the same
 /// currency: it is the pierce point of the cap plane, a plane through the axis, and the cylinder
@@ -16,6 +17,16 @@ enum CoordKey {
     /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
     /// common case.
     Pierce(Box<PiercePoint>),
+}
+
+impl CoordKey {
+    /// The point the judge orders.
+    fn point(&self) -> CylPoint<'_> {
+        match self {
+            CoordKey::Three(t) => CylPoint::Three(*t),
+            CoordKey::Pierce(m) => CylPoint::Pierce(m),
+        }
+    }
 }
 
 /// Build one ring node's key.
@@ -189,21 +200,12 @@ impl KeyCmp<'_> {
             })
             .collect();
         let refuse = || reject(undecided_reason(self.cyls, &classes));
-        let point = |k: &CoordKey| match k {
-            CoordKey::Three(t) => three_point_hp(jd, *t),
-            CoordKey::Pierce(m) => m.point_hp(jd),
-        };
-        let (x, y) = (point(a).ok_or_else(refuse)?, point(b).ok_or_else(refuse)?);
-        match x[axis].sub(&y[axis], jd.standard.prec).sign() {
-            Some(true) => Ok(1),
-            Some(false) => Ok(-1),
-            None => Err(refuse()),
-        }
+        jd.world_order(a.point(), b.point(), axis)
+            .ok_or_else(refuse)
     }
 
     /// A three-plane node no rational meet states, against a pierce point: exactly where both
-    /// state the coordinate ([`Self::both_stated`]), else the two as intervals ([`three_point_hp`],
-    /// [`PiercePoint::point_hp`]) — two distinct names, so a comparison the intervals cannot separate is
+    /// state the coordinate ([`Self::both_stated`]), else the two as intervals ([`Judge::world_order`]) — two distinct names, so a comparison the intervals cannot separate is
     /// refused, never read as a tie ([`undecided_reason`] names it).
     fn unstated(&self, t: [usize; 3], m: &PiercePoint, axis: usize) -> Result<i8, BoolError> {
         if let Some(order) = m
@@ -213,13 +215,9 @@ impl KeyCmp<'_> {
             return Ok(order);
         }
         let refuse = || reject(undecided_reason(self.cyls, &t));
-        let x = three_point_hp(self.jd, t).ok_or_else(refuse)?;
-        let y = m.point_hp(self.jd).ok_or_else(refuse)?;
-        match x[axis].sub(&y[axis], self.jd.standard.prec).sign() {
-            Some(true) => Ok(1),
-            Some(false) => Ok(-1),
-            None => Err(refuse()),
-        }
+        self.jd
+            .world_order(CylPoint::Three(t), CylPoint::Pierce(m), axis)
+            .ok_or_else(refuse)
     }
 
     /// **A coordinate both points state exactly, compared exactly.** The three-plane node states

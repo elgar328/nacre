@@ -12,7 +12,7 @@
 //! ([`PlaneWitness`]): the world name's narrow coefficients, its sense, the witness triangle and
 //! `frame_sign`. Nothing here reads a cached coordinate.
 
-use crate::kernel::frame3::plane_hp;
+use crate::kernel::frame3::{meet_hp, plane_hp};
 use crate::predicate::{Judge, PlaneWitness};
 use nacre_exact::quad::{MeetLine, QuadRoot, QuadVal};
 use nacre_exact::{CylinderDef, HpBounded, Orient, Rat};
@@ -27,6 +27,7 @@ use nacre_exact::{CylinderDef, HpBounded, Orient, Rat};
 // The exact arm is the wide one and the common one; its holders already box the whole point, so
 // boxing the arm again would buy nothing.
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum PiercePoint {
     /// The meet line of the name's two planes and the root along it: `base + s·dir` with
     /// `s = a + b√c`, both planes stated in the world.
@@ -226,6 +227,106 @@ impl<W: PlaneWitness> Judge<'_, W> {
     fn witness_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
         let t = self.planes[k].tri_pt3();
         plane_hp(&t[0], &t[1], &t[2], prec)
+    }
+}
+
+/// **A point a cylinder question orders** — the meet of three planes, or a pierce point.
+#[derive(Clone, Copy)]
+pub enum CylPoint<'p> {
+    /// The three planes' meet, by their table indices.
+    Three([usize; 3]),
+    /// A pierce point.
+    Pierce(&'p PiercePoint),
+}
+
+/// **A coordinate along a cylinder's axis** (`m · x`) — stated exactly (`a + b√c`, for a point
+/// with an exact meet or on a plane across the axis), or the point whose interval box gives it.
+#[derive(Clone, Copy)]
+pub enum AxisValue<'p> {
+    /// The coordinate, exact.
+    Stated(&'p QuadVal),
+    /// A point with no exact meet.
+    Point(&'p PiercePoint),
+}
+
+impl<W: PlaneWitness> Judge<'_, W> {
+    /// **A three-plane point as an interval** — its three planes' witness triangles ([`plane_hp`])
+    /// met at `prec` ([`meet_hp`]): a box that holds the true point whether or not the planes have
+    /// a world statement. `None` for a meet the precision could not separate.
+    pub fn three_hp(&self, t: [usize; 3], prec: usize) -> Option<[HpBounded; 3]> {
+        meet_hp(&t.map(|k| self.witness_hp(k, prec)), prec)
+    }
+
+    /// Either kind of point as an interval, at this operation's precision.
+    fn point_box(&self, p: CylPoint<'_>) -> Option<[HpBounded; 3]> {
+        match p {
+            CylPoint::Three(t) => self.three_hp(t, self.standard.prec),
+            CylPoint::Pierce(m) => m.point_hp(self),
+        }
+    }
+
+    /// **Which of two points has the larger coordinate on world axis `axis`** — `+1` for `a`, read
+    /// off their interval boxes. `None` where a box cannot be formed or the two cannot be told
+    /// apart: these are two distinct names, so an unseparated pair is never read as a tie.
+    pub fn world_order(&self, a: CylPoint<'_>, b: CylPoint<'_>, axis: usize) -> Option<i8> {
+        let (x, y) = (self.point_box(a)?, self.point_box(b)?);
+        x[axis]
+            .sub(&y[axis], self.standard.prec)
+            .sign()
+            .map(|pos| if pos { 1 } else { -1 })
+    }
+
+    /// **`sign((a − b) · d)` for two points on the line `p ∩ q`**, `d` its stored direction
+    /// (`n_p × n_q`, [`Self::stored_hp`]) — read off interval boxes. `None` where they cannot
+    /// separate the two: distinct names, so never a tie.
+    pub fn line_order(&self, p: usize, q: usize, a: &PiercePoint, b: &PiercePoint) -> Option<i8> {
+        let prec = self.standard.prec;
+        let (x, y) = (a.point_hp(self)?, b.point_hp(self)?);
+        let (np, nq) = (self.stored_hp(p, prec), self.stored_hp(q, prec));
+        let d = [
+            np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
+            np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),
+            np[0].mul(&nq[1], prec).sub(&np[1].mul(&nq[0], prec), prec),
+        ];
+        (0..3)
+            .map(|k| x[k].sub(&y[k], prec).mul(&d[k], prec))
+            .reduce(|s, t| s.add(&t, prec))?
+            .sign()
+            .map(|pos| if pos { 1 } else { -1 })
+    }
+
+    /// **The order of two coordinates along cylinder `def`'s axis.** Two stated ones compare
+    /// exactly ([`QuadVal::cmp_value`]); a pair with a point compares by intervals — the point's
+    /// box dotted with the axis, a stated value realized — and is never a tie: `None` where they
+    /// cannot be separated.
+    pub fn axis_order(
+        &self,
+        def: &CylinderDef,
+        a: AxisValue<'_>,
+        b: AxisValue<'_>,
+    ) -> Option<core::cmp::Ordering> {
+        use core::cmp::Ordering;
+        if let (AxisValue::Stated(x), AxisValue::Stated(y)) = (a, b) {
+            return x.cmp_value(y);
+        }
+        let prec = self.standard.prec;
+        let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
+        let hp = |v: AxisValue<'_>| match v {
+            AxisValue::Stated(q) => nacre_exact::quad_hp(q, prec),
+            AxisValue::Point(p) => {
+                let at = p.point_hp(self)?;
+                Some(
+                    at[0]
+                        .mul(&m[0], prec)
+                        .add(&at[1].mul(&m[1], prec), prec)
+                        .add(&at[2].mul(&m[2], prec), prec),
+                )
+            }
+        };
+        match hp(a)?.sub(&hp(b)?, prec).sign()? {
+            true => Some(Ordering::Greater),
+            false => Some(Ordering::Less),
+        }
     }
 }
 
