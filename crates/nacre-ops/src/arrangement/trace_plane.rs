@@ -121,7 +121,12 @@ fn trace_transversal_face(
                 let Some(combinatorics::LoopRing::Circle { cyl }) = loops.outer else {
                     unreachable!("the guard just matched a circle outer");
                 };
-                match chord_stations(jd, faces, plane_ix, wc, fc, cyl, crossings) {
+                debug_assert_eq!(
+                    cyls.get(cyl).is_some_and(|cy| cy.cuts(wc)),
+                    crossings.contains(&(wc, cyl)),
+                    "the record and the crossing set agree"
+                );
+                match chord_stations(jd, faces, plane_ix, wc, fc, cyl, cyls) {
                     Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => return,
                     Err(ChordUnstatable) => {
@@ -170,7 +175,12 @@ fn trace_transversal_face(
             // `StraightAngle`. Listed pairs get the stations; unlisted pairs are skipped, and the
             // two roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
-                match chord_stations(jd, faces, plane_ix, wc, fc, *cyl, crossings) {
+                debug_assert_eq!(
+                    cyls.get(*cyl).is_some_and(|cy| cy.cuts(wc)),
+                    crossings.contains(&(wc, *cyl)),
+                    "the record and the crossing set agree"
+                );
+                match chord_stations(jd, faces, plane_ix, wc, fc, *cyl, cyls) {
                     Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => {}
                     Err(_) => {
@@ -329,8 +339,16 @@ fn trace_transversal_face(
                     // clear has no root inside any arc — a crossing named here on an unrecorded pair
                     // would meet no ruling on the lateral's side.
                     if let crate::combinatorics::Wall::Arc { cyl, .. } = walls[edge]
-                        && !crossings.contains(&(wc, cyl))
-                        && !cyls.get(cyl).is_some_and(|cy| cy.sections(wc))
+                        && !{
+                            let draws = cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc));
+                            debug_assert_eq!(
+                                draws,
+                                crossings.contains(&(wc, cyl))
+                                    || cyls.get(cyl).is_some_and(|cy| cy.sections(wc)),
+                                "the record and the crossing set agree"
+                            );
+                            draws
+                        }
                     {
                         declined = Some(DeclineKind::CurvedRingWall);
                         break 'rings;

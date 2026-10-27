@@ -245,11 +245,18 @@ pub(crate) fn cylinder_gate(
     for &(c, ci) in &sectioned {
         silent[ci].push((c, Silence::Sectioned));
     }
-    for (cyl, s) in cyls.iter_mut().zip(silent) {
+    for (ci, (cyl, s)) in cyls.iter_mut().zip(silent).enumerate() {
         cyl.records = s
             .into_iter()
             .map(|(c, s)| (c, CylRecord::Silent(s)))
             .collect();
+        cyl.records.extend(
+            meets[ci]
+                .iter()
+                .enumerate()
+                .filter(|(_, meet)| **meet == ClassMeet::Cuts)
+                .map(|(c, _)| (c, CylRecord::Cuts)),
+        );
     }
     debug_assert!(
         cyls.iter().all(|cyl| (0..geom.len())

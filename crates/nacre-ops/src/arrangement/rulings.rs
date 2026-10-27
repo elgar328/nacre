@@ -27,15 +27,20 @@ pub(super) fn rulings_on_class(
     crossings: &std::collections::HashSet<(usize, usize)>,
     aliases: &Aliases,
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
-    // **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
-    // listed there was proven clear (or never in question), and contributing its rectangle
-    // anyway breaks the straddling family: the boss's own wall class is a d=0 pair, and its
-    // coplanar bottom cap's chord lands on a line the plate already traces. Unlisted pairs are
-    // silent; the gate lists exactly the pairs that need the rectangle.
-    // A class with no world statement that sections the cylinder ([`Silence::Sectioned`]) draws
-    // the rulings too, on this its own arrangement only.
+    // **The gate's answer, first** ([`WorkingCyl::draws_rulings`](crate::planes::WorkingCyl::draws_rulings)
+    // — a class that cuts the lateral, or one with no world statement that sections it on this its
+    // own arrangement only, [`Silence::Sectioned`]). A pair without that record was proven clear
+    // (or never in question), and contributing its rectangle anyway breaks the straddling family:
+    // the boss's own wall class is a d=0 pair, and its coplanar bottom cap's chord lands on a line
+    // the plate already traces. The gate records exactly the pairs that need the rectangle.
     let sections = cyls.get(k).is_some_and(|cy| cy.sections(wc));
-    if !crossings.contains(&(wc, k)) && !sections {
+    let draws = cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc));
+    debug_assert_eq!(
+        draws,
+        crossings.contains(&(wc, k)) || sections,
+        "the record and the crossing set agree"
+    );
+    if !draws {
         return Ok((Vec::new(), Vec::new()));
     }
     let Some(def) = cf.def.as_ref() else {

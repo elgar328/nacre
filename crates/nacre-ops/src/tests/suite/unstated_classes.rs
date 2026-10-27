@@ -633,7 +633,9 @@ fn nameless_classes_beside_world_cylinders() {
                     let mut by_arm = (0, 0, 0);
                     for cy in &setup.cyls {
                         for &(_, r) in &cy.records {
-                            let crate::planes::CylRecord::Silent(s) = r;
+                            let crate::planes::CylRecord::Silent(s) = r else {
+                                continue;
+                            };
                             match s {
                                 crate::planes::Silence::Beside(_) => by_arm.0 += 1,
                                 crate::planes::Silence::Apart => by_arm.1 += 1,

@@ -577,7 +577,7 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             &jd,
             plane_ix,
             cyls,
-            Default::default(),
+            setup.crossings.clone(),
         );
         let (plane_faces, curved, deferred) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
@@ -696,7 +696,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             &jd,
             plane_ix,
             cyls,
-            Default::default(),
+            setup.crossings.clone(),
         );
         let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
@@ -845,7 +845,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             &jd,
             plane_ix,
             cyls,
-            Default::default(),
+            setup.crossings.clone(),
         );
         let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
@@ -1299,7 +1299,7 @@ fn the_grouping_joins_across_a_cut_rim() {
             &jd,
             plane_ix,
             cyls,
-            Default::default(),
+            setup.crossings.clone(),
         );
         let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
             &m,

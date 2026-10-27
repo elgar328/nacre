@@ -501,6 +501,11 @@ pub(crate) struct WorkingCyl {
 /// [`WorkingCyl::records`]. A pair with no entry has nothing to say downstream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CylRecord {
+    /// The class's plane runs within the radius and cuts a lateral face: the class's arrangement
+    /// draws the cylinder's two rulings, and a disk of the cylinder on the class its chord. The
+    /// class has world coefficients (the gate answers a cut only from them), and the readers lean
+    /// on «within the radius» as their premise.
+    Cuts,
     /// A class with no world statement the cylinder is silent about, with what the gate proved of
     /// it. Every arm proves that **no face of the class reaches this cylinder's lateral faces**, and
     /// that is what the roads asking only [`WorkingCyl::is_silent`] lean on (a segment of the class
@@ -541,6 +546,19 @@ impl WorkingCyl {
             .any(|&(c, r)| c == wc && r == CylRecord::Silent(Silence::Sectioned))
     }
 
+    /// Whether class `wc`'s plane cuts this cylinder's lateral faces ([`CylRecord::Cuts`]).
+    pub(crate) fn cuts(&self, wc: usize) -> bool {
+        self.records
+            .iter()
+            .any(|&(c, r)| c == wc && r == CylRecord::Cuts)
+    }
+
+    /// Whether class `wc`'s arrangement draws this cylinder's rulings — the class cuts the
+    /// lateral ([`CylRecord::Cuts`]) or sections it on its own arrangement ([`Silence::Sectioned`]).
+    pub(crate) fn draws_rulings(&self, wc: usize) -> bool {
+        self.cuts(wc) || self.sections(wc)
+    }
+
     /// Whether the gate proved class `wc` silent about this cylinder.
     pub(crate) fn is_silent(&self, wc: usize) -> bool {
         self.records
@@ -552,7 +570,7 @@ impl WorkingCyl {
     pub(crate) fn beside_all(&self) -> impl Iterator<Item = (usize, i8)> + '_ {
         self.records.iter().filter_map(|&(c, r)| match r {
             CylRecord::Silent(Silence::Beside(side)) => Some((c, side)),
-            CylRecord::Silent(Silence::Apart | Silence::Sectioned) => None,
+            CylRecord::Silent(Silence::Apart | Silence::Sectioned) | CylRecord::Cuts => None,
         })
     }
 

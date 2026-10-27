@@ -17,8 +17,9 @@ pub(super) struct ChordUnstatable;
 /// **Written once because a disk's outer and a bored face's hole are the same circle asked the
 /// same question.**
 ///
-/// The cylinder's statement comes from any face row on its class — the same table `merge_circles`
-/// indexes — so a caller that traces with no cylinder table (the test shims) is served too.
+/// The record is the cylinder table's ([`WorkingCyl::cuts`](crate::planes::WorkingCyl::cuts)), so a
+/// caller that traces with no cylinder table draws no chord; the cylinder's statement comes from
+/// any face row on its class — the same table `merge_circles` indexes.
 pub(super) fn chord_stations(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
@@ -26,10 +27,10 @@ pub(super) fn chord_stations(
     wc: usize,
     fc: usize,
     cyl: usize,
-    crossings: &std::collections::HashSet<(usize, usize)>,
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Option<[ClassLineStation; 2]>, ChordUnstatable> {
     use nacre_exact::quad::CylinderMeet;
-    if !crossings.contains(&(wc, cyl)) {
+    if !cyls.get(cyl).is_some_and(|cy| cy.cuts(wc)) {
         return Ok(None);
     }
     let w = jd.world_rat(wc).ok_or(ChordUnstatable)?;

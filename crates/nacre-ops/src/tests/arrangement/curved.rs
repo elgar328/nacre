@@ -173,6 +173,9 @@ fn armed_boss_at(
                 .all(|q| (q.as_array()[0] - 40.0).abs() < 1e-12)
         })
         .expect("the x = 40 wall class");
+    setup.cyls[0]
+        .records
+        .push((wc, crate::planes::CylRecord::Cuts));
     let crossings: std::collections::HashSet<(usize, usize)> = [(wc, 0)].into_iter().collect();
     (m, plate, boss, setup, wc, crossings)
 }
@@ -383,12 +386,12 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
 /// **The gate's record arms the rulings road — and only the record.** With the through-boss pair
 /// listed, the boss's trace on the wall class is the rectangle: two rulings (one per side,
 /// Pierce-named ends, no plain segments) and two cap chords (`Lo`/`Hi` roots on the cap classes).
-/// With the record empty — every production call today — the same trace is empty: the negative
-/// control that pins "an empty record changes nothing", which is the population an
-/// unconditionally-firing arm would break (14 arc-family tests red, measured).
+/// With the pair's record removed the same trace is empty: the negative control that pins "an
+/// empty record changes nothing", which is the population an unconditionally-firing arm would
+/// break (14 arc-family tests red, measured).
 #[test]
 fn the_gates_record_arms_the_ruling_trace() {
-    let (m, _plate, boss, setup, wc, crossings) = armed_through_boss();
+    let (m, _plate, boss, mut setup, wc, crossings) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let mut tr = Trace::default();
     trace_one_of(
@@ -439,6 +442,7 @@ fn the_gates_record_arms_the_ruling_trace() {
         );
     }
     // The negative control: today's record.
+    setup.cyls[0].records.retain(|&(c, _)| c != wc);
     let mut tr0 = Trace::default();
     trace_one_of(
         &m,
