@@ -291,6 +291,17 @@ pub enum CylPoint<'p> {
     Pierce(&'p PiercePoint),
 }
 
+/// **A line along a cylinder's axis, as the caller holds it** — what
+/// [`Judge::axis_line_off_arcs`] reads.
+#[derive(Clone, Copy)]
+pub enum AxisLine<'p> {
+    /// The line through a point, whose interval box gives its direction off the axis.
+    Through(CylPoint<'p>),
+    /// The meet of two plane classes, both along the axis — stated by the caller, as
+    /// [`Judge::parallel_line_off`] asks.
+    Meet(usize, usize),
+}
+
 /// **A coordinate along a cylinder's axis** (`m · x`) — stated exactly (`a + b√c`, for a point
 /// with exact coordinates, an exact meet or on a plane across the axis), or the point whose
 /// interval box gives it.
@@ -486,22 +497,42 @@ impl<W: PlaneWitness> Judge<'_, W> {
         (0..3).any(|k| y[k].sub(&x[k], prec).sign().is_some())
     }
 
-    /// **Is the line along cylinder `def`'s axis through point `at` strictly outside every arc of
-    /// `arcs`?** — each arc two radial directions `[from, to]`, counter-clockwise about the axis
-    /// direction `m` (ends included in the arc; `from` and `to` pointing one way is the whole turn).
-    /// The answer reads only the line's direction off the axis, so it holds whether the line lies on
-    /// the cylinder or beside it, which an interval cannot tell apart. `true` is a proof; `false` where an arc may hold the direction, the box
-    /// cannot be formed, or the arithmetic overflows.
+    /// **Does the line along cylinder `def`'s axis miss every arc of `arcs`?** — each arc two radial
+    /// directions `[from, to]`, counter-clockwise about the axis direction `m` (ends included in the
+    /// arc; `from` and `to` pointing one way is the whole turn). The arcs are the lateral faces', so
+    /// an empty list is no face and the answer is `true`; a caller that could not state a face passes
+    /// no list rather than an empty one.
+    ///
+    /// The test reads only the line's direction off the axis, so it holds whether the line lies on
+    /// the cylinder or beside it, which an interval cannot tell apart. A line through a point
+    /// ([`AxisLine::Through`]) is asked that alone. The meet of two planes ([`AxisLine::Meet`]) is
+    /// also off when it is proved off the surface ([`Self::parallel_line_off`]) — a line inside the
+    /// radius at a direction an arc holds misses the face, which its direction cannot say — and is
+    /// read at the base point of its interval line; two parallel planes have none. `true` is a proof;
+    /// `false` where an arc may hold the direction, the box cannot be formed, or the arithmetic
+    /// overflows.
     pub fn axis_line_off_arcs(
         &self,
         def: &CylinderDef,
-        at: CylPoint<'_>,
+        line: AxisLine<'_>,
         arcs: &[[[Rat; 3]; 2]],
     ) -> bool {
         let prec = self.standard.prec;
-        let Some(b) = self.point_box(at, prec) else {
-            return false;
+        let b = match line {
+            AxisLine::Through(at) => self.point_box(at, prec),
+            AxisLine::Meet(p, q) => {
+                if self.parallel_line_off(p, q, def) {
+                    return true;
+                }
+                self.meet_line_hp(p, q, def, prec).map(|l| l.base)
+            }
         };
+        b.is_some_and(|b| self.box_off_arcs(def, &b, arcs))
+    }
+
+    /// [`Self::axis_line_off_arcs`] at a point's interval box.
+    fn box_off_arcs(&self, def: &CylinderDef, b: &[HpBounded; 3], arcs: &[[[Rat; 3]; 2]]) -> bool {
+        let prec = self.standard.prec;
         let hp = |v: &[Rat; 3]| v.map(|x| HpBounded::of_rat(x, prec));
         let (o, m) = (hp(&def.origin()), hp(&def.dir()));
         let dot = |x: &[HpBounded; 3], y: &[HpBounded; 3]| {

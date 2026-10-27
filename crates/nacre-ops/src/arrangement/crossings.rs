@@ -654,7 +654,9 @@ fn line_off_faces(
                 crate::planes::Theta::Whole | crate::planes::Theta::At(_) => None,
             })
             .collect();
-        arcs.is_some_and(|arcs| jd.axis_line_off_arcs(def, point, &arcs))
+        arcs.is_some_and(|arcs| {
+            jd.axis_line_off_arcs(def, nacre_judge::cylinder::AxisLine::Through(point), &arcs)
+        })
     };
     let Some(line) = line else {
         return interval().then_some(true);

@@ -412,7 +412,7 @@ fn a_line_along_the_axis_is_off_an_arc_by_its_direction() {
         let ps = planes(stated);
         let j = jd(&ps);
         let at = CylPoint::Three([0, 1, 2]);
-        let off = |arcs: &[[[Rat; 3]; 2]]| j.axis_line_off_arcs(&def, at, arcs);
+        let off = |arcs: &[[[Rat; 3]; 2]]| j.axis_line_off_arcs(&def, AxisLine::Through(at), arcs);
         assert!(
             off(&[[v(0, 2), v(-2, 0)]]),
             "stated {stated}: a quarter beyond"
@@ -441,6 +441,41 @@ fn a_line_along_the_axis_is_off_an_arc_by_its_direction() {
         assert!(
             off(&[[v(0, 2), v(1, -2)]]),
             "stated {stated}: the long way round"
+        );
+    }
+}
+
+/// **The meet of two planes along the axis is asked the same, and is also off off the surface.**
+/// `x = 2 ∩ y = 0` lies on the surface at `+x`: off a quarter beyond, on a quarter starting there.
+/// `x = 1 ∩ y = 0` is inside the radius, so it misses the face whatever arc holds `+x`, and so does
+/// `x = 5 ∩ y = 0` outside it. `x = 1` and `x = 5` are parallel: no line, no proof — not even against
+/// no arcs, which a point is off.
+#[test]
+fn the_meet_of_two_planes_along_the_axis_is_off_by_its_direction_or_its_distance() {
+    let def = cylinder();
+    let v = |x: i128, y: i128| [Rat::from_int(x), Rat::from_int(y), Rat::from_int(0)];
+    let beyond = [[v(0, 2), v(-2, 0)]];
+    let holding = [[v(2, 0), v(0, 2)]];
+    for stated in [true, false] {
+        let ps = planes(stated);
+        let j = jd(&ps);
+        let off =
+            |p, q, arcs: &[[[Rat; 3]; 2]]| j.axis_line_off_arcs(&def, AxisLine::Meet(p, q), arcs);
+        assert!(
+            off(5, 2, &beyond),
+            "stated {stated}: on the surface, off the arc"
+        );
+        assert!(
+            !off(5, 2, &holding),
+            "stated {stated}: on the surface and the arc"
+        );
+        assert!(off(0, 2, &holding), "stated {stated}: inside the radius");
+        assert!(off(4, 2, &holding), "stated {stated}: outside the radius");
+        assert!(!off(0, 4, &beyond), "stated {stated}: parallel planes");
+        assert!(!off(0, 4, &[]), "stated {stated}: parallel planes, no arcs");
+        assert!(
+            j.axis_line_off_arcs(&def, AxisLine::Through(CylPoint::Three([0, 1, 2])), &[]),
+            "stated {stated}: no faces, nothing to touch"
         );
     }
 }

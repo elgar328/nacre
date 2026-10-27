@@ -825,6 +825,28 @@ impl<W: Witness> Judge<'_, W> {
         }
         true
     }
+
+    /// **Whether planes `i` and `j` are parallel, as a proof** — `Some(true)` parallel, `Some(false)`
+    /// not, `None` where nothing exact can say. Two narrow world names answer by their normals;
+    /// otherwise the two chains are composed ([`parallel_by_composed_rotation`]). Nothing is judged
+    /// by intervals: an interval refutes parallelism and never establishes it.
+    ///
+    /// Two distinct classes of one table are proved not coplanar ([`Self::planes_coplanar`] merges
+    /// every pair it does not refute), so for them `Some(true)` means the planes share no line. One
+    /// plane is parallel to itself and shares every line with itself, which is why a plane is not
+    /// asked against itself.
+    pub fn planes_parallel(&self, i: usize, j: usize) -> Option<bool> {
+        debug_assert_ne!(i, j, "a plane asked whether it is parallel to itself");
+        let planes = self.planes;
+        let narrow = |k: usize| planes[k].world_name().and_then(|n| n.narrow()).copied();
+        if let (Some(a), Some(b)) = (narrow(i), narrow(j)) {
+            return Some(nacre_exact::parallel_rat(
+                &[a[0], a[1], a[2]],
+                &[b[0], b[1], b[2]],
+            ));
+        }
+        parallel_by_composed_rotation(planes, i, j)
+    }
 }
 
 /// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
@@ -1091,9 +1113,44 @@ fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -
     Some(iso.plane_coeffs(ca)? == cb)
 }
 
-/// The single rotation axis and total angle of a chain, or `None` if it turns about more than
-/// one axis (then the product is not a rotation about a coordinate axis and this shortcut does
-/// not apply — a conservative miss).
+/// **Are planes `i` and `j` parallel, decided by composing their motions?** — the direction twin
+/// of [`coplanar_by_composed_rotation`]. A normal is a direction, so translations and pivots do not
+/// move it ([`axis_and_turn`]), and two chains that turn about one axis carry `n_A` onto `n_B`'s
+/// frame by `Rotate(axis, θ_A − θ_B)`. A chain that does not turn is a turn of `0` about any axis.
+/// Both `true` and `false` are proofs; `None` where the chains turn about different axes or the
+/// angle between them is one the rationals cannot state (off the 90° family).
+fn parallel_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -> Option<bool> {
+    let (ca, cb) = (planes[i].base_coeffs_rat()?, planes[j].base_coeffs_rat()?);
+    let (axis_a, theta_a) = axis_and_turn(plane_def(planes, i))?;
+    let (axis_b, theta_b) = axis_and_turn(plane_def(planes, j))?;
+    let axis = match (axis_a, axis_b) {
+        (Some(a), Some(b)) if a != b => return None,
+        (Some(a), _) | (_, Some(a)) => a,
+        (None, None) => nacre_exact::Axis::Z,
+    };
+    let delta = theta_a.checked_add(Rat::from_int(0).checked_sub(theta_b.deg())?)?;
+    let iso = nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+        axis,
+        pivot: [Rat::from_int(0); 3],
+        angle: delta,
+    });
+    let zero = Rat::from_int(0);
+    let na = iso.plane_coeffs([ca[0], ca[1], ca[2], zero])?;
+    Some(nacre_exact::parallel_rat(
+        &[na[0], na[1], na[2]],
+        &[cb[0], cb[1], cb[2]],
+    ))
+}
+
+/// [`axis_and_turn`] for a chain that turns: the axis is required.
+fn single_axis_motion(def: &[WitnessPoint; 3]) -> Option<(nacre_exact::Axis, nacre_exact::Angle)> {
+    let (axis, total) = axis_and_turn(def)?;
+    Some((axis?, total))
+}
+
+/// The single rotation axis and total angle of a chain — no axis for a chain that does not turn —
+/// or `None` if it turns about more than one axis (then the product is not a rotation about a
+/// coordinate axis and this shortcut does not apply — a conservative miss).
 ///
 /// **Translations are skipped, and pivots are ignored, for the same reason**: this runs on the
 /// *difference* of two points that share one chain, and a translation is the identity on a
@@ -1106,7 +1163,9 @@ fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -
 /// rescue it either: their product is a half-turn, not a turn by the angles read here. So the
 /// declaration is that this shortcut is defined for **axis-preserving** motions, and anything
 /// else escalates. A conservative miss, never a wrong sign.
-fn single_axis_motion(def: &[WitnessPoint; 3]) -> Option<(nacre_exact::Axis, nacre_exact::Angle)> {
+fn axis_and_turn(
+    def: &[WitnessPoint; 3],
+) -> Option<(Option<nacre_exact::Axis>, nacre_exact::Angle)> {
     let chain = &def[0].chain;
     let mut axis: Option<nacre_exact::Axis> = None;
     let mut total = nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(0))?;
@@ -1129,7 +1188,7 @@ fn single_axis_motion(def: &[WitnessPoint; 3]) -> Option<(nacre_exact::Axis, nac
             return None;
         }
     }
-    Some((axis?, total))
+    Some((axis, total))
 }
 
 /// Is `d` weaker evidence than `best` — the one a report should quote?

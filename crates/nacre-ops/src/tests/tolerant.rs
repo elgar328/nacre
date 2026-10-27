@@ -325,6 +325,112 @@ fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
     assert_eq!(same, 0, "a cuboid has no two coplanar faces");
 }
 
+/// **`Judge::planes_parallel` answers by proof or not at all.** Read against the cached normals of
+/// the planes of two solids, over every pair:
+///
+/// - a cuboid turned `30°` and the same turned and then moved — one chain for each solid's walls,
+///   and two chains that differ by a translation, which a normal does not see — and the `30°` cuboid
+///   beside the one turned `120°`, whose turns compose to a quarter: every pair is answered, and
+///   rightly;
+/// - the `30°` cuboid beside the cuboid itself: a nameless wall `30°` from any other plane has no
+///   rational image, so every pair it is in is unanswered, and the named pairs are answered;
+/// - the `30°` cuboid beside one turned about `x`: two nameless walls turned about different axes
+///   are unanswered.
+#[test]
+fn planes_parallel_is_a_proof_through_one_axis_chains() {
+    let (mut m, s) = cuboid();
+    // A transform consumes its solid, so each turned body starts from a cuboid of its own.
+    let fresh = |m: &mut Model| {
+        crate::fixtures::cuboid(
+            m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        )
+    };
+    let c = fresh(&mut m);
+    let z30 = rotated_by(&mut m, c, 30);
+    let c = fresh(&mut m);
+    let c = rotated_by(&mut m, c, 30);
+    let moved = match apply(
+        &mut m,
+        &Operation::Transform {
+            solid: c,
+            isometry: Isometry::translation([5, 7, 0].map(Rat::from_int)),
+        },
+    )
+    .unwrap()
+    {
+        crate::OpOutput::Transform { solid } => solid,
+        _ => panic!("expected Transform"),
+    };
+    let c = fresh(&mut m);
+    let c = rotated_by(&mut m, c, 30);
+    let z120 = rotated_by(&mut m, c, 90);
+    let c = fresh(&mut m);
+    let x30 = match apply(
+        &mut m,
+        &Operation::Transform {
+            solid: c,
+            isometry: Isometry::rotation(SRot {
+                axis: Axis::X,
+                pivot: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+            }),
+        },
+    )
+    .unwrap()
+    {
+        crate::OpOutput::Transform { solid } => solid,
+        _ => panic!("expected Transform"),
+    };
+    m.rebuild_adjacency();
+    let truth =
+        |a: &WorkingPlane, b: &WorkingPlane| a.plane.normal().cross(b.plane.normal()).norm() < 1e-9;
+    // `(answered, parallel)` over the cross pairs of `x` and `y`, every answer checked against the
+    // cached normals. `unanswered` says which pairs must have none (`Some(true)`), which must have
+    // one (`Some(false)`), and which may go either way (`None`).
+    let ask = |x: Handle<Solid>,
+               y: Handle<Solid>,
+               unanswered: &dyn Fn(&WorkingPlane, &WorkingPlane) -> Option<bool>| {
+        let (tx, ty) = (plane_table(&m, x), plane_table(&m, y));
+        let n = tx.len();
+        let t: Vec<WorkingPlane> = tx.into_iter().chain(ty).collect();
+        let jd = crate::planes::test_judge(&t);
+        let (mut answered, mut parallel) = (0usize, 0usize);
+        for i in 0..n {
+            for j in n..t.len() {
+                let got = jd.planes_parallel(i, j);
+                match unanswered(&t[i], &t[j]) {
+                    Some(true) => {
+                        assert_eq!(got, None, "({i},{j})");
+                        continue;
+                    }
+                    None if got.is_none() => continue,
+                    _ => {}
+                }
+                assert_eq!(got, Some(truth(&t[i], &t[j])), "({i},{j})");
+                answered += 1;
+                parallel += usize::from(truth(&t[i], &t[j]));
+            }
+        }
+        (answered, parallel)
+    };
+    let none = |_: &WorkingPlane, _: &WorkingPlane| Some(false);
+    // Six faces each, two parallel per direction: 36 pairs, 12 of them parallel.
+    assert_eq!(ask(z30, moved, &none), (36, 12));
+    assert_eq!(ask(z30, z120, &none), (36, 12));
+    let nameless =
+        |a: &WorkingPlane, b: &WorkingPlane| Some(a.world.is_none() || b.world.is_none());
+    // The cuboid's six planes against the turned one's two caps, which keep their names.
+    assert_eq!(ask(z30, s, &nameless), (12, 4));
+    // A named plane beside one turned about the other axis may go either way: a name is no chain.
+    let both_nameless = |a: &WorkingPlane, b: &WorkingPlane| {
+        (a.world.is_none() && b.world.is_none()).then_some(true)
+    };
+    let (answered, _) = ask(z30, x30, &both_nameless);
+    assert!(answered > 0, "the named pairs are answered");
+}
+
 /// `Judge::cmp_coord` orders two implicit points (corner triples) by an axis exactly as
 /// their `three_planes` coordinates do (cmp is not rotation-invariant, so the f64
 /// coordinate is the oracle) — never a wrong sign, resolves some, antisymmetric.
