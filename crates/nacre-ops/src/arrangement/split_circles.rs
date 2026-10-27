@@ -103,7 +103,7 @@ pub(super) fn split_circles(
             {
                 continue;
             }
-            let Some(xs) = circle_crossings(jd, wc, circ, def, sg) else {
+            let Some(xs) = circle_crossings(jd, wc, circ, def, sg)? else {
                 return Err(undecided());
             };
             for n in xs {
@@ -503,17 +503,27 @@ pub(super) fn split_segments_at(
 /// would yield a point with **no name**, which the next stage (splitting the circle into arcs)
 /// would have to re-derive.
 ///
-/// **Only three of `CylinderMeet`'s variants can arrive here, and that is provable.** A plane
-/// cuts a cylinder in a *circle* only when it is ⊥ to the axis, so `wc ∩ sg.wall` is always ⊥ to
-/// the axis too:
+/// **It asks the judge's one door for how a plane pair's line meets a cylinder** ([`Judge::line_meet`]),
+/// and only where both planes have a world statement: the arc split orders its points about the
+/// circle exactly and the emitter reads the class's world statement, so a crossing the interval
+/// road names has nowhere to go. On that road the door's answer is the exact meet's.
+///
+/// **Only a crossing pair, a tangency or a miss of [`nacre_judge::cylinder::LineMeet`]'s shapes can
+/// arrive here (or an overflow), and that is provable.** A plane cuts a cylinder in a *circle* only
+/// when it is ⊥ to the axis, so `wc ∩ sg.wall` is always ⊥ to the axis too, and the other shapes
+/// cannot occur:
 /// - `CoincidentPlanes`/`ParallelPlanes` — the segment lies on that line, so the line exists;
 /// - `OnRuling` — a line on the cylinder and on `wc` would have to lie inside `cylinder ∩ wc`,
 ///   which is a circle, and a circle contains no line;
 /// - `AxisParallelMiss` — a line ⊥ to the axis is not ∥ to it.
 ///
-/// The quadratic cannot degenerate either: its leading coefficient is `|d|² > 0` because `d ⊥ m`.
+/// The last two are the gate's promise that no class oblique to the axis carries a circle
+/// ([`combinatorics::class_carries_circle`]); if it breaks, the answer would be a silent «no
+/// crossing», so it is refused by that promise's name (`ObliqueCircleClass`) where a debug build
+/// stops. The quadratic cannot degenerate either: its leading coefficient is `|d|² > 0` because
+/// `d ⊥ m`.
 ///
-/// `None` is overflow (the caller drops the witness, never the rejection).
+/// `Ok(None)` is a plane with no narrow world statement, or overflow (the caller refuses by width).
 ///
 /// **It returns the crossings' *names*, and the coordinate is derived from the name** (see
 /// [`combinatorics::pierce_point`]). The pair is solved in this function's own call order —
@@ -533,31 +543,39 @@ fn circle_crossings(
     circ: &MergedCircle,
     def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
-) -> Option<Vec<combinatorics::NodeId>> {
+) -> Result<Option<Vec<combinatorics::NodeId>>, BoolError> {
     use crate::combinatorics::QuadRoot;
-    use nacre_exact::quad::{CylinderMeet, QuadVal};
-    let w = jd.world_rat(wc)?;
-    let v = jd.world_rat(sg.wall)?;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let roots = match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
-        CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
+    use nacre_judge::cylinder::LineMeet;
+    if jd.world_rat(wc).is_none() || jd.world_rat(sg.wall).is_none() {
+        return Ok(None);
+    }
+    let roots = match jd.line_meet(wc, sg.wall, def, false) {
+        LineMeet::Pair(_) => vec![QuadRoot::Lo, QuadRoot::Hi],
         // `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
-        CylinderMeet::Tangent { s, .. } => vec![(QuadRoot::Double, QuadVal::from_rat(s))],
+        LineMeet::Tangent(..) => vec![QuadRoot::Double],
         // **Reachable, and the honest answer.** The caller's `segment_meets_cylinder` filter (a
         // segment that meets the solid cylinder has a line that meets its surface) needs both
         // endpoints' coordinates, so it is skipped where one end is a pierce point, and there the
         // line genuinely can miss. "No crossings" is what a miss means.
         // Measured: **6** times over the suite.
-        CylinderMeet::Miss(_) => return Some(Vec::new()),
+        LineMeet::Miss => return Ok(Some(Vec::new())),
+        LineMeet::Wide | LineMeet::Overflow => return Ok(None),
+        shape @ (LineMeet::OnRuling(_) | LineMeet::AxisParallelMiss) => {
+            debug_assert!(
+                false,
+                "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \
+                 can only miss, touch or cross the cylinder — got {shape:?}"
+            );
+            return Err(reject(RejectReason::ObliqueCircleClass));
+        }
         other => unreachable!(
-            "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \
-             can only miss, touch or cross the cylinder — got {other:?}"
+            "a segment lies on the line of its two planes, and both are named — got {other:?}"
         ),
     };
-    Some(
+    Ok(Some(
         roots
             .into_iter()
-            .map(|(root, _)| combinatorics::NodeId::pierce(wc, sg.wall, circ.cyl, root))
+            .map(|root| combinatorics::NodeId::pierce(wc, sg.wall, circ.cyl, root))
             .collect(),
-    )
+    ))
 }
