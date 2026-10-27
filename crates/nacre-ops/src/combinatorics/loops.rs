@@ -119,7 +119,7 @@ pub(crate) struct FaceLoops {
 /// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
 /// belong to which operand.
 ///
-/// **Both fields are independent of the plane being traced onto**, and re-deriving them once per
+/// **The table is independent of the plane being traced onto**, and re-deriving it once per
 /// plane class costs, measured on an 80-fin fold, **2,280,285** calls (one per face per class) for
 /// **13,492** distinct answers, 3.3% of the boolean. Hoisting them is what
 /// makes the tracer a function of a face table rather than of a topology store, and the 169×

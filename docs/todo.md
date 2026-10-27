@@ -18,8 +18,11 @@
   (게이트의 유리수 점)·`plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
   충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `crossings::AxisCoord`
   하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
-- 게이트가 배열보다 먼저 경우를 가르고 기록 여섯(`crossings`·`tangencies`·`tangent_walls`·`shared`·`silent`·`boxes`)에 담는다 —
-  `silent` 하나를 읽는 자리가 약 20, 접근자가 일곱이다.
+- 게이트는 (평면 클래스, 원통) 쌍마다 생성기 하나(`cyl_gate::class_meet` → `ClassMeet`: ⊥ · 없음 · 절단 · 접선 · 말 없음 ·
+  타원)로 답하고, 남은 일은 그 답을 읽는 능력 검사다(타원 · 원통 쌍 접촉 · 폭 · 이름 없는 클래스의 정산 · 접선 행 판정). 하류에
+  넘기는 기록은 셋 — 원통 행의 `records`(절단·말 없음; `cuts`·`draws_rulings`·`sections`·`is_silent`·`beside` 로 묻는다),
+  접선 행(`Tangency`), 공유 룰링(`SharedRuling`). 다음 곡선 종류(타원, 원통 쌍의 4차)는 `ClassMeet` 의 변종과 «그리나» 검사로
+  들어온다.
 - «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`) — 분할의 입력은 병합 층의 기록 셋(`MergedSeg`·
   `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 원통 전용 파일이 약 8,000줄(planes·arrangement·combinatorics 의 35%)이다.
 - 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호 방향, `emit.rs`)와 정확한
@@ -39,8 +42,9 @@
 면이 없다, seam 은 식별선)만 댄다. 경우 분석은 «곡면 쌍 → 교선 목록» 한 함수 안에 있고, 퇴화는 경우 코드가 아니라 0 의 판정이
 받는다. 셀 기계는 평면 배열과 원통 차트 둘로 남는다(design 「가지 말 것」 «평면 DCEL 을 원통 차트에 이식» — 그 차이가 위상 몫이다).
 하나가 되는 것은 그 아래(정의로 든 점 하나와 판정층의 수 — 위의 수 층)와 그 위(교선 생성기 하나 — 게이트는 «수 층이 이 점을
-표현하나·traits 가 이 곡선을 아나»를 묻는 능력 검사로 준다)다. 남은 계단은 하나다: 교선 생성기가 게이트의 갈래와 기록을
-대신한다(조사·계획은 따로). 분할 쪽에서 남긴 둘: 링을 읽는 쪽의 네 enum 은 한 타입이 아니다(물음 16 가지 — `names.rs` 의
+표현하나·traits 가 이 곡선을 아나»를 묻는 능력 검사로 준다)다 — 그 위의 생성기는 위 목록의 둘째 항목이다. 이름 있는
+클래스의 `Clear` 도 «어느 면도 옆면에 닿지 않는다»는 말 없음과 같은 명제지만 하류에 넘기지 않는다: 넘기면 `nesting::ask` 가
+그 클래스를 정확 도로 대신 기록으로 답하게 되는 의미 변경이라, 인구를 재고 따로 정한다. 분할 쪽에서 남긴 둘: 링을 읽는 쪽의 네 enum 은 한 타입이 아니다(물음 16 가지 — `names.rs` 의
 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다, 반증할 근거가 생기면); 같은 선 위 두 어휘의 겹침
 (평면 쌍 선분이 옆면이 있는 룰링 위에 겹침 — `RulingBoundNotYet`, census `tangentline slab wall 1.5` 3·스위트 6)은 짓는 도로가
 없다.
@@ -83,8 +87,8 @@
 
 옆면 차트(`cyl_chart`)도 먼저다. 차트는 축에 평행한 선분만 받는다 — 모서리가 «z선 × 정거장»이고 한 모서리에 길이
 넷이다(게이트의 다섯 갈래에서 유도한 전제). 4차 교선은 차트 위의 곡선이라 그 전제를 깬다. 그리고 교선은 지금
-게이트의 기록(`crossings`·`tangencies`·`SharedRuling` — 게이트 밖에서 그 필드를 직접 읽는 파일 7: `trace_class`·`aliases`·
-`crossings`·`cyl_chart`·`naming`·`names`·`self_touch`)과 분할(선분끼리 `split.rs` · 선분 대 원과 룰링
+게이트의 생성기(`class_meet` — 4차 교선은 `ClassMeet` 의 변종 하나로 들어온다)와 하류 기록(`WorkingCyl::records`·
+`tangencies`·`SharedRuling`)과 분할(선분끼리 `split.rs` · 선분 대 원과 룰링
 `crossings.rs` — 교점 수집은 한 걸음, 자르기는 곡선 종류마다 · 생산자 `rulings.rs`·`cyl_trace.rs`, 합 2,646줄)로
 배열에 들어온다. 직교 같은 특수 배치부터 하나씩 열면 배치마다 기록 하나·읽기 사슬 하나·분할 갈래가
 붙는다 — 차트는 곡선 종류마다 술어(교점·순서·접선 방향)만 대고 셀 기계는 한 벌인 모양으로 넓히고, 교선이 배열에
@@ -349,6 +353,21 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 마지막 빌드가 «뒤에서 다시 읽히는 값만」 복사할 수 있다. 확인할 것: 이미 소비된 값에 묻는 선택자(앞부분 빌드에서
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
+
+### «평면 클래스가 원통 축에 수직인가»의 철자가 둘이다
+
+클래스가 원통의 원을 싣는 것은 그 법선이 축에 평행할 때다. 그 물음을 `nacre_exact::axis_relation(n, m) == Across` 로 묻는
+자리가 둘(`cyl_gate::class_meet`, `combinatorics::class_carries_circle`), `nacre_exact::parallel_rat(n, m)` 으로 묻는 자리가
+아홉이다(`cyl_trace::circle_on_class`·`aliases.rs`·`crossings.rs`·`cyl_chart/mod.rs`·`cyl_geom.rs` 셋·`corners.rs`·
+`cyl_crossings.rs` — nacre-ops 비시험 코드, 원통 축끼리의 평행을 묻는 다른 명제는 뺐다). 둘 다 정확 산술이라 0 이 아닌 벡터에서
+답이 갈리지 않는다. 이름이 이미 있다 — `class_carries_circle` 이 그 명제와 0 벡터의 관례(`Across` 로 읽힌다)를 든다 — 그래서
+나머지가 그것을 물으면 한 명제가 한 함수가 된다. 바꾸기 전에 두 함수의 0 벡터 관례가 같은지 잰다.
+
+### 게이트가 하류 기록을 지역 벡터 셋을 거쳐 짓는다
+
+`cylinder_gate` 는 `class_meet` 의 표에서 `silent`·`apart`·`sectioned` 를 따로 모으고, 정산 뒤 그것을 `WorkingCyl::records`
+로 옮긴다. 정산의 판정(Apart·Sectioned 가 서는가)만 따로 들고 기록을 표에서 곧바로 지으면 그 셋이 사라진다(약 20줄). 하류
+기록의 순서는 독자에게 무관하다(클래스로 찾기만 하고, 한 쌍에 말 없음은 하나).
 
 ## 보류 — 인구가 생기면
 
