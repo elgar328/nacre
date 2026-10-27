@@ -4,7 +4,7 @@ use super::*;
 type SplitCircles = Option<(
     Vec<MergedSeg>,
     Vec<MergedCircle>,
-    Vec<MergedArc>,
+    Vec<Piece>,
     Vec<(usize, CutRim)>,
 )>;
 
@@ -281,9 +281,11 @@ pub(super) fn split_circles(
             if merged.is_empty() {
                 continue;
             }
-            arcs.push(MergedArc {
-                cyl: circ.cyl,
-                def: circ.def.clone(),
+            arcs.push(Piece {
+                on: OnCurve::Arc {
+                    cyl: circ.cyl,
+                    def: circ.def.clone(),
+                },
                 end: [nodes[order[k]], nodes[order[(k + 1) % order.len()]]],
                 merged,
             });

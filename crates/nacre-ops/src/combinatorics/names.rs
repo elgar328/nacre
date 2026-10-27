@@ -277,9 +277,9 @@ pub(crate) enum Carrier {
 /// its chart read the rim from, on an operand's lateral the cap across the edge — so the assembly
 /// states an arc's carriers off the wall alone, and the second face that states one is checked
 /// against the first. For it the ring additionally remembers **which way around the axis this
-/// edge runs**: `ccw` restates `ClassEdges::edge_at`'s own
-/// convention (*"`MergedArc::end` runs counter-clockwise about the axis"* — the even half-edge
-/// travels that way, its twin the other), carried rather than re-derived. That bit is what lets
+/// edge runs**: `ccw` restates the arrangement's own
+/// convention (an arc `arrangement::Piece`'s `end` runs counter-clockwise about the axis — the even
+/// half-edge travels that way, its twin the other), carried rather than re-derived. That bit is what lets
 /// `edge_for` tell the two complementary arcs between one pair of pierce vertices apart.
 ///
 /// A variant rather than a `usize::MAX` sentinel also keeps a hazard out:
@@ -303,8 +303,8 @@ pub(crate) enum Wall {
     /// second. Every producer states the plane it measured against — on a plane face the face's
     /// own class, on a result's lateral the chart station's wall, on an operand's lateral the
     /// plane across the edge. `up` restates
-    /// `ClassEdges::edge_at`'s convention (`MergedRuling::end` ascends the axis; the even
-    /// half-edge travels up, its twin down), carried like `Arc::ccw`.
+    /// the arrangement's convention (a ruling `arrangement::Piece`'s `end` ascends the axis; the
+    /// even half-edge travels up, its twin down), carried like `Arc::ccw`.
     Ruling {
         cyl: usize,
         side: i8,
@@ -486,7 +486,7 @@ pub(crate) struct ArcCarrier {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     /// `true` when travel is counter-clockwise about the cylinder's axis — the sense
-    /// `arrangement::split_circles` builds every `MergedArc` in, inverted for the twin half-edge.
+    /// an arc `arrangement::Piece` travels `end[0] → end[1]`, inverted for the twin half-edge.
     pub ccw: bool,
 }
 
@@ -506,8 +506,8 @@ pub(crate) struct RulingCarrier {
     /// `0`, the single ruling of a **tangent** wall: an identity key like the other two
     /// values, never a sign to multiply by (the sign consumers assert it away).
     pub side: i8,
-    /// `true` when travel runs along `+m` — the sense the ruling split builds every
-    /// `MergedRuling` in (`end[0] → end[1]` ascends the axis), inverted for the twin half-edge.
+    /// `true` when travel runs along `+m` — the sense a ruling `arrangement::Piece` travels
+    /// `end[0] → end[1]` (ascending the axis), inverted for the twin half-edge.
     pub up: bool,
     /// The plane class `side` was measured against — `Wall::Ruling`'s, carried on. A ruling is
     /// held by every plane through its line, and its side differs between them (`0` against a

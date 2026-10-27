@@ -150,7 +150,7 @@ struct LateralShape {
 /// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
 ///
 /// `arc` is `None` for the whole circle, and `Some([a, b])` runs **counter-clockwise** from `a`
-/// to `b` about the cylinder's axis direction — [`MergedArc::end`]'s convention, because these are
+/// to `b` about the cylinder's axis direction — an arc [`Piece`]'s convention, because these are
 /// what that becomes.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CircleSpan {
@@ -224,33 +224,171 @@ struct Staged {
     ruling_extents: Vec<(usize, RulingExtent)>,
 }
 
-/// **One plane class's edges, after the arc split — and the only thing that knows the half-edge
+/// **One edge of a plane class's arrangement** — a piece of one curve the class carries, between two
+/// named points: a segment of a plane pair's line, an arc of a cylinder's circle (the class ⊥ its
+/// axis), or a piece of one of its rulings (the class ∥ its axis). Every edge the walk, the labels
+/// and the emitter read is one of these, so a question asked of every edge is asked of this type;
+/// what differs by kind is [`OnCurve`].
+///
+/// `end` is in the piece's **own travel order**, and the half-edge numbering reads it one way
+/// ([`ClassEdges`]: the even half-edge travels `end[0] → end[1]`, its twin the other):
+/// - a segment travels the way its cutter stated (`OnCurve::Segment::sense`, or unstated);
+/// - an arc runs **counter-clockwise** about the cylinder's axis direction. That is not a
+///   convention this crate invents: STEP's `EDGE_CURVE` runs from `edge_start` to `edge_end` along
+///   increasing parameter, and `nacre-step` already writes a circular edge that way — so the
+///   exporter needs nothing, and the STEP round-trip measures it;
+/// - a ruling piece ascends `+m`, the cylinder's axis direction — the straight reading of the arc's
+///   convention.
+///
+/// `merged` is every `(solid, kind)` contribution that covers this piece — `edge_mask` reads it
+/// unchanged, whatever the kind.
+#[derive(Clone, Debug)]
+pub(crate) struct Piece {
+    pub on: OnCurve,
+    pub end: [combinatorics::NodeId; 2],
+    pub merged: Vec<(SolidSide, SegKind)>,
+}
+
+/// **Which curve a [`Piece`] lies on**, and what only that kind of piece carries.
+#[derive(Clone, Debug)]
+pub(crate) enum OnCurve {
+    /// The line `wc ∩ wall`. `end_h` pins each end on that line (see [`Seg::end_h`]); `sense` is
+    /// the travel sense from `end[0]` to `end[1]` stated by whoever cut the piece (see
+    /// [`combinatorics::Carrier::Plane`]) — `None` everywhere except a sub-segment the arc or ruling
+    /// split cut, whose ends it already knows the order of.
+    Segment {
+        wall: usize,
+        end_h: [combinatorics::EndPin; 2],
+        sense: Option<i8>,
+    },
+    /// The class's circle on cylinder class `cyl`.
+    Arc {
+        cyl: usize,
+        def: nacre_topo::CylinderDef,
+    },
+    /// One of the class's two rulings on cylinder class `cyl`: `side` names which
+    /// ([`combinatorics::RulingCarrier::side`] — the sign of `(x − o) · (m × n̂)` against the
+    /// class's canonical coefficients), `0` the tangent one.
+    Ruling {
+        cyl: usize,
+        def: nacre_topo::CylinderDef,
+        side: i8,
+        /// The lateral's `orient_sign` (`+1` material inside the cylinder, `−1` outside — a boss or
+        /// a bore), for the vertical answer's content check; an instrument's field, like the label.
+        #[cfg(test)]
+        orient: i8,
+    },
+}
+
+impl Piece {
+    /// The ring-edge carrier of the half-edge that travels `end[0] → end[1]` when `forward`, and
+    /// the other way otherwise, on class `wc` — the one place the travel convention above is read.
+    pub(super) fn carrier(&self, forward: bool, wc: usize) -> combinatorics::Carrier {
+        match &self.on {
+            OnCurve::Segment { wall, sense, .. } => combinatorics::Carrier::Plane {
+                wall: *wall,
+                sense: sense.map(|s| if forward { s } else { -s }),
+            },
+            OnCurve::Arc { cyl, def } => {
+                combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
+                    cyl: *cyl,
+                    def: def.clone(),
+                    ccw: forward,
+                }))
+            }
+            OnCurve::Ruling { cyl, def, side, .. } => {
+                combinatorics::Carrier::Ruling(Box::new(combinatorics::RulingCarrier {
+                    cyl: *cyl,
+                    def: def.clone(),
+                    side: *side,
+                    up: forward,
+                    plane: wc,
+                }))
+            }
+        }
+    }
+
+    /// The same half-edge as a ring wall ([`combinatorics::Wall`]) — what the emitted ring carries,
+    /// and the assembly mints the edge by.
+    pub(super) fn wall(&self, forward: bool, wc: usize) -> combinatorics::Wall {
+        match &self.on {
+            OnCurve::Segment { wall, .. } => combinatorics::Wall::Plane(*wall),
+            OnCurve::Arc { cyl, .. } => combinatorics::Wall::Arc {
+                cyl: *cyl,
+                ccw: forward,
+                plane: wc,
+            },
+            OnCurve::Ruling { cyl, side, .. } => combinatorics::Wall::Ruling {
+                cyl: *cyl,
+                side: *side,
+                up: forward,
+                plane: wc,
+            },
+        }
+    }
+
+    /// What pins each end on the piece's line, in `end` order. An arc's or a ruling's ends are pierce
+    /// points by construction, which is what [`combinatorics::EndPin::Cylinder`] says.
+    pub(super) fn pins(&self) -> [combinatorics::EndPin; 2] {
+        match &self.on {
+            OnCurve::Segment { end_h, .. } => *end_h,
+            OnCurve::Arc { .. } | OnCurve::Ruling { .. } => [combinatorics::EndPin::Cylinder; 2],
+        }
+    }
+}
+
+impl From<MergedSeg> for Piece {
+    fn from(s: MergedSeg) -> Self {
+        Piece {
+            on: OnCurve::Segment {
+                wall: s.wall,
+                end_h: s.end_h,
+                sense: s.sense,
+            },
+            end: s.end,
+            merged: s.merged,
+        }
+    }
+}
+
+impl From<MergedRuling> for Piece {
+    fn from(r: MergedRuling) -> Self {
+        Piece {
+            on: OnCurve::Ruling {
+                cyl: r.cyl,
+                def: r.def,
+                side: r.side,
+                #[cfg(test)]
+                orient: r.orient,
+            },
+            end: r.end,
+            merged: r.merged,
+        }
+    }
+}
+
+/// **One plane class's edges, after the splits — and the only thing that knows the half-edge
 /// numbering.**
 ///
-/// Half-edge encoding: edge `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
+/// Half-edge encoding: piece `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
 /// `twin(he) = he ^ 1`. The ranges are, in order:
 ///
-/// - **segments** `[0, 2·ns)` — an ordinary two-ended edge on a plane's meet with `P`;
-/// - **arcs** `[2·ns, 2·(ns+na))` — a piece of a circle a segment cut, equally two-ended;
-/// - **uncut circles**, on pseudo-half-edges `2·(ns+na) + 2i` — a closed curve with no vertex is
-///   not an orbit the walk can express, so [`walk_cells`] appends those cells *after* the walk.
+/// - **pieces** `[0, 2·np)` — every two-ended edge ([`Piece`]): the segments, then the arcs, then the
+///   ruling pieces, each kind in the order its split emitted it (the walk and the emitter visit
+///   edges in this order, and the handles the assembly mints follow it);
+/// - **uncut circles**, on pseudo-half-edges `2·np + 2i` — a closed curve with no vertex is not an
+///   orbit the walk can express, so [`walk_cells`] appends those cells *after* the walk.
 ///
-/// **The kind is a `match`, not `he >= 2 * segs.len()`.** There are three ranges, not two —
-/// a cut circle's arcs sit between — so the arithmetic comparison reads an arc as a circle, and
-/// indexing `segs[he / 2]` with it is not a wrong answer but an **index out of bounds**
-/// (measured). One type owns the numbering, so the question is a `match` the compiler checks
-/// rather than an arithmetic comparison each reader restates.
+/// **The kind is a `match`, not an arithmetic comparison each reader restates** — one type owns the
+/// numbering ([`ClassEdges::kind`]).
 ///
-/// **It borrows or owns** (`Cow`). The split makes new `Vec`s; if this only borrowed, the
-/// caller would have to keep them alive and the whole preamble — split, build, walk — would be
-/// written once per caller, which is the shape `decline_to_reject`'s doc calls *"two copies … would
-/// let them drift"*. Owning lets [`ClassEdges::of`] be the single constructor both callers use.
+/// **It borrows the circles or owns them** (`Cow`). The split makes new `Vec`s; if this only
+/// borrowed, the caller would have to keep them alive and the whole preamble — split, build, walk —
+/// would be written once per caller, which is the shape `decline_to_reject`'s doc calls *"two copies
+/// … would let them drift"*. Owning lets [`ClassEdges::of`] be the single constructor both callers
+/// use.
 struct ClassEdges<'a> {
-    segs: std::borrow::Cow<'a, [MergedSeg]>,
-    arcs: std::borrow::Cow<'a, [MergedArc]>,
-    /// Ruling pieces — a fourth range, empty until a tracer contributes
-    /// rulings on a ∥ class.
-    rulings: std::borrow::Cow<'a, [MergedRuling]>,
+    pieces: Vec<Piece>,
     circles: std::borrow::Cow<'a, [MergedCircle]>,
     /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
     /// (keyed by plane class where the per-class products are aggregated).
@@ -260,12 +398,10 @@ struct ClassEdges<'a> {
     wc: usize,
 }
 
-/// Which of the four ranges a half-edge is in, and its index within that range.
+/// Which of the two ranges a half-edge is in, and its index within that range.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum HalfEdgeKind {
-    Seg(usize),
-    Arc(usize),
-    Ruling(usize),
+    Piece(usize),
     Circle(usize),
 }
 

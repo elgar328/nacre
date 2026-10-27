@@ -49,7 +49,7 @@ pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<ArcLabel>>;
 /// **Two different questions live here and they are not one question.** `label` answers
 /// *membership* — "is this side material" — and that is all a label can say. Whether this lateral
 /// face is even **here** to bound it is a different proposition, and the trace answers that one:
-/// `marks` is the contribution list that covered this arc ([`MergedArc::merged`]), where a face
+/// `marks` is the contribution list that covered this arc ([`Piece::merged`]), where a face
 /// running through says `Transversal` and one whose boundary stops at the arc says `Graze`.
 /// A **holed** lateral re-entering a boolean makes the difference visible — its two sectors can
 /// carry a literally identical label, and only the kind says which one is a face at all.
@@ -62,7 +62,7 @@ pub(crate) struct ArcLabel {
     pub(crate) ends: [NodeId; 2],
     /// The four bits of the cell on the arc's disk side, in the class's stored frame.
     pub(crate) label: Label,
-    /// The `(solid, kind)` contributions covering this arc — [`MergedArc::merged`] verbatim.
+    /// The `(solid, kind)` contributions covering this arc — [`Piece::merged`] verbatim.
     ///
     /// **A lateral face's mark here is never `Seated`, and the type already says so.** The
     /// circle arm of [`trace_one`] builds its kind from [`CylOnClass`], whose only two answers are

@@ -1,9 +1,9 @@
 use super::*;
-/// The DCEL walk itself: half-edges into cells, over the **three** ranges an arrangement can hold.
+/// The DCEL walk itself: half-edges into cells, over the **two** ranges an arrangement can hold
+/// ([`ClassEdges`]).
 ///
-/// - segments `[0, 2·ns)` — an ordinary two-ended edge on a plane's meet with `P`;
-/// - arcs `[2·ns, 2·(ns+na))` — a piece of a circle a segment cut, equally two-ended;
-/// - uncut circles, appended **after** the walk on pseudo-half-edges `2·(ns+na) + 2i`, because a
+/// - pieces `[0, 2·np)` — every two-ended edge, whatever curve it lies on;
+/// - uncut circles, appended **after** the walk on pseudo-half-edges `2·np + 2i`, because a
 ///   closed curve with no vertex is not an orbit the walk can express.
 pub(super) fn walk_cells(
     jd: &Judge<'_, WorkingPlane>,
@@ -11,10 +11,9 @@ pub(super) fn walk_cells(
     wc: usize,
     edges: &ClassEdges<'_>,
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
-    let (segs, arcs, circles) = (&edges.segs, &edges.arcs, &edges.circles);
-    let n = segs.len();
+    let circles = &edges.circles;
     let he_count = edges.he_count();
-    let is_arc = |he: usize| matches!(edges.kind(he), HalfEdgeKind::Arc(_));
+    let is_arc = |he: usize| matches!(edges.kind(he), HalfEdgeKind::Piece(i) if matches!(edges.pieces[i].on, OnCurve::Arc { .. }));
     let origin = |he: usize| edges.origin(he);
     let edge_of = |he: usize| edges.edge_at(he);
 
@@ -47,7 +46,7 @@ pub(super) fn walk_cells(
     }
 
     watch!(E_WALK);
-    let components = component_count(segs, arcs, &edges.rulings);
+    let components = component_count(&edges.pieces);
 
     // Try both step directions (predecessor / successor); keep the one whose bounded/outer split
     // is right. Handedness is fixed by `orient_sign(w)` and unknown up front.
@@ -127,7 +126,7 @@ pub(super) fn walk_cells(
         let subdivides = |cells: &[Cell]| -> bool {
             let (v, e, f) = (
                 outgoing.len() as i64,
-                (n + arcs.len() + edges.rulings.len()) as i64,
+                edges.pieces.len() as i64,
                 cells.len() as i64,
             );
             v - e + f == 2 * components as i64
@@ -136,11 +135,11 @@ pub(super) fn walk_cells(
             && cells.iter().filter(|c| c.winding == -1).count() == components
             && subdivides(&cells)
         {
-            // **Circle cells, appended after the segment orbits**. Each circle is a
+            // **Circle cells, appended after the piece orbits**. Each circle is a
             // 1-edge component the DCEL walk cannot express (orbits need ≥3): a `+1` disk cell
-            // and a `−1` contour, with pseudo-half-edges numbered past the segment range —
-            // `2n + 2i` (disk side) and its `^1` twin (outside), so the label propagation's
-            // twin arithmetic works unmodified (`2n` is even). No crossing machinery is owed: a
+            // and a `−1` contour, with pseudo-half-edges numbered past the piece range —
+            // `2np + 2i` (disk side) and its `^1` twin (outside), so the label propagation's
+            // twin arithmetic works unmodified (`2np` is even). No crossing machinery is owed: a
             // circle and a segment cannot **cross** on this class — the gate cleared the pair or
             // recorded it — and the one shape that touches, a tangency, is skipped by
             // `split_circles`' `Double` arm rather than cut (a touch divides nothing).
@@ -187,7 +186,7 @@ pub(super) fn nest_cells(
     let circle_of = |c: &Cell| -> Option<usize> {
         match edges.kind(*c.half_edges.first()?) {
             HalfEdgeKind::Circle(i) => Some(i),
-            HalfEdgeKind::Seg(_) | HalfEdgeKind::Arc(_) | HalfEdgeKind::Ruling(_) => None,
+            HalfEdgeKind::Piece(_) => None,
         }
     };
     // The walk knows each edge's carrier and both handles, so the ring carries them instead of
@@ -482,14 +481,12 @@ pub(super) fn label_cells(
     seed: Label,
 ) -> Result<Vec<Label>, BoolError> {
     // Crossing a circle flips like crossing any edge — its occupancy list is the mask's input;
-    // the pseudo-half-edge numbering (`≥ 2·segs.len()`) picks the table.
+    // the pseudo-half-edge numbering (`≥ 2·pieces.len()`) picks the table.
     let mask_of = |he: usize| -> Result<Label, BoolError> {
         match edges.kind(he) {
-            HalfEdgeKind::Seg(i) => edge_mask(&edges.segs[i].merged),
             // An arc is a piece of its circle's trace, so it carries the same contributions —
             // and a ruling piece is a piece of the lateral's trace, likewise.
-            HalfEdgeKind::Arc(i) => edge_mask(&edges.arcs[i].merged),
-            HalfEdgeKind::Ruling(i) => edge_mask(&edges.rulings[i].merged),
+            HalfEdgeKind::Piece(i) => edge_mask(&edges.pieces[i].merged),
             HalfEdgeKind::Circle(i) => edge_mask(&edges.circles[i].whole_marks()?),
         }
     };

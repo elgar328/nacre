@@ -511,12 +511,8 @@ pub(crate) struct Cell {
 }
 
 /// Number of connected components of the 1-skeleton (union-find over vertex names joined by each
-/// edge — segment, arc, or ruling). The `-1`-winding face count must equal this.
-pub(super) fn component_count(
-    segs: &[MergedSeg],
-    arcs: &[MergedArc],
-    rulings: &[MergedRuling],
-) -> usize {
+/// piece — segment, arc, or ruling). The `-1`-winding face count must equal this.
+pub(super) fn component_count(pieces: &[Piece]) -> usize {
     let mut idx: HashMap<NodeId, usize> = HashMap::new();
     let mut id = |t: NodeId, parent: &mut Vec<usize>| -> usize {
         let n = idx.len();
@@ -537,12 +533,7 @@ pub(super) fn component_count(
     // 1-skeleton's components, and an arc is an edge of that skeleton like any other — leaving them
     // out would make a crossed circle look like a component of its own and the walk's check would
     // then be off by one wherever a circle was cut.
-    let ends = segs
-        .iter()
-        .map(|s| s.end)
-        .chain(arcs.iter().map(|a| a.end))
-        .chain(rulings.iter().map(|r| r.end));
-    for e in ends {
+    for e in pieces.iter().map(|p| p.end) {
         let (a, b) = (id(e[0], &mut parent), id(e[1], &mut parent));
         let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
         parent[ra] = rb;

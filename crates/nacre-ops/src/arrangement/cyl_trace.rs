@@ -347,7 +347,7 @@ pub(crate) fn plus_theta_is_above(
 ///
 /// **Derivation.** Write `r̂` for the cylinder's outward radial direction, `m̂` for its axis and `θ̂`
 /// for increasing θ (counter-clockwise about `m̂`, which is what
-/// `nacre_exact::quad::circular_order_about_seam` ranks and what [`MergedArc::end`] runs along).
+/// `nacre_exact::quad::circular_order_about_seam` ranks and what an arc [`Piece`]'s `end` runs along).
 /// Cylindrical coordinates are right-handed, so `r̂ × θ̂ = m̂` and `r̂ × m̂ = −θ̂`. The face's outward
 /// is `σ·r̂` with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], and "left of travel" is
 /// `n_out × travel`.

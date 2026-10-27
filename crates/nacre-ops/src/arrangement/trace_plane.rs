@@ -679,7 +679,7 @@ pub(super) fn trace_one(
                 // class along it and crosses nowhere, so no ruling trace will ever back it — the
                 // seated face is the only face on this class with that line as an edge, and it
                 // states the piece itself, `Seated` like its straight edges. `up` says which end
-                // is the lower one along the axis (`MergedRuling::end` ascends).
+                // is the lower one along the axis (a ruling [`Piece`]'s `end` ascends).
                 if let crate::combinatorics::Wall::Ruling {
                     cyl, side: 0, up, ..
                 } = ws[i]

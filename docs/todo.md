@@ -20,8 +20,8 @@
   하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
 - 게이트가 배열보다 먼저 경우를 가르고 기록 여섯(`crossings`·`tangencies`·`tangent_walls`·`shared`·`silent`·`boxes`)에 담는다 —
   `silent` 하나를 읽는 자리가 약 20, 접근자가 일곱이다.
-- «클래스 위의 곡선»을 묶는 타입이 없다 — 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)과 서로 무관한
-  `MergedSeg`·`MergedCircle`·`MergedArc`·`MergedRuling`. 원통 전용 파일이 약 8,000줄(planes·arrangement·combinatorics 의 35%)이다.
+- «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`) — 분할의 입력은 병합 층의 기록 셋(`MergedSeg`·
+  `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 원통 전용 파일이 약 8,000줄(planes·arrangement·combinatorics 의 35%)이다.
 - 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호 방향, `emit.rs`)와 정확한
   점만 받는 자리(`direction::arc_at` — 호의 접선 방향, `loops::curved_wall`)가 남는다.
 

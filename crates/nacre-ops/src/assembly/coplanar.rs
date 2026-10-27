@@ -384,7 +384,7 @@ fn merge_component(
             // its rim.
             let self_loop = nodes.len() == 1 && matches!(walls[0], Wall::Arc { .. });
             let floor = combinatorics::ring_floor(
-                walls.iter().any(|w| !matches!(w, Wall::Plane(_))),
+                walls.iter().any(|w| matches!(w, Wall::Arc { .. })),
                 self_loop,
             );
             if nodes.len() < floor {

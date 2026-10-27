@@ -861,7 +861,11 @@ pub(crate) fn frame_audit(
                     pos_labels.sort_unstable();
                     produced = Some(Produced {
                         cells: s.cells.len(),
-                        arcs: edges.arcs.len(),
+                        arcs: edges
+                            .pieces
+                            .iter()
+                            .filter(|p| matches!(p.on, OnCurve::Arc { .. }))
+                            .count(),
                         roots: s.nesting.root_groups.len(),
                         holes: s.nesting.holes.len(),
                         pos_labels,

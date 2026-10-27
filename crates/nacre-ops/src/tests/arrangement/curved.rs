@@ -508,9 +508,25 @@ fn the_armed_wall_class_walks_to_closed_cells() {
     )
     .unwrap();
     assert_eq!(
-        edges.rulings.len(),
+        edges
+            .pieces
+            .iter()
+            .filter(|p| matches!(p.on, OnCurve::Ruling { .. }))
+            .count(),
         6,
         "each ruling cut at z = 0 and z = 20"
+    );
+    // The numbering's order — segments, then arcs, then ruling pieces ([`ClassEdges`]): the walk and
+    // the emitter visit edges in it, and the assembly mints handles after them.
+    let rank = |p: &Piece| match p.on {
+        OnCurve::Segment { .. } => 0,
+        OnCurve::Arc { .. } => 1,
+        OnCurve::Ruling { .. } => 2,
+    };
+    assert!(
+        edges.pieces.windows(2).all(|w| rank(&w[0]) <= rank(&w[1])),
+        "pieces out of kind order: {:?}",
+        edges.pieces.iter().map(rank).collect::<Vec<_>>()
     );
     let (cells, _face_of) = walk_cells(&jd, &setup.cyls, wc, &edges).unwrap();
     assert_eq!(cells.len(), 6, "five bounded cells and the outer");
@@ -566,9 +582,7 @@ fn armed_class_edges<'a>(
     .unwrap();
     // Owned copies so the borrows above may end — a test convenience, not a production shape.
     ClassEdges {
-        segs: std::borrow::Cow::Owned(e.segs.into_owned()),
-        arcs: std::borrow::Cow::Owned(e.arcs.into_owned()),
-        rulings: std::borrow::Cow::Owned(e.rulings.into_owned()),
+        pieces: e.pieces,
         circles: std::borrow::Cow::Owned(e.circles.into_owned()),
         cut_rims: e.cut_rims,
         wc: e.wc,
@@ -1596,12 +1610,14 @@ fn with_cut_rings(
         ) else {
             continue;
         };
-        if edges.arcs.is_empty() {
+        // The arcs' piece indices, in order.
+        let arcs: Vec<usize> = (0..edges.pieces.len())
+            .filter(|&i| matches!(edges.pieces[i].on, OnCurve::Arc { .. }))
+            .collect();
+        if arcs.is_empty() {
             continue;
         }
         let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
-        let ns = edges.segs.len();
-        let na = edges.arcs.len();
         // Four cells share this class: the bitten plate-top face (+1, many steps), the
         // outside (−1 — it also borders the arc, via the outer bulge), and two digons
         // (chord + arc): the overhang (disk minus plate) and the bite (disk ∩ plate).
@@ -1623,10 +1639,12 @@ fn with_cut_rings(
             .iter()
             .max_by_key(|&&i| cells[i].half_edges.len())
             .expect("the bitten top ring");
-        let outer_ai = (0..na)
-            .find(|ai| face_of[&(2 * (ns + ai) + 1)] == outside)
+        let outer_ai = arcs
+            .iter()
+            .copied()
+            .find(|&ai| face_of[&(2 * ai + 1)] == outside)
             .expect("the outer piece borders the outside");
-        let overhang_ix = face_of[&(2 * (ns + outer_ai))];
+        let overhang_ix = face_of[&(2 * outer_ai)];
         let bite_ix = *bounded
             .iter()
             .find(|&&i| i != big_ix && i != overhang_ix)

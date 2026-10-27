@@ -114,42 +114,12 @@ impl MergedCircle {
     }
 }
 
-/// **One arc of a circle a segment cut** — the DCEL edge a crossed circle becomes.
+/// **One ruling piece on a class**, as the merge states it and the ruling split cuts it — for a
+/// class **parallel** to a cylinder's axis: the wall plane meets the lateral surface in up to two
+/// axis-parallel lines, and a piece of one is an ordinary two-ended edge whose carrier is the
+/// cylinder, not a plane pair. It enters the arrangement as a [`Piece`] (`OnCurve::Ruling`).
 ///
-/// **A circle leaves the parallel road here.** An uncut circle is a one-edge closed cell that
-/// the orbit walk cannot express (orbits need ≥ 2 half-edges and a vertex to turn at), which is why
-/// [`walk_cells`] appends it *after* the walk on pseudo-half-edges. Cut, it has endpoints and is
-/// an ordinary edge of the walk.
-///
-/// `end` is in the arc's **own travel order**, `end[0]` → `end[1]` counter-clockwise about the
-/// circle's normal. That is not a convention this crate invents: STEP's `EDGE_CURVE` runs from
-/// `edge_start` to `edge_end` along increasing parameter, and `nacre-step` already writes a
-/// circular edge that way — so the exporter needs nothing, and the STEP round-trip measures it.
-#[derive(Clone, Debug)]
-pub(crate) struct MergedArc {
-    pub cyl: usize,
-    pub def: nacre_topo::CylinderDef,
-    pub end: [NodeId; 2],
-    /// The contributions that **cover this arc** — not the circle's list entire.
-    ///
-    /// Not inherited whole from the circle: a face with a **hole** is not there at all over
-    /// the hole, and along the hole's rim it grazes where the band around it crosses.
-    /// [`split_circles`](fn@split_circles) selects per arc; `edge_mask` reads the result unchanged.
-    ///
-    /// Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
-    /// would, which is what "a piece of the same trace" means. (It is carried here because the
-    /// split is the only place that knows which circle an arc came from.)
-    pub merged: Vec<(SolidSide, SegKind)>,
-}
-
-/// **One ruling piece of the class's arrangement** — the straight sibling of [`MergedArc`], for a
-/// class **parallel** to a cylinder's axis: the wall plane meets the
-/// lateral surface in up to two axis-parallel lines, and a piece of one is an ordinary two-ended
-/// edge whose carrier is the cylinder, not a plane pair.
-///
-/// `end` is in the piece's **own travel order**: `end[0]` → `end[1]` runs along `+m` (the
-/// cylinder's axis direction) — the straight reading of [`MergedArc`]'s CCW convention, read the
-/// same way (`edge_at`: the even half-edge travels the stated way, its twin the other).
+/// `end` ascends `+m`, the cylinder's axis direction — [`Piece`]'s convention for a ruling piece.
 ///
 /// `side` names which of the two parallel rulings ([`combinatorics::RulingCarrier::side`] — the
 /// sign of `(x − o) · (m × n̂)` against the class's canonical coefficients).

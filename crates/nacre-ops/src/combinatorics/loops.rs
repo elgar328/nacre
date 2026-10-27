@@ -510,8 +510,8 @@ pub(crate) fn arc_departure_side(
 ///   the cap's own class, on a lateral the cap across the edge — the class the lateral roads
 ///   read the arc's station from.
 /// * a **ruling** has none — the same arm says a plane parallel to the axis meets the lateral along
-///   rulings and "the endpoints decide". `MergedRuling::end` ascending the axis is the
-///   *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
+///   rulings and "the endpoints decide". a ruling `arrangement::Piece`'s `end` ascending the axis
+///   is the *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
 ///   coordinate rather than read off a rule.
 ///
 /// `side` is [`ruling_side`]'s one spelling, and it needs a point on the ruling

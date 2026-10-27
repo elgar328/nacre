@@ -30,7 +30,7 @@ pub(super) fn emit_faces(
     // glob-imported name here, which is why the identity is always spelled out in full.
     // The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
     // that is the one fact a name cannot always give back (see `draft::Ring`). A circle cell
-    // (pseudo-half-edge past the segment range) has no nodes — its boundary is the cylinder
+    // (pseudo-half-edge past the piece range) has no nodes — its boundary is the cylinder
     // class itself.
     let bound_of = |cell: &Cell| -> crate::draft::Bound {
         if let Some(&he) = cell.half_edges.first()
@@ -48,26 +48,9 @@ pub(super) fn emit_faces(
             cell.half_edges
                 .iter()
                 .map(|&he| match edges.kind(he) {
-                    HalfEdgeKind::Seg(i) => crate::combinatorics::Wall::Plane(edges.segs[i].wall),
-                    // `edge_at`'s own convention, carried not re-derived: `MergedArc::end` runs
-                    // counter-clockwise about the axis, so the even half-edge travels that way
-                    // and its twin the other.
-                    HalfEdgeKind::Arc(i) => crate::combinatorics::Wall::Arc {
-                        cyl: edges.arcs[i].cyl,
-                        ccw: he % 2 == 0,
-                        plane: wc,
-                    },
-                    // Same shape for a ruling: `MergedRuling::end` ascends the axis, the even
-                    // half-edge travels up.
-                    HalfEdgeKind::Ruling(i) => {
-                        let r = &edges.rulings[i];
-                        crate::combinatorics::Wall::Ruling {
-                            cyl: r.cyl,
-                            side: r.side,
-                            up: he % 2 == 0,
-                            plane: wc,
-                        }
-                    }
+                    // The piece's own convention ([`Piece::wall`]): the even half-edge travels
+                    // `end[0] → end[1]`.
+                    HalfEdgeKind::Piece(i) => edges.pieces[i].wall(he % 2 == 0, wc),
                     // Mirrors `origin`'s statement: the nodes map above already refused it.
                     HalfEdgeKind::Circle(_) => {
                         unreachable!("a circle's pseudo-half-edge has no vertex to leave")
@@ -131,7 +114,7 @@ pub(super) fn emit_faces(
     // above: collected from the cells, outside the keep filter.
     //
     // **Which half-edge borders the disk side, derived.**
-    // `MergedArc::end` runs counter-clockwise about the *axis*, so the even half-edge travels
+    // An arc's `end` runs counter-clockwise about the *axis* ([`Piece`]), so the even half-edge travels
     // `+θ̂`. The walk keeps a cell on the **left of its travel in the root face's frame**, whose
     // outward is `n_out = frame_sign · n_P` ([`crate::planes::WorkingPlane::frame_sign`] — the
     // sentence's one home; the ∥ road's `ruling_interior_is_even` cites it too), so
@@ -159,33 +142,35 @@ pub(super) fn emit_faces(
     // with this rule; a convex arc, whose cells' corners can all fall outside, goes unchecked.
     // Measured 3,260 of 3,260 on the census corpus. That check is what makes this a *derivation*
     // rather than a third guess.
-    let ns_arcs = 2 * edges.segs.len();
     // Arcs are split only on a class with a world statement — `split_circles` reads the class's
     // world coefficients before it cuts a circle (`circle_crossings`) — so every arc below has one.
     let world = jd.planes[wc].world.as_ref();
     let arc_labels = edges
-        .arcs
+        .pieces
         .iter()
         .enumerate()
         .filter_map(|(i, ma)| {
+            let OnCurve::Arc { cyl, def } = &ma.on else {
+                return None;
+            };
             // `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
             // here would be that function's second spelling.
             let axis_up = crate::planes::plus_t_is_above(
                 world.expect("an arc is split only on a class with a world statement"),
-                &ma.def,
+                def,
             );
-            let even = ns_arcs + 2 * i;
+            let even = 2 * i;
             let he = even + usize::from(axis_up != (jd.planes[wc].frame_sign > 0));
             #[cfg(test)]
             disk_side_probe::record(
                 cells
                     .iter()
                     .position(|q| q.half_edges.contains(&even))
-                    .and_then(|cx| cell_side(jd, edges, &cells[cx], &ma.def)),
+                    .and_then(|cx| cell_side(jd, edges, &cells[cx], def)),
                 cells
                     .iter()
                     .position(|q| q.half_edges.contains(&(even + 1)))
-                    .and_then(|cx| cell_side(jd, edges, &cells[cx], &ma.def)),
+                    .and_then(|cx| cell_side(jd, edges, &cells[cx], def)),
                 he == even,
                 jd.planes[wc].frame_sign,
             );
@@ -203,7 +188,7 @@ pub(super) fn emit_faces(
             // The label and the trace that made it, **from one visit to one arc** — see
             // [`ArcLabel`] for why they may not become two maps.
             Some((
-                ma.cyl,
+                *cyl,
                 ArcLabel {
                     ends: ma.end,
                     label: labels[c],

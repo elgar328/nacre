@@ -57,20 +57,23 @@ pub(super) fn per_class(
     // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
     // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
     // so it is dropped here and **counted** by the chart's own census rather than guessed at.
-    // Walked by index rather than `enumerate`: the half-edge number below is `2·(ns+na) + 2i`,
-    // and indexing keeps `i` used in every build (a discarded `enumerate` index is a lint, and an
-    // `allow` for it would be a second thing to keep true).
-    let ruling_extents: Vec<(usize, RulingExtent)> = (0..edges.rulings.len())
-        .filter_map(|i| {
-            let r = &edges.rulings[i];
+    let ruling_extents: Vec<(usize, RulingExtent)> = edges
+        .pieces
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| {
+            let OnCurve::Ruling { cyl, def, side, .. } = &p.on else {
+                return None;
+            };
+            let (cyl, side) = (*cyl, *side);
             // A sectioned class's ruling is not a line of the lateral's chart: no face of the class
             // reaches the lateral, so it splits no cell there (see the check above).
-            if sectioned(r.cyl) {
+            if sectioned(cyl) {
                 return None;
             }
             let z = [
-                node_axis_param(jd, &r.def, r.end[0])?,
-                node_axis_param(jd, &r.def, r.end[1])?,
+                node_axis_param(jd, def, p.end[0])?,
+                node_axis_param(jd, def, p.end[1])?,
             ];
             // The chart's vertical answer — see [`RulingExtent::label`] and
             // [`RulingExtent::outer`], the two cells beside the ruling. Each is an `Option` rather
@@ -78,18 +81,17 @@ pub(super) fn per_class(
             // differ between a test build and a release one, and then the census would be measuring
             // a corpus production never sees.
             let (label, outer) = {
-                let base = 2 * (edges.segs.len() + edges.arcs.len());
                 let cell_at = |even: bool| -> Option<Label> {
-                    Some(labels[*face_of.get(&(base + 2 * i + usize::from(!even)))?])
+                    Some(labels[*face_of.get(&(2 * i + usize::from(!even)))?])
                 };
                 // A **tangent** ruling (`side == 0`) has no interior side on this class:
                 // the plane touches the cylinder, and both cells beside the line lie outside its
                 // disk. Its extent carries no label — the chart reads it as a station where the
                 // face ends, not as a wall with a chamber behind it.
-                let inside = if r.side == 0 {
+                let inside = if side == 0 {
                     None
                 } else {
-                    ruling_interior_is_even(jd, wc, r.side)
+                    ruling_interior_is_even(jd, wc, side)
                 };
                 let out = inside.and_then(cell_at);
                 let outer = inside.and_then(|inside| cell_at(!inside));
@@ -102,7 +104,7 @@ pub(super) fn per_class(
                     // exception) and that says nothing about the side.
                     // Recorded only where a label was formed, so `None` means one thing — the content
                     // did not distinguish — and never "there was nothing to check".
-                    if let Some(s) = r.merged.first().map(|m| m.0) {
+                    if let Some(s) = p.merged.first().map(|m| m.0) {
                         let has = |l: Label| {
                             let b = match s {
                                 crate::planes::SolidSide::A => 0,
@@ -116,7 +118,8 @@ pub(super) fn per_class(
                             // results are such a population on a through-axis class), so
                             // the content agrees with the derivation when the cell on the material's
                             // side has the solid and the other does not.
-                            let material_inside = r.orient > 0;
+                            let material_inside =
+                                matches!(p.on, OnCurve::Ruling { orient, .. } if orient > 0);
                             let verdict = match (has(i_l), has(e_l)) {
                                 (a, b) if a != b => Some(a == material_inside),
                                 _ => None,
@@ -129,30 +132,30 @@ pub(super) fn per_class(
                                 Some(false),
                                 "{}: class {wc}, side {}",
                                 ruling_probe::WRONG_SIDE,
-                                r.side
+                                side
                             );
                             ruling_probe::SIDE_CHECK.push(verdict);
                         }
                     }
                     // A tangent piece (`side == 0`) carries no label by design; the
                     // ledger's proposition is about the rulings a chamber lies behind.
-                    if r.side != 0 {
+                    if side != 0 {
                         ruling_probe::LABELLED.push(out.is_some());
                     }
                 }
                 (out, outer)
             };
             Some((
-                r.cyl,
+                cyl,
                 RulingExtent {
                     wall: wc,
-                    side: r.side,
-                    end: r.end,
+                    side,
+                    end: p.end,
                     z,
                     label,
                     outer,
                     #[cfg(test)]
-                    marks: r.merged.clone(),
+                    marks: p.merged.clone(),
                 },
             ))
         })
@@ -305,8 +308,8 @@ pub(crate) static MIXED_CLASS_AUDIT: MixedClassAudit = MixedClassAudit {
 };
 
 impl<'a> ClassEdges<'a> {
-    /// Run the arc split — and, when the class carries them, the chord injection and the ruling
-    /// split — and hold the result: **the one place a class's edges are assembled.**
+    /// Run the arc split and, when the class carries rulings, the ruling split, and hold the result
+    /// as one list of pieces: **the one place a class's edges are assembled.**
     #[allow(clippy::too_many_arguments)]
     pub(super) fn of(
         jd: &Judge<'_, WorkingPlane>,
@@ -386,7 +389,7 @@ impl<'a> ClassEdges<'a> {
         }
         type AfterCircles<'a> = (
             Cow<'a, [MergedSeg]>,
-            Cow<'a, [MergedArc]>,
+            Vec<Piece>,
             Cow<'a, [MergedCircle]>,
             Vec<(usize, CutRim)>,
         );
@@ -398,11 +401,11 @@ impl<'a> ClassEdges<'a> {
                     // least one arc (a tangency is skipped before it is collected). So "was split"
                     // and "has arcs" are one fact.
                     debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
-                    (Cow::Owned(s), Cow::Owned(a), Cow::Owned(c), r)
+                    (Cow::Owned(s), a, Cow::Owned(c), r)
                 }
                 None => (
                     Cow::Borrowed(segs),
-                    Cow::Borrowed(&[][..]),
+                    Vec::new(),
                     Cow::Borrowed(circles),
                     Vec::new(),
                 ),
@@ -413,10 +416,16 @@ impl<'a> ClassEdges<'a> {
             Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
             None => (segs2, Cow::Borrowed(rulings)),
         };
+        // Segments, then arcs, then ruling pieces — the order [`ClassEdges`] numbers them in.
+        let pieces = segs3
+            .into_owned()
+            .into_iter()
+            .map(Piece::from)
+            .chain(arcs)
+            .chain(rulings2.into_owned().into_iter().map(Piece::from))
+            .collect();
         Ok(ClassEdges {
-            segs: segs3,
-            arcs,
-            rulings: rulings2,
+            pieces,
             circles: circles2,
             cut_rims,
             wc,
@@ -425,91 +434,47 @@ impl<'a> ClassEdges<'a> {
 
     /// Where the walk's half-edges end and the circles' pseudo-half-edges begin.
     pub(super) fn he_count(&self) -> usize {
-        2 * (self.segs.len() + self.arcs.len() + self.rulings.len())
+        2 * self.pieces.len()
     }
 
     /// **The one classifier.** Every reader of a half-edge's kind asks this.
     pub(super) fn kind(&self, he: usize) -> HalfEdgeKind {
-        let ns = self.segs.len();
-        let na = self.arcs.len();
-        if he < 2 * ns {
-            HalfEdgeKind::Seg(he / 2)
-        } else if he < 2 * (ns + na) {
-            HalfEdgeKind::Arc((he - 2 * ns) / 2)
-        } else if he < self.he_count() {
-            HalfEdgeKind::Ruling((he - 2 * (ns + na)) / 2)
+        if he < self.he_count() {
+            HalfEdgeKind::Piece(he / 2)
         } else {
             HalfEdgeKind::Circle((he - self.he_count()) / 2)
         }
     }
 
-    /// The vertex a half-edge leaves. `he % 2 == 0` takes `end[0]` — one rule, all ranges.
+    /// The vertex a half-edge leaves. `he % 2 == 0` takes `end[0]` — one rule, all pieces.
     pub(super) fn origin(&self, he: usize) -> NodeId {
         match self.kind(he) {
-            HalfEdgeKind::Seg(i) => self.segs[i].end[he % 2],
-            HalfEdgeKind::Arc(i) => self.arcs[i].end[he % 2],
-            HalfEdgeKind::Ruling(i) => self.rulings[i].end[he % 2],
+            HalfEdgeKind::Piece(i) => self.pieces[i].end[he % 2],
             HalfEdgeKind::Circle(_) => {
                 unreachable!("a circle's pseudo-half-edge has no vertex to leave")
             }
         }
     }
 
-    /// **The one place a `RingEdge` is made from a half-edge.**
-    ///
-    /// **One spelling, so there is nothing to drift.** A second one that passes
-    /// `Carrier::plane(wall)` — that is, `sense: None` — drops the sense a split carries onto its
-    /// sub-segments, the one fact the endpoints cannot supply.
+    /// **The one place a `RingEdge` is made from a half-edge.** The carrier, sense included, is the
+    /// piece's ([`Piece::carrier`]) — a second spelling that passed `Carrier::plane(wall)`, that is
+    /// `sense: None`, would drop the sense a split carries onto its sub-segments, the one fact the
+    /// endpoints cannot supply.
     pub(super) fn edge_at(&self, he: usize) -> combinatorics::RingEdge {
-        let carrier = match self.kind(he) {
-            // `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge
-            // travels that way and its twin the other. The convention is stated once, at the
-            // split; this is the only place it is read.
-            HalfEdgeKind::Arc(i) => {
-                let a = &self.arcs[i];
-                combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
-                    cyl: a.cyl,
-                    def: a.def.clone(),
-                    ccw: he % 2 == 0,
-                }))
-            }
-            HalfEdgeKind::Seg(i) => combinatorics::Carrier::Plane {
-                wall: self.segs[i].wall,
-                sense: self.segs[i].sense.map(|s| if he % 2 == 0 { s } else { -s }),
-            },
-            // `MergedRuling::end` runs along `+m`, so the even half-edge travels up and its
-            // twin down — the straight reading of the arc convention above.
-            HalfEdgeKind::Ruling(i) => {
-                let r = &self.rulings[i];
-                combinatorics::Carrier::Ruling(Box::new(combinatorics::RulingCarrier {
-                    cyl: r.cyl,
-                    def: r.def.clone(),
-                    side: r.side,
-                    up: he % 2 == 0,
-                    plane: self.wc,
-                }))
-            }
-            HalfEdgeKind::Circle(_) => {
-                unreachable!("a circle's pseudo-half-edge is not a ring edge")
-            }
+        let HalfEdgeKind::Piece(i) = self.kind(he) else {
+            unreachable!("a circle's pseudo-half-edge is not a ring edge")
         };
+        let p = &self.pieces[i];
         // The endpoints as handles on this edge's line, carried by the producer. Not recovered from
         // the names: a canonical name need not mention `wc` or the wall (see
-        // `combinatorics::RingEdge`). An arc's ends are pierce points by construction — and a
-        // ruling's too — which is what `EndPin::Cylinder` says.
-        let (from_h, to_h) = match self.kind(he) {
-            HalfEdgeKind::Seg(i) => (self.segs[i].end_h[he % 2], self.segs[i].end_h[1 - he % 2]),
-            HalfEdgeKind::Arc(_) | HalfEdgeKind::Ruling(_) | HalfEdgeKind::Circle(_) => (
-                combinatorics::EndPin::Cylinder,
-                combinatorics::EndPin::Cylinder,
-            ),
-        };
+        // `combinatorics::RingEdge`).
+        let pins = p.pins();
         combinatorics::RingEdge {
             node: self.origin(he),
             to: self.origin(he ^ 1),
-            carrier,
-            from_h,
-            to_h,
+            carrier: p.carrier(he % 2 == 0, self.wc),
+            from_h: pins[he % 2],
+            to_h: pins[1 - he % 2],
         }
     }
 }

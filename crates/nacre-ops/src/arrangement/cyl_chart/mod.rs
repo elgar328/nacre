@@ -155,7 +155,7 @@ pub(crate) struct Chart {
     pub(crate) z_lines: Vec<ZLine>,
     pub(crate) theta: Vec<ThetaSeg>,
     /// How many rulings arrived with `z` descending, so that [`chart_of`] had to swap `end`
-    /// alongside `z` to keep `end[e] ↔ z[e]` true. Always 0 — `MergedRuling::end` is stated in
+    /// alongside `z` to keep `end[e] ↔ z[e]` true. Always 0 — a ruling `Piece`'s `end` is stated in
     /// ascending axis order — and the census asserts it, which is the count's one reader.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) end_swapped: usize,
