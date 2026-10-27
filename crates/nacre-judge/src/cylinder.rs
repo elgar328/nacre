@@ -486,6 +486,64 @@ impl<W: PlaneWitness> Judge<'_, W> {
         (0..3).any(|k| y[k].sub(&x[k], prec).sign().is_some())
     }
 
+    /// **Is the line along cylinder `def`'s axis through point `at` strictly outside every arc of
+    /// `arcs`?** — each arc two radial directions `[from, to]`, counter-clockwise about the axis
+    /// direction `m` (ends included in the arc; `from` and `to` pointing one way is the whole turn).
+    /// The answer reads only the line's direction off the axis, so it holds whether the line lies on
+    /// the cylinder or beside it, which an interval cannot tell apart. `true` is a proof; `false` where an arc may hold the direction, the box
+    /// cannot be formed, or the arithmetic overflows.
+    pub fn axis_line_off_arcs(
+        &self,
+        def: &CylinderDef,
+        at: CylPoint<'_>,
+        arcs: &[[[Rat; 3]; 2]],
+    ) -> bool {
+        let prec = self.standard.prec;
+        let Some(b) = self.point_box(at, prec) else {
+            return false;
+        };
+        let hp = |v: &[Rat; 3]| v.map(|x| HpBounded::of_rat(x, prec));
+        let (o, m) = (hp(&def.origin()), hp(&def.dir()));
+        let dot = |x: &[HpBounded; 3], y: &[HpBounded; 3]| {
+            x[0].mul(&y[0], prec)
+                .add(&x[1].mul(&y[1], prec), prec)
+                .add(&x[2].mul(&y[2], prec), prec)
+        };
+        // The point less the axis origin. Its axis component needs no removing: a turn about the
+        // axis, `(x × v) · m`, does not change when `v` gains a multiple of `m`.
+        let v: [HpBounded; 3] = std::array::from_fn(|k| b[k].sub(&o[k], prec));
+        let cross = |x: &[HpBounded; 3], y: &[HpBounded; 3]| -> [HpBounded; 3] {
+            [
+                x[1].mul(&y[2], prec).sub(&x[2].mul(&y[1], prec), prec),
+                x[2].mul(&y[0], prec).sub(&x[0].mul(&y[2], prec), prec),
+                x[0].mul(&y[1], prec).sub(&x[1].mul(&y[0], prec), prec),
+            ]
+        };
+        // The sign of `(x × y) · m`: `Some(true)` when `y` is counter-clockwise of `x` by less than
+        // a half turn, `None` where the box straddles.
+        let turn = |x: &[HpBounded; 3], y: &[HpBounded; 3]| dot(&cross(x, y), &m).sign();
+        arcs.iter().all(|[from, to]| {
+            let exact_turn = nacre_exact::cross3_rat(from, to)
+                .and_then(|c| nacre_exact::dot3_rat(&c, &def.dir()));
+            let Some(ft) = exact_turn else {
+                return false;
+            };
+            let zero = Rat::from_int(0);
+            let (f, t) = (hp(from), hp(to));
+            if ft > zero {
+                // Inside exactly when `v` is counter-clockwise of `from` and clockwise of `to`.
+                turn(&f, &v) == Some(false) || turn(&v, &t) == Some(false)
+            } else if ft < zero {
+                // The complement of the shorter way round from `to` to `from`.
+                turn(&t, &v) == Some(true) && turn(&v, &f) == Some(true)
+            } else if nacre_exact::dot3_rat(from, to).is_some_and(|d| d > zero) {
+                false // `from` and `to` point one way: the whole turn
+            } else {
+                turn(&f, &v) == Some(false) // exactly a half turn
+            }
+        })
+    }
+
     /// **Is `n` strictly inside the counter-clockwise arc `lo → hi`**, three points of one circle of
     /// cylinder `def`, read from their interval boxes: travelling counter-clockwise about the axis
     /// `m`, `(lo, n, hi)` is in that order exactly when `m · ((n − lo) × (hi − lo)) > 0` — the sign

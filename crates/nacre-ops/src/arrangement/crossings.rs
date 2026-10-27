@@ -64,7 +64,7 @@ pub(super) fn split_circles(
             .expect("a cylinder this split listed")
     };
     let here: Vec<usize> = circles.iter().map(|c| c.cyl).collect();
-    let mut on_seg = collect(
+    let (mut on_seg, cuts) = collect(
         jd,
         cyls,
         wc,
@@ -110,15 +110,52 @@ pub(super) fn split_circles(
                 .map(|n| (n, None))
                 .collect())
         },
-        |cyl, n, _meet, on_seg| {
-            // The crossing's name, as the table knows it: a class through a corner names the
-            // corner again here, and the tables key by name.
-            let n = canon(n);
-            on_circle[index(cyl)].push(n);
-            on_seg.push(n);
-            Ok(())
+        // **A crossing shown off every arc the class carries is no cut point** — asked against each
+        // arc's two ends alone ([`combinatorics::theta_between`]), under the table's name, so the
+        // points of the circle's continuation are never ordered against each other: two names
+        // there for one point would refuse a point no edge of this class has. An arc's own ends
+        // are cut points by construction (fed in above), and a crossing that is another name of
+        // one is that end. Three circles drop nothing: one with a contribution that is the whole
+        // circle (every crossing is on it), one with no contribution (where «off every arc» would
+        // be an empty truth), and one with a closed arc (`p == q`), which `theta_between` reads as
+        // the whole turn less its end and so answers `false` for another name of the end itself.
+        // What cannot be shown off stays a cut point: off an arc it is a vertex where nothing
+        // crosses the segment, which costs a vertex, where dropping a crossing on an arc would
+        // lose one. Cutting every crossing of the whole circle instead puts a vertex on the segment
+        // where nothing crosses it (measured: 4 per op on the `tangentline slab 1.6` controls, 16 on
+        // `rrect-box`, 0 on the other 353 census rows), and where that point *is* a vertex of the
+        // segment already (a face through the top of a fillet's circle: the user's gusset foot,
+        // `y = 0 = −2 + r`) the segment split refuses it as two names for one point.
+        //
+        // The crossing travels under the table's name: a class through a corner names the corner
+        // again here, and the tables key by name.
+        |cyl, n, _meet| {
+            let ci = index(cyl);
+            let x = canon(n);
+            let on = Landing::On {
+                cut: Some(ci),
+                node: x,
+            };
+            let Some(extents) = circles[ci]
+                .merged
+                .iter()
+                .map(|&(_, _, arc)| arc)
+                .collect::<Option<Vec<[NodeId; 2]>>>()
+            else {
+                return on;
+            };
+            let off = !extents.is_empty()
+                && extents.iter().all(|&[p, q]| canon(p) != canon(q))
+                && !extents.iter().flatten().any(|&e| canon(e) == x)
+                && extents.iter().all(|&[p, q]| {
+                    combinatorics::theta_between(jd, cyl, &cyls[cyl].def, p, q, x) == Some(false)
+                });
+            if off { Landing::Off } else { on }
         },
     )?;
+    for (ci, n) in cuts {
+        on_circle[ci].push(n);
+    }
 
     // Nothing crossed: the caller keeps its own slices and no edge is copied. The common case
     // pays for the question and not for an answer it does not need.
@@ -129,25 +166,6 @@ pub(super) fn split_circles(
     let mut arcs = Vec::new();
     let mut cut_rims: Vec<(usize, CutRim)> = Vec::new();
 
-    // **The circle side runs first, because it decides which crossings are cut points
-    // at all**. `circle_crossings` names where the segment's *line* meets the whole
-    // circle; but the class's circle is only where its arcs are (`MergedCircle::merged` — a
-    // fillet's quarter, a slot's half), and a crossing on the circle's **continuation** lies on
-    // no edge of this class. Cutting it anyway puts a vertex on the segment where nothing
-    // crosses it (measured: 4 per op on the `tangentline slab 1.6` controls, 16 on
-    // `rrect-box`, 0 on the other 353 census rows), and where that point *is* a vertex of the
-    // segment already (a face through the top of a fillet's circle: the user's gusset foot,
-    // `y = 0 = −2 + r`) the segment split refuses it as two names for one point.
-    // **The rule: a crossing shown off every arc the class carries is no cut point.** An arc's own
-    // ends are cut points by construction (fed in above); every other crossing is asked against
-    // each arc's two ends, and one shown off all of them leaves before the order is formed. One
-    // that cannot be shown off stays a cut point: off an arc it is a vertex where nothing crosses
-    // the segment, which costs a vertex, where dropping a crossing on an arc would lose one.
-    //
-    // Segments first ("the sharper question before the vaguer one") would be an unmeasured order,
-    // and the order changes no refusal: both halves refuse a point wearing two names with the same
-    // reject, and identity on both halves is the alias table's (`canon`), so what reaches either
-    // refusal is a coincidence no discovery event recorded — the honest floor.
     for (ci, circ) in circles.iter().enumerate() {
         let raw = std::mem::take(&mut on_circle[ci]);
         if raw.is_empty() {
@@ -173,37 +191,6 @@ pub(super) fn split_circles(
             }
         }
         nodes.sort_unstable();
-        // **A crossing shown off every arc leaves before the order is formed** — asked against
-        // each arc's two ends alone ([`combinatorics::theta_between`]), so the points of the
-        // circle's continuation are never ordered against each other: two names there for one
-        // point would refuse a point no edge of this class has. What this cannot show stays, and
-        // the order below refuses it if it is another name of a point already there. Three
-        // circles drop nothing here: one with a contribution that is the whole circle (every
-        // crossing is on it), one with no contribution (where «off every arc» would be an empty
-        // truth), and one with a closed arc (`p == q`), which `theta_between` reads as the whole
-        // turn less its end and so answers `false` for another name of the end itself.
-        let extents: Option<Vec<[NodeId; 2]>> =
-            circ.merged.iter().map(|&(_, _, arc)| arc).collect();
-        let mut off_arcs: Vec<NodeId> = Vec::new();
-        if let Some(extents) = extents
-            && !extents.is_empty()
-            && extents.iter().all(|&[p, q]| canon(p) != canon(q))
-        {
-            nodes.retain(|&x| {
-                let off = !is_end(x)
-                    && extents.iter().all(|&[p, q]| {
-                        combinatorics::theta_between(jd, circ.cyl, &cyls[circ.cyl].def, p, q, x)
-                            == Some(false)
-                    });
-                if off {
-                    off_arcs.push(x);
-                }
-                !off
-            });
-            for v in on_seg.iter_mut() {
-                v.retain(|&n| !off_arcs.iter().any(|&d| canon(d) == canon(n)));
-            }
-        }
         // ---- the circle → arcs, in θ order about the seam ----
         let order = combinatorics::circular_order(jd, circ.cyl, &cyls[circ.cyl].def, &nodes)
             .map_err(|e| reject(e.reason()))?;
@@ -560,7 +547,7 @@ fn lateral_crossings(
     let Some(v) = jd.world_rat(sg.wall) else {
         return Ok(None);
     };
-    let (o, m) = (def.origin(), def.dir());
+    let m = def.dir();
     // **The line runs along the axis when both normals are perpendicular to it.** The wall's is
     // stated exactly; so is `wc`'s where it has a narrow world name. A class with no world statement
     // here sections the cylinder — it carries rulings, so the gate found it along the axis
@@ -579,6 +566,11 @@ fn lateral_crossings(
     let crossing = |root: QuadRoot, at: combinatorics::PiercePoint| {
         (combinatorics::NodeId::pierce(wc, sg.wall, cyl, root), at)
     };
+    // A point of the segment the interval road can box: a three-plane end.
+    let end_point = sg.end.iter().find_map(|&e| match e.kind() {
+        NodeKind::ThreePlane(t) => Some(nacre_judge::cylinder::CylPoint::Three(t)),
+        NodeKind::Pierce { .. } => None,
+    });
     match jd.line_meet(wc, sg.wall, def, along_axis) {
         LineMeet::Pair(roots) => {
             let mut out = Vec::with_capacity(2);
@@ -600,32 +592,83 @@ fn lateral_crossings(
         // ([`crate::planes::SharedRuling`]) crosses no ruling — it *is* one, and the fold in
         // [`split_rulings`] states it there.
         LineMeet::OnRuling(_) if on_a_shared_line => Ok(Some(Vec::new())),
-        // **The segment is asked, not its line.** A face's rulings and arcs stand at angles its
-        // arc holds, and two lines along the axis on one cylinder at different angles never
-        // meet — so a segment at an angle no lateral face holds crosses none of their edges. Its
-        // span is not read: the angle alone is what the population needs, and the ends' axis
-        // parameters have no reader for a three-plane end.
         LineMeet::OnRuling(line) => {
-            let Some(theta) = crate::planes::Theta::at_line(&line.base(), &o, &m) else {
-                return Ok(None);
-            };
-            let seg = crate::planes::Footprint { span: None, theta };
-            if pieces()
-                .iter()
-                .all(|fp| crate::planes::pieces_clear(def, &seg, def, fp))
-            {
-                return Ok(Some(Vec::new()));
+            match line_off_faces(jd, def, Some(&line), end_point, &pieces()) {
+                Some(true) => Ok(Some(Vec::new())),
+                // On a face: the ruling split does not arrange the shape yet — nor where the planes
+                // degenerate.
+                Some(false) => Err(reject(RejectReason::RulingBoundNotYet)),
+                None => Ok(None),
             }
-            // On a face: the ruling split does not arrange the shape yet — nor where the planes
-            // degenerate.
-            Err(reject(RejectReason::RulingBoundNotYet))
         }
         LineMeet::CoincidentPlanes | LineMeet::ParallelPlanes => {
             Err(reject(RejectReason::RulingBoundNotYet))
         }
+        // Along the axis, the interval road cannot tell a line on the surface from one beside it;
+        // either way it crosses no ruling, and it touches a face only if it lies at an angle one
+        // holds — the question [`line_off_faces`] answers from a point of the segment.
+        LineMeet::Undecided
+            if along_axis && line_off_faces(jd, def, None, end_point, &pieces()) == Some(true) =>
+        {
+            Ok(Some(Vec::new()))
+        }
         LineMeet::Undecided => Err(undecided()),
         LineMeet::Wide | LineMeet::Overflow => Ok(None),
     }
+}
+
+/// **Does a segment's line along cylinder `def`'s axis miss every lateral face of it?** — one
+/// predicate, asked on both roads of a line that lies on the surface or that the intervals cannot
+/// tell from one there: such a line crosses no ruling (they are parallel) and no circle (its class
+/// is ∥ the axis), so it touches the lateral only where a face holds its angle.
+///
+/// **The segment is asked, not its line**, and only its angle: a face's rulings and arcs stand at
+/// angles its arc holds, and two lines along the axis on one cylinder at different angles never
+/// meet. The span is not read — the angle alone is what the population needs.
+///
+/// Two bodies. Holding the exact line, the half-space along its own direction ([`Theta::at_line`]
+/// as a piece `span: None` × its angle, against each face — [`crate::planes::pieces_clear`]):
+/// `Some(true)` off every face, `Some(false)` on one, `None` where the angle has no rational
+/// spelling. Holding only a point of the segment, its direction off the axis against each face's
+/// arc ([`Judge::axis_line_off_arcs`] — a direction is the same along the whole line, so any point
+/// of it will do): `Some(true)` where that proves the line off, `None` otherwise — a face whose
+/// angle is not an arc (`Theta::Whole`, or one direction) is not shown clear. Where both bodies can
+/// answer, a debug build checks the interval one never proves clear what the exact one does not.
+///
+/// [`Theta::at_line`]: crate::planes::Theta::at_line
+fn line_off_faces(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    line: Option<&nacre_exact::quad::MeetLine>,
+    point: Option<nacre_judge::cylinder::CylPoint<'_>>,
+    pieces: &[crate::planes::Footprint],
+) -> Option<bool> {
+    let interval = || -> bool {
+        let Some(point) = point else {
+            return false;
+        };
+        let arcs: Option<Vec<[[Rat; 3]; 2]>> = pieces
+            .iter()
+            .map(|fp| match fp.theta {
+                crate::planes::Theta::Arc(a) => Some([a.from, a.to]),
+                crate::planes::Theta::Whole | crate::planes::Theta::At(_) => None,
+            })
+            .collect();
+        arcs.is_some_and(|arcs| jd.axis_line_off_arcs(def, point, &arcs))
+    };
+    let Some(line) = line else {
+        return interval().then_some(true);
+    };
+    let theta = crate::planes::Theta::at_line(&line.base(), &def.origin(), &def.dir())?;
+    let seg = crate::planes::Footprint { span: None, theta };
+    let clear = pieces
+        .iter()
+        .all(|fp| crate::planes::pieces_clear(def, &seg, def, fp));
+    debug_assert!(
+        clear || !interval(),
+        "the interval body proves a line off the faces the exact one puts it on"
+    );
+    Some(clear)
 }
 
 /// One crossing [`lateral_crossings`] found: its Pierce name, and the meet it was solved as (the
@@ -805,7 +848,7 @@ pub(super) fn split_rulings(
         }
     }
     let mut on_ruling: Vec<Vec<NodeId>> = vec![Vec::new(); rulings.len()];
-    let mut on_seg = collect(
+    let (mut on_seg, cuts) = collect(
         jd,
         cyls,
         wc,
@@ -822,55 +865,68 @@ pub(super) fn split_rulings(
             };
             Ok(xs.into_iter().map(|(n, meet)| (n, Some(meet))).collect())
         },
-        |cyl, n, meet, on_seg| {
+        // Which of `wc`'s rulings the crossing is on, `0` being `wc`'s tangent one — asked of the
+        // point ([`ruling_side_signed`]), not read off the crossing's own root (`Double`, i.e. the
+        // *line* `wc ∩ wall` touches the cylinder), which is the same statement only while `wc` is
+        // the wall that touches: a line tangent to the cylinder can cross a `wc` that cuts it, and
+        // then the root's `0` matches no ruling of `wc` at all. Then which piece of that ruling
+        // (several faces of one solid can put several pieces on one side), by the closed extent of
+        // the axis coordinate; beyond every piece, or no piece on that side, is off.
+        |cyl, n, meet| {
             let def = &cyls[cyl].def;
-            let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
+            let undecided = || Landing::Fails(reject(combinatorics::undecided_reason(cyls, &[wc])));
             let meet = meet.expect("a ruling crossing carries the meet it was solved as");
-            // Which of `wc`'s rulings the crossing is on, `0` being `wc`'s tangent one —
-            // asked of the point ([`ruling_side_signed`]), not read off the
-            // crossing's own root (`Double`, i.e. the *line* `wc ∩ wall` touches the
-            // cylinder), which is the same statement only while `wc` is the wall that
-            // touches: a line tangent to the cylinder can cross a `wc` that cuts it, and
-            // then the root's `0` matches no ruling of `wc` at all.
-            let side = meet.ruling_side(jd, wc, def).ok_or_else(undecided)?;
-            let Some(c) = AxisCoord::of_meet(jd, def, n, &meet) else {
-                return Err(undecided());
+            let Some(side) = meet.ruling_side(jd, wc, def) else {
+                return undecided();
             };
-            // Which piece of that ruling (several faces of one solid can put several
-            // pieces on one side): closed-extent test on the axis coordinate.
+            let Some(c) = AxisCoord::of_meet(jd, def, n, meet) else {
+                return undecided();
+            };
+            let (mut cut, mut landed) = (None, false);
             for (ri, r) in rulings.iter().enumerate() {
                 if r.cyl != cyl || r.side != side {
                     continue;
                 }
                 let [lo, hi] = &ruling_ends[ri];
-                let (a, b) = (
-                    c.cmp(lo, jd, def).ok_or_else(undecided)?,
-                    c.cmp(hi, jd, def).ok_or_else(undecided)?,
-                );
+                let (Some(a), Some(b)) = (c.cmp(lo, jd, def), c.cmp(hi, jd, def)) else {
+                    return undecided();
+                };
                 use core::cmp::Ordering::*;
                 match (a, b) {
+                    // Strictly inside: the ruling splits here, and the segment with it. Pieces on
+                    // one side do not overlap, so at most one holds the point inside.
                     (Greater, Less) => {
-                        // Strictly inside: the ruling splits here, and the segment with it.
-                        on_ruling[ri].push(aliases.canon_point(n));
-                        on_seg.push(aliases.canon_point(n));
+                        debug_assert!(cut.is_none(), "two ruling pieces on one side overlap");
+                        cut = Some(ri);
+                        landed = true;
                     }
+                    // On an end: the T-junction. One point, and it must wear **one** name — the
+                    // crossing's `{wc, wall}` pair must be the very pair that named the ruling's
+                    // end, or the table must know the two names as one point — else two names
+                    // share the point.
                     (Equal, _) | (_, Equal) => {
-                        // On an end: the T-junction. One point, and it must wear **one**
-                        // name — the crossing's `{wc, wall}` pair must be the very pair
-                        // that named the ruling's end, or the table must know the
-                        // two names as one point — else two names share the point.
                         let end_n = if a == Equal { r.end[0] } else { r.end[1] };
                         if aliases.canon_point(end_n) != aliases.canon_point(n) {
-                            return Err(reject(RejectReason::CoincidentNodes));
+                            return Landing::Fails(reject(RejectReason::CoincidentNodes));
                         }
-                        on_seg.push(aliases.canon_point(n));
+                        landed = true;
                     }
                     _ => {} // beyond this piece: the surface continues, the face does not
                 }
             }
-            Ok(())
+            if landed {
+                Landing::On {
+                    cut,
+                    node: aliases.canon_point(n),
+                }
+            } else {
+                Landing::Off
+            }
         },
     )?;
+    for (ri, n) in cuts {
+        on_ruling[ri].push(n);
+    }
     let folds = segs
         .iter()
         .any(|sg| shared_here.iter().any(|&(t, _, _)| t == sg.wall));
@@ -1000,12 +1056,20 @@ fn fold_onto_rulings(
     Ok(kept)
 }
 
+/// [`collect`]'s product: each segment's cut points, and each `(piece, node)` a crossing cuts a piece
+/// of the kind at, in the order the walk found them.
+type Collected = (Vec<Vec<NodeId>>, Vec<(usize, NodeId)>);
+
+/// A crossing, by name, with the meet it was solved as where its kind reads it again.
+type Crossing = (NodeId, Option<combinatorics::PiercePoint>);
+
 /// **Every crossing a segment holds, for one kind of curve** — the one walk pass B makes over a
 /// class's segments, whatever it cuts them against. The kind supplies only its own answers: the
 /// cylinders it has curves of here (`here`), where a segment's line crosses one of them
 /// (`crossings`, each crossing's name and the meet it was solved as where the kind reads it again),
-/// and where a crossing the segment holds lands (`place`, which records it on the kind's pieces and
-/// in the segment's cut points). The cut points left on each segment come back (`on_seg[si]`).
+/// and where a crossing lands among its pieces (`land`, a [`Landing`]). The cut points left on each
+/// segment come back (`on_seg[si]`), with each `(piece, node)` a crossing cuts a piece of the kind at,
+/// in the order the walk found them.
 ///
 /// A segment whose two ends are one point cuts nothing — asked by **name**, which is the identity:
 /// two spellings of one point are refused upstream, not tolerated here (measured unexercised). A
@@ -1020,9 +1084,10 @@ fn fold_onto_rulings(
 /// when the population widens — so it is asked instead of assumed. The segment's two ends are
 /// located on its own line when a crossing first asks, not for every segment: a segment no
 /// crossing reaches is never asked, and its class may have no description to locate it by.
-/// A crossing, by name, with the meet it was solved as where its kind reads it again.
-type Crossing = (NodeId, Option<combinatorics::PiercePoint>);
-
+///
+/// `land` is asked before the segment's question, so a crossing **shown off every piece** of the kind
+/// on this class leaves first. Only a proof counts: a landing the pieces cannot judge waits for the
+/// segment's answer and is refused only where the segment holds the crossing.
 fn collect(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -1030,16 +1095,12 @@ fn collect(
     segs: &[MergedSeg],
     here: &[usize],
     crossings: impl Fn(usize, &MergedSeg, usize) -> Result<Vec<Crossing>, BoolError>,
-    mut place: impl FnMut(
-        usize,
-        NodeId,
-        Option<combinatorics::PiercePoint>,
-        &mut Vec<NodeId>,
-    ) -> Result<(), BoolError>,
-) -> Result<Vec<Vec<NodeId>>, BoolError> {
+    land: impl Fn(usize, NodeId, Option<&combinatorics::PiercePoint>) -> Landing,
+) -> Result<Collected, BoolError> {
     // A class with no world statement (it sections the cylinder) refuses by the gate's name.
     let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
     let mut on_seg: Vec<Vec<NodeId>> = vec![Vec::new(); segs.len()];
+    let mut cuts: Vec<(usize, NodeId)> = Vec::new();
     for (si, sg) in segs.iter().enumerate() {
         if sg.end[0] == sg.end[1] {
             continue;
@@ -1050,6 +1111,13 @@ fn collect(
                 continue;
             }
             for (n, meet) in crossings(si, sg, cyl)? {
+                // **A proof of absence outranks an undecided question.** A crossing shown off every
+                // piece of its kind cuts nothing, whatever the segment says; asked after, the
+                // segment's undecided answer would refuse a point no edge of this class has.
+                let landing = land(cyl, n, meet.as_ref());
+                if matches!(landing, Landing::Off) {
+                    continue;
+                }
                 let at =
                     combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
                         .ok_or_else(undecided)?;
@@ -1072,11 +1140,32 @@ fn collect(
                 {
                     continue;
                 }
-                place(cyl, n, meet, &mut on_seg[si])?;
+                match landing {
+                    Landing::Off => {}
+                    Landing::Fails(e) => return Err(e),
+                    Landing::On { cut, node } => {
+                        on_seg[si].push(node);
+                        cuts.extend(cut.map(|c| (c, node)));
+                    }
+                }
             }
         }
     }
-    Ok(on_seg)
+    Ok((on_seg, cuts))
+}
+
+/// **Where a crossing lands among a kind's pieces**, judged once, before the segment is asked
+/// ([`collect`]).
+enum Landing {
+    /// Shown off every piece of the kind on this class: it cuts nothing.
+    Off,
+    /// On a piece: `node` (the crossing under the table's name) cuts the segment, and the piece
+    /// `cut` — an index into the kind's own list — where it lands strictly inside one.
+    On { cut: Option<usize>, node: NodeId },
+    /// The pieces cannot place it — refused, but only once the segment is shown to hold it: a
+    /// crossing off the segment is no point of this class, and refusing it would refuse nothing
+    /// the class has.
+    Fails(BoolError),
 }
 
 /// **The order of distinct points along one curve**, by `cmp` over their indices `0..n`.

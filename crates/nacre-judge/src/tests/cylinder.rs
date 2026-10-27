@@ -399,3 +399,48 @@ fn a_circles_turn_reads_the_true_order_whatever_the_facing() {
         }
     }
 }
+
+/// **A line along the axis is off an arc by its direction alone, on both roads.** The point
+/// `x = 1, y = 0, z = 3` stands at `+x` from the axis (inside the radius — the answer reads
+/// directions, not the surface). Against a quarter from `+y` to `−x` it is off; against a quarter
+/// starting at `+x`, or a half turn from `−y` round to `+y`, it is on; a whole turn holds it.
+#[test]
+fn a_line_along_the_axis_is_off_an_arc_by_its_direction() {
+    let def = cylinder();
+    let v = |x: i128, y: i128| [Rat::from_int(x), Rat::from_int(y), Rat::from_int(0)];
+    for stated in [true, false] {
+        let ps = planes(stated);
+        let j = jd(&ps);
+        let at = CylPoint::Three([0, 1, 2]);
+        let off = |arcs: &[[[Rat; 3]; 2]]| j.axis_line_off_arcs(&def, at, arcs);
+        assert!(
+            off(&[[v(0, 2), v(-2, 0)]]),
+            "stated {stated}: a quarter beyond"
+        );
+        assert!(
+            off(&[[v(-2, 0), v(0, -2)]]),
+            "stated {stated}: the far quarter"
+        );
+        assert!(
+            !off(&[[v(2, 0), v(0, 2)]]),
+            "stated {stated}: a quarter starting there"
+        );
+        assert!(
+            !off(&[[v(0, -2), v(0, 2)]]),
+            "stated {stated}: a half turn through it"
+        );
+        assert!(
+            !off(&[[v(2, 0), v(2, 0)]]),
+            "stated {stated}: the whole turn"
+        );
+        assert!(
+            !off(&[[v(0, 2), v(-2, 0)], [v(0, -2), v(2, 0)]]),
+            "stated {stated}: off one arc, on the next"
+        );
+        // More than a half turn, the long way from `+y` round to `−y` through `−x`, misses `+x`.
+        assert!(
+            off(&[[v(0, 2), v(1, -2)]]),
+            "stated {stated}: the long way round"
+        );
+    }
+}
