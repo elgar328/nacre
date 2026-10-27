@@ -485,20 +485,29 @@ pub(crate) struct WorkingCyl {
     /// record ([`SharedRuling`]), carried with the class like `owner` so every road that holds
     /// the table reads it rather than deciding it again.
     pub(crate) shared: Vec<SharedRuling>,
-    /// **The plane classes with no world statement this cylinder is silent about** — the gate's
-    /// record ([`cylinder_gate`]), with what the gate proved of each ([`Silence`]). Every arm proves
-    /// that **no face of the class reaches this cylinder's lateral faces**, and that is what the
-    /// roads asking only [`WorkingCyl::is_silent`] lean on (a segment of the class splits no ruling
-    /// or circle of the cylinder, a corner of the class lies off its disks). Each arm proves more:
-    /// `Beside` that the whole cylinder lies on one side of the plane, `Apart` that the class reads
-    /// the cylinder's solid as filled, `Sectioned` that the class draws the section on its own
-    /// arrangement. The roads that would ask the class's coefficients about this cylinder answer
-    /// from the record instead. Every nameless class of the boolean is here, or the gate refused.
-    pub(crate) silent: Vec<(usize, Silence)>,
+    /// **What the gate hands the arrangement about plane classes and this cylinder** — one entry
+    /// per class with something to say ([`CylRecord`]), read through the methods below. Every
+    /// nameless class of the boolean is here, or the gate refused.
+    pub(crate) records: Vec<(usize, CylRecord)>,
     /// **The lateral faces' boxes**, one per face — `[low, high]` corners, rational and outward
-    /// ([`lateral_box`]). The gate's silence is proved against them and a ray proves its miss
-    /// against the same ones. Built only when a nameless class asks; empty otherwise.
+    /// ([`lateral_box`]). The gate's silence is proved against them. A ray's miss is proved
+    /// against the box of each arc it meets, which the same function builds for the arc's piece
+    /// (`combinatorics::arc_box_rat`), not against these. Built only when a nameless class asks;
+    /// empty otherwise.
     pub(crate) boxes: Vec<[[nacre_exact::Rat; 3]; 2]>,
+}
+
+/// **What the gate tells the arrangement about one plane class and a cylinder** — an entry of
+/// [`WorkingCyl::records`]. A pair with no entry has nothing to say downstream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CylRecord {
+    /// A class with no world statement the cylinder is silent about, with what the gate proved of
+    /// it. Every arm proves that **no face of the class reaches this cylinder's lateral faces**, and
+    /// that is what the roads asking only [`WorkingCyl::is_silent`] lean on (a segment of the class
+    /// splits no ruling or circle of the cylinder, a corner of the class lies off its disks). The
+    /// roads that would ask the class's coefficients about this cylinder answer from the record
+    /// instead.
+    Silent(Silence),
 }
 
 /// **What the gate proved of a nameless class it passed as silent about a cylinder.**
@@ -527,21 +536,23 @@ impl WorkingCyl {
     /// Whether class `wc` sections this cylinder ([`Silence::Sectioned`]) — its own arrangement
     /// draws the cylinder's rulings.
     pub(crate) fn sections(&self, wc: usize) -> bool {
-        self.silent
+        self.records
             .iter()
-            .any(|&(c, s)| c == wc && matches!(s, Silence::Sectioned))
+            .any(|&(c, r)| c == wc && r == CylRecord::Silent(Silence::Sectioned))
     }
 
     /// Whether the gate proved class `wc` silent about this cylinder.
     pub(crate) fn is_silent(&self, wc: usize) -> bool {
-        self.silent.iter().any(|&(c, _)| c == wc)
+        self.records
+            .iter()
+            .any(|&(c, r)| c == wc && matches!(r, CylRecord::Silent(_)))
     }
 
     /// Every class the gate proved this whole cylinder beside, with the side.
     pub(crate) fn beside_all(&self) -> impl Iterator<Item = (usize, i8)> + '_ {
-        self.silent.iter().filter_map(|&(c, s)| match s {
-            Silence::Beside(side) => Some((c, side)),
-            Silence::Apart | Silence::Sectioned => None,
+        self.records.iter().filter_map(|&(c, r)| match r {
+            CylRecord::Silent(Silence::Beside(side)) => Some((c, side)),
+            CylRecord::Silent(Silence::Apart | Silence::Sectioned) => None,
         })
     }
 
@@ -552,7 +563,7 @@ impl WorkingCyl {
     }
 }
 
-/// **Whether the gate passed any of `classes` as silent about the cylinders** ([`WorkingCyl::silent`]).
+/// **Whether the gate passed any of `classes` as silent about the cylinders** ([`WorkingCyl::is_silent`]).
 /// Not «has no world statement»: a boolean with no cylinder has no gate record, so a nameless class
 /// there is not silent.
 pub(crate) fn silent_among(cyls: &[WorkingCyl], classes: &[usize]) -> bool {

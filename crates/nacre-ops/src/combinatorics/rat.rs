@@ -220,7 +220,7 @@ pub(crate) fn node_coords_rat(
 
 /// Whether a ring's corners name a class the gate proved silent about some cylinder — the rings
 /// whose corners have no rational coordinates for the gate's own reason
-/// ([`crate::planes::WorkingCyl::silent`]).
+/// ([`crate::planes::WorkingCyl::is_silent`]).
 pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[RingEdge]) -> bool {
     rb.iter()
         .any(|e| three_plane_name(e.node).is_some_and(|t| crate::planes::silent_among(cyls, &t)))

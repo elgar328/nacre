@@ -13,7 +13,7 @@ use super::*;
 /// anything reads the answers. The gate is then what can and cannot be drawn: it settles the
 /// nameless candidates against the cylinder's other records, refuses an ellipse
 /// ([`RejectReason::ObliqueCylinderCut`]), and hands the arrangement the records it reads — the
-/// crossings, the [`Tangency`] rows, the silences ([`WorkingCyl::silent`]) and the lines two
+/// crossings, the [`Tangency`] rows, the silences ([`WorkingCyl::records`]) and the lines two
 /// classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row its verdict cannot
 /// judge ([`RejectReason::TangentLineInAnotherPlane`]).
 ///
@@ -93,7 +93,7 @@ pub(crate) fn cylinder_gate(
             realized: *cache,
             owner,
             shared: Vec::new(),
-            silent: Vec::new(),
+            records: Vec::new(),
             boxes: Vec::new(),
         });
     }
@@ -111,7 +111,7 @@ pub(crate) fn cylinder_gate(
     // side of it** ([`nameless_stance`]) — the question every other arm of [`class_meet`] asks needs the
     // class's rational coefficients, and this one needs none. Then the cylinder has nothing to say
     // on that class, and the class nothing to say about the cylinder; the roads that would ask read
-    // the record ([`WorkingCyl::silent`]). Failing that, the class may still pass with its faces
+    // the record ([`WorkingCyl::records`]). Failing that, the class may still pass with its faces
     // apart from the lateral — the bore filled (`Apart`) or the section drawn on its own arrangement
     // (`Sectioned`). The boxes are built only when such a class is present — the common boolean
     // pays nothing.
@@ -246,7 +246,10 @@ pub(crate) fn cylinder_gate(
         silent[ci].push((c, Silence::Sectioned));
     }
     for (cyl, s) in cyls.iter_mut().zip(silent) {
-        cyl.silent = s;
+        cyl.records = s
+            .into_iter()
+            .map(|(c, s)| (c, CylRecord::Silent(s)))
+            .collect();
     }
     debug_assert!(
         cyls.iter().all(|cyl| (0..geom.len())

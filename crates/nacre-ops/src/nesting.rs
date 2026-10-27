@@ -240,7 +240,7 @@ enum Said {
     /// none does, the honest name is the arithmetic one and not "no clear ray".
     Unformed,
     /// The question reads a plane class the gate proved silent about the cylinders
-    /// ([`crate::planes::WorkingCyl::silent`]) — a class with no world statement — and nothing
+    /// ([`crate::planes::WorkingCyl::is_silent`]) — a class with no world statement — and nothing
     /// here could answer it without one. Not [`Said::Unformed`]: the same arithmetic also fails on
     /// a `Wide` name or an overflow, and those are width, where this is the gate's own
     /// undecidedness carried to the place that met it.
@@ -350,7 +350,7 @@ fn rim_and_centre<'a>(
     // gate is what empties its population, and this is what says so where the point is made.
     // `is_some_and` folds a *second* cause in — a class with no rational description also loses
     // its rim. That population is empty too: such a class passes the gate only as silent about
-    // every cylinder (`WorkingCyl::silent`), and a silent class carries no circle. If it ever stops
+    // every cylinder (`WorkingCyl::is_silent`), and a silent class carries no circle. If it ever stops
     // being empty the cell falls to `RingHasNoWitness` rather than to a wrong answer, which is the
     // direction this kernel takes.
     let carries = jd

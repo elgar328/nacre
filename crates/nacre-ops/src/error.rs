@@ -449,7 +449,7 @@ pub enum RejectReason {
     /// [`Self::WitnessNotRational`]. Conservative honest refusal, never a guess.
     ///
     /// The gate's own name, and past the gate only where its record reaches: a class with no
-    /// world name that the gate passed as silent about the cylinders (`WorkingCyl::silent`) and
+    /// world name that the gate passed as silent about the cylinders (`WorkingCyl::is_silent`) and
     /// that a later road meets without the description it needs — the circle nesting, the
     /// coordinate ray — refuses there by this name, because the cause is the gate's. What the chart
     /// cannot read it names by cause — two sides that disagree are [`Self::LabelConflict`], a

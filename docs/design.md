@@ -1349,7 +1349,7 @@ pub(crate) struct WorkingCyl {
     pub(crate) realized: nacre_geom::Cylinder,        // 모델의 캐시가 아니다 — 연산 하나를 산다
     pub(crate) owner: SolidSide,                      // 쌍 루프는 주인이 다른 쌍만 묻는다
     pub(crate) shared: Vec<SharedRuling>,             // 옆면 위에 놓인 두 클래스의 교선 — 게이트의 기록
-    pub(crate) silent: Vec<(usize, Silence)>,         // 이름 없는 클래스의 게이트 판정 — 쪽, 면이 떨어짐, 또는 단면
+    pub(crate) records: Vec<(usize, CylRecord)>,      // 게이트가 배열에 넘기는 클래스별 기록 — 이름 없는 클래스의 말 없음(쪽, 면이 떨어짐, 또는 단면)
     pub(crate) boxes: Vec<[[Rat; 3]; 2]>,             // 옆면마다 호를 아는 상자 — 이름 없는 클래스가 있을 때만
 }
 ```
@@ -1838,7 +1838,7 @@ pierce 꼭짓점은 기권한다. 남는 기권과 그 근거: 곡선 간선 × 
   이것이 답한다. 이 물음이 `Apart` 보다 먼저인 것은 더 강한 증명이라서다: 한쪽에 선 원통은 다른 기록이 있어도 그
   클래스에 아무것도 두지 않는다. 한 원통의 옆면들은 **함께** 묻는다(축을 따라 떨어진 두 옆면 사이를
   지나는 평면은 한쪽이 없다). 그 원통은 그 클래스에서 할 말이 없고 클래스는 그 원통에 대해 할 말이 없으며, 물을
-  자리는 기록(`WorkingCyl::silent`)을 읽는다 — 원 싣기(`circle_on_class`), 현(`chord_stations`), 선분과 원·룰링의
+  자리는 기록(`WorkingCyl::records` — `is_silent`·`beside`)을 읽는다 — 원 싣기(`circle_on_class`), 현(`chord_stations`), 선분과 원·룰링의
   교차(`split_circles`·`split_rulings`), 원판과 꼭짓점의 포함(`nesting`), 광선(`curved_count`·좌표 도로). 상자는 그런
   클래스가 있을 때만 짓는다.
 - **기록은 «어느 쪽»까지 든다**(`Silence::Beside`). 필렛·슬롯처럼 관통 꼭짓점과 호를 남기는 원통 곁의 말 없는
