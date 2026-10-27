@@ -9,8 +9,11 @@
 //!   …) that route each query to its planes' names (`nacre-predicates`' filters, then
 //!   `nacre-exact`'s integer twins) or the kernel by whether its planes are rotated. The b-rep supplies witnesses through the
 //!   [`Witness`](predicate::Witness) / [`PlaneWitness`](predicate::PlaneWitness) ports.
+//! - [`cylinder`] — the points where two planes meet a cylinder ([`cylinder::PiercePoint`]) and
+//!   the questions asked of them, over the same ports.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+pub mod cylinder;
 pub mod kernel;
 pub mod predicate;
 

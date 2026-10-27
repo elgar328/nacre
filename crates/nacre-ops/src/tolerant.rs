@@ -64,6 +64,9 @@ impl PlaneWitness for WorkingPlane {
     fn name_ints(&self) -> Option<&nacre_judge::predicate::NameInts> {
         self.name_ints.as_ref()
     }
+    fn world_sense(&self) -> Option<i8> {
+        self.world.as_ref().map(|w| w.sense.sign())
+    }
 }
 
 #[cfg(test)]

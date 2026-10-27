@@ -12,7 +12,7 @@
 × 수 체계 셋(세계 진술 위의 checked `Rat`·`QuadVal` / 이름 없는 클래스의 고정 정밀도 구간 / 게이트의 기록)**의 칸마다 따로
 계산한다. 잰 것(nacre-ops, 비시험 코드):
 
-- «평면의 어느 쪽인가» 철자 8(`Judge::orient3d`·`PierceMeet::side` 의 두 팔·`plane_side_of_rat`·`plane_sign_hp`·
+- «평면의 어느 쪽인가» 철자 8(`Judge::orient3d`·`PiercePoint::side` 의 두 팔·`plane_side_of_rat`·`plane_sign_hp`·
   `plane_cuts_lateral`·`WorkingPlane::misses`·`WorkingCyl::beside`), 선·축 위 순서는 공용 길(`order_along` 계열) 밖에 독립
   재구현 둘(`split_rulings::AxisCoord`·`winding` 의 `CoordKey`), 원 위 순서는 정확(`circular_order`)과 구간(`theta_between` 의
   구간 팔) 둘. 선과 원통의 교차는 `world.is_none()` 갈래가 넷(`pierce_meet`·`arc_crossings`·`crossing_on_ruling`·
@@ -206,7 +206,7 @@ census 는 거의 축정렬이라 `xy turned` 3 만 보인다(스위트에서 �
   `chain_point_rat`)도 프레임 노드를 접어야 한다.
 - **원판 면이 있는 원통을 자르는 평면** — 온전한 림(캡의 원판, 원 구멍)과 끊긴 림을 함께 가진 원통(판 가장자리에
   걸친 핀)을 축 방향의 이름 없는 평면이 가르면, 그 클래스 위에 원을 가르는 현이 필요한데 `chord_stations` 는 기록된
-  쌍에서만 현을 그린다 — 게이트가 단면을 그리지 않고 거절한다(점수판의 «판 가장자리에 걸친 핀» 가족). 현의 끝을 `PierceMeet` 로 세우면 열린다.
+  쌍에서만 현을 그린다 — 게이트가 단면을 그리지 않고 거절한다(점수판의 «판 가장자리에 걸친 핀» 가족). 현의 끝을 `PiercePoint` 로 세우면 열린다.
 - **단면 클래스가 원통 자신의 접선 룰링을 품는다** — 판의 벽이 끝나는 필렛 접선 룰링을 돌린 벽 평면이 품으면, 게이트는
   단면으로 통과시키지만(원통의 솔리드는 제 접선 벽을 기록하지 않아 만날 기록이 없다) 판의 윗면·아랫면 배열에서 분할
   단계가 거절한다: 그 벽 평면이 옆벽 선과 만나는 점 `{캡, W, 옆벽}` 과 옆벽 선분의 끝인 필렛 접점(관통 이름, `Double`)은

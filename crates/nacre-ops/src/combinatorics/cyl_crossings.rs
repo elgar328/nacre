@@ -48,7 +48,7 @@ pub(crate) fn circular_order(
         .iter()
         .map(|&n| {
             pierce_meet(jd, cyl, def, n)
-                .and_then(PierceMeet::into_exact)
+                .and_then(PiercePoint::into_exact)
                 .ok_or(CircleOrderFail::Undecided)
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -301,7 +301,7 @@ pub(crate) fn crossing_on_ruling(
     // **A wall with no world statement picks its root by the same predicate, read off boxes.**
     // The class `wc` crossing the ruling is ⊥ the axis and named; the wall sections the cylinder,
     // so its two rulings are two distinct lines and each root is on one of them
-    // ([`PierceMeet::ruling_side`]).
+    // ([`PiercePoint::ruling_side`]).
     if jd.planes[fc].world.is_none() {
         let w = class_coeffs_rat(jd, wc).ok_or(NoCrossing)?;
         if side == 0 || !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &def.dir()) {

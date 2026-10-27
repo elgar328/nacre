@@ -63,6 +63,12 @@ pub(crate) use in_faces::*;
 pub(crate) use incidence_order::*;
 pub(crate) use loops::*;
 pub(crate) use mixed_ring::*;
+// A pierce node's root (`NodeKind::Pierce`) is class-space vocabulary: a result vertex names the same
+// point by its rank about the cylinder (`nacre_topo::Vertex::Pierce`), and `Def::vertex` reads one as
+// the other. The derived order `Lo < Hi` is read by comparison keys here — the arrangement's reject
+// witness is the smallest name — so reordering the variants would silently reverse those choices.
+pub(crate) use nacre_exact::quad::{QuadRoot, ruling_side_signed};
+pub(crate) use nacre_judge::cylinder::PiercePoint;
 pub(crate) use names::*;
 pub(crate) use rat::*;
 pub(crate) use rays::*;

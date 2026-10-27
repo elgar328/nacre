@@ -20,10 +20,11 @@
 nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre` 크레이트는 파사드(재수출 전용)
 ├── nacre-store      # typed-index 저장소: Store<T>/Handle<T> (기하·위상 무지, nacre-* 의존 없음)
 ├── nacre-math       # 자체 선형대수: Point<D>·Vector<D> (nacre-* 의존 없음)
-├── nacre-exact      # 유리수·정수로 정확히 답할 수 있는 모든 것: Rat·Angle·Isometry·PlaneName·QuadVal·정확 술어 (nacre-* 의존 없음)
+├── nacre-exact      # 유리수·정수로 정확히 답할 수 있는 모든 것: Rat·Angle·Isometry·PlaneName·CylinderDef·QuadVal·QuadRoot·정확 술어 (nacre-* 의존 없음)
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
 ├── nacre-judge      # 부호 판정: 정확히 답할 수 없는 회전 좌표를 f64 필터→상승→«증명 또는 미결»로 정한다
 │                    #   kernel(WitnessPoint) + predicate(질의를 정확 경로나 kernel 로 보내는 라우터)
+│                    #   + cylinder(두 평면이 원통과 만나는 점 PiercePoint 와 그 질문)
 │                    #   ← exact · predicates · math
 ├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect 격리)
 │                    #   ← math · predicates · exact(Rat 링 술어 쌍둥이)
@@ -50,7 +51,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 `nacre-geom`과 `nacre-topo`의 관계는 한 방향이다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache` 의 팔이 geom 의 `Plane`·`Cylinder` 를, `EdgeCache` 가 `Curve` 를 든다 — 진실은 topo 자신의 타입이고 geom 은 그 실현이다).
 
-**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-exact`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 exact 에 사는 이유). 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
+**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 공개 이름의 **대부분이 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`·`CylinderDef`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-exact`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 과 원통의 진실 `CylinderDef`·관통 근의 이름 `QuadRoot` 가 topo·ops 가 아니라 exact 에 사는 이유 — topo 는 `CylinderDef` 를 재수출한다). 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
 
 **파사드 `nacre`.** 열 개 층을 **모듈로** 재수출하고(`nacre::exact`·`geom`·`math`·`ops`·`props`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude`에 담는다.
 - **평면(flat) 재수출은 하지 않는다.** **층 분리가 이 설계의 뼈대**여서 이름공간에 남긴다. 같은 맨이름이 층마다 다른 것을 뜻하기도 한다 — `topo::Surface` 는 진실, `geom::Surface` 는 그 f64 실현이다.
@@ -1314,7 +1315,7 @@ kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` �
 
 판정 타입은 두 크레이트에 나뉘어 산다. **`nacre-judge`** 는 정의를 든 점(`WitnessPoint`)·모션의
 펼침(`MoveNode`)·증명 기준(`ProofStandard`)·결과(`Decision`)와, 평면 표에 던지는 질문(`Judge<W: Witness>`)을
-갖는다. **`nacre-ops`** 는 연산 하나 동안 모델에서 그 표를 짓는다(`pub(crate)` `FaceInfo`·`WorkingPlane`·
+갖고, 두 평면이 원통과 만나는 점(`PiercePoint` — `Judge::pierce` 가 이름에서 푼다)과 그 점에 묻는 질문도 같은 표 위에서 갖는다. **`nacre-ops`** 는 연산 하나 동안 모델에서 그 표를 짓는다(`pub(crate)` `FaceInfo`·`WorkingPlane`·
 `WorkingCyl`) — `nacre-judge` 는 `nacre-topo` 를 모르므로 핸들은 이 경계에서 해소된다.
 
 이름 규칙: (1) **`Working*` = 모델 타입의 판정층 쌍둥이이자 표의 뿌리**(수명 = 연산 하나 — `Model` 에
@@ -1860,13 +1861,13 @@ pierce 꼭짓점은 기권한다. 남는 기권과 그 근거: 곡선 간선 × 
   단면을 참으로 그린다: 평면이 축을 따라 달리고 축이 반지름 안에 있고(`nameless_stance` 의 `Rulings` — 밖이면 위의
   `Beside`), 그 클래스의
   면이 모두 옆면 상자들과 떨어지면, 그 클래스의 배열이 원통의 룰링을 그려 판의 단면을 닫는다. 관통점은 구간 상자
-  (`PierceMeet::Bounded`, 「이차곡면 판정 — 원통 우선」)이고 같음은 이름이 준다. 그 룰링은 옆면 차트로 가지 않는다 —
+  (`PiercePoint::Bounded`, 「이차곡면 판정 — 원통 우선」)이고 같음은 이름이 준다. 그 룰링은 옆면 차트로 가지 않는다 —
   클래스의 어떤 면도 옆면에 닿지 않아 옆면의 셀을 가르지 않으며, 그 클래스가 내는 면이 그 룰링에 닿으면 이름으로
   거절한다(`per_class`). 단면은 그 클래스의 배열 안 어디서 닫히든 그 클래스의 면들의 라벨을 바꾸지 않는다(메운 단면과
   같은 논증 — 이 길을 먼저 지어 본 버리는 스파이크에서, 닫는 룰링을 반대편 것으로 바꿔 심어도 부피가 비트
   동일했다; 제품에서는 같은 심기를 원 위 회전의 debug 대조가 먼저 멈춘다). 다른 클래스가 이
   클래스에 대해 묻는 것(필렛 점이 그 평면의 어느 쪽인가, 호가 그 선을 몇 번 자르는가)은 결과를 좌우하므로 구간
-  판(`PierceMeet::side`, `arc_crossings_hp`)이 답한다. 온전한 림이 있는 원통은 단면을 그리지 않는다 — 평면 면이 그
+  판(`PiercePoint::side`, `arc_crossings_hp`)이 답한다. 온전한 림이 있는 원통은 단면을 그리지 않는다 — 평면 면이 그
   림을 원 고리로 들고, 그 원을 가르는 현은 기록된 쌍에서만 그려진다(`chord_stations`). 게이트는 또 그 원통의 다른
   기록 클래스와 이 클래스의 교선이 옆면 위 룰링이 아님을 증명한다 — `shared_rulings` 는 기록된 쌍만 읽는다.
 - **게이트의 «기록»이 열고 배열은 기록만 믿는다.** `point_plane_clearance_rat` **한 호출**의
@@ -2475,9 +2476,9 @@ A 를 받치던 다섯 근거가 이 커널에서 서지 않는 까닭:
 **판정 방법.** 평면∩원통 교차점은 좌표가 `a+b√c`(a, b, c 유리수) 꼴이다(nacre-exact `QuadVal`).
 
 - 점-대-평면 부호와 같은-판별식 비교는 `a+b√c` 의 부호(`QuadVal::sign`)로 닫힌다.
-- 배열에서 관통점은 이름에서 다시 푼 만남(`PierceMeet` — `pierce_meet` 하나가 짓는다)으로 다니고, 점에 묻는 것(평면의
+- 배열에서 관통점은 이름에서 다시 푼 만남(`PiercePoint` — 판정층의 `Judge::pierce` 하나가 짓는다)으로 다니고, 점에 묻는 것(평면의
   쪽, 어느 룰링, 구간 점)은 그 타입의 메서드다. `a + b√c` 비교기가 읽는 정확한 쌍은 `exact` 로 꺼낸다.
-- 이름의 평면 하나에 세계 진술이 없으면 만남은 **구간 상자**(`PierceMeet::Bounded`)다 — 같은 규약(방향 `n₁ × n₂`, 근
+- 이름의 평면 하나에 세계 진술이 없으면 만남은 **구간 상자**(`PiercePoint::Bounded`)다 — 같은 규약(방향 `n₁ × n₂`, 근
   `Lo`/`Hi` = `mid ∓ √disc/2A`)의 구간판(`quad::plane_plane_cylinder_hp`)을 그 평면의 저장 향 계수(`stored_hp` — 이름이
   없으니 정준 향이 곧 저장 향)로 푼다. 구간은 «다르다»만 증명하므로 같음은 이름이 준다: 점은 제 이름의 두 평면 위에 있고,
   원통을 단면하는(`Silence::Sectioned`) 한 이름 없는 평면·그 원통·한 룰링의 두 점은 축 성분 0 인 좌표가 같다(`KeyCmp` —

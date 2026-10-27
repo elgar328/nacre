@@ -455,20 +455,6 @@ fn incident_plane_classes(
     classes
 }
 
-/// **Canonical → outward**: the sign that carries a class's `world_rat` name to the frame
-/// `orient3d` answers in, for the predicates that read the name ([`side_of`]'s pierce arm,
-/// [`arc_departure_side`]).
-///
-/// **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d` answers
-/// against the class's **outward** normal, and the name may point either way along the plane's
-/// facing. The world name's sense (`κ`, [`crate::planes::WorldName`]) relates the two — read off
-/// the truth, never off the plane cache — and `frame_sign` carries the plane's facing to the root
-/// face's outward.
-pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
-    let kappa = jd.planes[q].world.as_ref()?.sense.sign();
-    Some(kappa * jd.planes[q].frame_sign)
-}
-
 /// **Which side of `q` an arc leaves to**: the arc starts at `node` — a pierce point of
 /// cylinder `cyl` on the line `q` cuts — and travels counter-clockwise about the axis when `ccw`.
 /// Its tangent there is `±m̂ × (a − c)`, and the side of `q` that points to is the side the whole
@@ -477,7 +463,7 @@ pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> 
 /// Coordinate-free: `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))` (the axial part of `a − o` drops
 /// against `m`), so the counter-clockwise tangent's side is **minus** [`ruling_side`]
 /// at `a` — the very predicate that names which ruling a lateral point lies on — and a clockwise
-/// arc's is plus. Then the same canonical → outward bridge as [`side_of`] ([`outward_fix`]), so
+/// arc's is plus. Then the same canonical → outward bridge as [`side_of`] ([`Judge::outward_fix`]), so
 /// the answer sits in the walk's frame. `None` when the arc is tangent to `q` at `a`
 /// (`ruling_side` reads zero) or a description is missing — the walk answers `Unnameable`.
 ///
@@ -495,7 +481,7 @@ pub(crate) fn arc_departure_side(
     let w = class_coeffs_rat(jd, q)?;
     let (line, sv) = pierce_meet(jd, cyl, def, node)?.into_exact()?;
     let rs = ruling_side(&w, def, (&line, &sv))?;
-    Some(outward_fix(jd, q)? * if ccw { -rs } else { rs })
+    Some(jd.outward_fix(q)? * if ccw { -rs } else { rs })
 }
 
 // ---------------------------------------------------------------------------
@@ -551,7 +537,7 @@ fn curved_wall(
         nacre_geom::Curve::Line(_) => {
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
             let at = pierce_meet(jd, cyl, &def, end)
-                .and_then(PierceMeet::into_exact)
+                .and_then(PiercePoint::into_exact)
                 .ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
             // **A tangent wall has one ruling, and its side is `0`.** A fillet's

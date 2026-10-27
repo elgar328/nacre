@@ -210,6 +210,17 @@ pub trait PlaneWitness: Witness {
     /// `crate::frame3`'s `shared_base` applies the same convention to the points it derives
     /// itself.
     fn name_ints(&self) -> Option<&NameInts>;
+
+    /// **Which way the world name faces the plane** — `+1` when [`Witness::world_name`]'s normal
+    /// points the way the plane's truth faces, `-1` when it opposes; `None` exactly when there is
+    /// no world name. A bit of the truth carried beside the name, as [`Self::frame_sign`] is: it
+    /// asks the implementer for no bound.
+    ///
+    /// Not [`witness_name_sense`]: that is the name against the *witness triangle's* winding,
+    /// readable only where the triangle's bases lie on the named plane; this is the name against
+    /// the truth, which every world name has. The two meet through `frame_sign` (triangle against
+    /// stored normal).
+    fn world_sense(&self) -> Option<i8>;
 }
 
 /// A plane's canonical name integers, **oriented as the stored coefficients are** — the exact
@@ -1146,4 +1157,4 @@ fn looser(d: Decision, best: Option<Decision>) -> bool {
 
 #[cfg(test)]
 #[path = "tests/predicate.rs"]
-mod tests;
+pub(crate) mod tests;

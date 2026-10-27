@@ -7,7 +7,7 @@ use super::*;
 /// face holds crosses nothing, and one a face holds the ruling split refuses by name rather than
 /// reasoning it unreachable.
 ///
-/// Returns each crossing with the meet it was solved as ([`combinatorics::PierceMeet`] — exact, or
+/// Returns each crossing with the meet it was solved as ([`combinatorics::PiercePoint`] — exact, or
 /// an interval box where a class has no world statement; the side and extent tests below read it
 /// without re-solving). `None` is overflow.
 fn lateral_crossings(
@@ -34,8 +34,8 @@ fn lateral_crossings(
         let prec = jd.standard.prec;
         let undecided = || reject(RejectReason::CylinderGateUndecided);
         let line = nacre_exact::quad::plane_plane_cylinder_hp(
-            &jd.planes[wc].canon_hp(prec),
-            &jd.planes[sg.wall].canon_hp(prec),
+            &jd.canon_hp(wc, prec),
+            &jd.canon_hp(sg.wall, prec),
             &o,
             &m,
             r2,
@@ -119,7 +119,7 @@ fn lateral_crossings(
             .map(|(root, s)| {
                 (
                     combinatorics::NodeId::pierce(wc, sg.wall, cyl, root),
-                    combinatorics::PierceMeet::Exact(line.clone(), s),
+                    combinatorics::PiercePoint::Exact(line.clone(), s),
                 )
             })
             .collect(),
@@ -128,7 +128,7 @@ fn lateral_crossings(
 
 /// One crossing [`lateral_crossings`] found: its Pierce name, and the meet it was solved as (the
 /// side and extent tests read it without re-solving).
-type LateralCrossing = (combinatorics::NodeId, combinatorics::PierceMeet);
+type LateralCrossing = (combinatorics::NodeId, combinatorics::PiercePoint);
 
 /// **A point's coordinate along a cylinder's axis** (`m · x`) — exact (`a + b√c`) where the point has
 /// an exact meet or lies on a plane across the axis, else an interval. Two exact ones compare
@@ -155,7 +155,7 @@ impl AxisCoord {
         jd: &Judge<'_, WorkingPlane>,
         def: &nacre_topo::CylinderDef,
         n: combinatorics::NodeId,
-        meet: &combinatorics::PierceMeet,
+        meet: &combinatorics::PiercePoint,
     ) -> Option<Self> {
         use nacre_exact::quad::QuadVal;
         let m = def.dir();

@@ -18,98 +18,6 @@ use super::*;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NodeId(pub(super) NodeKind);
 
-/// **Which crossing of a class pair's meet line a [`NodeKind::Pierce`] means** — ascending
-/// parameter along `ℓ = n₁ × n₂`, the two classes' world-name normals in the name's stored
-/// (ascending) order (`nacre_exact::quad`'s pair order). Class-space vocabulary only: a result
-/// vertex names its point by its place about the cylinder ([`nacre_topo::Vertex::Pierce`]'s
-/// `rank`), and `Def::vertex` is where one is read as the other.
-///
-/// **The declaration order is load-bearing.** The derived `Ord` is `Lo < Hi`, which *is* the
-/// ascending-parameter convention, and comparison keys downstream read it (the arrangement's
-/// reject witness is chosen as the smallest name). Reordering these two variants would silently
-/// reverse those choices, so the order is a decision, not a listing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum QuadRoot {
-    /// The smaller parameter along the meet-line direction.
-    Lo,
-    /// The larger parameter.
-    Hi,
-    /// **A tangency: the two roots coincide, so there is one point.**
-    ///
-    /// A stored variant, not just a solver's report: spelling a tangency `Lo` would leave `Lo`
-    /// meaning either "the smaller of two" or "the only one", and then nothing holding a name
-    /// could tell whether a re-sort should toggle it.
-    Double,
-}
-
-impl QuadRoot {
-    /// **The name the same point takes once the two planes are swapped.**
-    ///
-    /// Not "the other root" — the *other name for this point*, which is what a swap needs. For a
-    /// genuine pair the swap sends `lo ↦ −hi` and `hi ↦ −lo` (see [`Self::canonical`]), so the
-    /// two names trade places. For a tangency `s = mid` and the swap sends `mid ↦ −mid` along
-    /// `ℓ ↦ −ℓ`: **the point goes to itself**, so its name does too.
-    #[inline]
-    pub(crate) fn flipped(self) -> QuadRoot {
-        match self {
-            QuadRoot::Lo => QuadRoot::Hi,
-            QuadRoot::Hi => QuadRoot::Lo,
-            QuadRoot::Double => QuadRoot::Double,
-        }
-    }
-
-    /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
-    ///
-    /// A [`NodeKind::Pierce`] stores its two plane classes ascending, and its root is defined
-    /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
-    /// `(pair, root)` in some other order has to restate the root — and the restatement is a
-    /// **derivation, not a convention**. Swapping the two planes in
-    /// `nacre_exact::quad::plane_plane_cylinder` sends `ℓ ↦ −ℓ` while `base` is invariant (the
-    /// Cramer system's row swap and its row-2 sign change cancel in numerator and denominator
-    /// alike), leaves `a`, `c` and the discriminant alone and sends `b ↦ −b`. So the roots become
-    /// `lo′ = −hi` and `hi′ = −lo`, and `base + lo′·(−ℓ) = base + hi·ℓ`: the swapped `Lo` and the
-    /// original `Hi` are **the same point**.
-    ///
-    /// **A tangency is the exception, and it is not written here.** With `disc = 0` there is
-    /// one point and the swap fixes it, so its name must not change — which is exactly what
-    /// [`Self::flipped`] already says about [`QuadRoot::Double`]. The exception lives in the
-    /// primitive, so this function has no special case to get wrong.
-    ///
-    /// **The rule this states is not about swapping — it is about `ℓ`.** `Lo`/`Hi` are the
-    /// order along `ℓ`, so *anything* that reverses `ℓ` trades the two names, and the swap is
-    /// only the case this function can see. Negating either normal is another: the plane is the
-    /// same set, and `plane_plane_cylinder` fixes the base by `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}`
-    /// — a condition `−ℓ` satisfies identically — so the base does not move and `ℓ` alone
-    /// reverses. ⇒ **flip once per reversal; an even number is no flip at all.**
-    #[inline]
-    pub(crate) fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
-        let [first, second] = pair;
-        if second < first {
-            ([second, first], root.flipped())
-        } else {
-            ([first, second], root)
-        }
-    }
-
-    /// **The crossing this name means**, in the meet its two classes' statements solve to (in
-    /// the name's order) — `None` where the meet does not hold it: a `Double` of a pair, a `Lo`
-    /// or `Hi` of a tangency, or a meet with no crossing.
-    pub(crate) fn crossing(
-        self,
-        meet: &nacre_exact::quad::CylinderMeet,
-    ) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
-        use nacre_exact::quad::{CylinderMeet, QuadVal};
-        match (meet, self) {
-            (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => Some((line.clone(), s[0])),
-            (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => Some((line.clone(), s[1])),
-            (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => {
-                Some((line.clone(), QuadVal::from_rat(*s)))
-            }
-            _ => None,
-        }
-    }
-}
-
 /// **Which of the two things a [`NodeId`] names**, and what it carries.
 ///
 /// **Read it with `match`, never a `_` arm and never `let`-`else`**: a third variant lights up
@@ -618,47 +526,21 @@ pub(crate) struct RulingCarrier {
 /// silence. Callers that want the tangent ruling *named* — "which ruling of this wall, `0` being
 /// its tangent one" — take [`ruling_side_signed`] instead ([`crate::arrangement::node_ruling_side`],
 /// `curved_wall` and the ruling split; the corner's root does not mean the same thing).
+///
+/// **A side is a fact about the point and the wall, not about the point's own name.** Reading it
+/// off the name's root (`QuadRoot::Double ⇒ 0`) is the same statement *only* when the wall asked
+/// about is the very wall the name pairs — the tangent wall the corner was minted on. It is not the
+/// same statement once the alias table hands back a representative with another pair (a tangent
+/// corner a class through the axis also passes through) or once a `Double`-rooted corner is asked
+/// about a *different* wall: then the root says `0` for a point that sits squarely on one of that
+/// wall's two rulings — silently, and with the sign the caller needs. Both doors ask the point, so
+/// both cases answer correctly and the tangent wall still answers `0`.
 pub(crate) fn ruling_side(
     w: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
     at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
 ) -> Option<i8> {
     ruling_side_signed(w, def, at).filter(|&s| s != 0)
-}
-
-/// **Which ruling of `w` a point of the lateral is on, `0` being `w`'s tangent ruling** — the
-/// same sign as [`ruling_side`], with the axis plane answered rather than abstained on.
-///
-/// **A side is a fact about the point and the wall, not about the point's own
-/// name.** Reading it off the name's root (`QuadRoot::Double ⇒ 0`) is the same statement *only*
-/// when the wall asked about is the very wall the name pairs — the tangent wall the corner was
-/// minted on. It is not the same statement once the alias table hands back a representative with
-/// another pair (a tangent corner a class through the axis also passes through) or once a
-/// Double-rooted corner is asked about a *different* wall: then the
-/// root says `0` for a point that sits squarely on one of that wall's two rulings — silently, and
-/// with the sign the caller needs. Asked here, of the point, both cases answer correctly and the
-/// tangent wall still answers `0`.
-///
-/// `None` is checked-`Rat` overflow only.
-pub(crate) fn ruling_side_signed(
-    w: &[nacre_exact::Rat; 4],
-    def: &nacre_topo::CylinderDef,
-    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
-) -> Option<i8> {
-    let (o, m) = (def.origin(), def.dir());
-    let n = [w[0], w[1], w[2]];
-    let c = nacre_exact::cross3_rat(&m, &n)?;
-    let mut d = nacre_exact::Rat::from_int(0);
-    for k in 0..3 {
-        d = d.checked_sub(c[k].checked_mul(o[k])?)?;
-    }
-    Some(
-        match nacre_exact::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
-            nacre_exact::Orient::Positive => 1,
-            nacre_exact::Orient::Negative => -1,
-            nacre_exact::Orient::Zero => 0,
-        },
-    )
 }
 
 impl Carrier {

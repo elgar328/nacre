@@ -15,7 +15,7 @@ enum CoordKey {
     /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
     /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
     /// common case.
-    Pierce(Box<PierceMeet>),
+    Pierce(Box<PiercePoint>),
 }
 
 /// Build one ring node's key.
@@ -73,7 +73,7 @@ fn flat_axis(jd: &Judge<'_, WorkingPlane>, p: usize) -> Option<usize> {
 /// Never handed an interval box: [`KeyCmp::cmp`] sends any pair with one to [`KeyCmp::bounded`]
 /// first, so the refusal here is the width of a named meet.
 fn exact(
-    m: &PierceMeet,
+    m: &PiercePoint,
 ) -> Result<(&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal), BoolError> {
     m.exact()
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))
@@ -203,9 +203,9 @@ impl KeyCmp<'_> {
 
     /// A three-plane node no rational meet states, against a pierce point: exactly where both
     /// state the coordinate ([`Self::both_stated`]), else the two as intervals ([`three_point_hp`],
-    /// [`PierceMeet::point_hp`]) — two distinct names, so a comparison the intervals cannot separate is
+    /// [`PiercePoint::point_hp`]) — two distinct names, so a comparison the intervals cannot separate is
     /// refused, never read as a tie ([`undecided_reason`] names it).
-    fn unstated(&self, t: [usize; 3], m: &PierceMeet, axis: usize) -> Result<i8, BoolError> {
+    fn unstated(&self, t: [usize; 3], m: &PiercePoint, axis: usize) -> Result<i8, BoolError> {
         if let Some(order) = m
             .exact()
             .and_then(|(line, _)| self.both_stated(t, line, axis))
@@ -415,7 +415,7 @@ fn arc_extremum_winding(
             // two roots differ in `a` and the smaller one is read off that one sign.
             CylinderMeet::Pair { line, s: [s0, s1] } => {
                 let s = if line.dir()[a] > zero { s0 } else { s1 };
-                CoordKey::Pierce(Box::new(PierceMeet::Exact(line, s)))
+                CoordKey::Pierce(Box::new(PiercePoint::Exact(line, s)))
             }
             // `H` holds the axis, which the cap plane crosses at the centre — inside the cylinder,
             // so the line through it meets the surface twice; and the cap plane is ⊥ `m` while `H`

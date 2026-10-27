@@ -535,7 +535,7 @@ pub(crate) enum Silence {
     /// The class's plane runs along the axis and cuts the lateral in two rulings, every face on it
     /// stands apart from every lateral face's box, and the cylinder has no whole rim. On that
     /// class's own arrangement the solid is sectioned truly — the rulings are drawn there and close
-    /// the section (their pierce points are interval boxes, [`crate::combinatorics::PierceMeet`]) —
+    /// the section (their pierce points are interval boxes, [`crate::combinatorics::PiercePoint`]) —
     /// and nowhere else: the lateral chart takes no ruling of it, since no face of the class reaches
     /// the lateral, and the other classes see the class's faces apart from the cylinder.
     Sectioned,

@@ -115,6 +115,9 @@ impl PlaneWitness for W {
     fn chain_id(&self) -> u64 {
         0
     }
+    fn world_sense(&self) -> Option<i8> {
+        None
+    }
     fn name_ints(&self) -> Option<&NameInts> {
         self.ints.as_ref()
     }
@@ -161,7 +164,7 @@ fn cube_corner_planes() -> Vec<W> {
 /// [`cancel_cmp_coord`] needs. The motion identity, the names and the world statement default to
 /// "one shared motion, no names"; the builders below change them for fixtures that need a chain of
 /// their own or a name.
-struct RW {
+pub(crate) struct RW {
     tri: [Point3; 3],
     coeffs: [f64; 4],
     def: [WitnessPoint; 3],
@@ -209,7 +212,7 @@ impl RW {
     }
 
     /// Three integer points on a plane, each carried by `motion`.
-    fn moved(pts: [[i128; 3]; 3], motion: impl Fn(WitnessPoint) -> WitnessPoint) -> RW {
+    pub(crate) fn moved(pts: [[i128; 3]; 3], motion: impl Fn(WitnessPoint) -> WitnessPoint) -> RW {
         let def: [WitnessPoint; 3] =
             pts.map(|q| motion(WitnessPoint::at([ri(q[0], 1), ri(q[1], 1), ri(q[2], 1)])));
         let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord_approx()));
@@ -244,7 +247,7 @@ impl RW {
     }
 
     /// …stated in the world, which an unmoved plane's name is.
-    fn stated(mut self) -> RW {
+    pub(crate) fn stated(mut self) -> RW {
         assert!(
             self.def[0].chain.is_empty(),
             "only an unmoved plane names the world"
@@ -270,6 +273,17 @@ impl PlaneWitness for RW {
     fn chain_id(&self) -> u64 {
         self.id
     }
+    // The truth faces the way the stated coefficients do; the name's normal is read against them.
+    fn world_sense(&self) -> Option<i8> {
+        let n = self.world.as_ref()?.coeff_ints();
+        let zero = num_bigint::BigInt::from(0);
+        let k = (0..3).find(|&k| n[k] != zero)?;
+        Some(if (n[k] > zero) == (self.coeffs[k] > 0.0) {
+            1
+        } else {
+            -1
+        })
+    }
     fn name_ints(&self) -> Option<&NameInts> {
         self.ints.as_ref()
     }
@@ -290,7 +304,7 @@ impl PlaneWitness for RW {
 /// The collector is leaked so a fixture stays a one-liner — a `Vec` per call, in a test binary,
 /// and nothing reads it. A fixture that *does* want the evidence builds its own [`Notes`] and
 /// calls [`Judge::new`].
-fn jd<W>(planes: &[W]) -> Judge<'_, W> {
+pub(crate) fn jd<W>(planes: &[W]) -> Judge<'_, W> {
     Judge::new(planes, fixture(), Box::leak(Box::new(Notes::new())))
 }
 

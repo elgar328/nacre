@@ -157,7 +157,7 @@ fn the_chart_is_an_orthogonal_in_plane_frame_along_the_normals_own_directions() 
 /// one ulp of the large component, so nothing reading the cache as a rounding could object.
 ///
 /// The class's facing ([`stored_coeffs_rat`]) and the canonical → outward sign
-/// ([`loops::outward_fix`]) come out the same: they read the world name and its sense. Comparing
+/// ([`Judge::outward_fix`](crate::tolerant::Judge::outward_fix)) come out the same: they read the world name and its sense. Comparing
 /// the name's first nonzero component with the cache's reads the flipped sign, which the contrast
 /// below states.
 #[test]
@@ -200,7 +200,7 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
     );
     let answers = |planes: &[WorkingPlane]| {
         let jd = crate::planes::test_judge(planes);
-        (stored_coeffs_rat(&jd, c), loops::outward_fix(&jd, c))
+        (stored_coeffs_rat(&jd, c), jd.outward_fix(c))
     };
     let truth = answers(&planes);
     assert!(truth.0.is_some() && truth.1.is_some(), "both answer");
@@ -515,7 +515,7 @@ fn nameless_walls_through_a_cylinder() -> (
 /// it.** A `5×5` box turned 37° about `z` at the axis of a radius-5 cylinder: every wall plane cuts
 /// the cylinder, and none has a world name. The wall `n·x = 2.5` (`n = (cos 37°, sin 37°, 0)`) meets
 /// the top cap `z = 11` in two points `2.5·n ± √18.75·n⊥`; the meet of that pair is
-/// [`PierceMeet::Bounded`], its two roots are those two points (in some order), the point is on its
+/// [`PiercePoint::Bounded`], its two roots are those two points (in some order), the point is on its
 /// own planes by name, and three points of the top circle are in one cyclic order.
 #[test]
 fn a_pierce_point_on_a_nameless_plane_is_a_box_the_questions_read() {

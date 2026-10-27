@@ -334,8 +334,8 @@ pub(crate) fn ring_box_points_hp(
 }
 
 /// **A node as an interval, whichever kind of name it is** — [`three_point_hp`] for three planes,
-/// [`PierceMeet::point_hp`] for a pierce point — exact or, with a plane of no world statement
-/// among its two, an interval box ([`PierceMeet::Bounded`]). `None` for a meet the precision could
+/// [`PiercePoint::point_hp`] for a pierce point — exact or, with a plane of no world statement
+/// among its two, an interval box ([`PiercePoint::Bounded`]). `None` for a meet the precision could
 /// not separate, a pierce point no box states (a tangency on the interval road, a named meet that
 /// fails its exact solve), or a cylinder missing from the table.
 pub(crate) fn node_point_hp(
@@ -743,7 +743,7 @@ fn rational_ends_midpoint(
     Some(p)
 }
 
-/// **A pierce node's meet, re-solved from its name** ([`PierceMeet`]) — the two classes' world
+/// **A pierce node's meet, re-solved from its name** ([`PiercePoint`]) — the two classes' world
 /// coefficients and the cylinder, never a producer's coordinate.
 ///
 /// `None` folds four causes, and only one of them reaches here on the product road:
@@ -754,7 +754,7 @@ fn rational_ends_midpoint(
 /// * **a named class with no narrow world coefficients** — a `Wide` name. The cylinder gate asks
 ///   every class of a model with a cylinder for them and refuses before any arrangement. A class
 ///   with **no** world name is not this cause: its pierce points are solved as interval boxes
-///   ([`PierceMeet::Bounded`]), and `None` there is a box the precision cannot form or a root an
+///   ([`PiercePoint::Bounded`]), and `None` there is a box the precision cannot form or a root an
 ///   interval cannot state (a tangency);
 /// * **an overflow** in `plane_plane_cylinder` — reachable (long decimals at a small scale), and
 ///   the one cause `WitnessNotRational`, the name most callers give this `None`, is true of;
@@ -774,7 +774,7 @@ pub(crate) fn pierce_meet(
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
-) -> Option<PierceMeet> {
+) -> Option<PiercePoint> {
     let (planes, root) = match n.kind() {
         NodeKind::Pierce {
             planes,
@@ -789,252 +789,11 @@ pub(crate) fn pierce_meet(
         }
         NodeKind::ThreePlane(_) => return None,
     };
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    // **The interval road is for a plane with no world statement, and only for it.** A named pair
-    // whose exact solve fails (a wide name, an overflow) keeps declining here under its own name:
-    // answering it by intervals would put a second number on a population the exact road owns.
-    if planes.iter().any(|&c| jd.planes[c].world.is_none()) {
-        let prec = jd.standard.prec;
-        let line = nacre_exact::quad::plane_plane_cylinder_hp(
-            &jd.planes[planes[0]].canon_hp(prec),
-            &jd.planes[planes[1]].canon_hp(prec),
-            &o,
-            &m,
-            r2,
-            prec,
-        )?;
-        // No tangency on this road: an interval proves two roots apart, never one double root.
-        let at = match root {
-            QuadRoot::Lo => line.root(false, prec)?,
-            QuadRoot::Hi => line.root(true, prec)?,
-            QuadRoot::Double => return None,
-        };
-        return Some(PierceMeet::Bounded {
-            at: Box::new(at),
-            planes,
-            cyl,
-        });
-    }
-    let (p1, p2) = (
-        class_coeffs_rat(jd, planes[0])?,
-        class_coeffs_rat(jd, planes[1])?,
-    );
-    let (line, s) = root.crossing(&nacre_exact::quad::plane_plane_cylinder(
-        &p1, &p2, &o, &m, r2,
-    )?)?;
-    #[cfg(debug_assertions)]
-    debug_assert_bounded_holds_exact(jd, planes, &o, &m, r2, root, &line, &s);
-    Some(PierceMeet::Exact(line, s))
-}
-
-/// **The interval road answers for the named population too, where it can be checked.** Every
-/// exact pierce point is also solved the interval way ([`nacre_exact::quad::plane_plane_cylinder_hp`]
-/// on the same coefficients, the same root by name), and the two boxes must overlap — both hold
-/// the true point. A convention that differed between the roads (a root order, a line direction)
-/// would put the interval point on the other ruling and fail here on the first named crossing.
-#[cfg(debug_assertions)]
-#[allow(clippy::too_many_arguments)]
-fn debug_assert_bounded_holds_exact(
-    jd: &Judge<'_, WorkingPlane>,
-    planes: [usize; 2],
-    o: &[nacre_exact::Rat; 3],
-    m: &[nacre_exact::Rat; 3],
-    r2: &nacre_exact::BigRat,
-    root: QuadRoot,
-    line: &nacre_exact::quad::MeetLine,
-    s: &nacre_exact::quad::QuadVal,
-) {
-    let prec = jd.standard.prec;
-    let hi = match root {
-        QuadRoot::Lo => false,
-        QuadRoot::Hi => true,
-        QuadRoot::Double => return,
-    };
-    let Some(at) = nacre_exact::quad::plane_plane_cylinder_hp(
-        &jd.planes[planes[0]].canon_hp(prec),
-        &jd.planes[planes[1]].canon_hp(prec),
-        o,
-        m,
-        r2,
-        prec,
-    )
-    .and_then(|l| l.root(hi, prec)) else {
-        return;
-    };
-    let Some(ex) = PierceMeet::Exact(line.clone(), *s).point_hp(jd) else {
-        return;
-    };
-    debug_assert!(
-        (0..3).all(|k| ex[k].sub(&at[k], prec).sign().is_none()),
-        "the interval road put a named pierce point somewhere the exact road does not"
-    );
-}
-
-/// **Where a pierce point is** — what [`pierce_meet`] solves a pierce name to, and the one vessel
-/// every question about the point reads.
-///
-/// The questions are this type's methods, so a caller asks *what it wants to know* (a side, an
-/// interval) and never which number answers it. A caller that needs the exact pair itself — an
-/// `a + b√c` comparison, a rational root — takes [`PierceMeet::into_exact`] or
-/// [`PierceMeet::exact`] and declines where there is none.
-// The exact arm is the wide one and the common one; its holders (`CoordKey::Pierce`, `PierceAt`)
-// already box the whole meet, so boxing the arm again would buy nothing.
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum PierceMeet {
-    /// The meet line of the name's two planes and the root along it: `base + s·dir` with
-    /// `s = a + b√c`, both planes stated in the world.
-    Exact(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-    /// A point one of whose planes has no world statement: an interval box that holds it, with
-    /// the name's two planes and its cylinder — what the questions below answer **by name** where
-    /// an interval cannot (a point on one of its own planes; two points of one ruling).
-    Bounded {
-        at: Box<[nacre_exact::HpBounded; 3]>,
-        planes: [usize; 2],
-        cyl: usize,
-    },
-}
-
-impl PierceMeet {
-    /// The exact pair, borrowed.
-    pub(crate) fn exact(
-        &self,
-    ) -> Option<(&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal)> {
-        match self {
-            Self::Exact(line, s) => Some((line, s)),
-            Self::Bounded { .. } => None,
-        }
-    }
-
-    /// The exact pair, moved out.
-    pub(crate) fn into_exact(
-        self,
-    ) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
-        match self {
-            Self::Exact(line, s) => Some((line, s)),
-            Self::Bounded { .. } => None,
-        }
-    }
-
-    /// **The side of plane `q` this point lies on, from `q`'s statement** — one `a + b√c` sign
-    /// ([`nacre_exact::quad::plane_side`]) against `q`'s world coefficients, bridged from the name's
-    /// facing to the outward one ([`outward_fix`]), so it answers in [`side_of`]'s convention.
-    /// `None` for a named class with no narrow rational description. Where the point or `q` has no
-    /// world statement the sign is read off interval boxes — `q`'s outward plane
-    /// ([`WorkingPlane::outward_hp`]) at the point's box, `None` where the box straddles `q` — and a
-    /// bounded point is on its own two planes by name.
-    pub(crate) fn side(&self, jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
-        let by_box = |at: &[nacre_exact::HpBounded; 3]| {
-            let prec = jd.standard.prec;
-            let pl = jd.planes[q].outward_hp(prec);
-            pl[0]
-                .mul(&at[0], prec)
-                .add(&pl[1].mul(&at[1], prec), prec)
-                .add(&pl[2].mul(&at[2], prec), prec)
-                .add(&pl[3], prec)
-                .sign()
-                .map(|pos| if pos { 1 } else { -1 })
-        };
-        match self {
-            Self::Bounded { at, planes, .. } => {
-                if planes.contains(&q) {
-                    return Some(0);
-                }
-                by_box(at)
-            }
-            // A plane with no world statement has no coefficients for the exact sign; the point's
-            // own box is read against its interval plane instead.
-            Self::Exact(..) if jd.planes[q].world.is_none() => by_box(&self.point_hp(jd)?),
-            Self::Exact(line, s) => {
-                let co = class_coeffs_rat(jd, q)?;
-                let fix = outward_fix(jd, q)?;
-                Some(
-                    fix * match nacre_exact::quad::plane_side(&co, line, s) {
-                        nacre_exact::Orient::Positive => 1,
-                        nacre_exact::Orient::Negative => -1,
-                        nacre_exact::Orient::Zero => 0,
-                    },
-                )
-            }
-        }
-    }
-
-    /// **This point as an interval** — `base + s·dir` along its exact meet line, the root realized
-    /// at the model's precision ([`nacre_exact::quad_hp`]).
-    pub(crate) fn point_hp(
-        &self,
-        jd: &Judge<'_, WorkingPlane>,
-    ) -> Option<[nacre_exact::HpBounded; 3]> {
-        match self {
-            Self::Bounded { at, .. } => Some((**at).clone()),
-            Self::Exact(line, s) => {
-                let prec = jd.standard.prec;
-                let sb = nacre_exact::quad_hp(s, prec)?;
-                let (b, d) = (line.base(), line.dir());
-                let at = |k: usize| nacre_exact::affine_hp(b[k], d[k], &sb, prec);
-                Some([at(0)?, at(1)?, at(2)?])
-            }
-        }
-    }
-
-    /// The name's two planes and its cylinder, for a point with no exact meet — what the
-    /// by-name rules read.
-    pub(crate) fn name_planes_and_cyl(&self) -> Option<([usize; 2], usize)> {
-        match self {
-            Self::Exact(..) => None,
-            Self::Bounded { planes, cyl, .. } => Some((*planes, *cyl)),
-        }
-    }
-
-    /// The name's two planes, for a point with no exact meet.
-    pub(crate) fn name_planes(&self) -> Option<[usize; 2]> {
-        self.name_planes_and_cyl().map(|(p, _)| p)
-    }
-
-    /// **Which of wall `wall`'s two rulings of `def` this point lies on** — the sign of
-    /// `(x − o) · (m × n_wall)`, the convention [`ruling_side_signed`] states, with `n_wall` the
-    /// wall's coefficients as a pierce name orders them ([`WorkingPlane::canon_hp`]). Exact for an
-    /// exact point against a named wall, `None` there for a wall with no narrow rational description
-    /// (a `Wide` name — the exact road's population, which the interval road does not answer for, as
-    /// [`pierce_meet`] and [`Self::side`] rule); otherwise read off the interval box, `None` where it
-    /// straddles the plane through the axis.
-    pub(crate) fn ruling_side(
-        &self,
-        jd: &Judge<'_, WorkingPlane>,
-        wall: usize,
-        def: &nacre_topo::CylinderDef,
-    ) -> Option<i8> {
-        if let Some((line, s)) = self.exact()
-            && jd.planes[wall].world.is_some()
-        {
-            return ruling_side_signed(&class_coeffs_rat(jd, wall)?, def, (line, s));
-        }
-        let prec = jd.standard.prec;
-        let at = self.point_hp(jd)?;
-        let n = jd.planes[wall].canon_hp(prec);
-        let m = def.dir().map(|x| nacre_exact::HpBounded::of_rat(x, prec));
-        let o = def
-            .origin()
-            .map(|x| nacre_exact::HpBounded::of_rat(x, prec));
-        let c = [
-            m[1].mul(&n[2], prec).sub(&m[2].mul(&n[1], prec), prec),
-            m[2].mul(&n[0], prec).sub(&m[0].mul(&n[2], prec), prec),
-            m[0].mul(&n[1], prec).sub(&m[1].mul(&n[0], prec), prec),
-        ];
-        let d = [
-            at[0].sub(&o[0], prec),
-            at[1].sub(&o[1], prec),
-            at[2].sub(&o[2], prec),
-        ];
-        d[0].mul(&c[0], prec)
-            .add(&d[1].mul(&c[1], prec), prec)
-            .add(&d[2].mul(&c[2], prec), prec)
-            .sign()
-            .map(|pos| if pos { 1 } else { -1 })
-    }
+    jd.pierce(planes, cyl, def, root)
 }
 
 /// **A node as an interval, for a question about cylinder `cyl`** — a three-plane corner
-/// ([`three_point_hp`]) or a pierce point of that cylinder ([`PierceMeet::point_hp`]); `None` for a
+/// ([`three_point_hp`]) or a pierce point of that cylinder ([`PiercePoint::point_hp`]); `None` for a
 /// pierce point of another cylinder or a box the precision cannot form.
 pub(crate) fn node_hp_on(
     jd: &Judge<'_, WorkingPlane>,
@@ -1126,8 +885,8 @@ pub(crate) fn arc_crossings_hp(
 ) -> Option<Vec<NodeId>> {
     let prec = jd.standard.prec;
     let line = nacre_exact::quad::plane_plane_cylinder_hp(
-        &jd.planes[p].canon_hp(prec),
-        &jd.planes[q].canon_hp(prec),
+        &jd.canon_hp(p, prec),
+        &jd.canon_hp(q, prec),
         &def.origin(),
         &def.dir(),
         def.r2(),

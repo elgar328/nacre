@@ -10,6 +10,8 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `exact::CylinderDef` is a cylinder's exact statement — origin, axis, seam direction and squared radius — where `topo::CylinderDef` names the same type.
+- `exact::quad::QuadRoot` names which crossing of a plane pair's meet line with a cylinder a point is (`Lo`, `Hi`, or the one point of a tangency, `Double`), and `exact::quad::ruling_side_signed` says which of a wall's two rulings a point of a cylinder lies on.
 - `exact::quad::radical_plane` is the plane two cylinders on parallel axes share their points on (`exact::quad::RadicalPlane` names the other outcomes).
 - `exact::quad::MeetLine::point_at` is the line's point at a rational parameter.
 - `step::uncertainty` gives the uncertainty a STEP file of some solids states (`step::Uncertainty`, `step::NotProven`).

@@ -107,7 +107,7 @@ pub(crate) fn order_along(
 ///
 /// **One rule, two numbers.** A pair with a plane pin is ordered by that formula — the plane-pinned
 /// point's side through the integer predicates, a pierce point's through one `a + b√c` sign
-/// ([`PierceMeet::side`]); only two pierce points, neither with a pin, go through the `a + b√c` tower on
+/// ([`PiercePoint::side`]); only two pierce points, neither with a pin, go through the `a + b√c` tower on
 /// one coordinate axis. `None` is a missing description (a pin with no exact description, a
 /// cylinder with no world statement), never a shape this cannot order.
 #[inline]
@@ -229,7 +229,7 @@ pub(crate) enum OnLine {
 /// [`Located::Pierce`].
 pub(crate) struct PierceAt {
     /// The meet line of the name's two planes and the root along it.
-    pub(crate) meet: PierceMeet,
+    pub(crate) meet: PiercePoint,
     /// The classes the gate proved the point's whole cylinder beside, with the side
     /// ([`crate::planes::WorkingCyl::beside`]) — the side of such a class this point lies on, which
     /// its coefficients cannot say: the class has no world statement. Empty, and unallocated,
@@ -251,7 +251,7 @@ impl PierceAt {
     }
 
     /// The side of plane `q` this point lies on, in [`side_of`]'s convention — the gate's record
-    /// where it holds one, else `q`'s statement ([`PierceMeet::side`]); one reading, as `side_of`'s
+    /// where it holds one, else `q`'s statement ([`PiercePoint::side`]); one reading, as `side_of`'s
     /// pierce arm makes it.
     fn side(&self, jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
         match self.beside.iter().find(|&&(c, _)| c == q) {
@@ -465,7 +465,7 @@ pub(crate) fn order_located(
 /// **A pierce point against a plane pin is the plane road's own formula.** The plane road's
 /// `at.orient3d(j) · ds` is «the side of the first point against `j`, times `dir_sign(p, q, j)`»
 /// ([`order_pinned`]'s derivation — `j`'s orientation cancels as a square), and a pierce point has a
-/// side of a plane too ([`PierceMeet::side`]). So the mixed pair reads no coordinate of the plane-pinned
+/// side of a plane too ([`PiercePoint::side`]). So the mixed pair reads no coordinate of the plane-pinned
 /// point and no direction of the line: `(X, j) ↦ side_X(j) · ds_j` and `(i, X) ↦ −side_X(i) · ds_i`.
 /// `None` where `side_X` has no description to read. Only two pierce points compare on a
 /// coordinate axis through the `a + b√c` tower, below.
@@ -539,12 +539,12 @@ fn order_by_boxes(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
     q: usize,
-    a: &PierceMeet,
-    b: &PierceMeet,
+    a: &PiercePoint,
+    b: &PiercePoint,
 ) -> Option<i8> {
     let prec = jd.standard.prec;
     let (x, y) = (a.point_hp(jd)?, b.point_hp(jd)?);
-    let (np, nq) = (jd.planes[p].stored_hp(prec), jd.planes[q].stored_hp(prec));
+    let (np, nq) = (jd.stored_hp(p, prec), jd.stored_hp(q, prec));
     let d = [
         np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
         np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),

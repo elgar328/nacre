@@ -426,8 +426,8 @@ pub fn cylinder_strip_side_extent(
 /// **Does that disk reach *one named* ruling?** — `side` names the ruling in **this** family's
 /// vocabulary: the sign of `(p − o)·(n × m)`, the same one [`StripSide::Plus`] is written about.
 ///
-/// **The arrangement's `side` is the opposite sign.** `arrangement::ruling_side_signed` measures
-/// against `m × n`, so a caller carrying a `MergedRuling` must negate before asking here. Stated
+/// **[`crate::quad::ruling_side_signed`]'s sign is the opposite one** — it measures against
+/// `m × n` — so a caller holding that sign must negate before asking here. Stated
 /// rather than absorbed: a predicate that silently accepted either convention would answer about
 /// the wrong ruling for whichever caller it was not written for.
 ///
@@ -733,4 +733,96 @@ fn lift4(v: &[Rat; 4]) -> ([num_bigint::BigInt; 4], num_bigint::BigInt) {
     let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
     let num = core::array::from_fn(|i| BigInt::from(v[i].numer()) * (&d / &den[i]));
     (num, d)
+}
+
+/// **A cylinder's exact statement** — a point on its axis, the axis direction, the seam direction
+/// and the **squared** radius, all exact rationals.
+///
+/// The two directions are kept as given, not normalized (a unit vector is irrational in general).
+/// The seam is the line of the surface on the `+ref_dir` side of the axis, where the angle about the
+/// axis is zero. The radius is held squared: the squared distance from the axis to a rational point
+/// is rational, the radius need not be — [`Self::radius_rat`] gives it exactly when it is rational,
+/// [`Self::radius_f64`] as a number.
+///
+/// Built only by [`CylinderDef::new`], which refuses a statement that names no cylinder.
+// The component form is the cylinder's analogue of a plane's *points* — a direct lift of the
+// caller's vocabulary, never a derived product (the shape refused for plane coefficients). The f64
+// cache holds the realized unit frame; this holds what the cylinder *is*. The seam is model
+// geometry, not a chart choice: the rational half-angle chart puts its excluded point on it. The
+// fields are private so a literal cannot bypass the check.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CylinderDef {
+    origin: [Rat; 3],
+    dir: [Rat; 3],
+    ref_dir: [Rat; 3],
+    /// `r²`, not `r`: the square of the distance from the axis to any rational point on the
+    /// surface is rational, the radius itself need not be, and no exact predicate ever asks for
+    /// the radius unsquared. A radius wanted as a number is a realization ([`Self::radius_f64`]),
+    /// or the exact rational when the square has one ([`Self::radius_rat`]). **Wide**, because
+    /// the square of a stated `Rat` need not fit `i128` (a 16-digit decimal below `1e-4`) and a
+    /// statement is never refused for the width of its square.
+    r2: BigRat,
+}
+
+impl CylinderDef {
+    /// The checked constructor — `None` when the statement means no cylinder, and **only then**:
+    /// a zero `dir`, a non-positive squared radius `r2`, or a `ref_dir` with no component
+    /// perpendicular to the axis (`ref_dir × dir = 0`, which a zero `ref_dir` satisfies too). The
+    /// width of the numbers is never a cause.
+    // The parallelism test runs in `parallel_rat`, which clears denominators and answers in
+    // integers, so it cannot decline. Checked `Rat` would answer `None` on overflow — conflating
+    // *no cylinder* with *the arithmetic ran out*, and callers read `None` as the first: a statement
+    // whose axis carries a small component with a long decimal (denominator ~10²⁰, whose square
+    // leaves `i128`) would crash a constructor's `expect`. Measured population: 80% of computed
+    // near-axis-aligned directions, 0% of hand-written short decimals.
+    pub fn new(origin: [Rat; 3], dir: [Rat; 3], ref_dir: [Rat; 3], r2: BigRat) -> Option<Self> {
+        let zero = Rat::from_int(0);
+        if dir.iter().all(|c| *c == zero) || !r2.is_positive() {
+            return None;
+        }
+        if parallel_rat(&ref_dir, &dir) {
+            return None;
+        }
+        Some(CylinderDef {
+            origin,
+            dir,
+            ref_dir,
+            r2,
+        })
+    }
+
+    /// A point on the axis, exact.
+    pub fn origin(&self) -> [Rat; 3] {
+        self.origin
+    }
+
+    /// The axis direction, raw (unnormalized), exact. Nonzero by construction.
+    pub fn dir(&self) -> [Rat; 3] {
+        self.dir
+    }
+
+    /// The seam reference direction, raw, exact — not parallel to `dir` by construction. The
+    /// seam is the lateral line on the `+ref_dir` side of the axis.
+    pub fn ref_dir(&self) -> [Rat; 3] {
+        self.ref_dir
+    }
+
+    /// The squared radius, exact. Positive by construction.
+    pub fn r2(&self) -> &BigRat {
+        &self.r2
+    }
+
+    /// The radius as an exact rational, when the squared radius has one — true of every radius a
+    /// caller stated as a number, and of any arc through rational points whose `|start − centre|²`
+    /// is a rational's square. `None` is not a refusal: the cylinder is as well-defined as any
+    /// other, its radius merely has no rational spelling.
+    pub fn radius_rat(&self) -> Option<Rat> {
+        sqrt_rat_big(&self.r2)
+    }
+
+    /// The radius realized as an `f64`, correctly rounded — `√r²`'s nearest `f64`, exact or
+    /// approached ([`sqrt_f64`]). The cache's number.
+    pub fn radius_f64(&self) -> f64 {
+        sqrt_f64(&self.r2).expect("r² > 0 by construction")
+    }
 }

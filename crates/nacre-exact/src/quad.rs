@@ -651,6 +651,117 @@ pub enum CylinderMeet {
     Pair { line: MeetLine, s: [QuadVal; 2] },
 }
 
+/// **Which crossing of a plane pair's line with a cylinder a point is.** The line `p ∩ q` meets a
+/// cylinder in at most two points, ordered by their parameter along `ℓ = n_p × n_q` — the order of
+/// [`plane_plane_cylinder`]'s `Pair` for the planes in that order: `Lo` the smaller, `Hi` the
+/// larger, `Double` the one point of a tangency. Reversing `ℓ` — swapping the planes, or negating
+/// either normal — trades `Lo` and `Hi` ([`QuadRoot::canonical`]).
+///
+/// The derived `Ord` is `Lo < Hi < Double`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum QuadRoot {
+    /// The smaller parameter along the meet-line direction.
+    Lo,
+    /// The larger parameter.
+    Hi,
+    /// **A tangency: the two roots coincide, so there is one point.**
+    ///
+    /// A stored variant, not just a solver's report: spelling a tangency `Lo` would leave `Lo`
+    /// meaning either "the smaller of two" or "the only one", and then nothing holding a name
+    /// could tell whether a re-sort should toggle it.
+    Double,
+}
+
+impl QuadRoot {
+    /// **The name the same point takes once the two planes are swapped.**
+    ///
+    /// Not "the other root" — the *other name for this point*, which is what a swap needs. For a
+    /// genuine pair the swap sends `lo ↦ −hi` and `hi ↦ −lo` (see [`Self::canonical`]), so the
+    /// two names trade places. For a tangency `s = mid` and the swap sends `mid ↦ −mid` along
+    /// `ℓ ↦ −ℓ`: **the point goes to itself**, so its name does too.
+    #[inline]
+    pub fn flipped(self) -> QuadRoot {
+        match self {
+            QuadRoot::Lo => QuadRoot::Hi,
+            QuadRoot::Hi => QuadRoot::Lo,
+            QuadRoot::Double => QuadRoot::Double,
+        }
+    }
+
+    /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
+    ///
+    /// A name that stores its two planes ascending defines its root against the meet line
+    /// `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's `(pair, root)` in some other
+    /// order has to restate the root — and the restatement is a
+    /// **derivation, not a convention**. Swapping the two planes in
+    /// [`plane_plane_cylinder`] sends `ℓ ↦ −ℓ` while `base` is invariant (the
+    /// Cramer system's row swap and its row-2 sign change cancel in numerator and denominator
+    /// alike), leaves `a`, `c` and the discriminant alone and sends `b ↦ −b`. So the roots become
+    /// `lo′ = −hi` and `hi′ = −lo`, and `base + lo′·(−ℓ) = base + hi·ℓ`: the swapped `Lo` and the
+    /// original `Hi` are **the same point**.
+    ///
+    /// **A tangency is the exception, and it is not written here.** With `disc = 0` there is
+    /// one point and the swap fixes it, so its name must not change — which is exactly what
+    /// [`Self::flipped`] already says about [`QuadRoot::Double`]. The exception lives in the
+    /// primitive, so this function has no special case to get wrong.
+    ///
+    /// **The rule this states is not about swapping — it is about `ℓ`.** `Lo`/`Hi` are the
+    /// order along `ℓ`, so *anything* that reverses `ℓ` trades the two names, and the swap is
+    /// only the case this function can see. Negating either normal is another: the plane is the
+    /// same set, and `plane_plane_cylinder` fixes the base by `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}`
+    /// — a condition `−ℓ` satisfies identically — so the base does not move and `ℓ` alone
+    /// reverses. ⇒ **flip once per reversal; an even number is no flip at all.**
+    #[inline]
+    pub fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
+        let [first, second] = pair;
+        if second < first {
+            ([second, first], root.flipped())
+        } else {
+            ([first, second], root)
+        }
+    }
+
+    /// **The crossing this name means**, in the meet its two classes' statements solve to (in
+    /// the name's order) — `None` where the meet does not hold it: a `Double` of a pair, a `Lo`
+    /// or `Hi` of a tangency, or a meet with no crossing.
+    pub fn crossing(self, meet: &CylinderMeet) -> Option<(MeetLine, QuadVal)> {
+        match (meet, self) {
+            (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => Some((line.clone(), s[0])),
+            (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => Some((line.clone(), s[1])),
+            (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => {
+                Some((line.clone(), QuadVal::from_rat(*s)))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// **Which of wall `w`'s rulings of cylinder `def` a point of the cylinder lies on** — the point
+/// `base + s·dir` of a meet line ([`plane_plane_cylinder`]'s), and the sign of `(x − o)·(m × n_w)`:
+/// the side of the plane through the axis with normal `m × n_w`, `0` on that plane. A wall that cuts
+/// the cylinder within its radius does so in two rulings, symmetric about that plane, so the sign
+/// tells them apart; a wall tangent to the cylinder touches it in one ruling, on that plane — `0`.
+///
+/// `None` is checked-`Rat` overflow only.
+pub fn ruling_side_signed(
+    w: &[Rat; 4],
+    def: &crate::CylinderDef,
+    at: (&MeetLine, &QuadVal),
+) -> Option<i8> {
+    let (o, m) = (def.origin(), def.dir());
+    let n = [w[0], w[1], w[2]];
+    let c = crate::cross3_rat(&m, &n)?;
+    let mut d = Rat::from_int(0);
+    for k in 0..3 {
+        d = d.checked_sub(c[k].checked_mul(o[k])?)?;
+    }
+    Some(match plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
+        Orient::Positive => 1,
+        Orient::Negative => -1,
+        Orient::Zero => 0,
+    })
+}
+
 /// The exact meet of two planes and a cylinder's lateral surface.
 ///
 /// `dir`/`r2` are the cylinder's **raw** rational axis direction and **squared** radius

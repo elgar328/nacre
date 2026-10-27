@@ -146,7 +146,7 @@ fn arc_at(
         NodeKind::ThreePlane(_) => return Err(reject(RejectReason::RingNaming)),
     }
     let at = pierce_meet(jd, a.cyl, &a.def, node)
-        .and_then(PierceMeet::into_exact)
+        .and_then(PiercePoint::into_exact)
         .ok_or_else(undecided)?;
     let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
     // The circle's centre: where the axis pierces this plane. The canonical sign the coefficients
