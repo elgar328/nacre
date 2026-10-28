@@ -56,6 +56,43 @@ pub(crate) fn axis_param_of_plane(
     nacre_exact::axis_param_of_plane(coeffs, &def.origin(), &def.dir())
 }
 
+/// **Does this class carry that cylinder's *circle*?** — its normal is parallel to the axis, so
+/// the section is a circle and not an ellipse. Exact and **total** ([`nacre_exact::axis_relation`]
+/// clears denominators into `BigInt`), so a caller's `false` means the geometry, never the width.
+/// It is the `Across` arm of the relation the gate reads three ways ([`cylinder_gate`]'s
+/// `class_meet`), so a reader asking whether a class carries a circle asks this rather than
+/// respelling the test.
+///
+/// **The one place this rule is named, and it is load-bearing far past its callers.**
+/// Sites reason from "a circle's class is ⊥ to its axis" without asking — the segment-vs-arc turn
+/// sign in `combinatorics::direction`, `circle_crosses_ruling`'s extent derivation, and
+/// `segment_meets_cylinder`'s precondition (`(p1 − p0)·m = 0`) in the arrangement's circle
+/// crossings, where the two meet shapes the premise rules out are refused as
+/// [`crate::RejectReason::ObliqueCircleClass`] should it break — and the proposition they share is
+/// held by the gate. [`crate::nesting`]'s rim witnesses and `disk_in_disk`, which would answer
+/// silently wrong, ask.
+///
+/// **What actually holds it** ([`cylinder_gate`]): the gate runs whenever the input
+/// has a cylinder at all and sweeps **every (plane class × cylinder)** pair; an oblique pair whose
+/// lateral faces cannot be *proved* to miss the plane is refused
+/// ([`crate::RejectReason::ObliqueCylinderCut`] — the section would be an ellipse). So a
+/// class that carries a circle is a class whose plane **meets** that cylinder, and had it been
+/// oblique the gate would already have refused. The seated producer has a second, stronger
+/// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
+/// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
+/// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
+///
+/// **The argument is easy to misread**,
+/// which is why a consumer that would answer *silently wrong* asks instead of assuming.
+/// The relation calls a **zero** vector parallel to everything (`Across`), so a zero normal or
+/// axis answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
+/// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
+/// with no rational description), and the gate asks the same `axis_relation`, so it shares the
+/// convention — but the name reads the convention backwards, so it is written down here.
+pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact::Rat; 3]) -> bool {
+    nacre_exact::axis_relation(n, dir) == nacre_exact::AxisRelation::Across
+}
+
 /// A lateral face's axis-parameter span, read off its rim carrier planes.
 ///
 /// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
@@ -90,7 +127,7 @@ pub(super) fn lateral_t_range(
         let coeffs = *model.world_plane_name(cap)?.narrow()?;
         // A carrier parallel to the axis is a ruling's wall: it has no station and is not one.
         // Only a ⊥ carrier — an arc's cap plane — speaks here; `None` past that is overflow.
-        if !nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+        if !class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
             continue;
         }
         let t = axis_param_of_plane(&coeffs, def)?;
@@ -151,7 +188,7 @@ fn rim_arc_union(
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
         let coeffs = world_coeffs(cap)?;
-        if !nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+        if !class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
             continue; // a ruling on a wall, not a rim
         }
         let [va, vb] = e.vertices;
@@ -387,7 +424,7 @@ pub(super) fn lateral_cover_on_ruling(
             let other = if a == face.surface { b } else { a };
             let coeffs = world_plane_coeffs(model, other)?;
             let n = [coeffs[0], coeffs[1], coeffs[2]];
-            if nacre_exact::parallel_rat(&n, &m) {
+            if class_carries_circle(&n, &m) {
                 let [va, vb] = e.vertices;
                 let held = va == vb
                     || arc_holds_half_open(

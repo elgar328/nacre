@@ -5,16 +5,7 @@
 
 ## 지금
 
-### «평면 클래스가 원통 축에 수직인가»의 철자가 셋이다
-
-클래스가 원통의 원을 싣는 것은 그 법선이 축에 평행할 때다. 그 물음을 `nacre_exact::axis_relation(n, m) == Across` 로 묻는
-자리가 둘(`cyl_gate::class_meet`, `combinatorics::class_carries_circle`), `nacre_exact::parallel_rat(n, m)` 으로 묻는 자리가
-아홉이다(`cyl_trace::circle_on_class`·`aliases.rs`·`crossings.rs`·`cyl_chart/mod.rs`·`cyl_geom.rs` 셋·`corners.rs`·
-`cyl_crossings.rs` — nacre-ops 비시험 코드, 원통 축끼리의 평행을 묻는 다른 명제는 뺐다). 이 둘은 정확 산술이라 0 이 아닌
-벡터에서 답이 갈리지 않는다. 셋째 철자는 `witnesses::face_circle` 이다 — `cross3_rat(n, m)` 이 0 인지를 checked 산술로
-물어, 넘치면 «수직 아님»과 같은 `None` 으로 접힌다. 이름이 이미 있다 — `class_carries_circle` 이 그 명제와 0 벡터의
-관례(`Across` 로 읽힌다)를 든다 — 그래서 나머지가 그것을 물으면 한 명제가 한 함수가 된다. 바꾸기 전에 두 함수의 0 벡터
-관례가 같은지 잰다. 같은 부류(한 명제를 여러 자리가 따로 계산한다)의 다른 철자는 「원통 도로에 남은 철자」가 든다.
+지금 열린 항목은 없다 — 다음은 아래에서 고른다.
 
 ## 다음 — 사용자가 만나는 한계
 
@@ -331,6 +322,8 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
   `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 그 넷은
   한 타입이 아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다(반증할 근거가
   생기면).
+- 관통점 이름의 두 평면에서 ⊥ 클래스를 고르는 두 자리(`rulings.rs::node_axis_param`·`in_faces.rs::corner_axis_param`)는
+  `class_carries_circle` 이 아니라 «축 매개변수가 있는가»(`axis_param_of_plane` — `n·m ≠ 0`, 비스듬한 평면도 통과)로 고른다.
 - 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호
   방향, `arrangement/emit.rs`)와 정확한 점만 받는 자리(`direction::arc_at` — 호의 접선 방향, `loops::curved_wall`)가 남는다.
 

@@ -339,10 +339,12 @@ fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacr
 }
 
 /// The axis parameter of the ⊥ class among a pierce corner's two naming planes — the `z` of
-/// the arc that ends there, or of a ruling piece's end. Exactly one of the two is ⊥ in this
-/// population (two ⊥ planes never meet, and [`crate::planes::axis_param_of_plane`] answers only
-/// for `n · m ≠ 0`); `None` names a corner without one — a tilted cut or a three-plane
-/// name where a pierce was expected.
+/// the arc that ends there, or of a ruling piece's end. It takes the first naming plane that
+/// meets the axis in a point ([`crate::planes::axis_param_of_plane`] answers only for
+/// `n · m ≠ 0`); two ⊥ planes never meet, so a cap-and-wall corner has exactly one. That is not
+/// the ⊥ question ([`crate::planes::class_carries_circle`]): a plane oblique to the axis answers
+/// too. `None` names a corner with no such plane — both run along the axis, or neither has a
+/// world statement — overflow, or a three-plane name where a pierce was expected.
 fn corner_axis_param(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,

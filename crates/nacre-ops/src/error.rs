@@ -401,7 +401,7 @@ pub enum RejectReason {
     /// **A backstop, deliberately, and it is classified as one.** [`Self::ObliqueCylinderCut`] says
     /// *the kernel's coverage ends here* and judges nothing about the input; this says something
     /// stronger and different — the gate promised no oblique class would carry a circle (see
-    /// [`crate::combinatorics::class_carries_circle`]) and the promise did not hold. Sharing
+    /// [`crate::planes::class_carries_circle`]) and the promise did not hold. Sharing
     /// [`Self::ObliqueCylinderCut`] would put two sentences under one label. The vessel-guard
     /// precedent is [`Self::PartialCircleUncut`], and it takes the same class.
     ///

@@ -372,8 +372,8 @@ pub(crate) fn turn(
         ) => sa * sb * jd.plane_pair_dir_sign(p, *ca, *cb) * frame,
         // **A segment against an arc needs no new primitive, and the algebra says why.**
         // A circle bound's plane is ⊥ to the axis, so `n_P ∥ m` — see
-        // [`class_carries_circle`] for what actually holds that (the gate, not this module). The
-        // arc's tangent is
+        // [`crate::planes::class_carries_circle`] for what actually holds that (the gate, not
+        // this module). The arc's tangent is
         // `T = ±(m × r)` with `r = x − c`, the segment's direction
         // `d = n_P × n_carrier` is ⊥ to `m`, and BAC-CAB collapses the cross product:
         //

@@ -24,7 +24,7 @@ use super::*;
 /// the gate lets an oblique plane through when every lateral face
 /// of the cylinder provably misses it. The conclusion stands on a narrower fact: this ring holds
 /// an **arc** of that cylinder, so the plane does not miss it, and an oblique pair that meets is
-/// what the gate refuses. [`class_carries_circle`] carries the argument.
+/// what the gate refuses. [`crate::planes::class_carries_circle`] carries the argument.
 fn face_circle<'a>(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,
@@ -41,9 +41,7 @@ fn face_circle<'a>(
     // The face's plane must be perpendicular to the axis: its normal is parallel to `m`.
     let coeffs = jd.world_rat(plane)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let c = nacre_exact::cross3_rat(&n, &first.def.dir())?;
-    let zero = nacre_exact::Rat::from_int(0);
-    if c.iter().any(|v| *v != zero) {
+    if !crate::planes::class_carries_circle(&n, &first.def.dir()) {
         return None;
     }
     Some(&first.def)

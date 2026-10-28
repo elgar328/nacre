@@ -291,8 +291,8 @@ push 하는 쪽에 묻는다(`EdgeGiven`; ops 깔때기 `push_edge_realized` 가
 종류를 읽는 판정은 진실을 읽는다. 관계는 두 방향의 물음이고 강체 운동이 보존하므로 두 진술을 세계까지 옮길
 필요가 없다: 각 방향을 자기 사슬의 선형부로 정확히 옮길 수 있는 만큼 옮기고(`LineDir` — 이동은 그대로, 거울·
 사분각은 치환, 회전은 자기 축을 그대로, 프레임은 `ẑ` 를 그 평면의 법선으로), 남은 운동이 **값으로** 같거나 한쪽이
-더 갔으면 그만큼 되돌려 한 프레임에서 묻는다. 원통 인구 게이트(`cyl_gate`)와 원의 클래스(`class_carries_circle`)가
-같은 규칙(`nacre_exact::axis_relation`)을 부른다.
+더 갔으면 그만큼 되돌려 한 프레임에서 묻는다. 원통 인구 게이트(`cyl_gate`)는 같은 규칙(`nacre_exact::axis_relation`)을
+부르고, 클래스가 원을 싣는가는 그 `Across` 팔 하나(`class_carries_circle`)로 묻는다.
 
 ```rust
 pub struct Edge {

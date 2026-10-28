@@ -60,7 +60,7 @@
 
 use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent, SegKind};
 use crate::draft::{Bound, LocalFace};
-use crate::planes::{ClassIx, SolidSide, WorkingCyl, WorkingPlane};
+use crate::planes::{ClassIx, SolidSide, WorkingCyl, WorkingPlane, class_carries_circle};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, combinatorics, reject};
 use nacre_exact::Rat;
@@ -421,7 +421,7 @@ pub(crate) fn chart_of(
         let Some(coeffs) = jd.world_rat(c) else {
             continue;
         };
-        if nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
+        if class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
             push(c, &mut classes);
         }
     }

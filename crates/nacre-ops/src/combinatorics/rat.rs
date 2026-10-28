@@ -111,38 +111,6 @@ pub(crate) fn pierce_name_from_def(
     Some(NodeId::pierce(k0, k1, cyl, root))
 }
 
-/// **Does this class carry that cylinder's *circle*?** — its normal is parallel to the axis, so
-/// the section is a circle and not an ellipse. Exact and **total** ([`nacre_exact::parallel_rat`]
-/// clears denominators into `BigInt`), so a caller's `false` means the geometry, never the width.
-///
-/// **The one place this rule is named, and it is load-bearing far past its callers.**
-/// Nine sites reason from "a circle's class is ⊥ to its axis" — [`crate::nesting`]'s rim witnesses
-/// and `disk_in_disk`, the segment-vs-arc turn sign below, `segment_meets_cylinder`'s
-/// precondition, `circle_crosses_ruling`'s extent derivation, an `unreachable!` in the
-/// arrangement's circle crossings, and three of the merge road's f64 arguments — and the
-/// proposition they share is held by the gate.
-///
-/// **What actually holds it** ([`crate::planes::cylinder_gate`]): the gate runs whenever the input
-/// has a cylinder at all and sweeps **every (plane class × cylinder)** pair; an oblique pair whose
-/// lateral faces cannot be *proved* to miss the plane is refused
-/// ([`crate::RejectReason::ObliqueCylinderCut`] — the section would be an ellipse). So a
-/// class that carries a circle is a class whose plane **meets** that cylinder, and had it been
-/// oblique the gate would already have refused. The seated producer has a second, stronger
-/// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
-/// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
-/// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
-///
-/// **The argument is easy to misread**,
-/// which is why the two consumers that would answer *silently wrong* ask instead of assume.
-/// The relation calls a **zero** vector parallel to everything (`Across`), so a zero normal or
-/// axis answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
-/// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
-/// with no rational description), and the gate asks the same `axis_relation`, so it shares the
-/// convention — but the name reads the convention backwards, so it is written down here.
-pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact::Rat; 3]) -> bool {
-    nacre_exact::axis_relation(n, dir) == nacre_exact::AxisRelation::Across
-}
-
 /// **Where a cylinder's axis meets a plane class** — the centre of the circle that cylinder traces
 /// on the plane, exact.
 ///

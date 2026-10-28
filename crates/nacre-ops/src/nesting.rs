@@ -168,9 +168,7 @@ pub(crate) fn disk_in_disk(
     // the class is known to have coefficients — no unreachable "what if it has none" arm.
     let coeffs = jd.world_rat(wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    if !combinatorics::class_carries_circle(&n, &a.dir())
-        || !combinatorics::class_carries_circle(&n, &b.dir())
-    {
+    if !class_carries_circle(&n, &a.dir()) || !class_carries_circle(&n, &b.dir()) {
         return Err(reject(RejectReason::ObliqueCircleClass));
     }
     let (ra2, rb2) = (a.r2(), b.r2());
@@ -322,7 +320,7 @@ impl Said {
 /// `û ⊥ m` does not give `û ⊥ n` unless `m ∥ n`. An `On` that is not on the boundary returns
 /// from `inside` **without** the converse, which would be a silent wrong answer rather than a
 /// refusal, so the rim is offered only to a class that carries the circle
-/// ([`combinatorics::class_carries_circle`]). On an oblique class
+/// ([`class_carries_circle`]). On an oblique class
 /// `ask`'s radial arm is **right** (it reads the solid cylinder, and an
 /// elliptical section is exactly the plane's points within `r` of the axis), while `disk_in_disk`
 /// is wrong there — not for the centre distance (both
@@ -346,7 +344,7 @@ fn rim_and_centre<'a>(
     // class plane and a `Witness::On` there is a lie `inside` answers **without the converse** —
     // a silent wrong answer, not a refusal. The centre stays: it is the ellipse's centre either
     // way, and `ask`'s radial arm reads the solid cylinder, which is right for any section.
-    // The guard is total ([`combinatorics::class_carries_circle`]) and fires nowhere today; the
+    // The guard is total ([`class_carries_circle`]) and fires nowhere today; the
     // gate is what empties its population, and this is what says so where the point is made.
     // `is_some_and` folds a *second* cause in — a class with no rational description also loses
     // its rim. That population is empty too: such a class passes the gate only as silent about
@@ -355,7 +353,7 @@ fn rim_and_centre<'a>(
     // direction this kernel takes.
     let carries = jd
         .world_rat(wc)
-        .is_some_and(|c| combinatorics::class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
+        .is_some_and(|c| class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
     // Rim witnesses at `centre + r·u` need the radius itself; a cell whose squared radius has no
     // rational root is simply not offered them — it keeps its centre, exactly as when a witness's
     // arithmetic leaves `i128` below.

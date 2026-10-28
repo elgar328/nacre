@@ -246,7 +246,7 @@ impl Aliases {
             let Some(wc) = jd.world_rat(c) else {
                 continue;
             };
-            if !nacre_exact::parallel_rat(&[wc[0], wc[1], wc[2]], &m) {
+            if !class_carries_circle(&[wc[0], wc[1], wc[2]], &m) {
                 continue; // only a class across the axis meets the line in a point
             }
             let mut s = [c, t1, t2];

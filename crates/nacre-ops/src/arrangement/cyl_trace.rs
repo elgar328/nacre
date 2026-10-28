@@ -44,10 +44,10 @@ pub(super) fn circle_on_class(
     };
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let m = def.dir();
-    // ⊥ to the axis, decided **totally** (`parallel_rat` clears denominators and answers in
-    // integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
+    // ⊥ to the axis, decided **totally** (`class_carries_circle` clears denominators and answers
+    // in integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
     // all — a miss, like a parallel plane, not a decline.
-    if !nacre_exact::parallel_rat(&n, &m) {
+    if !class_carries_circle(&n, &m) {
         return Ok(Vec::new());
     }
     // **The face's boundary as the tracer names it — its cycles — and nothing else.** A

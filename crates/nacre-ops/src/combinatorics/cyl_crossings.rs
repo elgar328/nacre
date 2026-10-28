@@ -291,7 +291,7 @@ pub(crate) fn crossing_on_ruling(
     use RulingNameFail::{NoCrossing, Undecided, Width};
     use nacre_judge::cylinder::LineMeet;
     let w = jd.world_rat(wc).ok_or(NoCrossing)?;
-    if !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &def.dir()) {
+    if !crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
         return Err(NoCrossing);
     }
     let meet = jd.line_meet(wc, fc, def, false);

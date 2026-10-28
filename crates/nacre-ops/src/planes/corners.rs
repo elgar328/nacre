@@ -558,7 +558,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corn
         .ok_or(CornerFail::Shape)?;
     let def = world_cylinder(model, cylinder)?;
     let (o, m) = (def.origin(), def.dir());
-    if !nacre_exact::parallel_rat(&n, &m) {
+    if !class_carries_circle(&n, &m) {
         return Err(CornerFail::Shape);
     }
     // `n·(o + t·m) + d = 0`, and `n·m ≠ 0` because the axis is along the normal.

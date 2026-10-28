@@ -460,7 +460,7 @@ pub(super) fn split_segments_at(
 /// - `AxisParallelMiss` — a line ⊥ to the axis is not ∥ to it.
 ///
 /// The last two are the gate's promise that no class oblique to the axis carries a circle
-/// ([`combinatorics::class_carries_circle`]); if it breaks, the answer would be a silent «no
+/// ([`class_carries_circle`]); if it breaks, the answer would be a silent «no
 /// crossing», so it is refused by that promise's name (`ObliqueCircleClass`) where a debug build
 /// stops. The quadratic cannot degenerate either: its leading coefficient is `|d|² > 0` because
 /// `d ⊥ m`.
@@ -703,7 +703,7 @@ impl AxisCoord {
         let m = def.dir();
         for &c in planes {
             if let Some(w) = jd.world_rat(c)
-                && nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m)
+                && class_carries_circle(&[w[0], w[1], w[2]], &m)
             {
                 let t = crate::planes::axis_param_of_plane(&w, def)?;
                 return Some(Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(
