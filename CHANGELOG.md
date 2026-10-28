@@ -72,6 +72,7 @@ While the version is `0.0.z`, every release may break anything.
 - **Breaking:** `ops::Realized` → `ops::Realization`, so «Realized» names only a cache's tier; and `ops::realize_cache` — the cheap road every push takes, which only the kernel's own instruments asked — is no longer published.
 - **Breaking:** `exact::round_to_f64` takes no precision: it forms the interval's ends at the value's own precision, as `exact::round_to_digits` does.
 - `judge::WitnessPoint`'s wide and judged frame steps charge a narrowed axis or origin component half an ulp — floored at the smallest normal `f64`, and nothing for an exact component — where they charged the realization's radius plus a whole ulp.
+- `props::centroid` gives the centroid of a solid with cylindrical faces — a bore, a fillet, an arc in its profile — where it refused with `props::PropsError::CentroidOfCurvedFace`. Like the volume, it is an `f64` measurement.
 
 ### Removed
 
@@ -86,6 +87,7 @@ While the version is `0.0.z`, every release may break anything.
 - `Operation::PadOnFace` and `Operation::PocketOnFace`, their `OpOutput` variants, and `OpError::PadMissesFace`, `OpError::PocketNotBlind` and `OpError::NonPositiveDistance`. A pad or pocket is the face's sketch frame (`face_sketch_frame`), an `Extrude` with a positive or negative distance, and a `Boolean` with the face's solid; a pocket deeper than the body cuts through.
 - `LogCell::Face`, which only the removed operations used.
 - `topo::Model::make_live`, whose only callers were the removed operations.
+- **Breaking:** `props::PropsError::CentroidOfCurvedFace`, which nothing returns now that `props::centroid` reads curved faces.
 
 ### Fixed
 

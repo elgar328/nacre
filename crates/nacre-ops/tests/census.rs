@@ -524,22 +524,14 @@ fn record(
             let mut parts = Vec::new();
             for &s in v {
                 let p = nacre_props::mass_props(m, s).expect("props");
-                // **A curved result has no centroid to print, and that is a record, not a crash.**
-                // `centroid` refuses a face it cannot integrate a first moment over
-                // (`CentroidOfCurvedFace`). Volume and area still measure the whole body, so the
-                // row keeps its comparable numbers and marks the missing field rather than taking
-                // the process down.
                 let (n, d) = coord_digest(m, s);
-                let centroid = match nacre_props::centroid(m, s) {
-                    Ok(c) => format!(
-                        "{:016x},{:016x},{:016x}",
-                        c[0].to_bits(),
-                        c[1].to_bits(),
-                        c[2].to_bits()
-                    ),
-                    Err(nacre_props::PropsError::CentroidOfCurvedFace) => "curved".to_string(),
-                    Err(e) => panic!("centroid: {e:?}"),
-                };
+                let c = nacre_props::centroid(m, s).expect("centroid");
+                let centroid = format!(
+                    "{:016x},{:016x},{:016x}",
+                    c[0].to_bits(),
+                    c[1].to_bits(),
+                    c[2].to_bits()
+                );
                 parts.push(format!(
                     "{:016x}/{:016x}/{centroid}/v{n}h{d:016x}",
                     p.volume.to_bits(),

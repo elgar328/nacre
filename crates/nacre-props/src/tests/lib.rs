@@ -334,23 +334,186 @@ fn an_off_centre_void_pushes_the_centroid_away() {
     }
 }
 
+/// The centroid's three coordinates against `want`, each by [`close`].
+fn centroid_is(m: &Model, s: Handle<Solid>, want: [f64; 3]) {
+    let c = centroid(m, s).unwrap();
+    for i in 0..3 {
+        assert!(close(c[i], want[i]), "axis {i}: {c:?} vs {want:?}");
+    }
+}
+
+/// The edge leaving a ring vertex: straight, or an arc of `turns` quarter turns about a centre.
+type Leaving = Option<([f64; 2], i32)>;
+
+/// One ring of a sketch: `(vertex, edge from it)` pairs.
+fn ring(steps: &[([f64; 2], Leaving)]) -> nacre_ops::Ring2d {
+    let rat = |p: [f64; 2]| p.map(|x| nacre_exact::Rat::from_decimal(x).unwrap());
+    let (mut vertices, mut edges) = (Vec::new(), Vec::new());
+    for &(at, arc) in steps {
+        vertices.push(rat(at));
+        edges.push(match arc {
+            None => nacre_ops::Edge2d::Line,
+            Some((centre, turns)) => {
+                nacre_ops::arc_turns_rat(rat(centre), rat(at), turns)
+                    .unwrap()
+                    .0
+            }
+        });
+    }
+    nacre_ops::Ring2d::new(vertices, edges).unwrap()
+}
+
+/// `ring` extruded `dist` up from `z = 0`.
+fn prism(m: &mut Model, r: nacre_ops::Ring2d, dist: f64) -> Handle<Solid> {
+    let op = Operation::Extrude {
+        frame: SketchFrame::world(m, Axis::Z),
+        profile: nacre_ops::from_paths(vec![r]).unwrap().remove(0),
+        dist,
+    };
+    let OpOutput::Extrude { solid, .. } = apply(m, &op).unwrap() else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// The plate `[0, 10]² × [0, 2]` with its corner `(10, 10)` rounded to radius 3.
+fn rounded_corner_plate(m: &mut Model) -> Handle<Solid> {
+    let r = ring(&[
+        ([0.0, 0.0], None),
+        ([10.0, 0.0], None),
+        ([10.0, 7.0], Some(([7.0, 7.0], 1))),
+        ([7.0, 10.0], None),
+        ([0.0, 10.0], None),
+    ]);
+    prism(m, r, 2.0)
+}
+
+/// [`rounded_corner_plate`]'s centroid: the plate, less the corner square `[7, 10]²`, plus the
+/// quarter disk about `(7, 7)`, whose centroid stands `4r/(3π)` off each of its edges.
+fn rounded_corner_centroid() -> [f64; 3] {
+    let quarter = 9.0 * PI / 4.0;
+    let area = 100.0 - 9.0 + quarter;
+    let xy = (100.0 * 5.0 - 9.0 * 8.5 + quarter * (7.0 + 4.0 / PI)) / area;
+    [xy, xy, 1.0]
+}
+
+/// A plain cylinder's centroid is its axis's midpoint — on the axis because the band is whole.
 #[test]
-fn a_curved_solid_refuses_a_centroid_but_still_reports_volume() {
+fn a_cylinders_centroid_is_its_axis_midpoint() {
     let mut m = Model::new();
     let s = nacre_ops::fixtures::cylinder_with_seam(
         &mut m,
-        Point3::origin(),
+        Point3::from_array([1.0, -2.0, 3.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
     )
     .solid;
-    assert!(matches!(
-        centroid(&m, s),
-        Err(PropsError::CentroidOfCurvedFace)
-    ));
-    assert!(close(mass_props(&m, s).unwrap().volume, 20.0 * PI));
+    centroid_is(&m, s, [1.0, -2.0, 5.5]);
+}
+
+/// **A cut band, symmetric about one axis.** The half disk of radius 2 about the origin on
+/// `y ≥ 0`: its centroid stands `4r/(3π)` off the chord.
+#[test]
+fn a_half_disk_prisms_centroid_stands_off_its_chord() {
+    let mut m = Model::new();
+    let r = ring(&[([2.0, 0.0], Some(([0.0, 0.0], 2))), ([-2.0, 0.0], None)]);
+    let s = prism(&mut m, r, 3.0);
+    centroid_is(&m, s, [0.0, 8.0 / (3.0 * PI), 1.5]);
+}
+
+/// **A whole band facing its axis, as an inner loop.** The plate `[0, 10]² × [0, 2]` with a bore
+/// of radius 1 at `(3, 4)`: the plate's moment less the bore's.
+#[test]
+fn a_bore_off_centre_pulls_the_centroid_away() {
+    let mut m = Model::new();
+    let plate = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::origin(),
+        Point3::from_array([10.0, 10.0, 2.0]),
+    );
+    let bore = nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([3.0, 4.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        4.0,
+    )
+    .solid;
+    let r = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, plate, bore).unwrap();
+    m.rebuild_adjacency();
+    assert_eq!(r.len(), 1);
+    let (vp, vb) = (200.0, 2.0 * PI);
+    let off = |p: f64, b: f64| (vp * p - vb * b) / (vp - vb);
+    centroid_is(&m, r[0], [off(5.0, 3.0), off(5.0, 4.0), 1.0]);
+}
+
+/// **A cut band facing away from its axis.** The quarter of a fillet: the arc runs a quarter turn
+/// from `ref_dir`'s side, so no symmetry zeroes the band's off-axis moments.
+#[test]
+fn a_rounded_corners_centroid_counts_the_quarter_disk() {
+    let mut m = Model::new();
+    let s = rounded_corner_plate(&mut m);
+    centroid_is(&m, s, rounded_corner_centroid());
+}
+
+/// **A cut band facing its axis.** The plate `[0, 10]² × [0, 2]` with its corner `(0, 0)` cut
+/// away by a cylinder of radius 3 on the corner's edge: the quarter disk's moment comes off.
+#[test]
+fn a_corner_cut_by_a_cylinder_loses_the_quarter_disk() {
+    let mut m = Model::new();
+    let plate = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::origin(),
+        Point3::from_array([10.0, 10.0, 2.0]),
+    );
+    let tool = nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        3.0,
+        4.0,
+    )
+    .solid;
+    let r = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, plate, tool).unwrap();
+    m.rebuild_adjacency();
+    assert_eq!(r.len(), 1);
+    let quarter = 9.0 * PI / 4.0;
+    let xy = (100.0 * 5.0 - quarter * (4.0 / PI)) / (100.0 - quarter);
+    centroid_is(&m, r[0], [xy, xy, 1.0]);
+}
+
+/// **The centroid moves with the solid.** The rounded plate turned 37° about `z` through
+/// `(1, 2, 0)` — a cylinder the turn leaves with no world statement — has the turned centroid.
+#[test]
+fn a_turned_curved_solids_centroid_turns_with_it() {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
+    let mut m = Model::new();
+    let s = rounded_corner_plate(&mut m);
+    let Ok(OpOutput::Transform { solid }) = apply(
+        &mut m,
+        &Operation::Transform {
+            solid: s,
+            isometry: Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                pivot: [Rat::from_int(1), Rat::from_int(2), Rat::from_int(0)],
+                angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+            }),
+        },
+    ) else {
+        panic!("the turn")
+    };
+    m.rebuild_adjacency();
+    let [x, y, z] = rounded_corner_centroid();
+    let (sn, cs) = 37f64.to_radians().sin_cos();
+    let (dx, dy) = (x - 1.0, y - 2.0);
+    centroid_is(
+        &m,
+        solid,
+        [1.0 + cs * dx - sn * dy, 2.0 + sn * dx + cs * dy, z],
+    );
 }
 
 /// A `2·hw` square centred on a `size` cube's lid.
@@ -547,6 +710,11 @@ proptest! {
         let props = mass_props(&m, s).unwrap();
         prop_assert!(close(props.volume, PI * r * r * h), "vol {} vs {}", props.volume, PI*r*r*h);
         prop_assert!(close(props.area, 2.0 * PI * r * (r + h)), "area {}", props.area);
+        let c = centroid(&m, s).unwrap();
+        let mid = base + dir * (0.5 * h / dir.norm());
+        for i in 0..3 {
+            prop_assert!(close(c[i], mid[i]), "axis {i}: {c:?} vs {mid:?}");
+        }
     }
 
     /// A boss adds `A_p·dist` of volume and `P·dist` of surface (the top hole

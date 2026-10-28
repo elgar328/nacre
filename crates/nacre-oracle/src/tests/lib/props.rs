@@ -13,6 +13,20 @@ fn face_count(model: &Model, s: Handle<Solid>) -> usize {
         .sum()
 }
 
+/// nacre's centroid of `s` against OCCT's, axis by axis — on a curved solid, the first-moment
+/// integral of the lateral faces against an independent kernel's.
+fn centroid_agrees(model: &Model, s: Handle<Solid>, occt: [f64; 3], what: &str) {
+    let c = nacre_props::centroid(model, s).unwrap();
+    for i in 0..3 {
+        assert!(
+            approx(c[i], occt[i]),
+            "{what}: centroid axis {i}: nacre {} occt {}",
+            c[i],
+            occt[i]
+        );
+    }
+}
+
 #[test]
 fn parse_reads_all_fields_order_independent() {
     let stdout = "\
@@ -212,6 +226,7 @@ fn a_turned_cylinder_matches_occt() {
     model.rebuild_adjacency();
     let ours = mass_props(&model, solid).unwrap();
     let occt = occt_props_of(&model).unwrap();
+    centroid_agrees(&model, solid, occt.centroid, "the turned cylinder");
     let (vol, area) = (PI * 1.5 * 1.5 * 2.0, 2.0 * PI * 1.5 * (1.5 + 2.0));
     assert!(
         approx(ours.volume, occt.volume) && approx(ours.volume, vol),
@@ -303,6 +318,7 @@ fn through_hole_cut_matches_occt() {
     let s = boolean_one(&mut model, BoolKind::Cut, a, b).unwrap();
     let ours = mass_props(&model, s).unwrap();
     let p = occt_props_of(&model).unwrap();
+    centroid_agrees(&model, s, p.centroid, "the drilled box");
     // `approx`, not a hand-picked epsilon: the harness reports OCCT's figures to six
     // significant digits, so a tighter comparison measures the *printout* rather than the
     // two kernels (measured — 1e-6 absolute failed on 6.4292 vs 6.4292036732051026).
@@ -346,6 +362,7 @@ fn a_tangent_wall_through_a_lateral_window_matches_occt() {
             let occt = occt_boolean_of(&m, OcctBool::Cut, slab, boss).unwrap();
             let r = boolean_one(&mut m, BoolKind::Cut, slab, boss).unwrap();
             let ours = mass_props(&m, r).unwrap();
+            centroid_agrees(&m, r, occt.centroid, &format!("w {w} seam {seam}"));
             let window = w * (1.0 - w * w).sqrt() + w.asin() - w;
             let hand = 7.2 - (PI - window) * 0.6;
             assert!(
@@ -572,6 +589,7 @@ fn two_bores_match_occt() {
     let two = boolean_one(&mut model, BoolKind::Cut, one, d2).unwrap();
     let ours = mass_props(&model, two).unwrap();
     let p = occt_props_of(&model).unwrap();
+    centroid_agrees(&model, two, p.centroid, "two bores");
     assert!(
         approx(ours.volume, p.volume),
         "volume: nacre {} vs occt {}",
@@ -808,6 +826,7 @@ fn cylinder_props_diff_occt() {
     .solid;
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
+    centroid_agrees(&model, solid, occt.centroid, "the cylinder");
     assert!(
         approx(nacre.volume, occt.volume),
         "{} vs {}",

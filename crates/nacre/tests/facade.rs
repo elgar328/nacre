@@ -373,11 +373,6 @@ fn errors_from_the_doors_say_one_line_and_chain_their_cause() {
         no_radius.to_string(),
         "the radius 0 at (0, 0) is not positive"
     );
-    let curved = centroid(&m, solids[0]).unwrap_err();
-    assert_eq!(
-        curved.to_string(),
-        "the centroid is refused for a solid with a curved face"
-    );
 }
 
 /// `?` carries every door's error into one `Box<dyn Error>`, and the caller can still take it
@@ -551,7 +546,6 @@ fn every_error_line_follows_the_std_convention() {
         [
             PropsError::UnsupportedBoundary,
             PropsError::UnsupportedInnerLoop,
-            PropsError::CentroidOfCurvedFace,
         ]
         .iter()
         .map(ToString::to_string),

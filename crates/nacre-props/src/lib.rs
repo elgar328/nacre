@@ -17,9 +17,7 @@ use nacre_topo::{Face, Loop, Model, Solid, SurfaceCache};
 
 use std::f64::consts::PI;
 
-/// Volume and surface area of one solid. The centroid is [`centroid`], a
-/// separate function: it needs a planar boundary, and folding it in here would
-/// take volume and area down with it on a curved solid. (Inertia is still
+/// Volume and surface area of one solid. The centroid is [`centroid`]. (Inertia is still
 /// deferred — no consumer has asked.)
 ///
 /// No `PartialEq`: the fields are `f64`, and production geometry never compares
@@ -49,12 +47,6 @@ pub enum PropsError {
     /// Not returned: a curved face's inner loops — holes, and a lateral's second rim — are
     /// integrated like every other boundary (`lateral_moments`).
     UnsupportedInnerLoop,
-    /// [`centroid`] met a **curved** face. Volume and area handle those
-    /// analytically, but the cone argument the centroid rests on needs a planar
-    /// base, so it is refused rather than approximated. Volume and area on the
-    /// same solid are unaffected — which is why the centroid is its own
-    /// function and not a [`MassProps`] field.
-    CentroidOfCurvedFace,
 }
 
 impl std::fmt::Display for PropsError {
@@ -64,7 +56,6 @@ impl std::fmt::Display for PropsError {
                 "a boundary is empty, encloses nothing, or is not a loop these properties read"
             }
             Self::UnsupportedInnerLoop => "a curved face's inner loop is not supported",
-            Self::CentroidOfCurvedFace => "the centroid is refused for a solid with a curved face",
         })
     }
 }
@@ -97,7 +88,7 @@ pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, Prop
     // its (unsigned) area adds — both surfaces bound material.
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
         for &face in &model.shell(sh).faces {
-            let (a, flux) = face_contribution(model, model.face(face), reference)?;
+            let (a, flux, _) = face_integrals(model, model.face(face), reference)?;
             area += a;
             volume_flux += flux;
         }
@@ -179,19 +170,14 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
     }
 }
 
-/// The centroid of one solid.
+/// The centroid of one solid — the mean point of its material, planar and cylindrical faces alike.
 ///
-/// Reuses the divergence-theorem decomposition [`mass_props`] already performs:
-/// the solid is the signed sum of **cones** from a reference point `R` over each
-/// planar face, and a cone's centroid sits three quarters of the way from its
-/// apex to the base's centroid — for *any* base outline, because the
-/// cross-sections are scaled copies. So `C = R + Σ Vᵢ·¾(cᵢ − R) / Σ Vᵢ` with
-/// `Vᵢ = Aᵢ·n̂ᵢ·(cᵢ − R)/3`, all of which [`face_props`] already supplies. Holes
-/// need no special case: `Aᵢ` and `cᵢ` are the region's, holes already removed.
+/// A measurement, like [`mass_props`]: computed analytically from the realized geometry in `f64`.
+/// A solid's centroid is in general not a number the kernel's exact types hold (a half disk's sits
+/// `4r/(3π)` off its chord), so it is a value to report, not a point to build on.
 ///
-/// A **curved** face breaks that argument (the cone over it is not one), so a
-/// solid carrying any is refused rather than approximated — volume and area on
-/// the same solid keep working, which is why this is not a [`MassProps`] field.
+/// Refused (`UnsupportedBoundary`) where [`face_props`] refuses one of its faces, or where the
+/// solid encloses no volume.
 pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsError> {
     let solid = model.solid(solid);
     let outer = model.shell(solid.outer);
@@ -202,12 +188,9 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsErro
     let mut moment = Vector3::zero();
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
         for &face in &model.shell(sh).faces {
-            let f = face_props(model, face)?;
-            let normal = f.normal.ok_or(PropsError::CentroidOfCurvedFace)?;
-            let arm = f.centroid - reference;
-            let v = f.area * normal.dot(arm) / 3.0;
-            volume += v;
-            moment += arm * (0.75 * v);
+            let (_, flux, m) = face_integrals(model, model.face(face), reference)?;
+            volume += flux / 3.0;
+            moment += m;
         }
     }
     if volume == 0.0 {
@@ -261,13 +244,27 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
     Ok((Point3::from_array(lo), Point3::from_array(hi)))
 }
 
-/// `(area, raw volume flux)` of one face — flux is `∮ (r − R)·n̂ dA` without the
-/// global `1/3`. Outward normal = surface natural normal × orientation sign.
-fn face_contribution(
+/// `(area, raw volume flux, first moment)` of one face — the face's part of the solid's area, of
+/// `∮ (p − R)·n̂ dA` (three times its volume share), and of `∫_V (p − R) dV`. Outward normal =
+/// surface natural normal × orientation sign.
+///
+/// **One field for the first moment.** With `q = p − R`, `∂ⱼ(qᵢ qⱼ) = 4 qᵢ`, so the divergence
+/// theorem gives `∫_V q dV = ¼ ∮ q (q·n̂) dA` — and any face may be integrated by its own closed
+/// form, because the faces of one closed surface share the field.
+///
+/// - **A plane** has `q·n̂ = h` constant, so its term is `¼·h·A·(c − R) = ¾·vᵢ·(c − R)`: the cone over
+///   the face from `R`, whose centroid sits three quarters of the way from apex to base for any
+///   outline. Holes need no case of their own — `A` and `c` are the region's.
+/// - **A lateral**, `q = b + z·â + r·n̂(θ)` with `b` the axis point at the moments' `z0` less `R`, has
+///   `q·n̂ = r + b·n̂` and `dA = r dθ dz`, so its term is
+///   `¼·r·[ r·b·j1 + r·â·jz + r²·jn + b·(b·jn) + â·(b·jzn) + r·(jnn·b) ]` over [`LateralMoments`],
+///   whose `sign` cancels the outward normal's as in the flux. `b` is taken at `z0`, not at the
+///   axis origin, because `jzn` moves when `z` is shifted and the moments measure `z` from `z0`.
+fn face_integrals(
     model: &Model,
     face: &Face,
     reference: Point3,
-) -> Result<(f64, f64), PropsError> {
+) -> Result<(f64, f64, Vector3), PropsError> {
     let sign = f64::from(face.orientation.sign());
     // The cache, for the same reason as `face_props`: the divergence theorem is being
     // evaluated in `f64`, so the realization is the right description to read.
@@ -278,7 +275,9 @@ fn face_contribution(
             // hole's contribution (divergence theorem, n̂ constant on a plane).
             let normal = plane.normal() * sign;
             let (area, centroid) = planar_region(model, face)?;
-            Ok((area, normal.dot(centroid - reference) * area))
+            let arm = centroid - reference;
+            let flux = normal.dot(arm) * area;
+            Ok((area, flux, arm * (0.75 * (flux / 3.0))))
         }
         SurfaceCache::Cylinder { cylinder: cyl, .. } => {
             // With `p = a₀ + z·axis + r·n̂(θ)` and outward `sign·n̂`, `(p−R)·n̂ = r + (a₀−R)·n̂`
@@ -287,12 +286,23 @@ fn face_contribution(
             // The moments below are already `sign`-carrying, so the two signs **cancel** and
             // none is written here; the area, which must come out positive, keeps one.
             let m = lateral_moments(model, face, cyl)?;
-            let radius = cyl.radius();
+            let r = cyl.radius();
+            let axis = cyl.axis().direction();
             let a0 = cyl.axis().origin();
-            Ok((
-                radius * sign * m.j1,
-                radius * (radius * m.j1 + (a0 - reference).dot(m.jn)),
-            ))
+            let flux = r * (r * m.j1 + (a0 - reference).dot(m.jn));
+            let b = (a0 + axis * m.z0) - reference;
+            let (u, w) = (cyl.ref_dir(), axis.cross(cyl.ref_dir()));
+            let (bu, bw) = (b.dot(u), b.dot(w));
+            let [cc, cs, ss] = m.jnn;
+            let nn_b = u * (bu * cc + bw * cs) + w * (bu * cs + bw * ss);
+            let moment = (b * (r * m.j1)
+                + axis * (r * m.jz)
+                + m.jn * (r * r)
+                + b * b.dot(m.jn)
+                + axis * b.dot(m.jzn)
+                + nn_b * r)
+                * (0.25 * r);
+            Ok((r * sign * m.j1, flux, moment))
         }
     }
 }
@@ -408,8 +418,8 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
 ///
 /// Each is carried with the sign of the walk's sense in the chart, which is the face's
 /// `Orientation::sign()` (see [`lateral_moments`]); consumers either multiply it back in (the
-/// area) or take a ratio of two moments (the centroid) or have it cancel against the outward
-/// normal's own sign (the flux).
+/// area) or take a ratio of two moments (the face's centroid) or have it cancel against the
+/// outward normal's own sign (the flux, and the solid's first moment in [`face_integrals`]).
 struct LateralMoments {
     /// `∬ dθ dz` — the chart area.
     j1: f64,
@@ -417,6 +427,10 @@ struct LateralMoments {
     jn: Vector3,
     /// `∬ (z − z0) dθ dz`.
     jz: f64,
+    /// `∬ (z − z0)·n̂(θ) dθ dz`, in world coordinates.
+    jzn: Vector3,
+    /// `∬ n̂n̂ᵀ dθ dz` in the face's `(ref_dir, axis × ref_dir)` frame: `[∬cos², ∬cos·sin, ∬sin²]`.
+    jnn: [f64; 3],
     /// The axial station, from the axis origin, that `jz` measures `z` from.
     z0: f64,
 }
@@ -433,8 +447,9 @@ struct LateralMoments {
 ///     ∬_R g dθ dz  =  ∮_∂R −G dθ        (∂R walked CCW in the chart)
 /// ```
 ///
-/// and the four `g` this crate needs — `1`, `cos θ`, `sin θ` (area and flux) and `z` (the
-/// centroid) — all have closed-form `G`. Three consequences carry the curved arms:
+/// and the `g` this crate needs — `1`, `cos θ`, `sin θ` (area and flux), `z` (the face's centroid),
+/// and `z·cos θ`, `z·sin θ`, `cos²θ`, `cos θ·sin θ`, `sin²θ` (the solid's first moment) — all have
+/// closed-form `G`. Three consequences carry the curved arms:
 ///
 /// - **Inner loops are not a special case.** The identity sums over *every* boundary component in
 ///   the sense it is wound, so a hole subtracts itself. No `UnsupportedInnerLoop`.
@@ -476,6 +491,7 @@ fn lateral_moments(
         .ok_or(PropsError::UnsupportedBoundary)?;
     let z0 = axial_of(model.vertex_point(he_start(model, first)?));
     let (mut j1, mut jz, mut jc, mut js) = (0.0, 0.0, 0.0, 0.0);
+    let (mut cc, mut cs, mut ss, mut zc, mut zs) = (0.0, 0.0, 0.0, 0.0, 0.0);
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for &he in &lp.half_edges {
             let Curve::Circle(c) = edge_curve(model, he) else {
@@ -508,10 +524,18 @@ fn lateral_moments(
             };
             j1 -= z * travel;
             jz -= 0.5 * z * z * travel;
+            cc -= 0.5 * z * travel;
+            ss -= 0.5 * z * travel;
             if va != vb {
                 // `sin`/`cos` are periodic, so these need no unwrapping.
                 jc -= z * (t_end.sin() - t_start.sin());
                 js += z * (t_end.cos() - t_start.cos());
+                let d2 = 0.25 * ((2.0 * t_end).sin() - (2.0 * t_start).sin());
+                cc -= z * d2;
+                ss += z * d2;
+                cs -= 0.5 * z * (t_end.sin().powi(2) - t_start.sin().powi(2));
+                zc -= 0.5 * z * z * (t_end.sin() - t_start.sin());
+                zs += 0.5 * z * z * (t_end.cos() - t_start.cos());
             }
         }
     }
@@ -522,6 +546,8 @@ fn lateral_moments(
         j1,
         jn: u * jc + w * js,
         jz,
+        jzn: u * zc + w * zs,
+        jnn: [cc, cs, ss],
         z0,
     })
 }
