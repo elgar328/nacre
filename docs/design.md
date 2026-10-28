@@ -2527,10 +2527,12 @@ A 를 받치던 다섯 근거가 이 커널에서 서지 않는 까닭:
 
 ### 참고 논문과 라이선스 규율
 
-일반 이차곡면쌍에 갈 때 꺼낼 참고처다(원통에는 불필요).
+일반 이차곡면쌍과 곡면 위 배열(원통 차트의 곡선 어휘)에 갈 때 꺼낼 참고처다.
 
 - **QI 3부작 + 구현 논문**(pencil 분류로 교차 타입을 대수적으로 exact 결정). Dupont·Lazard·Lazard·Petitjean, "Near-optimal parameterization of the intersection of quadrics" — SoCG 2003, JSC 2008 저널 3부작(Part I 생성 알고리즘 43(3):168–191, Part II pencil 분류 43(3):192–215, Part III 특이 교차 43(3):216–232). C++ 구현 논문: Lazard·Peñaranda·Petitjean, "Intersecting Quadrics: An Efficient and Exact Implementation", SoCG 2004 / Comp. Geom. 35(1–2):74–99, 2006.
 - **CGAL 3D Spherical Kernel**(2차 대수적수 exact — 다른 계보). de Castro·Cazals·Loriot·Teillaud, Comp. Geom. 42(6–7):536–550, 2009. 간접 술어(Attene, 정의 기반)와 다른 계보라 「확장」이 아니라 「대안 접근」으로만 참고한다.
+- **곡면 위 배열.** Berberich·Fogel·Halperin·Kerber·Setter, "Arrangements on Parametric Surfaces" I·II, Math. Comput. Sci. 4, 2010 — 엔진은 곡선·곡면 종류를 모르고, 곡선 종류마다 술어 묶음(비교·위아래·분할·교점과 중복도)과 곡면 위상(원통에는 무한 면이 없다, seam 은 식별선)만 댄다.
+- **이차곡면 교선의 정확 배열.** Berberich·Hemmer·Kettner·Schömer·Wolpert, SoCG 2005 — 교선을 평면에 사상해 배열하고, 퇴화는 경우 코드가 아니라 정확한 0 의 판정이 받는다.
 
 라이선스 규율은 indirect predicates 에 적용한 것과 같고 더 엄격하다.
 

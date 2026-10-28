@@ -5,50 +5,16 @@
 
 ## 지금
 
-### 원통 도로를 한 엔진으로 — 곡선 traits · 교선 생성기
+### «평면 클래스가 원통 축에 수직인가»의 철자가 셋이다
 
-평면 도로는 한 엔진이다: 점은 정의로 들고 부호는 판정층 하나가 답한다(유리수면 정확 술어, 회전이 끼면 필터 → 상승 →
-증명된 일치 또는 이름 붙인 거절 — design 「CIP」). 원통 판정의 구간 팔은 판정층의 문이고 각 문의 몸통은 정밀도를 인자로
-받는다; 무엇이 판정층에 있고 무엇이 nacre-ops 에 남는지, 두 도로가 한 몸통이 될 수 없는 물음은 design 「이차곡면 판정 — 원통
-우선」이 든다. 상승은 없다(「보류」의 «원통 판정의 상승 — 인구가 생기면»).
-
-남은 것은 그 위다. 잰 것(nacre-ops, 비시험 코드):
-
-- «평면의 어느 쪽인가»의 철자: `Judge::orient3d`(세 평면 점)·`PiercePoint::side`(관통점, 두 도로를 한 몸통에)·`plane_side_of_rat`
-  (게이트의 유리수 점)·`plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
-  충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `crossings::AxisCoord`
-  하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
-- 게이트는 (평면 클래스, 원통) 쌍마다 생성기 하나(`cyl_gate::class_meet` → `ClassMeet`: ⊥ · 없음 · 절단 · 접선 · 말 없음 ·
-  타원)로 답하고, 남은 일은 그 답을 읽는 능력 검사다(타원 · 원통 쌍 접촉 · 폭 · 이름 없는 클래스의 정산 · 접선 행 판정). 하류에
-  넘기는 기록은 셋 — 원통 행의 `records`(절단·말 없음; `cuts`·`draws_rulings`·`sections`·`is_silent`·`beside` 로 묻는다),
-  접선 행(`Tangency`), 공유 룰링(`SharedRuling`). 다음 곡선 종류(타원, 원통 쌍의 4차)는 `ClassMeet` 의 변종과 «그리나» 검사로
-  들어온다.
-- «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`) — 분할의 입력은 병합 층의 기록 셋(`MergedSeg`·
-  `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 원통 전용 파일이 약 8,000줄(planes·arrangement·combinatorics 의 35%)이다.
-- 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호 방향, `emit.rs`)와 정확한
-  점만 받는 자리(`direction::arc_at` — 호의 접선 방향, `loops::curved_wall`)가 남는다.
-
-그래서 한 자리를 «조각을 읽게» 고치면 같은 명제의 다른 칸이 다음 거절을 낸다. 분할 쪽에서는 그 칸들이 한 자리다 — 선분이
-곡선과 만나는 걸음은 하나(`crossings::collect`)이고, 거기서 «모든 조각 밖» 증명이 «선분 위» 미결보다 먼저 묻히며, 축 방향 선은
-원통 위인지 몰라도 «발자국 각 밖인가» 한 술어(`line_off_faces` — 정확·구간 두 몸통, 구간 몸통은 `Judge::axis_line_off_arcs`)로
-답한다. 게이트가 단면 클래스와 다른 기록 클래스의 선을 물을 때도 같은 술어를 두 평면의 선으로 읽는다(평행이면 선이 없다는
-정확한 증명 `Judge::planes_parallel` 이 먼저) — 필렛 곁의 돌린 상자 네 짓기가 서고, 두 벽의 모서리 선이 사분원 위인 배치는
-게이트에서 거절된다. 게이트의 ∥ 벽 갈래도 면의 호로 묻는다 — 평면이 무한 원통을 자르더라도 옆면의 모든 면을 비키면 무기록 통과다
-(`laterals_clear_plane`, 비스듬한 갈래와 한 물음). `suite/carrier_readings.rs` 의 포켓 배치(판 − 포켓
-`[41,50]×[−17,−10]×[6,13]` 대 8° 상자 — 포켓 벽 `y = −17` 의 평면이 필렛의 무한 원통을 사분원 밖에서 자른다)가 여섯 불리언으로
-서고, 분할의 두 규칙을 잠근다: 어느 하나를 되돌리면 그 배치가 분할에서 `CylinderGateUndecided` 로 거절된다. 코퍼스에 그
-인구는 0 이다(census `c` 행은 게이트의 둘째 충분조건 앞뒤로 세 빌드 모두 같다).
-
-방향(조사 — CGAL *Arrangements on Parametric Surfaces* I·II, 이차곡면 교선의 정확 배열 SoCG 2005, 간접 술어):
-엔진은 곡선·곡면 종류를 모르고, 곡선 종류마다 술어 묶음(비교·위아래·분할·교점과 중복도 — 약 열둘)과 곡면 위상(원통에는 무한
-면이 없다, seam 은 식별선)만 댄다. 경우 분석은 «곡면 쌍 → 교선 목록» 한 함수 안에 있고, 퇴화는 경우 코드가 아니라 0 의 판정이
-받는다. 셀 기계는 평면 배열과 원통 차트 둘로 남는다(design 「가지 말 것」 «평면 DCEL 을 원통 차트에 이식» — 그 차이가 위상 몫이다).
-하나가 되는 것은 그 아래(정의로 든 점 하나와 판정층의 수 — 위의 수 층)와 그 위(교선 생성기 하나 — 게이트는 «수 층이 이 점을
-표현하나·traits 가 이 곡선을 아나»를 묻는 능력 검사로 준다)다 — 그 위의 생성기는 위 목록의 둘째 항목이다. 분할 쪽에서
-남긴 둘: 링을 읽는 쪽의 네 enum 은 한 타입이 아니다(물음 16 가지 — `names.rs` 의
-`Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다, 반증할 근거가 생기면); 같은 선 위 두 어휘의 겹침
-(평면 쌍 선분이 옆면이 있는 룰링 위에 겹침 — `RulingBoundNotYet`, census `tangentline slab wall 1.5` 3·스위트 0)은 짓는 도로가
-없다.
+클래스가 원통의 원을 싣는 것은 그 법선이 축에 평행할 때다. 그 물음을 `nacre_exact::axis_relation(n, m) == Across` 로 묻는
+자리가 둘(`cyl_gate::class_meet`, `combinatorics::class_carries_circle`), `nacre_exact::parallel_rat(n, m)` 으로 묻는 자리가
+아홉이다(`cyl_trace::circle_on_class`·`aliases.rs`·`crossings.rs`·`cyl_chart/mod.rs`·`cyl_geom.rs` 셋·`corners.rs`·
+`cyl_crossings.rs` — nacre-ops 비시험 코드, 원통 축끼리의 평행을 묻는 다른 명제는 뺐다). 이 둘은 정확 산술이라 0 이 아닌
+벡터에서 답이 갈리지 않는다. 셋째 철자는 `witnesses::face_circle` 이다 — `cross3_rat(n, m)` 이 0 인지를 checked 산술로
+물어, 넘치면 «수직 아님»과 같은 `None` 으로 접힌다. 이름이 이미 있다 — `class_carries_circle` 이 그 명제와 0 벡터의
+관례(`Across` 로 읽힌다)를 든다 — 그래서 나머지가 그것을 물으면 한 명제가 한 함수가 된다. 바꾸기 전에 두 함수의 0 벡터
+관례가 같은지 잰다. 같은 부류(한 명제를 여러 자리가 따로 계산한다)의 다른 철자는 「원통 도로에 남은 철자」가 든다.
 
 ## 다음 — 사용자가 만나는 한계
 
@@ -82,7 +48,9 @@
 `crossings.rs` — 교점 수집은 한 걸음, 자르기는 곡선 종류마다 · 생산자 `rulings.rs`·`cyl_trace.rs`, 합 2,646줄)로
 배열에 들어온다. 직교 같은 특수 배치부터 하나씩 열면 배치마다 기록 하나·읽기 사슬 하나·분할 갈래가
 붙는다 — 차트는 곡선 종류마다 술어(교점·순서·접선 방향)만 대고 셀 기계는 한 벌인 모양으로 넓히고, 교선이 배열에
-들어오는 길도 같은 모양으로 정한다. 평면 DCEL 을 차트로 옮기는 길은 아니다(design 「가지 말 것」).
+들어오는 길도 같은 모양으로 정한다. 평면 DCEL 을 차트로 옮기는 길은 아니다(design 「가지 말 것」). 경우 분석은
+«곡면 쌍 → 교선 목록» 한 함수에 두고(평면 × 원통은 지금 `class_meet`), 퇴화는 경우 코드가 아니라 0 의 판정이 받는다(조사 —
+design 「참고 논문과 라이선스 규율」).
 
 ### 한 원통면을 두 솔리드가 공유한다 — `CylinderPairContact`
 
@@ -240,7 +208,7 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   `LabelConflict`. 백스톱 48(`SuspectedDefect`, 끝나는 쪽)은 스코어보드가 칸마다 변종까지 고정한다.
   같은 부류의 필렛 쪽: 판의 제 접선 벽 클래스에서 옆면의 끝은 `side = 0` 룰링 정거장인데, 다른 솔리드의 면이
   그 선 위에 세그먼트를 두면 접히지 않는다(`lateral_crossings` 의 `OnRuling` 경비, `RulingBoundNotYet` — census
-  `slab wall 1.5`). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
+  `tangentline slab wall 1.5` 3). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
 - **옆면의 제 간선을 다른 솔리드의 면이 선으로만 짚는** 가족(반원기둥의 평면 모서리를 지나는 `x − y = 1` 벽 —
   `a_body_touching_itself_along_a_laterals_own_edge_is_refused`): 그 벽이 `B` 의 면이고 `A − B` 에서 `B` 가 두 캡을 다
   넘지 않으면 백스톱 `EdgeCurveUnderived` 로 거절된다 — 답은 겹침을 뺀 `A` 다(두 틀·두 꼭짓점 순서·세 높이, 이음 있든 없든).
@@ -350,14 +318,21 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
 
-### «평면 클래스가 원통 축에 수직인가»의 철자가 둘이다
+### 원통 도로에 남은 철자
 
-클래스가 원통의 원을 싣는 것은 그 법선이 축에 평행할 때다. 그 물음을 `nacre_exact::axis_relation(n, m) == Across` 로 묻는
-자리가 둘(`cyl_gate::class_meet`, `combinatorics::class_carries_circle`), `nacre_exact::parallel_rat(n, m)` 으로 묻는 자리가
-아홉이다(`cyl_trace::circle_on_class`·`aliases.rs`·`crossings.rs`·`cyl_chart/mod.rs`·`cyl_geom.rs` 셋·`corners.rs`·
-`cyl_crossings.rs` — nacre-ops 비시험 코드, 원통 축끼리의 평행을 묻는 다른 명제는 뺐다). 둘 다 정확 산술이라 0 이 아닌 벡터에서
-답이 갈리지 않는다. 이름이 이미 있다 — `class_carries_circle` 이 그 명제와 0 벡터의 관례(`Across` 로 읽힌다)를 든다 — 그래서
-나머지가 그것을 물으면 한 명제가 한 함수가 된다. 바꾸기 전에 두 함수의 0 벡터 관례가 같은지 잰다.
+한 명제를 여러 자리가 따로 계산하면, 한 자리를 «조각을 읽게» 고칠 때 같은 명제의 다른 칸이 다음 거절을 낸다. 남은 철자
+(nacre-ops 가 묻는 것):
+
+- «평면의 어느 쪽인가»: `Judge::orient3d`(세 평면 점)·`PiercePoint::side`(관통점, 두 도로를 한 몸통에)·`plane_side_of_rat`
+  (게이트의 유리수 점)·`plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
+  충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `crossings::AxisCoord`
+  하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
+- «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`) — 분할의 입력은 병합 층의 기록 셋(`MergedSeg`·
+  `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 그 넷은
+  한 타입이 아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다(반증할 근거가
+  생기면).
+- 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호
+  방향, `arrangement/emit.rs`)와 정확한 점만 받는 자리(`direction::arc_at` — 호의 접선 방향, `loops::curved_wall`)가 남는다.
 
 ### 게이트가 하류 기록을 지역 벡터 셋을 거쳐 짓는다
 

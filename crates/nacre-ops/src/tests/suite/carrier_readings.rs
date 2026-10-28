@@ -734,7 +734,11 @@ fn pocket_beside_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<So
 /// cylinder off its quarter: the plane misses the lateral face though it cuts the infinite cylinder
 /// (`laterals_clear_plane`, asked before the faces), so the pair writes nothing. A record there
 /// would meet the turned box's walls, which have no world statement, in a line on the cylinder's
-/// surface, which the gate would ask of the faces (`line_off_lateral`).
+/// surface, which the gate would ask of the faces (`line_off_lateral`). The arrangement's split
+/// reads the same placement under two rules, and this test locks both: an absence proved outranks
+/// an undecided «on the segment» (`crossings::collect`), and a line along the axis is off the
+/// lateral when its angle is off every face's arc (`line_off_faces`). Undoing either refuses the
+/// Fuse with `CylinderGateUndecided`.
 #[test]
 fn a_pocket_wall_beside_the_fillet_quarter_builds() {
     every_kind(
