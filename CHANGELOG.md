@@ -88,6 +88,7 @@ While the version is `0.0.z`, every release may break anything.
 - `LogCell::Face`, which only the removed operations used.
 - `topo::Model::make_live`, whose only callers were the removed operations.
 - **Breaking:** `props::PropsError::CentroidOfCurvedFace`, which nothing returns now that `props::centroid` reads curved faces.
+- **Breaking:** `props::PropsError::UnsupportedInnerLoop`, which nothing returns: a curved face's inner loops are integrated like every other boundary.
 
 ### Fixed
 

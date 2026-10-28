@@ -44,9 +44,6 @@ pub enum PropsError {
     /// whose loop is empty or encloses no area, a solid of zero volume asked for its centroid, or
     /// a one-edge loop that is not a full circle.
     UnsupportedBoundary,
-    /// Not returned: a curved face's inner loops — holes, and a lateral's second rim — are
-    /// integrated like every other boundary (`lateral_moments`).
-    UnsupportedInnerLoop,
 }
 
 impl std::fmt::Display for PropsError {
@@ -55,7 +52,6 @@ impl std::fmt::Display for PropsError {
             Self::UnsupportedBoundary => {
                 "a boundary is empty, encloses nothing, or is not a loop these properties read"
             }
-            Self::UnsupportedInnerLoop => "a curved face's inner loop is not supported",
         })
     }
 }
@@ -439,8 +435,7 @@ struct LateralMoments {
 ///
 /// **No rectangle assumption.** Reading one `Δθ` and one height off the loop's two rims and
 /// multiplying holds only for a `(θ, z)` *rectangle*, so a face with a hole, or one whose outer
-/// walk detours around a notch, would have to be refused (`UnsupportedInnerLoop`,
-/// `UnsupportedBoundary`). Green's theorem asks the boundary
+/// walk detours around a notch, would have to be refused. Green's theorem asks the boundary
 /// instead: for any region `R` in the chart and any `g` with `∂G/∂z = g`,
 ///
 /// ```text
@@ -452,7 +447,7 @@ struct LateralMoments {
 /// closed-form `G`. Three consequences carry the curved arms:
 ///
 /// - **Inner loops are not a special case.** The identity sums over *every* boundary component in
-///   the sense it is wound, so a hole subtracts itself. No `UnsupportedInnerLoop`.
+///   the sense it is wound, so a hole subtracts itself.
 /// - **A straight edge contributes nothing**: a ruling sits at one θ, so `dθ = 0`.
 /// - **The sign is the walk's.** `θ̂ × ẑ = r̂`, so the chart is right-handed about the *surface's*
 ///   normal; a loop is CCW about its *face's* outward normal, which is `sign · r̂`. Hence every

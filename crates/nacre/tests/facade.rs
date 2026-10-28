@@ -543,12 +543,9 @@ fn every_error_line_follows_the_std_convention() {
         .map(ToString::to_string),
     )
     .chain(
-        [
-            PropsError::UnsupportedBoundary,
-            PropsError::UnsupportedInnerLoop,
-        ]
-        .iter()
-        .map(ToString::to_string),
+        [PropsError::UnsupportedBoundary]
+            .iter()
+            .map(ToString::to_string),
     )
     .chain(
         [
