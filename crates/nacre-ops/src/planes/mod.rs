@@ -524,9 +524,13 @@ pub(crate) enum Silence {
     /// against the class read it here.
     Beside(i8),
     /// The class's plane may cut the cylinder, but every face on it stands apart from every
-    /// lateral face's box, the cylinder leaves only whole rims, and it writes no other record. On
-    /// that class the cylinder's solid is sectioned as if the bore were filled or the boss removed;
-    /// the cylinder has no pierce point or arc anywhere, so no road asks for a side.
+    /// lateral face's box, and the cylinder leaves only whole rims. On that class the cylinder's
+    /// solid is sectioned as if the bore were filled or the boss removed. That reading and the true
+    /// one differ only inside the lateral boxes, which hold the bore or the boss, and everything the
+    /// class's faces put on an arrangement lies outside them — so the cylinder may carry other
+    /// records as well. A pierce point or an arc another record puts on the cylinder has no
+    /// recorded side of this class: a road that asks one reads it on the interval road
+    /// ([`crate::combinatorics::PiercePoint`]), as it does of a [`Silence::Sectioned`] class.
     Apart,
     /// The class's plane runs along the axis and cuts the lateral in two rulings, every face on it
     /// stands apart from every lateral face's box, and the cylinder has no whole rim. On that
