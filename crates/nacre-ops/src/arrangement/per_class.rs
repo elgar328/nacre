@@ -72,8 +72,8 @@ pub(super) fn per_class(
                 return None;
             }
             let z = [
-                node_axis_param(jd, def, p.end[0])?,
-                node_axis_param(jd, def, p.end[1])?,
+                combinatorics::pierce_axis_param(jd, def, p.end[0])?,
+                combinatorics::pierce_axis_param(jd, def, p.end[1])?,
             ];
             // The chart's vertical answer — see [`RulingExtent::label`] and
             // [`RulingExtent::outer`], the two cells beside the ruling. Each is an `Option` rather
@@ -214,8 +214,8 @@ fn circle_crosses_ruling(
     // The ruling as a piece: its two ends' axis parameters (rational — each end's other plane is
     // ⊥ the axis), the whole circle round. The arc's axis parameter is the class's own.
     let ruling_piece = (|| {
-        let t0 = node_axis_param(jd, ruling_def, ruling.end[0])?;
-        let t1 = node_axis_param(jd, ruling_def, ruling.end[1])?;
+        let t0 = combinatorics::pierce_axis_param(jd, ruling_def, ruling.end[0])?;
+        let t1 = combinatorics::pierce_axis_param(jd, ruling_def, ruling.end[1])?;
         Some(crate::planes::Footprint {
             span: Some([t0.min(t1), t0.max(t1)]),
             theta: crate::planes::Theta::Whole,

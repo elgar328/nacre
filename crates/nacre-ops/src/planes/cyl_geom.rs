@@ -93,6 +93,26 @@ pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact
     nacre_exact::axis_relation(n, dir) == nacre_exact::AxisRelation::Across
 }
 
+/// **The plane of a point's name that crosses the cylinder's axis** — the first of `planes`
+/// whose normal is along the axis ([`class_carries_circle`]). The point lies on that plane and the
+/// plane is ⊥ the axis, so its [`axis_param_of_plane`] is the point's height; two such planes are
+/// parallel, so one name holds at most one. A plane oblique to the axis meets the axis in a point
+/// too, but the named point is not there — which is why a reader that wants the height asks this
+/// rather than taking the first plane [`axis_param_of_plane`] answers for. `None` when no plane of
+/// the name crosses the axis.
+///
+/// It takes coefficients, not classes, because its readers hold them from different places: a
+/// class's world statement, or a model vertex's plane names.
+pub(crate) fn across_axis_plane(
+    planes: impl IntoIterator<Item = [nacre_exact::Rat; 4]>,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 4]> {
+    let m = def.dir();
+    planes
+        .into_iter()
+        .find(|w| class_carries_circle(&[w[0], w[1], w[2]], &m))
+}
+
 /// A lateral face's axis-parameter span, read off its rim carrier planes.
 ///
 /// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis

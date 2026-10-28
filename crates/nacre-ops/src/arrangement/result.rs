@@ -83,8 +83,8 @@ pub(crate) struct ArcLabel {
 /// class, folded once, keyed in the global class space.
 ///
 /// `end` is the piece's own two pierce nodes and `z` their axis parameters
-/// ([`node_axis_param`]). Both are carried because the chart needs the **order** (from the node's
-/// `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the **position** (`z`), and
+/// ([`combinatorics::pierce_axis_param`]). Both are carried because the chart needs the
+/// **order** (from the node's `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the **position** (`z`), and
 /// deriving one from the other twice is how a name loses a sign.
 /// Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
 /// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.

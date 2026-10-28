@@ -546,11 +546,11 @@ fn curved_wall(
             // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
             // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
             // ends have to be compared — and each end is a pierce point of two planes and the
-            // cylinder, of which the one ⊥ to the axis **cuts** the ruling: where it crosses the axis
-            // is a rational question ([`crate::planes::axis_param_of_plane`], which answers nothing
-            // for a plane along the axis). Which plane of the pair holds the ruling — `near`, or
-            // another plane through the same line where the end is a corner on three planes, named
-            // by the pair its definition chose — does not enter.
+            // cylinder, of which the one ⊥ to the axis (`crate::planes::across_axis_plane`) **cuts**
+            // the ruling: where it crosses the axis is a rational question
+            // (`crate::planes::axis_param_of_plane`). Which plane of the pair holds the ruling —
+            // `near`, or another plane through the same line where the end is a corner on three
+            // planes, named by the pair its definition chose — does not enter.
             //
             // **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
             // parallel to the axis or perpendicular to it — the gate admits an oblique class only
@@ -563,9 +563,13 @@ fn curved_wall(
                 let nacre_topo::Vertex::Pierce { planes, .. } = *model.vertex(v) else {
                     return None;
                 };
-                planes.iter().find_map(|&h| {
-                    crate::planes::axis_param_of_plane(model.world_plane_name(h)?.narrow()?, &def)
-                })
+                let w = crate::planes::across_axis_plane(
+                    planes
+                        .iter()
+                        .filter_map(|&h| model.world_plane_name(h)?.narrow().copied()),
+                    &def,
+                )?;
+                crate::planes::axis_param_of_plane(&w, &def)
             };
             let [v0, v1] = model.edge(he.edge).vertices;
             let (t0, t1) = (

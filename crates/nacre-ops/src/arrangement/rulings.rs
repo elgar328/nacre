@@ -72,7 +72,9 @@ pub(super) fn rulings_on_class(
             .any(|(_, kind)| matches!(kind, SegKind::Graze { .. }))
         {
             let o = def.origin().map(|x| x.to_f64());
-            let at = |n: NodeId| node_axis_param(jd, def, n).map_or(f64::NAN, |t| t.to_f64());
+            let at = |n: NodeId| {
+                combinatorics::pierce_axis_param(jd, def, n).map_or(f64::NAN, |t| t.to_f64())
+            };
             ruling_probe::CARVED.push(ruling_probe::Carved {
                 origin: o,
                 span: [at(pieces[0].0[0]), at(pieces[pieces.len() - 1].0[1])],
@@ -174,8 +176,8 @@ fn ruling_sweep(
     // ruling from `start` to `end` — see [`plus_theta_is_above`], the one spelling of the product.
     let body_side = |start: NodeId, end: NodeId| -> Result<(Rat, Rat, i8, bool), DeclineKind> {
         let (Some(ta), Some(tb)) = (
-            node_axis_param(jd, def, start),
-            node_axis_param(jd, def, end),
+            combinatorics::pierce_axis_param(jd, def, start),
+            combinatorics::pierce_axis_param(jd, def, end),
         ) else {
             return Err(DeclineKind::Ruling);
         };
@@ -355,22 +357,4 @@ pub(crate) fn node_ruling_side(
 ) -> Option<i8> {
     let (_, cyl, _) = combinatorics::pierce_name(n)?;
     combinatorics::pierce_meet(jd, cyl, def, n)?.ruling_side(jd, wall, def)
-}
-
-/// A pierce point's axis parameter: one of the two planes in its name is ⊥ the axis (a cap, a
-/// rim), and **that class's** parameter is the point's — a rational, so the ordering along a
-/// ruling needs no quadratic comparison at all.
-///
-/// The name need not carry `wc` (a station the sweep minted does). A corner the
-/// operand named (`Pierce{[cap, t], Double}`, a fillet's tangent corner) lies on `wc`'s ruling
-/// too when `wc` contains it, and its parameter is read the same way: from its cap.
-pub(super) fn node_axis_param(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    n: NodeId,
-) -> Option<nacre_exact::Rat> {
-    let (planes, _, _) = combinatorics::pierce_name(n)?;
-    planes
-        .iter()
-        .find_map(|&c| crate::planes::axis_param_of_plane(&jd.world_rat(c)?, def))
 }

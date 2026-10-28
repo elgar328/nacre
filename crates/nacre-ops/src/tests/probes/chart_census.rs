@@ -89,7 +89,7 @@ pub(crate) fn census(
         // wrong with nothing red. The premise is that a ruling's ends are always z-lines, which is
         // structural (a ruling node is `[wall, other plane]` and that other plane can only be ⊥ to
         // the axis, which `chart_of` collects in full) — but it joins two *different* spellings of
-        // the axis parameter (`node_axis_param` for the ends, `bands::axis_param` for the lines),
+        // the axis parameter (`pierce_axis_param` for the ends, `bands::axis_param` for the lines),
         // and the day those disagree the drop is what would happen. Measured 0 across the suite.
         for t in &chart.theta {
             for e in t.z {

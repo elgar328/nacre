@@ -322,8 +322,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
   `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 그 넷은
   한 타입이 아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다(반증할 근거가
   생기면).
-- 관통점 이름의 두 평면에서 ⊥ 클래스를 고르는 두 자리(`rulings.rs::node_axis_param`·`in_faces.rs::corner_axis_param`)는
-  `class_carries_circle` 이 아니라 «축 매개변수가 있는가»(`axis_param_of_plane` — `n·m ≠ 0`, 비스듬한 평면도 통과)로 고른다.
 - 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호
   방향, `arrangement/emit.rs`)와 정확한 점만 받는 자리(`direction::arc_at` — 호의 접선 방향, `loops::curved_wall`)가 남는다.
 

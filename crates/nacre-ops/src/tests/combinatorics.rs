@@ -814,3 +814,89 @@ fn swapping_the_planes_trades_the_two_roots_names() {
         "lo′ is the old hi"
     );
 }
+
+/// **A point's height along an axis is read off the plane of its name that crosses the axis,
+/// never off an oblique one.** A triangular prism `(0,0), (2,0), (0,2)` over `z ∈ [0, 1]` has
+/// walls `x = 0`, `y = 0` and the slanted `x + y = 2`. With the axis along `x` through
+/// `(−3, 5, 7)` (or along `y` through `(5, −3, 7)`), the wall across the axis meets it at `t = 3`
+/// and the slanted wall at `t = 0` — so a reader taking the first plane that meets the axis at all
+/// answers `0` for a point the slanted wall shares with the cap, and a height for a point on no
+/// cap. The axis is chosen so the cap's class is numbered after the slanted one, and the test
+/// asserts that it is: a pierce name sorts its pair, so only then does it list the slanted wall
+/// first.
+#[test]
+fn a_pierce_points_height_is_its_caps_not_an_oblique_planes() {
+    use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
+    use nacre_exact::{BigRat, Rat};
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, nacre_exact::Axis::Z);
+    let profile = from_rings(vec![vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(0.0, 2.0)]])
+        .expect("a triangle")
+        .remove(0);
+    let Ok(OpOutput::Extrude { solid, .. }) = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    ) else {
+        panic!("the prism")
+    };
+    m.rebuild_adjacency();
+    let faces = crate::planes::collect_planes(&m, solid).expect("the face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+    let (planes, _, _) = crate::planes::dense_planes(&faces, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    let class = |n: [i128; 3]| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                (0..3).all(|i| (w[i] == ri(0)) == (n[i] == 0))
+            })
+            .expect("the prism holds a wall with that normal")
+    };
+    let (px, py, slant) = (class([1, 0, 0]), class([0, 1, 0]), class([1, 1, 0]));
+    // The cap is the later-numbered of `x = 0` and `y = 0`, the one that can follow the slanted wall.
+    let (cap, along, dir, origin) = if px > py {
+        (px, py, [ri(1), ri(0), ri(0)], [ri(-3), ri(5), ri(7)])
+    } else {
+        (py, px, [ri(0), ri(1), ri(0)], [ri(5), ri(-3), ri(7)])
+    };
+    let def = nacre_topo::CylinderDef::new(origin, dir, [ri(0), ri(0), ri(1)], BigRat::from(ri(1)))
+        .expect("a cylinder");
+    let pierce = |a: usize, b: usize| NodeId::pierce(a, b, 0, QuadRoot::Lo);
+    let msg = format!("classes: cap {cap}, along {along}, slanted {slant}");
+    assert!(
+        slant < cap,
+        "the cap must be numbered after the slanted wall: {msg}"
+    );
+    assert_eq!(
+        pierce_axis_param(&jd, &def, pierce(cap, along)),
+        Some(ri(3)),
+        "{msg}"
+    );
+    assert_eq!(
+        pierce_axis_param(&jd, &def, pierce(cap, slant)),
+        Some(ri(3)),
+        "{msg}"
+    );
+    assert_eq!(
+        pierce_axis_param(&jd, &def, pierce(along, slant)),
+        None,
+        "{msg}"
+    );
+    let w = |c: usize| jd.world_rat(c).expect("a named class");
+    assert_eq!(
+        crate::planes::across_axis_plane([w(slant), w(cap)], &def),
+        Some(w(cap)),
+        "{msg}"
+    );
+    assert_eq!(
+        crate::planes::across_axis_plane([w(along), w(slant)], &def),
+        None,
+        "{msg}"
+    );
+}

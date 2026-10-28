@@ -338,24 +338,6 @@ fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacr
     Some([m[0], m[1], m[2], d0])
 }
 
-/// The axis parameter of the ⊥ class among a pierce corner's two naming planes — the `z` of
-/// the arc that ends there, or of a ruling piece's end. It takes the first naming plane that
-/// meets the axis in a point ([`crate::planes::axis_param_of_plane`] answers only for
-/// `n · m ≠ 0`); two ⊥ planes never meet, so a cap-and-wall corner has exactly one. That is not
-/// the ⊥ question ([`crate::planes::class_carries_circle`]): a plane oblique to the axis answers
-/// too. `None` names a corner with no such plane — both run along the axis, or neither has a
-/// world statement — overflow, or a three-plane name where a pierce was expected.
-fn corner_axis_param(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    n: NodeId,
-) -> Option<nacre_exact::Rat> {
-    let (planes, _, _) = pierce_name(n)?;
-    planes
-        .iter()
-        .find_map(|&c| crate::planes::axis_param_of_plane(&jd.world_rat(c)?, def))
-}
-
 /// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
 /// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)`.
 ///
@@ -402,7 +384,7 @@ pub(crate) fn loop_parity(
                 for e in edges {
                     match &e.carrier {
                         Carrier::Arc(arc) => {
-                            let t = corner_axis_param(jd, def, e.node)?;
+                            let t = pierce_axis_param(jd, def, e.node)?;
                             let side = above(t)?;
                             if side == Orient::Positive {
                                 continue; // the arc is below the point
@@ -438,8 +420,8 @@ pub(crate) fn loop_parity(
                         }
                         Carrier::Ruling(rl) => {
                             let (Some(t0), Some(t1)) = (
-                                corner_axis_param(jd, def, e.node),
-                                corner_axis_param(jd, def, e.to),
+                                pierce_axis_param(jd, def, e.node),
+                                pierce_axis_param(jd, def, e.to),
                             ) else {
                                 return None;
                             };
@@ -602,7 +584,7 @@ pub(crate) fn ruling_meets_lateral(
             LateralLoop::Ring(edges) => {
                 for e in edges {
                     if matches!(e.carrier, Carrier::Arc(_)) {
-                        ts.push(corner_axis_param(jd, def, e.node)?);
+                        ts.push(pierce_axis_param(jd, def, e.node)?);
                     }
                 }
             }

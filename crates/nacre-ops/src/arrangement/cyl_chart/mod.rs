@@ -439,7 +439,7 @@ pub(crate) fn chart_of(
     // **`end` travels with `z`.** `per_class` states `z[e]` as the axis parameter of `end[e]`,
     // so sorting `z` alone would silently break that pairing — and the cell reader asks
     // "this ruling's node *on this z-line*" of exactly that pairing. Swapping both keeps it a
-    // carried fact rather than a rule spelled a second time (`node_axis_param` is not re-asked).
+    // carried fact rather than a rule spelled a second time (`pierce_axis_param` is not re-asked).
     let mut end_swapped = 0usize;
     let theta: Vec<ThetaSeg> = curved
         .rulings

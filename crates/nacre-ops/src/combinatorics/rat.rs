@@ -776,6 +776,26 @@ impl NodePoint {
     }
 }
 
+/// **A pierce point's axis parameter** — read off the plane of its name that crosses the axis
+/// ([`crate::planes::across_axis_plane`]), so a rational, and the ordering along a ruling needs no
+/// quadratic comparison at all. `None` where no plane of the name crosses the axis (the point's
+/// height is then no single rational plane's), a plane without a world statement, overflow, or a
+/// three-plane name where a pierce was expected.
+///
+/// The name need not carry the wall whose ruling the point is on (a station the sweep minted
+/// does). A corner the operand named (`Pierce{[cap, t], Double}`, a fillet's tangent corner) lies
+/// on that ruling too when the wall contains it, and its parameter is read the same way: from its
+/// cap.
+pub(crate) fn pierce_axis_param(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    n: NodeId,
+) -> Option<nacre_exact::Rat> {
+    let (planes, _, _) = pierce_name(n)?;
+    let w = crate::planes::across_axis_plane(planes.iter().filter_map(|&c| jd.world_rat(c)), def)?;
+    crate::planes::axis_param_of_plane(&w, def)
+}
+
 /// Whether a node is a pierce point one of whose planes has no world statement — the population
 /// the interval readings below are for, and the only one.
 pub(crate) fn names_a_nameless_plane(jd: &Judge<'_, WorkingPlane>, n: NodeId) -> bool {

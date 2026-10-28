@@ -701,17 +701,15 @@ impl AxisCoord {
         planes: &[usize],
     ) -> Option<Option<Self>> {
         let m = def.dir();
-        for &c in planes {
-            if let Some(w) = jd.world_rat(c)
-                && class_carries_circle(&[w[0], w[1], w[2]], &m)
-            {
-                let t = crate::planes::axis_param_of_plane(&w, def)?;
-                return Some(Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(
-                    dot(&def.origin(), &m)?.checked_add(t.checked_mul(dot(&m, &m)?)?)?,
-                ))));
-            }
-        }
-        Some(None)
+        let Some(w) =
+            crate::planes::across_axis_plane(planes.iter().filter_map(|&c| jd.world_rat(c)), def)
+        else {
+            return Some(None);
+        };
+        let t = crate::planes::axis_param_of_plane(&w, def)?;
+        Some(Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(
+            dot(&def.origin(), &m)?.checked_add(t.checked_mul(dot(&m, &m)?)?)?,
+        ))))
     }
 
     fn value(&self) -> nacre_judge::cylinder::AxisValue<'_> {
