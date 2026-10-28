@@ -314,8 +314,8 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 한 명제를 여러 자리가 따로 계산하면, 한 자리를 «조각을 읽게» 고칠 때 같은 명제의 다른 칸이 다음 거절을 낸다. 남은 철자
 (nacre-ops 가 묻는 것):
 
-- «평면의 어느 쪽인가»: `Judge::orient3d`(세 평면 점)·`PiercePoint::side`(관통점, 두 도로를 한 몸통에)·`plane_side_of_rat`
-  (게이트의 유리수 점)·`plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
+- «평면의 어느 쪽인가»: `Judge::orient3d`(세 평면 점)·`PiercePoint::side`(관통점, 두 도로를 한 몸통에)·
+  `plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
   충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `crossings::AxisCoord`
   하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
 - «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`) — 분할의 입력은 병합 층의 기록 셋(`MergedSeg`·

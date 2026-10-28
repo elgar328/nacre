@@ -1028,19 +1028,6 @@ pub(crate) struct Tangency {
     pub(crate) witness: Point3,
 }
 
-/// Sign of `n·p + d` for a rational point — the side of the plane `p` is on. `None` on overflow.
-fn plane_side_of_rat(coeffs: &[nacre_exact::Rat; 4], p: &[nacre_exact::Rat; 3]) -> Option<i8> {
-    let mut acc = coeffs[3];
-    for k in 0..3 {
-        acc = acc.checked_add(coeffs[k].checked_mul(p[k])?)?;
-    }
-    Some(match acc.cmp(&nacre_exact::Rat::from_int(0)) {
-        core::cmp::Ordering::Greater => 1,
-        core::cmp::Ordering::Less => -1,
-        core::cmp::Ordering::Equal => 0,
-    })
-}
-
 /// The foot of the perpendicular from the axis origin to the plane — **rational**, because it is
 /// `o - ((n·o + d)/(n·n))·n` and nothing there leaves the field. This is the tangency line's base
 /// point; the line itself is that point plus `t·m`.
@@ -1133,10 +1120,12 @@ fn tangency_rows(
     // `r = 0`; `CylinderDef` refuses that at construction (`NonPositiveRadius`, "positive by
     // construction"). Filtered anyway rather than assumed: a `Some(0)` here would compare unequal
     // to every material side and hand the verdict a silent `false`, and this file's own rule is
-    // that an answer it cannot state becomes `undecided`, never a default.
-    let lens_side = base
+    // that an answer it cannot state becomes `undecided`, never a default. The sign is the
+    // class's world name's own, the frame `mat_side` below is read in.
+    let lens_side = jd.planes[c]
+        .world
         .as_ref()
-        .and_then(|_| plane_side_of_rat(coeffs, &o))
+        .map(|w| nacre_exact::plane_residual_sign(&w.name, o))
         .filter(|&s| s != 0);
     // Built **once**, not once per face — the same warning `wall_faces_clear`'s caller carries
     // (built eagerly, a cut over a plate with 16 bores would build it 16 times and read it 0).

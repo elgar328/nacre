@@ -684,13 +684,9 @@ pub(super) fn trace_one(
                     // The axis side, in the label frame (`W`'s stored normal): the one bit a
                     // tangent edge flips ([`SegKind::Tangent`]).
                     let axis_above = (|| -> Option<bool> {
-                        let w = jd.stored_world_rat(wc)?;
+                        let w = jd.planes[wc].world.as_ref()?;
                         let o = cyls.get(cyl)?.def.origin();
-                        let mut acc = w[3];
-                        for k in 0..3 {
-                            acc = acc.checked_add(w[k].checked_mul(o[k])?)?;
-                        }
-                        Some(acc > Rat::from_int(0))
+                        Some(w.sense.sign() * nacre_exact::plane_residual_sign(&w.name, o) > 0)
                     })();
                     let Some(axis_above) = axis_above else {
                         out.declined.push((fp, DeclineKind::Ruling));
