@@ -748,8 +748,10 @@ pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Opt
 ///
 /// A three-plane name is pinned by whichever of its planes cuts the line ([`pin_on_line`]). A
 /// pierce name whose pair *is* the line's is pinned by its cylinder ([`EndPin::Cylinder`] — the
-/// quadric's root along that very line); a pierce name with another pair is a point the line
-/// passes through by coincidence, pinned by whichever of that pair's planes cuts the line.
+/// quadric's root along that very line); a pierce name with another pair — a ruling's end on a
+/// cap, a corner the line passes through — is pinned by whichever of that pair's planes cuts the
+/// line. Where both of them hold the line (a pencil), neither cuts it and the answer is `None`: the
+/// rule finds no pin on that line, and each reader says what that means there.
 ///
 /// Why it exists: a segment's endpoint travels as a (name, pin) pair, and the alias table can
 /// fold the name onto a representative of another **variant** — a tangent corner's `Pierce` onto

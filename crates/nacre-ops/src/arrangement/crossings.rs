@@ -943,8 +943,21 @@ pub(super) fn split_rulings(
 /// splits did not cut, and is refused by name rather than stated twice.
 ///
 /// `Seated`, `Graze` and `Tangent` say which side of the class plane a face fills, so they mean
-/// the same on a ruling. `Transversal` says which side of the *directed line*, and a ruling runs
-/// up the axis rather than along `wc × wall`: it is refused by name, not carried across frames.
+/// the same on a ruling. `Transversal` says the face crosses the class plane along the line — a
+/// fact about the face and the plane, whichever way the line runs — and that is what
+/// `cells::edge_mask` reads of it: both of its solid's bits flip. Its `mat` stays the contributing
+/// face's, a side of the directed line `wc × wall` and not of the ruling's `+m`; read on a ruling
+/// piece as the latter it would be wrong. A second mark of the same solid on the piece needs a
+/// plane face whose interior holds its own lateral's ruling where the lateral is — two faces of
+/// one valid solid meeting inside, which no valid operand has (`edge_mask` refuses two transversals
+/// or a `Graze` beside one, `EdgeOccupancyConflict`, and takes a `Seated` or `Tangent` beside one as
+/// seated). Which side of
+/// the station holds the other solid the chart reads off the cells, not off these marks.
+///
+/// A plane face carried here may still touch the lateral's own edge from inside the same result
+/// solid — the lateral ending on a flat face where another part of the body crosses that line. That
+/// is the self-touch verdict's to refuse (`assembly::self_touch_reject`, which asks a lateral's
+/// ruling edge against the solid's plane faces).
 fn fold_onto_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -970,13 +983,6 @@ fn fold_onto_rulings(
             .iter_mut()
             .find(|r| r.cyl == cyl && canon(r.end) == key)
         {
-            if sg
-                .merged
-                .iter()
-                .any(|(_, k)| matches!(k, SegKind::Transversal { .. }))
-            {
-                return Err(reject(RejectReason::RulingBoundNotYet));
-            }
             r.merged.extend(sg.merged.iter().copied());
             continue;
         }

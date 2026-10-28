@@ -466,13 +466,11 @@ pub enum RejectReason {
     ///
     /// **Not [`Self::CylinderGateUndecided`]**: nothing here failed to be computed — the gate
     /// decided exactly that a third plane holds the line — and that name's sentence is false of
-    /// it. **Not [`Self::RulingBoundNotYet`]** either: where the wall face runs across the line
-    /// the rulings split does refuse it (a transversal segment on a recorded line), but where it
-    /// only reaches the line nobody has shown the split cannot arrange it.
+    /// it. **Not [`Self::RulingBoundNotYet`]** either: the rulings split is not what cannot read
+    /// the shape — the verdict is.
     ///
     /// A line that passes through a wall face's hole or gap touches no face, writes no row, and
-    /// is not this name's: held by a far secant face, it reaches the rulings split as a recorded
-    /// line instead ([`Self::RulingBoundNotYet`]). Fired by the half cylinder's flat edge with a
+    /// is not this name's. Fired by the half cylinder's flat edge with a
     /// wall tangent across it and by an L-shaped tangent face (`tests/coverage/edge_on_a_ruling.rs`);
     /// none in the census.
     TangentLineInAnotherPlane,
@@ -777,12 +775,7 @@ pub enum RejectReason {
     /// lateral along a line the gate did not record (`planes::SharedRuling` — the lines of two
     /// secant classes, or of a secant and a tangent one of the other solid, that lie on a lateral
     /// face), or on planes that degenerate against the cylinder there; a recorded line's segment
-    /// that shares a stretch with a ruling piece without matching one end for end, or one that
-    /// crosses its own class there (`Transversal`, whose side is the directed line's — a tangent
-    /// line through a wall face's hole, recorded with a far secant face that holds it:
-    /// `a_tangent_line_through_a_hole_held_by_a_far_step_is_refused_today`; none in the census. A
-    /// tangent wall across a half cylinder's flat edge, which reached it too, is
-    /// [`Self::TangentLineInAnotherPlane`] at the gate). And a lateral
+    /// that shares a stretch with a ruling piece without matching one end for end. And a lateral
     /// cell that straddles a θ the chart has no vertical line for — the arcs of one rim end
     /// disagreeing, a sector opened at one ruling of a cut rim, a sector holding every rim node
     /// (`cyl_chart::read_cell`): the chart's vertical lines come from the ruling sweep, which

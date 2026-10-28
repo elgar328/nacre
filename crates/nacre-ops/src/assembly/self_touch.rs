@@ -206,12 +206,15 @@ pub(crate) fn assemble_fuse_cut(
 ///    not its endpoints. The endpoints alone miss the shape that motivated this: a cut taken all the
 ///    way *through* leaves a contact line whose ends sit on the face's ring while its middle crosses
 ///    the interior, and a point test reads both ends as "on the boundary, not inside" and passes a
-///    body that cannot exist (measured: `Ok(n=1)`, volume exact, `validate` silent).
+///    body that cannot exist (measured: `Ok(n=1)`, volume exact, `validate` silent). An end a
+///    cylinder made is asked like a three-plane one — that test pins both kinds on the line — so a
+///    lateral's own ruling edge, where the lateral ends on a flat face of the solid, is asked against
+///    the solid's other plane faces like any straight edge.
 ///
 /// **One judge, not two.** The endpoint test is *subsumed* — an endpoint strictly inside puts that
 /// end in an inside stretch of the line, so the segment test answers it too. Measured across the
-/// corpus: 1,696 candidate pairs, the two verdicts agreed on every one, and no pair was
-/// undecidable. Keeping both would answer the same question in two places.
+/// corpus on edges with three-plane ends: 1,696 candidate pairs, the two verdicts agreed on every
+/// one, and no pair was undecidable. Keeping both would answer the same question in two places.
 ///
 /// **The boxes hold where the truth can be, so they can only over-keep.** They are built from
 /// realized `f64` coordinates, which are rounded; a box used to *reject* a candidate before an
@@ -286,10 +289,10 @@ pub(super) fn self_touch_reject(
         // say ([`combinatorics::ruling_meets_lateral`]). The point arm below asks a vertex
         // against a plane face. What none asks abstains rather than pretends, each for a reason
         // written down: an arc edge lies in a plane face only on its own circle's plane, where
-        // the faces overlap in area (the coplanar merge's); a lateral's own ruling edge lies in a
-        // plane face only on a line the gate records, and the rulings split refuses a face across
-        // it (`RulingBoundNotYet`); and a contact with a curved face at a point needs a plane
-        // slanted to its axis through the cylinder (`ObliqueCylinderCut`).
+        // the faces overlap in area (the coplanar merge's); and a lateral face touched at a single
+        // point is not asked — where a plane face through that point is slanted to the axis the gate
+        // refuses it first (`ObliqueCylinderCut`), and on planes along or across the axis the case
+        // is not measured.
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -371,17 +374,6 @@ pub(super) fn self_touch_reject(
         };
         let mut read: HashMap<usize, combinatorics::CompFace> = HashMap::new();
         'edges: for (&[u, v], own) in &owners {
-            // **Abstain on an edge with a pierce endpoint.** It has no three-plane name to
-            // intersect, and this is a *rejection guard*: declining here would turn "I cannot
-            // check this edge" into "this model is invalid" — a reject on a possibly-sound solid.
-            // The curved arm below asks the one such population it can read (an edge along a
-            // ruling, against the solid's lateral); the nets named above stand behind the rest.
-            let (Some(up), Some(vp)) = (
-                combinatorics::three_plane_name(u),
-                combinatorics::three_plane_name(v),
-            ) else {
-                continue;
-            };
             // An arc lies in a plane face only on its own circle's plane, where the face would
             // overlap the arc's own face in area — the coplanar merge's case, not a line contact.
             if arc_edges.contains(&[u, v]) {
@@ -425,12 +417,15 @@ pub(super) fn self_touch_reject(
                 // fail, measured: an edge can lie on a pencil of three planes and the ring is
                 // free to call it by any of them — including `q` itself — and where four planes
                 // concur the endpoints' canonical triples need not share a second plane at all
-                // (31 pairs in the rotation sweep). An edge's two faces always give one, because
-                // that is what the edge *is*.
+                // (31 pairs in the rotation sweep). An edge's own plane faces give one, because
+                // that is what the edge *is* — a lateral's ruling edge has one, the flat face it
+                // ends on, and both its ends lie on `q` and on that plane.
                 let Some(w2) = own.iter().map(|&o| faces[o].surf.plane()).find(|&x| x != q) else {
-                    continue; // an edge whose faces are both on `q` is not an edge
+                    // Every plane face of the edge lies on `q`: face `j` holds the edge inside only
+                    // where it overlaps that face in area — the coplanar merge's case.
+                    continue;
                 };
-                match combinatorics::segment_meets_face(jd, cyls, q, w2, up, vp, &read[&j]) {
+                match combinatorics::segment_meets_face(jd, cyls, q, w2, u, v, &read[&j]) {
                     Ok(true) => {
                         found_at(Touch::Edge([u, v]));
                         continue 'edges;
@@ -453,8 +448,9 @@ pub(super) fn self_touch_reject(
         // edge does not — would read here as a self-touch, `Impossible` where `SuspectedDefect` is
         // the truth; the suite holds no such vertex (measured).
         //
-        // A pierce vertex abstains: a point contact with a curved face needs a plane slanted to
-        // the cylinder's axis through a point of the cylinder, which `ObliqueCylinderCut` refuses.
+        // A pierce vertex abstains. A plane face through it is slanted to the cylinder's axis, along
+        // it, or across it: the first the gate refuses (`ObliqueCylinderCut`); the other two are not
+        // measured here.
         visits.sort_unstable();
         for at in visits.chunk_by(|x, y| x.0 == y.0) {
             let n = at[0].0;

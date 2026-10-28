@@ -122,7 +122,7 @@ pub(crate) fn every_ray(
     Ok(out)
 }
 
-/// **Does the open segment between two named points on one line meet this face's material?**
+/// **Does the open segment between two named points on `P ∩ w` meet this face's material?**
 ///
 /// [`every_ray`]'s sibling, and not its copy. That one asks about a **point** and may bail with
 /// `PointOnRing` when the point lands on the boundary — here the two endpoints are *expected* to,
@@ -160,19 +160,26 @@ pub(crate) fn every_ray(
 /// behind the gate: one of the edge's own faces may lie on `P` facing the other way (a box's
 /// bottom over a bore, beside the plate's top), the other may then stand parallel to the
 /// cylinder's axis, which the gate passes, and the line crosses the ring's arc.
+///
+/// **The segment's own two ends are pinned by the same rule** ([`pin_for`]), so an end a cylinder
+/// made is asked like a three-plane one: a lateral's own ruling edge, its ends pierce points of the
+/// flat face it bounds and a cap, is pinned by the cap. An end the rule does not pin is
+/// `RingNaming`. The risk is a pencil: where planes beyond `P` and `w` hold the edge's line, a pierce
+/// end named by a pair other than `P` and `w` can have both its planes holding the line, and then
+/// neither cuts it (named by `P` and `w` themselves, its cylinder pins it) — which pair the name
+/// carries, against which of the edge's faces gave `w`, comes down to the order of the faces, and
+/// so does whether the end is pinned. Pinning it regardless needs its root carried from one pair to the other,
+/// which nothing does.
 pub(crate) fn segment_meets_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     p: usize,
     w: usize,
-    u: [usize; 3],
-    v: [usize; 3],
+    u: NodeId,
+    v: NodeId,
     face: &CompFace,
 ) -> Result<bool, BoolError> {
-    // A point on `P ∩ w` is named there by a third plane of its own that **cuts** the line; one
-    // parallel to it names nothing ([`pin_on_line`]).
-    let handle = |t: [usize; 3]| pin_on_line(jd, p, w, &t);
-    let (Some(hu), Some(hv)) = (handle(u), handle(v)) else {
+    let (Some(hu), Some(hv)) = (end_on_line(jd, p, w, u), end_on_line(jd, p, w, v)) else {
         return Err(reject(RejectReason::RingNaming));
     };
     let BoundEdges::Ring(_) = &face.outer else {
@@ -235,10 +242,10 @@ pub(crate) fn segment_meets_face(
             }
         }
     }
-    let (lo, hi) = if order_along(jd, p, w, hu, hv) <= 0 {
-        (PointOn::Class(hu), PointOn::Class(hv))
+    let (lo, hi) = if order(hu, hv)? <= 0 {
+        (hu, hv)
     } else {
-        (PointOn::Class(hv), PointOn::Class(hu))
+        (hv, hu)
     };
     let by_place = |x: &([PointOn; 2], bool), y: &([PointOn; 2], bool)| {
         order(x.0[0], y.0[0]).map(|o| o.cmp(&0))

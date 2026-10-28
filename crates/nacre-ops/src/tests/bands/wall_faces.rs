@@ -1297,33 +1297,45 @@ fn a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure() {
     }
 }
 
-/// **A tangent line through a hole, held by a far face's plane, is refused by the rulings road
-/// today.** The line `(0, 0)` runs through the hole of `x = 0`, so no wall face touches it and
-/// the gate writes no row; but the step's face `y = 0` is a secant on the boss's axis plane, and
-/// with a tangent class of the other solid it records the line as a shared ruling. That road does
-/// not arrange this shape yet and refuses it by name (`RulingBoundNotYet`) — every operation, either
-/// order. The same block with the boss moved off the wall (axis at `x = 2.6`) builds all six, so
-/// the refusal is the tangent line's, not the step's. A row read off the outer loop alone has the
-/// gate refuse it `TangentLineInAnotherPlane` instead, whose six-region sentence is false here:
-/// nothing touches the line.
+/// **A tangent line through a hole, beside a far step, builds.** The line `(0, 0)` runs through the
+/// hole of `x = 0`, so no wall face touches it and the gate writes no row. The step does put a
+/// recorded line on the boss: its wall `x = 4` and the slot's wall `y = −2` meet at `(4, −2)` on
+/// the lateral, both cutting the cylinder, and the slot wall's face crosses the lateral there — a
+/// segment on the step's class along a ruling piece, carried onto that piece by the rulings split.
+/// All six build, the overlap the two circular segments past `|y| = 2` as for the hole without the
+/// step: at the boss's height the block is there only past `|y| = 2`, and there the circle reaches
+/// the step's `x ≥ 4` at the single point `(4, 2)`.
 #[test]
-fn a_tangent_line_through_a_hole_held_by_a_far_step_is_refused_today() {
+fn a_tangent_line_through_a_hole_beside_a_far_step_builds() {
+    let (r, d, h): (f64, f64, f64) = (2.5, 2.0, 1.0);
+    let overlap = 2.0 * h * (r * r * (d / r).acos() - d * (r * r - d * d).sqrt());
     for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
         for swapped in [false, true] {
             let (mut m, block, boss) = wide_boss_in_a_wall_gap(WallGap::HoleBesideStep);
+            let vol = |m: &Model, s| nacre_props::mass_props(m, s).unwrap().volume;
+            let (vblock, vboss) = (vol(&m, block), vol(&m, boss));
             let (a, b) = if swapped {
                 (boss, block)
             } else {
                 (block, boss)
             };
-            match crate::boolean(&mut m, kind, a, b) {
-                Err(BoolError::Rejected { reason, .. }) => assert_eq!(
-                    reason,
-                    RejectReason::RulingBoundNotYet,
-                    "{kind:?} swapped {swapped}"
-                ),
-                other => panic!("{kind:?} swapped {swapped}: {other:?}"),
-            }
+            let out = crate::boolean(&mut m, kind, a, b)
+                .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{kind:?} swapped {swapped}: {vs:?}");
+            let (bodies, want) = match (kind, swapped) {
+                (BoolKind::Fuse, _) => (1, vblock + vboss - overlap),
+                (BoolKind::Cut, false) => (1, vblock - overlap),
+                (BoolKind::Cut, true) => (1, vboss - overlap),
+                _ => (2, overlap),
+            };
+            assert_eq!(out.len(), bodies, "{kind:?} swapped {swapped}");
+            let got: f64 = out.iter().map(|&s| vol(&m, s)).sum();
+            assert!(
+                (got - want).abs() < 1e-9,
+                "{kind:?} swapped {swapped}: {got} vs {want}"
+            );
         }
     }
 }

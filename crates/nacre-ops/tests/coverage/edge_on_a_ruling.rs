@@ -952,3 +952,65 @@ fn an_outside_corner_as_tall_as_the_cylinder_builds() {
         }
     }
 }
+
+/// **A lateral's own edge inside a face of its own body is refused.** `A` is the upper half
+/// cylinder; its lateral ends on its flat face `y = 0` along the ruling `(1, 0)`. `B` is a prism
+/// whose wall `x − y = 1` passes through that line from the side `A` does not fill — locally `A`
+/// is a quarter wedge there and `B` a half-space, so the two meet on the line alone. Where `B` also
+/// reaches across `A` elsewhere (`joined` — a strip `y ∈ [0.2, 0.5]` through the half disk),
+/// `A ∪ B` is one solid whose lateral edge lies inside its own face on `x − y = 1`, and it is
+/// refused (`SelfTouchingResult` — the planar arm asks an edge whose ends a cylinder made like any
+/// straight edge). Where it does not (`apart`), the union is the two bodies. Everything else
+/// builds, the volumes in closed form, except `A − B` with `B` short of either cap: that stops at
+/// a backstop (`EdgeCurveUnderived`) where `A` less the overlap is the answer.
+#[test]
+fn a_body_touching_itself_along_a_laterals_own_edge_is_refused() {
+    let apart: &[[f64; 2]] = &[[-0.5, -1.5], [3.0, -1.5], [3.0, 2.0]];
+    let joined: &[[f64; 2]] = &[
+        [-0.5, -1.5],
+        [3.0, -1.5],
+        [3.0, 0.5],
+        [-0.5, 0.5],
+        [-0.5, 0.2],
+        [1.2, 0.2],
+    ];
+    // The strip's cross-section inside the half disk: `∫ (√(1 − y²) + 1/2) dy` over `[0.2, 0.5]`.
+    let antiderivative = |y: f64| (y * (1.0 - y * y).sqrt() + y.asin()) / 2.0 + y / 2.0;
+    let across = antiderivative(0.5) - antiderivative(0.2);
+    let a = std::f64::consts::PI;
+    let all = every_six(upper_half_disk, &[("apart", apart), ("joined", joined)]);
+    assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
+    for (p, six) in &all {
+        let joined = p.family == "joined";
+        let (b, common) = (
+            p.b_volume(),
+            if joined {
+                across * p.height.shared()
+            } else {
+                0.0
+            },
+        );
+        let fuse = if joined {
+            Err(RejectReason::SelfTouchingResult)
+        } else {
+            Ok((2, a + b))
+        };
+        let a_less_b = if p.height == Height::PastBoth {
+            Ok((1, a - common))
+        } else {
+            Err(RejectReason::EdgeCurveUnderived)
+        };
+        let both = Ok((usize::from(joined), common));
+        let want = [fuse, fuse, a_less_b, Ok((1, b - common)), both, both];
+        for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            match (got, want) {
+                (Ok((n, v)), Ok((wn, wv))) => {
+                    assert_eq!(*n, wn, "{p}: [{i}] bodies");
+                    assert!((v - wv).abs() < 1e-9, "{p}: [{i}] volume {v}, want {wv}");
+                }
+                (Err(r), Err(w)) => assert_eq!(*r, w, "{p}: [{i}]"),
+                (got, want) => panic!("{p}: [{i}] {got:?}, want {want:?}"),
+            }
+        }
+    }
+}

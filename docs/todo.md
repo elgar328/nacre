@@ -58,11 +58,11 @@
 | `cyl_gate::classes_holding_the_line` | 접선을 품는 셋째 클래스의 **무한 평면** | `TangentLineInAnotherPlane` — r=1 원통에 y=1 면이 접하는 상자, 셋째 면 x=0 이 접선에서 떨어져 있음(네 짓기) |
 | `cyl_gate::shared_rulings` | 두 무한 평면 + 각만 | 없음 — 기록 과잉, 거절하는 독자 없음 |
 
-인구는 전부 우리가 지은 것이다(census·kit 0). 첫 행을 열려면 둘이 먼저다. 셋째 클래스의 **면**이 접선에 닿는가를 읽는
+인구는 전부 우리가 지은 것이다(census·kit 0). 첫 행을 열려면 하나가 먼저다. 셋째 클래스의 **면**이 접선에 닿는가를 읽는
 도구가 없다 — 접선 행의 판독(`line_runs_through_face`)은 접선 평면의 띠를 읽어서 할선 평면에서는 양쪽으로 틀린다(반원통의
 평면이 끝 룰링에서 끝나는 여섯 영역을 «안 닿음», 선에서 떨어진 면을 «닿음»; 잠금은
-`a_tangency_row_is_written_only_where_the_lateral_face_is`). 그 판독이 서면 다음 자리는 룰링 위에 겹친
-평면 쌍 선분의 `Transversal` 이다(`fold_onto_rulings` 의 `RulingBoundNotYet` — 오늘 스위트 6·census 0). 표 밖의 자리 하나: 광선 도로의 `in_faces::lateral_face_crossings` 는 원통 위의
+`a_tangency_row_is_written_only_where_the_lateral_face_is`). 그 판독 뒤의 룰링 분할은 룰링 위에 겹친 평면 쌍 선분의
+`Transversal` 을 그 조각에 싣는다. 표 밖의 자리 하나: 광선 도로의 `in_faces::lateral_face_crossings` 는 원통 위의
 광선을 면의 각과 무관하게 «이 광선으로 못 셈»(`Graze`)으로 읽는다 — 다음 증인으로 넘어가므로 거절로 이어지는 인구는 재지 않았다.
 
 ## 다음 — 사용자가 만나는 한계
@@ -256,14 +256,10 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   같은 부류의 필렛 쪽: 판의 제 접선 벽 클래스에서 옆면의 끝은 `side = 0` 룰링 정거장인데, 다른 솔리드의 면이
   그 선 위에 세그먼트를 두면 접히지 않는다(`lateral_crossings` 의 `OnRuling` 경비, `RulingBoundNotYet` — census
   `slab wall 1.5`). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
-- **벽 면의 구멍만 지나는 접선을 먼 할선 면이 품는** 가족. 닿는 벽 면이 없어 접선 행은 없고, 할선과 다른 솔리드의
-  접선 클래스가 그 선을 공유 룰링으로 기록해 룰링 분할(`fold_onto_rulings`)이 자기 클래스를 가로지르는 조각을
-  만나 `RulingBoundNotYet` 으로 거절한다 — 모든 연산, 양 순서. 접선만 없앤 같은 배치는 빌드된다.
-  `a_tangent_line_through_a_hole_held_by_a_far_step_is_refused_today` 가 고정한다.
-- **이 가족들을 열 때 자기접촉 판정도 함께 본다.** 옆면 자신의 룰링 간선(옆면이 평면 면과 만나는 선)이 같은 솔리드의
-  다른 평면 면 안에 놓이는 몸 — 반원기둥의 평면 모서리를 할선 벽 `x − y = 1` 이 지나는 면이 품고 다른 데서 이어진
-  모양 — 은 판정이 묻지 않는다. 오늘은 그 면이 기록된 선을 가로지르는 조각이라 룰링 분할이 `RulingBoundNotYet` 으로
-  먼저 거절한다(두 몸 짝까지, 두 틀·두 높이 측정). 그 거절이 열리면 그 몸은 조용히 지어질 수 있다.
+- **옆면의 제 간선을 다른 솔리드의 면이 선으로만 짚는** 가족(반원기둥의 평면 모서리를 지나는 `x − y = 1` 벽 —
+  `a_body_touching_itself_along_a_laterals_own_edge_is_refused`): 그 벽이 `B` 의 면이고 `A − B` 에서 `B` 가 두 캡을 다
+  넘지 않으면 백스톱 `EdgeCurveUnderived` 로 거절된다 — 답은 겹침을 뺀 `A` 다(두 틀·두 꼭짓점 순서·세 높이, 이음 있든 없든).
+  두 캡 너머면 지어진다.
 
 ### 비스듬한 평면 × 원통 — `ObliqueCylinderCut`
 
