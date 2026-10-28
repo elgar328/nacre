@@ -325,12 +325,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
   분할의 입력을 `Piece` 로 할지는 재지 않았다. 링을 읽는 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)은 한 타입이
   아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다.
 
-### 게이트가 하류 기록을 지역 벡터 셋을 거쳐 짓는다
-
-`cylinder_gate` 는 `class_meet` 의 표에서 `silent`·`apart`·`sectioned` 를 따로 모으고, 정산 뒤 그것을 `WorkingCyl::records`
-로 옮긴다. 정산의 판정(Apart·Sectioned 가 서는가)만 따로 들고 기록을 표에서 곧바로 지으면 그 셋이 사라진다(약 20줄). 하류
-기록의 순서는 독자에게 무관하다(클래스로 찾기만 하고, 한 쌍에 말 없음은 하나).
-
 ## 보류 — 인구가 생기면
 
 ### 원통 판정의 상승 — 인구가 생기면

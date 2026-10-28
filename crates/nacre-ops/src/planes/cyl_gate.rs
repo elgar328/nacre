@@ -145,14 +145,15 @@ pub(crate) fn cylinder_gate(
         }
         meets.push(row);
     }
-    // The classes cutting cylinder `ci`, and the tangent ones carrying a face of its other operand
-    // — the half of [`SharedRuling`]'s population a tangent class gives, whether or not its faces
-    // wrote rows. With the tangency rows, these are the records the nameless settlements weigh.
-    let cuts_of = |ci: usize| {
+    // The classes whose answer about cylinder `ci` is `want`, and the tangent ones carrying a face
+    // of its other operand — the half of [`SharedRuling`]'s population a tangent class gives,
+    // whether or not its faces wrote rows. With the tangency rows, the cutting and tangent classes
+    // are the records the nameless settlements weigh.
+    let meeting = |ci: usize, want: ClassMeet| {
         meets[ci]
             .iter()
             .enumerate()
-            .filter(|(_, meet)| **meet == ClassMeet::Cuts)
+            .filter(move |(_, meet)| **meet == want)
             .map(|(c, _)| c)
     };
     let tangent_walls_of = |ci: usize| {
@@ -170,30 +171,6 @@ pub(crate) fn cylinder_gate(
             })
             .map(|(c, _)| c)
     };
-    let mut silent: Vec<Vec<(usize, Silence)>> = vec![Vec::new(); cyls.len()];
-    // Classes whose faces stand apart from a cylinder their plane may cut — silent once the
-    // cylinder is shown to leave no record either, which only the end of the loop knows.
-    let mut apart: Vec<(usize, usize)> = Vec::new();
-    // Classes that cut a cylinder along its rulings with every face apart — sectioned once no other
-    // record of that cylinder shares a line with them, which only the end of the loop knows.
-    let mut sectioned: Vec<(usize, usize)> = Vec::new();
-    let mut oblique = false;
-    for (ci, row) in meets.iter().enumerate() {
-        for (c, meet) in row.iter().enumerate() {
-            match meet {
-                ClassMeet::Silent(Silence::Beside(side)) => {
-                    silent[ci].push((c, Silence::Beside(*side)))
-                }
-                ClassMeet::Silent(Silence::Apart) => apart.push((c, ci)),
-                ClassMeet::Silent(Silence::Sectioned) => sectioned.push((c, ci)),
-                ClassMeet::Ellipse => oblique = true,
-                ClassMeet::Across
-                | ClassMeet::Clear
-                | ClassMeet::Cuts
-                | ClassMeet::Tangent { .. } => {}
-            }
-        }
-    }
 
     // **A face apart from a cylinder its plane cuts is silent only while the cylinder writes
     // nothing anywhere.** On that class the arrangement then sees the cylinder's solid as if the
@@ -201,60 +178,66 @@ pub(crate) fn cylinder_gate(
     // and every label that changes lies in the lateral's box, which no face of the class reaches.
     // A record of that cylinder (a crossing, a tangency) puts it on other classes' arrangements as
     // it is, while this class reads it filled, and the two would meet on their shared lines
-    // disagreeing; so such a pair is refused here, before the oblique record's reader below, as
-    // every nameless refusal is.
+    // disagreeing; so such a pair is refused here, before the ellipse refusal below, as every
+    // nameless refusal is.
     //
     // A class that sections the cylinder would be such a record too, and cannot be one today:
     // `Apart` asks for only whole rims and `Sectioned` for none, and every cylinder of the table
     // has a lateral row (the table refuses a class with none), so only whole rims means some. The
     // day a cylinder with a whole rim can be sectioned (the chord a nameless plane cuts from a
     // disk), the assertion lights and the pair is refused here like the others.
-    for (c, ci) in apart {
+    for ci in 0..cyls.len() {
+        if meeting(ci, ClassMeet::Silent(Silence::Apart))
+            .next()
+            .is_none()
+        {
+            continue;
+        }
         debug_assert!(
-            !sectioned.iter().any(|&(_, k)| k == ci),
+            meeting(ci, ClassMeet::Silent(Silence::Sectioned))
+                .next()
+                .is_none(),
             "a cylinder with only whole rims is sectioned by another class"
         );
-        let recorded = cuts_of(ci).next().is_some()
+        let recorded = meeting(ci, ClassMeet::Cuts).next().is_some()
             || tangencies.iter().any(|t| t.cyl == ci)
             || tangent_walls_of(ci).next().is_some();
         if recorded {
             return Err(undecided());
         }
-        silent[ci].push((c, Silence::Apart));
     }
     // **A sectioned class shares no line of a lateral face with another record of that cylinder.**
     // `shared_rulings` reads only the recorded pairs, so a line this class meets another recorded
     // class in, lying on a lateral face, would be a ruling no record states. Every such pair is
     // shown off the faces ([`line_off_lateral`]) or refused.
-    let mut pieces: Vec<Option<Vec<Footprint>>> = (0..cyls.len()).map(|_| None).collect();
-    for &(c, ci) in &sectioned {
-        let fps: &[Footprint] =
-            pieces[ci].get_or_insert_with(|| lateral_pieces(faces, cyls[ci].surf));
-        let others = cuts_of(ci)
-            .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
-            .chain(tangent_walls_of(ci))
-            .chain(
-                sectioned
-                    .iter()
-                    .filter(|&&(x, k)| k == ci && x != c)
-                    .map(|&(x, _)| x),
-            );
-        for x in others {
-            if !line_off_lateral(jd, c, x, &cyls[ci].def, fps) {
-                return Err(undecided());
+    for (ci, cyl) in cyls.iter().enumerate() {
+        let mut pieces: Option<Vec<Footprint>> = None;
+        for c in meeting(ci, ClassMeet::Silent(Silence::Sectioned)) {
+            let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
+            let others = meeting(ci, ClassMeet::Cuts)
+                .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
+                .chain(tangent_walls_of(ci))
+                .chain(meeting(ci, ClassMeet::Silent(Silence::Sectioned)).filter(move |&x| x != c));
+            for x in others {
+                if !line_off_lateral(jd, c, x, &cyl.def, fps) {
+                    return Err(undecided());
+                }
             }
         }
     }
-    for &(c, ci) in &sectioned {
-        silent[ci].push((c, Silence::Sectioned));
-    }
-    for (ci, (cyl, s)) in cyls.iter_mut().zip(silent).enumerate() {
-        cyl.records = s
-            .into_iter()
-            .map(|(c, s)| (c, CylRecord::Silent(s)))
+    for (cyl, row) in cyls.iter_mut().zip(&meets) {
+        cyl.records = row
+            .iter()
+            .enumerate()
+            .filter_map(|(c, meet)| match meet {
+                ClassMeet::Silent(s) => Some((c, CylRecord::Silent(*s))),
+                ClassMeet::Cuts => Some((c, CylRecord::Cuts)),
+                ClassMeet::Across
+                | ClassMeet::Clear
+                | ClassMeet::Tangent { .. }
+                | ClassMeet::Ellipse => None,
+            })
             .collect();
-        cyl.records
-            .extend(cuts_of(ci).map(|c| (c, CylRecord::Cuts)));
     }
     debug_assert!(
         cyls.iter().all(|cyl| (0..geom.len())
@@ -264,7 +247,11 @@ pub(crate) fn cylinder_gate(
     );
 
     // An ellipse is drawn by no road ([`class_meet`]'s oblique arm).
-    if oblique {
+    if meets
+        .iter()
+        .flatten()
+        .any(|meet| *meet == ClassMeet::Ellipse)
+    {
         return Err(reject(RejectReason::ObliqueCylinderCut));
     }
 
