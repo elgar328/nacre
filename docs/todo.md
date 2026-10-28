@@ -311,19 +311,19 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 
 ### 원통 도로에 남은 철자
 
-한 명제를 여러 자리가 따로 계산하면, 한 자리를 «조각을 읽게» 고칠 때 같은 명제의 다른 칸이 다음 거절을 낸다. 남은 철자
+한 명제를 여러 자리가 따로 계산하면, 한 자리를 «조각을 읽게» 고칠 때 같은 명제의 다른 칸이 다음 거절을 낸다. 남은 것
 (nacre-ops 가 묻는 것):
 
-- «평면의 어느 쪽인가»: `Judge::orient3d`(세 평면 점)·`PiercePoint::side`(관통점, 두 도로를 한 몸통에)·
-  `plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
-  충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `crossings::AxisCoord`
-  하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
-- «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`) — 분할의 입력은 병합 층의 기록 셋(`MergedSeg`·
-  `MergedCircle`·`MergedRuling`)이고, 링을 읽는 쪽은 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)이다. 그 넷은
-  한 타입이 아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다(반증할 근거가
-  생기면).
-- 곡선·차트 층에는 세계 진술로 도로를 고르는 자리(`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction.rs` 의 호
-  방향, `arrangement/emit.rs`)와 정확한 점만 받는 자리(`direction::arc_at` — 호의 접선 방향, `loops::curved_wall`)가 남는다.
+- **한 선 위 순서의 셋째 철자.** 한 선 위의 순서는 `order_on` 계열(`order_located`)과 판정층의 `Judge::line_order` 가 답하는데,
+  `pierce_between`(결과 정점 이름 짓기의 쌍둥이 분할)은 `{own, wall}` 선 위의 관통점을 `KeyCmp` 의 세계 축 한 축으로 줄 세운다.
+  선 위 순서는 두 끝을 `pin_for` 로 핀해야 하는데, 잰 것(스위트·census 세 빌드·무시 스윕, 호출 약 51,700): 이 함수가 점을 나눈
+  67 번이 모두 끝을 `pin_for` 가 핀하지 못하는(`None`) 입력이고(`edge_on_a_ruling` 가족 — `a_keyhole_builds`·
+  `a_vertex_on_a_cap_circle_builds_or_is_refused_by_name` 등), 나머지 호출은 나눌 점이 없다. 그 끝은 「자기접촉 판정이 답하지
+  않는 두 자리」의 다발 끝과 같은 빈자리(두 평면 쌍 사이에서 근을 옮기는 규칙)다 — 그 규칙이 이 함수에도 먼저다.
+- **분할의 입력.** «클래스 위의 곡선»은 분할의 출력에서만 한 타입이다(`Piece`). 입력은 병합 층의 기록 셋(`MergedSeg`·
+  `MergedCircle`·`MergedRuling`)이고, 앞의 둘은 `Piece` 로의 `From` 이 있으며 `MergedCircle` 은 끝이 없고 기여마다 각 범위를 든다.
+  분할의 입력을 `Piece` 로 할지는 재지 않았다. 링을 읽는 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)은 한 타입이
+  아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다.
 
 ### 게이트가 하류 기록을 지역 벡터 셋을 거쳐 짓는다
 
@@ -345,6 +345,14 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그렇게 잰 «정밀도로 갈리는 인구»다. 열 때의 규약: 증명된 일치는 0 이고 보고한다(쪽·순서·원 위 회전 — overview 「정밀도
 인프라」), 접점·옆면 위의 선·seam 위는 이름에서만 온다(근사로는 중근을 확정하지 못한다 — Mehlhorn–Sagraloff) — 그 판정의
 고갈은 호출처가 이름 붙여 거절하고 `notes` 에 싣지 않는다; 충분조건 탐침(게이트의 상자·껍질 판정)은 기록하지 않는다.
+
+### 곡선·차트 층은 좁은 세계 이름만 읽는다 — 인구가 생기면
+
+`cyl_trace.rs` 의 범위 조립, `cyl_chart/read_cell.rs`, `direction::arc_at`, `arrangement/emit.rs`, `loops::curved_wall` 은 좁은
+세계 이름이 있는 평면만 읽고, 없으면 이름으로 거절하거나 기권한다 — 구간 팔이 없다. 게이트가 이름 없는 클래스는 모든 원통에
+대해 말 없게 하고(`cylinder_gate` 의 단언 «every nameless class is silent about every cylinder») 넓은 이름의 클래스는 원통이 낀
+불리언에서 `WitnessNotRational` 로 거절하므로, 그 팔에 닿는 인구는 스위트·census 세 빌드·무시 스윕에서 0 이다. 여는 조건은 그
+인구다.
 
 ### 광선이 세계 진술 있는 클래스에서 관통 꼭짓점 링을 읽지 않는다
 
