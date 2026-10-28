@@ -48,21 +48,12 @@
 클래스의 `Clear` 도 «어느 면도 옆면에 닿지 않는다»는 말 없음과 같은 명제지만 하류에 넘기지 않는다: 넘기면 `nesting::ask` 가
 그 클래스를 정확 도로 대신 기록으로 답하게 되는 의미 변경이라, 인구를 재고 따로 정한다. 분할 쪽에서 남긴 둘: 링을 읽는 쪽의 네 enum 은 한 타입이 아니다(물음 16 가지 — `names.rs` 의
 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다, 반증할 근거가 생기면); 같은 선 위 두 어휘의 겹침
-(평면 쌍 선분이 옆면이 있는 룰링 위에 겹침 — `RulingBoundNotYet`, census `tangentline slab wall 1.5` 3·스위트 6)은 짓는 도로가
+(평면 쌍 선분이 옆면이 있는 룰링 위에 겹침 — `RulingBoundNotYet`, census `tangentline slab wall 1.5` 3·스위트 0)은 짓는 도로가
 없다.
 
-첫 잠금은 `suite/carrier_readings.rs` 의 거절 행들이다 — 조각은 떨어져 있고 담체만 닿는 배치, 대조군과 함께:
-
-| 오늘 거절하는 자리 | 담체로 읽는 것 | 고정물 |
-|---|---|---|
-| `cyl_gate::classes_holding_the_line` | 접선을 품는 셋째 클래스의 **무한 평면** | `TangentLineInAnotherPlane` — r=1 원통에 y=1 면이 접하는 상자, 셋째 면 x=0 이 접선에서 떨어져 있음(네 짓기) |
-| `cyl_gate::shared_rulings` | 두 무한 평면 + 각만 | 없음 — 기록 과잉, 거절하는 독자 없음 |
-
-인구는 전부 우리가 지은 것이다(census·kit 0). 첫 행을 열려면 하나가 먼저다. 셋째 클래스의 **면**이 접선에 닿는가를 읽는
-도구가 없다 — 접선 행의 판독(`line_runs_through_face`)은 접선 평면의 띠를 읽어서 할선 평면에서는 양쪽으로 틀린다(반원통의
-평면이 끝 룰링에서 끝나는 여섯 영역을 «안 닿음», 선에서 떨어진 면을 «닿음»; 잠금은
-`a_tangency_row_is_written_only_where_the_lateral_face_is`). 그 판독 뒤의 룰링 분할은 룰링 위에 겹친 평면 쌍 선분의
-`Transversal` 을 그 조각에 싣는다. 표 밖의 자리 하나: 광선 도로의 `in_faces::lateral_face_crossings` 는 원통 위의
+담체로 읽는 자리 하나가 남는다: `cyl_gate::shared_rulings` 는 두 무한 평면과 각만 읽는다 — 기록 과잉이고 거절하는 독자가
+없어 고정물이 없다. 접선을 품는 셋째 클래스는 면으로 읽는다(`suite/carrier_readings.rs` 의 접선 슬래브 넷이 대조군과 함께 선다).
+또 하나: 광선 도로의 `in_faces::lateral_face_crossings` 는 원통 위의
 광선을 면의 각과 무관하게 «이 광선으로 못 셈»(`Graze`)으로 읽는다 — 다음 증인으로 넘어가므로 거절로 이어지는 인구는 재지 않았다.
 
 ## 다음 — 사용자가 만나는 한계
@@ -318,8 +309,8 @@ kit 의 `rotateX`·`rotateY`·`rotateZ(…, { pivot: "center" })` 는 몸마다 
 
 위의 항목이 든 것 밖의 이름 붙인 거절:
 
-- 접선의 선이 셋째 평면 안에 놓이는 배치: 열쇠 구멍은 빌드되고, 남은 가족은 「원통의 룰링 위에 놓인 모서리
-  선 — 남은 가족」이 든다. 그 밖의 행은 게이트가 배열 전에 거절한다(`TangentLineInAnotherPlane`).
+- 접선의 선을 품는 셋째 클래스의 면이 그 선에 닿는 배치: 열쇠 구멍은 빌드되고, 남은 가족은 「원통의 룰링 위에 놓인
+  모서리 선 — 남은 가족」이 든다. 그 밖의 행은 게이트가 배열 전에 거절한다(`TangentLineInAnotherPlane`).
 - 옆면 구멍에 자국이 닿으면 `DeclineKind::CylFaceHole` 로 거절한다.
 - 스케치의 임의 각도 호(`ArcSweepNotQuarterTurn`).
 - 호–호 접합이 있는 솔리드(`Vertex::CylinderPair` 모서리, 두 원통 사이의 룰링 간선)를 받은 불리언은 입구에서
@@ -336,6 +327,16 @@ kit 의 `rotateX`·`rotateY`·`rotateZ(…, { pivot: "center" })` 는 몸마다 
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
 잠금 공백·API·성능·구조. 순서는 없다.
+
+### 자기접촉 판정이 답하지 않는 두 자리
+
+- 평면 다발 위 간선의 관통 끝: 그 끝을 선 자신의 쌍이 아닌 쌍이 이름 짓고 그 쌍의 두 평면이 다 그 선을 품으면 `pin_for` 가 고정하지
+  못해 `segment_meets_face` 가 `RingNaming` 으로 담고(자기접촉이 없으면 거절), 그렇게 되느냐가 간선의 면 순서에 달린다. 두 평면 쌍
+  사이에서 근(Lo·Hi)을 옮기는 규칙(두 쌍의 선 방향 부호)이 있어야 순서와 무관하게 답한다. 스위트·census 인구 0, 고정물 없음.
+- 관통 꼭짓점(점 팔)·옆면의 한 점 접촉(곡면 팔)의 기권: 그 점을 지나는 평면이 축에 비스듬하면 게이트가 먼저 거절하지만
+  (`ObliqueCylinderCut`), 축을 따르거나 가로지르는 평면 위의 경우는 재지 않았다.
+- 같은 다발에서 `pin_for` 가 `None` 을 낼 때 옛 고정을 그대로 쓰는 독자 둘(`split.rs` 의 분할 끝 `s.pin()`, `trace_class.rs` 의
+  `end_h`) — 그 고정이 다발에서 맞는지 재지 않았다.
 
 ### kit 은 소비마다 복사한다 — 모든 중간값이 산다
 

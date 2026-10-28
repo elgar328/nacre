@@ -373,7 +373,8 @@ pub(crate) fn census(
                 // `face_spans` actually reads is the **kind**: a face running through says
                 // `Transversal`, one whose boundary stops at the line says `Graze` and may not
                 // reach the interval at all.
-                // Measured over the suite: 412 `Transversal`, **12 `Graze`** — not empty.
+                // Measured over the lib suite: 12,247 rulings with a mark that is not `Graze`, **1,552
+                // all `Graze`** — not empty.
                 if t.marks
                     .iter()
                     .all(|(_, k)| matches!(k, crate::arrangement::SegKind::Graze { .. }))

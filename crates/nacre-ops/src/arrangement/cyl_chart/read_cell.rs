@@ -662,12 +662,9 @@ impl Chart {
 /// all (a whole circle goes to `DiskLabels`, and existence at an uncut end is the row's span), so
 /// today only cut rims ask here.
 ///
-/// **How often each row actually fires** (whole binary, production calls only):
-/// `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
-/// do not · nothing at all **0**. The chart reads it once per cut end (`cyl_chart::census`'s
-/// `arcs_read`, 756 over the lib suite).
-/// The twelve are the six dropped sectors read at both rims, which is the cross-check that the
-/// sector census and this one describe the same events.
+/// **How often each row actually fires** (the lib suite, marks read): `Transversal` **23,744** ·
+/// `Graze` **9,878**, of which **9,267** reach and **611** do not · nothing at all **3**. The chart
+/// reads it once per cut end (`cyl_chart::census`'s `arcs_read`).
 pub(crate) fn face_spans(
     r: &ArcLabel,
     side: SolidSide,
