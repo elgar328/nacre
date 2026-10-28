@@ -622,18 +622,26 @@ fn touching(va: f64, vb: f64) -> [[Want; 3]; 2] {
     ]
 }
 
-/// **A tangent line beside a third class's plane, off its faces** — the slab's face `y = 1` is
-/// tangent to the unit cylinder along the line `x = 0, y = 1`; the notch's wall (or the arm's end)
-/// `x = 0` holds that line as a plane, but its face stands at `y ≥ 2`, off the line. The gate asks
-/// which classes hold the tangent line by their infinite planes (`classes_holding_the_line`) and
-/// refuses the line in another plane. Four constructions: the notch, the arm, the block on the
-/// cylinder's side, the notch turned and moved.
+/// **A tangent line beside a third class's plane, off its faces, builds** — the slab's face `y = 1`
+/// is tangent to the unit cylinder along the line `x = 0, y = 1`; the notch's wall (or the arm's
+/// end, or the block's side) `x = 0` holds that line as a plane, but its face stands at `y ≥ 3` (or
+/// `y ≤ −1`), off the line. The gate reads the faces on the classes holding the line
+/// (`line_runs_through_face` on that plane), finds none touching it, and hands the row to the
+/// verdict, which reads three regions there; the rulings split carries the slab face's segment on
+/// `x = 0` onto that class's ruling. Four constructions — the notch, the arm, the block on the
+/// cylinder's side, the notch turned and moved — each the same answers as its control below with
+/// the third plane at `x = 0.5`.
 #[test]
-fn a_tangent_line_beside_a_third_plane_off_its_faces_is_refused() {
-    let named = || refused(RejectReason::TangentLineInAnotherPlane);
-    every_kind(|m| notched_slab(m, 0.0), named());
-    every_kind(|m| ell_slab(m, 0.0), named());
-    every_kind(|m| slab_and_blocked_cylinder(m, 0.0), named());
+fn a_tangent_line_beside_a_third_plane_off_its_faces_builds() {
+    every_kind(|m| notched_slab(m, 0.0), touching(16.0, 2.0 * PI));
+    every_kind(|m| ell_slab(m, 0.0), touching(14.0, 2.0 * PI));
+    // The block meets the cylinder over the part of the disk with `x ≥ 0, y ≤ −0.5`:
+    // `∫ (√(1 − x²) − 1/2) dx` over `[0, √3/2]` = `π/6 − √3/8`, over the height 2.
+    let lens = PI / 6.0 - 3f64.sqrt() / 8.0;
+    every_kind(
+        |m| slab_and_blocked_cylinder(m, 0.0),
+        touching(8.0, 2.0 * PI + 10.0 - 2.0 * lens),
+    );
     every_kind(
         |m| {
             let (a, b) = notched_slab(m, 0.0);
@@ -643,7 +651,7 @@ fn a_tangent_line_beside_a_third_plane_off_its_faces_is_refused() {
             let b = shift(m, b, [0.5, 0.25, 0.0]);
             (a, b)
         },
-        named(),
+        touching(16.0, 2.0 * PI),
     );
 }
 
@@ -665,6 +673,48 @@ fn a_tangent_line_with_no_third_plane_builds() {
     every_kind(
         |m| slab_and_blocked_cylinder(m, 0.5),
         touching(8.0, 2.0 * PI + 7.5 - 2.0 * lens),
+    );
+}
+
+/// The tangent slab with a wedge on top whose face on `x = 0` — a plane holding the tangent line —
+/// is a triangle with one corner on the line, at `(0, 1, 1.75)` on the lateral, the face running off
+/// it above the slab: `(y, z)` = `(1, 1.75)`, `(2.5, 1.2)`, `(2.5, 2.5)`, swept over `x ∈ [0, 2]`.
+fn slab_with_a_wedge_on_the_line(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let slab = bx(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
+    let pts =
+        [(1.0, 1.75), (2.5, 1.2), (2.5, 2.5)].map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+    let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a triangle");
+    let profile = crate::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let frame = SketchFrame::world(m, Axis::X);
+    let OpOutput::Extrude { solid: wedge, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    )
+    .expect("the wedge extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let a = op1(m, BoolKind::Fuse, slab, wedge);
+    (a, unit_cylinder(m))
+}
+
+/// **A third plane's face meeting the tangent line at a corner is refused as oblique.** The
+/// wedge's face on `x = 0` meets the line `x = 0, y = 1` at one corner on the lateral; the corner's
+/// other edges leave it neither along the axis nor level, so the faces across them lie on planes
+/// slanted to the axis through that point of the lateral, and the gate refuses those before any
+/// tangency row is read — every operation, either order. (How the face itself reads against the
+/// line is the reader's own test, `a_face_meeting_the_line_at_a_corner_does_not_touch_it`.)
+#[test]
+fn a_third_plane_face_meeting_the_tangent_line_at_a_corner_is_refused_as_oblique() {
+    every_kind(
+        slab_with_a_wedge_on_the_line,
+        refused(RejectReason::ObliqueCylinderCut),
     );
 }
 

@@ -456,16 +456,16 @@ pub enum RejectReason {
     /// silent cell takes why its ends are silent (`cyl_chart::read_cell`), and a class table and
     /// face rows that disagree are [`Self::CylinderStagesDisagree`].
     CylinderGateUndecided,
-    /// **A tangent line another plane holds, and not as an edge** — the population gate wrote a
-    /// tangency row (a wall plane exactly `r` from a cylinder's axis, a wall face touching the line
-    /// where a lateral face lies on it), another plane class holds that line too, and the
-    /// line is not an edge the wall face and a face on that class both end on
-    /// (`planes::Tangency::line_is_an_edge`). Such a plane is a secant, so around the line six
+    /// **A tangent line another class's face reaches, and not as an edge** — the population gate
+    /// wrote a tangency row (a wall plane exactly `r` from a cylinder's axis, a wall face touching
+    /// the line where a lateral face lies on it), a face on another plane class holding that line
+    /// touches it there too, and the line is not an edge the wall face and a face on that class
+    /// both end on (`planes::Tangency::line_is_an_edge`). Such a plane is a secant, so around the line six
     /// regions meet rather than the three the tangency's verdict (`assembly::tangency_reject`)
     /// reads, and no road judges them — the gate refuses the pair before the arrangement runs.
     ///
     /// **Not [`Self::CylinderGateUndecided`]**: nothing here failed to be computed — the gate
-    /// decided exactly that a third plane holds the line — and that name's sentence is false of
+    /// decided exactly that a third class's face reaches the line — and that name's sentence is false of
     /// it. **Not [`Self::RulingBoundNotYet`]** either: the rulings split is not what cannot read
     /// the shape — the verdict is.
     ///

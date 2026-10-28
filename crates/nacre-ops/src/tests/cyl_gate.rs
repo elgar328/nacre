@@ -350,7 +350,8 @@ fn the_tangent_wall_states_itself_exactly() {
         &def,
         surf,
         SolidSide::B, // the cylinder is the second operand; the wall face is the cube's
-        !holders.is_empty(),
+        &jd,
+        &holders,
     );
     assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
     let t = &rows[0];
@@ -367,7 +368,7 @@ fn the_tangent_wall_states_itself_exactly() {
     // The face `x = 0` runs from `y = 0` to `y = 2` across the tangent line `y = 1`, and its
     // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`.
     assert!(t.runs_through, "{t:?}");
-    assert!(!t.line_in_another_plane, "{t:?}");
+    assert!(!t.line_on_another_face, "{t:?}");
     assert!(t.undecided.is_none(), "{t:?}");
     // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.
     let w = t.witness.as_array();
@@ -512,7 +513,7 @@ fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
     let present = half_cylinder_and_box([-0.5, 1.0], [0.5, 2.0]).expect("setup");
     assert_eq!(present.len(), 1, "{present:?}");
     assert!(
-        present[0].undecided.is_none() && !present[0].line_in_another_plane,
+        present[0].undecided.is_none() && !present[0].line_on_another_face,
         "{present:?}"
     );
     match half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]) {
@@ -691,4 +692,86 @@ fn an_unusable_face_list_is_one_unbounded_piece() {
         theta: Theta::at_line(&[z(0), z(-1), z(0)], &o, &axis).unwrap(),
     };
     assert!(!pieces.iter().all(|fp| pieces_clear(&def, &line, &def, fp)));
+}
+
+/// A prism over the triangle `(y, z)` = `tri` on the world `YZ` plane, swept along `+x`; its face on
+/// `x = 0`, and that face's plane as the gate names it.
+fn yz_prism_face(tri: [(f64, f64); 3]) -> (Model, Handle<Face>, [Rat; 4]) {
+    let mut m = Model::new();
+    let pts = tri.map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+    let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a triangle");
+    let profile = crate::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let frame = crate::SketchFrame::world(&m, nacre_exact::Axis::X);
+    let Ok(crate::OpOutput::Extrude { solid, .. }) = crate::apply(
+        &mut m,
+        &crate::Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    ) else {
+        panic!("the prism extrudes")
+    };
+    let zero = Rat::from_int(0);
+    let (face, name) = m
+        .shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .find_map(|&f| {
+            let name = *m.world_plane_name(m.face(f).surface)?.narrow()?;
+            (name[1] == zero && name[2] == zero && name[3] == zero).then_some((f, name))
+        })
+        .expect("the face on x = 0");
+    (m, face, name)
+}
+
+/// **A face meeting the line at a single corner does not touch it.** The line `x = 0, y = 1` along
+/// `z`, read over `0 < z < 2` on the plane `x = 0`: a triangle with one corner on it at `z = 1.75`
+/// and the rest at `y > 1` meets it at that point alone — no positive length, so it does not touch
+/// (`LineContact::touches`); a triangle with an edge on it over `1 ≤ z ≤ 1.5` touches there, along
+/// its boundary, never through its interior. The corner's other two steps both cross the line at
+/// `1.75` under the reading that counts a piece on it as above, so the parity stays even.
+#[test]
+fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
+    let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let z = Rat::from_int;
+    let read = |tri: [(f64, f64); 3]| {
+        let (m, face, coeffs) = yz_prism_face(tri);
+        // The frame puts `u` on `y` and `v` on `z`: the triangle's first corner is `(0, y, z)`.
+        let (y, zz) = tri[0];
+        assert!(
+            m.face(face).outer.half_edges.iter().any(|he| {
+                m.vertex_point(m.edge(he.edge).vertices[0])
+                    .distance(Point3::from_array([0.0, y, zz]))
+                    < 1e-12
+            }),
+            "the corner (0, {y}, {zz})"
+        );
+        line_runs_through_face(
+            &m,
+            m.face(face),
+            &coeffs,
+            &[z(0), z(1), z(0)],
+            &[z(0), z(0), z(1)],
+            [z(0), z(2)],
+        )
+    };
+    assert_eq!(
+        read([(1.0, 1.75), (2.5, 1.2), (2.5, 2.5)]),
+        Some(LineContact {
+            touches: false,
+            runs_through: false,
+            contact_at: None,
+        })
+    );
+    assert_eq!(
+        read([(1.0, 1.0), (1.0, 1.5), (2.5, 1.25)]),
+        Some(LineContact {
+            touches: true,
+            runs_through: false,
+            contact_at: Some(r(5, 4)),
+        })
+    );
 }

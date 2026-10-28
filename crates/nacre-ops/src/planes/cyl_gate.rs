@@ -353,7 +353,7 @@ pub(crate) fn cylinder_gate(
         cyls[ci].shared.push(sr);
     }
     for t in &mut tangencies {
-        t.line_is_an_edge = t.line_in_another_plane
+        t.line_is_an_edge = t.line_on_another_face
             && !t.runs_through
             && cyls[t.cyl].shared.iter().any(|sr| {
                 (sr.line.0 == t.wall || sr.line.1 == t.wall)
@@ -371,7 +371,7 @@ pub(crate) fn cylinder_gate(
         if let Some(e) = t.undecided {
             return Err(e);
         }
-        if t.line_in_another_plane && !t.line_is_an_edge {
+        if t.line_on_another_face && !t.line_is_an_edge {
             return Err(crate::reject_at(
                 RejectReason::TangentLineInAnotherPlane,
                 crate::RejectWhere::Point(t.witness),
@@ -446,11 +446,10 @@ struct PairCx<'a, 'j> {
 ///   `Negative` cuts (two rulings); `Zero` is tangent (one grazing line). The third is not `Cuts`:
 ///   that would put the pair on the ruling road, and three roads there spell "two distinct
 ///   roots". Keeping it apart keeps every one of those sentences true and the arrangement
-///   unchanged: of 21 measured cells **15 assemble**, `validate` clean and volumes exact; the
-///   other 6 are the third-plane population [`Tangency::line_in_another_plane`] names — a line two
-///   classes share on the cylinder, recorded as a [`SharedRuling`] and arranged as one. A row the
-///   tangency's verdict cannot judge — that line not being an edge both faces end on, or the row
-///   not stated — is refused at the gate's end ([`RejectReason::TangentLineInAnotherPlane`], or
+///   unchanged: the 15 measured cells with no third class on the line assemble, `validate` clean
+///   and volumes exact. A row the
+///   tangency's verdict cannot judge — a third class's face reaching that line where it is not an
+///   edge both faces end on, or the row not stated — is refused at the gate's end ([`RejectReason::TangentLineInAnotherPlane`], or
 ///   the row's own name), before anything is arranged.
 /// - anything else — an oblique plane, [`ClassMeet::Clear`] when every lateral face of the
 ///   cylinder provably misses the plane — the face's reach along `n` against the plane's station
@@ -594,8 +593,8 @@ fn class_meet(
             return Ok((ClassMeet::Clear, Vec::new()));
         }
         // **The classes holding a tangent line, asked once for the pair** — the rows
-        // below read it (`line_in_another_plane`) and so does [`SharedRuling`]. It is
-        // asked here, before any face is: the rows are written only for faces that fail
+        // below read those classes' faces (`line_on_another_face`) and [`SharedRuling`] reads
+        // the classes. It is asked here, before any wall face is: the rows are written only for faces that fail
         // to clear the footprint and touch the line within a lateral's span, so a face
         // standing on a cap, or one the line passes through a hole of, writes none — yet
         // its line is the same line.
@@ -672,7 +671,8 @@ fn class_meet(
                         &cyl.def,
                         cyl.surf,
                         cyl.owner,
-                        holders.as_ref().is_some_and(|(h, _)| !h.is_empty()),
+                        jd,
+                        holders.as_ref().map_or(&[][..], |(h, _)| h.as_slice()),
                     );
                 } else {
                     return Ok((ClassMeet::Cuts, Vec::new()));
@@ -917,8 +917,8 @@ fn wall_faces_clear(
 /// parabola and the plane, and the far half-space — and whether the kept ones hang together is a
 /// question only [`crate::draft::keep`] can answer. So this is a *record*, not a verdict:
 /// the gate states the geometry, the operation decides. Where that three-region picture does not
-/// hold (a third plane holds the line) or the row could not be stated, the gate refuses instead
-/// of handing the verdict a row it cannot read.
+/// hold (a face on a third class reaches the line) or the row could not be stated, the gate refuses
+/// instead of handing the verdict a row it cannot read.
 ///
 /// **A row is about a lateral *face*, not its surface.** A half cylinder's surface is tangent to
 /// a wall on the side the face does not have, where nothing touches: a row there made the verdict
@@ -965,11 +965,28 @@ pub(crate) struct Tangency {
     /// open, and a face flush with the cap planes still has its interior inside it (the frozen
     /// `bore-slab` shape).
     pub(crate) runs_through: bool,
-    /// **Another plane class holds this tangent line.** Such a plane is a *secant*: substituting
+    /// **A face on another plane class holding this tangent line touches it** over this lateral
+    /// face's stretches of the line ([`line_runs_through_face`] on that class's plane; a face or a
+    /// stretch that could not be read touches). Such a plane is a *secant*: substituting
     /// `u = c·v` into `(u+r)² + v² = r²` gives `v·(v(1+c²) + 2cr) = 0`, so it meets the cylinder in
-    /// this ruling *and* one more, runs within the radius, and is recorded as a crossing. The local
-    /// picture is then **six** regions, not three, the two wedges can take different `keep`s, and
-    /// the record below cannot speak.
+    /// this ruling *and* one more, runs within the radius, and is recorded as a crossing. Where its
+    /// face reaches the line the local picture is **six** regions, not three, the two wedges can
+    /// take different `keep`s, and the record below cannot speak; where the plane holds the line but
+    /// none of its faces reaches it, nothing there divides the three.
+    ///
+    /// Asked over the lateral's stretches, not the wall face's contact within them: a holder face
+    /// that reaches the line only where the wall face does not is read as touching — the answer
+    /// errs only towards the refusal. A face meeting the line at a single corner does not touch it
+    /// (no positive length; `a_face_meeting_the_line_at_a_corner_does_not_touch_it`). Where that
+    /// corner lies on the lateral, one of its edges leaves it neither along the axis nor level — two
+    /// level edges are one straight line, and the face would then run along the line — and where
+    /// that edge is straight and its neighbour a plane, the plane passes through that point of the
+    /// lateral and is neither this plane nor level: slanted to the axis. The gate refuses it first
+    /// (`ObliqueCylinderCut`, or, where it cannot state the plane, by that name —
+    /// `CylinderGateUndecided`, `WitnessNotRational`; a witness:
+    /// `a_third_plane_face_meeting_the_tangent_line_at_a_corner_is_refused_as_oblique`). A straight
+    /// edge whose neighbour is another cylinder's lateral is not measured. An arc in the outer loop
+    /// where the line reaches it leaves the face unread, and an unread face touches.
     ///
     /// A whole **disk** wall face clearing the tangent line is read by the footprint reader
     /// and writes no row at all, so what reaches here is the refusal's true subject: the gate
@@ -977,7 +994,7 @@ pub(crate) struct Tangency {
     /// an edge of the arrangement along this face's contact ([`Tangency::line_is_an_edge`]),
     /// which the structure judges. Read by the gate alone, so no row the verdict sees has it
     /// without that edge.
-    line_in_another_plane: bool,
+    line_on_another_face: bool,
     /// **Something above could not be stated, and the refusal that says what**: the wall face's
     /// own, where the footprint reader could not read it (the name [`wall_faces_clear`] raises for
     /// that face), else [`RejectReason::CylinderGateUndecided`] (a face with no world description
@@ -992,7 +1009,7 @@ pub(crate) struct Tangency {
     /// ([`SharedRuling::stated_by`]), and `wall ∩ that class` *is* the line — so the contact runs
     /// along that edge, and the lateral, the wall face and the secant face all end on it. Two
     /// lumps meeting there meet on an edge, which the assembly's structure sees (four faces use
-    /// it); the six-region picture `line_in_another_plane` abstains on is then the structure's to
+    /// it); the six-region picture `line_on_another_face` abstains on is then the structure's to
     /// judge, not this row's. The keyhole: the box's tangent wall and the wall through the axis
     /// share the box's vertical edge.
     ///
@@ -1051,6 +1068,19 @@ fn tangency_foot(
 /// A lateral face's stretches of one ruling, in the axis parameter (`lateral_cover_on_ruling`).
 type Stretches = Vec<[nacre_exact::Rat; 2]>;
 
+/// One lateral face as [`tangency_rows`] reads it against the tangent line.
+struct LateralOnLine<'a> {
+    /// Its row in the face table.
+    ix: usize,
+    cf: &'a CylFaceInfo,
+    /// Its own stretches of the line; `None` where they could not be read.
+    cover: Option<Stretches>,
+    /// The stretches a row reads: `cover`, else the face's axial span.
+    stretches: Option<Stretches>,
+    /// Whether a face on another class holding the line touches it over `stretches`.
+    held: bool,
+}
+
 /// **The rows a tangent `(class, cylinder)` pair writes** — one per (wall face, lateral face) pair
 /// whose lateral face lies on the line ([`Tangency`]'s doc says how that is read) and whose wall
 /// face did not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
@@ -1074,15 +1104,30 @@ fn tangency_rows(
     def: &nacre_topo::CylinderDef,
     surf: Handle<Surface>,
     owner: SolidSide,
-    line_in_another_plane: bool,
+    jd: &Judge<'_, WorkingPlane>,
+    holders: &[usize],
 ) -> Vec<Tangency> {
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let side_of = |i: usize| {
         if i < n_a { SolidSide::A } else { SolidSide::B }
     };
-    // The line's base — one answer for the whole pair, like whether a third plane holds it
+    // The line's base — one answer for the whole pair, like which other classes hold it
     // (asked by the caller, `classes_holding_the_line`).
     let base = tangency_foot(coeffs, &o);
+    // The plane faces on those classes, each with its class's world name (a holder is read from
+    // one).
+    let holder_faces: Vec<(Handle<Face>, [nacre_exact::Rat; 4])> = faces
+        .iter()
+        .enumerate()
+        .filter_map(|(j, row)| match (row, plane_ix[j]) {
+            (FaceRow::Plane(fj), ClassIx::Plane(cj)) if holders.contains(&cj) => Some((
+                fj.face.expect("collect_planes yields real faces"),
+                jd.world_rat(cj)
+                    .expect("a holder class has a world name: classes_holding_the_line reads it"),
+            )),
+            _ => None,
+        })
+        .collect();
     // Which side of the wall plane the cylinder is on — the lens' side. A tangency puts the
     // whole cylinder on one side, and `0` would mean the axis lies *in* the plane, which needs
     // `r = 0`; `CylinderDef` refuses that at construction (`NonPositiveRadius`, "positive by
@@ -1099,7 +1144,10 @@ fn tangency_rows(
     // The lateral faces of this cylinder, with their own orientation and span — and where each
     // lies on the tangent line, read once per pair (the line is the pair's, not a wall face's).
     // `None` is a face that could not be read there, which keeps the face's bounding rectangle.
-    let laterals: Vec<(usize, &CylFaceInfo, Option<Stretches>)> = faces
+    // The stretches a row reads are those, else the face's axial span. And whether a face on another
+    // class holding the line touches it over those stretches — once per lateral, since it does not
+    // depend on the wall face; a face or a stretch that could not be read touches.
+    let laterals: Vec<LateralOnLine<'_>> = faces
         .iter()
         .enumerate()
         .filter_map(|(i, row)| match row {
@@ -1109,7 +1157,26 @@ fn tangency_rows(
                     .zip(cf.face)
                     .zip(cf.def.as_ref())
                     .and_then(|((b, fh), d)| lateral_cover_on_ruling(model, model.face(fh), d, b));
-                Some((i, cf, cover))
+                let stretches = match &cover {
+                    Some(c) => Some(c.clone()),
+                    None => cf.footprint.span.map(|sp| vec![sp]),
+                };
+                let held = holder_faces
+                    .iter()
+                    .any(|(fh, hc)| match (&base, &stretches) {
+                        (Some(b), Some(st)) => st.iter().any(|&sp| {
+                            line_runs_through_face(model, model.face(*fh), hc, b, &m, sp)
+                                .is_none_or(|c| c.touches)
+                        }),
+                        _ => true,
+                    });
+                Some(LateralOnLine {
+                    ix: i,
+                    cf,
+                    cover,
+                    stretches,
+                    held,
+                })
             }
             _ => None,
         })
@@ -1209,7 +1276,14 @@ fn tangency_rows(
             .as_ref()
             .filter(|w| w.name.narrow() == Some(coeffs))
             .map(|w| -fi.orient_sign * w.sense.sign());
-        for (cy_ix, cf, cover) in &laterals {
+        for LateralOnLine {
+            ix: cy_ix,
+            cf,
+            cover,
+            stretches,
+            held,
+        } in &laterals
+        {
             // The line must lie on this lateral **face**, not only on its surface: a half
             // cylinder's surface is tangent to a wall on the side the face does not have, and
             // nothing touches there; nor where a window in the face lets the line through.
@@ -1242,19 +1316,15 @@ fn tangency_rows(
             // carrying its refusal, and reads as a contact through the interior — dropped here,
             // that refusal would vanish with it (`line_runs_through_face`); and so does a row any
             // stretch of which could not be read.
-            let stretches: Option<Stretches> = match cover {
-                Some(c) => Some(c.clone()),
-                None => cf.footprint.span.map(|sp| vec![sp]),
-            };
             let per_stretch = base
                 .as_ref()
-                .zip(stretches)
+                .zip(stretches.clone())
                 .filter(|_| unread.is_none())
                 .and_then(|(b, stretches)| {
                     stretches
                         .into_iter()
                         .map(|sp| {
-                            line_runs_through_face(model, model.face(fh), coeffs, &o, &m, r2, b, sp)
+                            line_runs_through_face(model, model.face(fh), coeffs, b, &m, sp)
                                 .map(|c| (sp, c))
                         })
                         .collect::<Option<Vec<_>>>()
@@ -1314,7 +1384,7 @@ fn tangency_rows(
             #[allow(clippy::print_stderr)]
             {
                 eprintln!(
-                    "TROW liap={line_in_another_plane} runs_through={} undecided={}",
+                    "TROW held={held} runs_through={} undecided={}",
                     contact.runs_through,
                     undecided.is_some()
                 );
@@ -1327,7 +1397,7 @@ fn tangency_rows(
                 lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side,
                 cyl_orient: cf.orient_sign,
                 runs_through: contact.runs_through,
-                line_in_another_plane,
+                line_on_another_face: *held,
                 undecided,
                 across: across.clone(),
                 line_is_an_edge: false,
@@ -1370,15 +1440,23 @@ enum LoopOnLine {
     Crossings([Vec<nacre_exact::QuadVal>; 2]),
 }
 
-/// **Where does the tangent line run through the wall face, over one stretch of the line a lateral
-/// face covers?** —
-/// the proposition a row carries ([`Tangency::runs_through`]), and whether the face touches the
-/// line there at all.
+/// **Where does the tangent line run through a face whose plane holds it, over one stretch of the
+/// line a lateral face covers?** — of the wall face, the proposition a row carries
+/// ([`Tangency::runs_through`]); of a face on another class holding the line, whether it touches
+/// the line there at all ([`Tangency::line_on_another_face`]).
 ///
-/// The line is `foot + v·m` (`foot` is the perpendicular foot from the axis origin, so `v` is the
-/// axis parameter itself — the scale the span is in), and the question is about the **open**
-/// stretch `span[0] < v < span[1]`: the lateral face is there, and a row reads each of the face's
-/// stretches in turn.
+/// The line is `foot + v·m` (`foot` is the perpendicular foot from the axis origin onto the wall,
+/// so `v` is the axis parameter itself — the scale the span is in), and the question is about the
+/// **open** stretch `span[0] < v < span[1]`: the lateral face is there, and a row reads each of the
+/// face's stretches in turn. `coeffs` are the face's own plane's, and `foot` lies on it.
+///
+/// **The line is a strip of width zero.** A piece's side is asked as the strip test asks it
+/// ([`nacre_exact::cylinder_strip_side`]), about `foot` at radius `0`: the strip a radius-`0`
+/// cylinder on the line cuts from any plane holding the line is the line itself. The wall's own
+/// strip about the axis is that line already — its plane is `r` from the axis, so the half-width is
+/// `0` — so the wall reads as it does about the axis; a secant plane holding the line cuts a strip
+/// of positive width about the axis, of which the line is one edge, and only the radius-`0` strip
+/// reads it.
 ///
 /// **It is point-in-polygon with the line itself as the ray.** Every loop — the outer and
 /// every hole — is read through [`corner_of`], and a step whose ends lie on opposite sides of the
@@ -1390,7 +1468,7 @@ enum LoopOnLine {
 /// **interior** exactly when both readings put it inside: a face that ends on the line along an
 /// edge, or meets it at one corner, is inside on one side only. The arrangement's own sweep
 /// (`trace_transversal_face`) answers the same kind of question, but `planes` sits below the
-/// engine, and that sweep's line is a meet of two classes, which this one is not.
+/// engine and runs before it.
 ///
 /// **The crossing is placed from one end of the step and the step's direction** — the edge's
 /// two ends when both are rational, else its carrier pair (`Edge::surfaces`): a plane neighbour's
@@ -1407,15 +1485,18 @@ fn line_runs_through_face(
     model: &Model,
     face: &Face,
     coeffs: &[nacre_exact::Rat; 4],
-    o: &[nacre_exact::Rat; 3],
-    m: &[nacre_exact::Rat; 3],
-    r2: &nacre_exact::BigRat,
     foot: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
     span: [nacre_exact::Rat; 2],
 ) -> Option<LineContact> {
     use super::corners::Corner;
     use core::cmp::Ordering;
-    use nacre_exact::{Orient, QuadVal, Rat, StripSide, cross3_rat, dot3_rat};
+    use nacre_exact::{BigRat, Orient, QuadVal, Rat, StripSide, cross3_rat, dot3_rat};
+    debug_assert!(
+        nacre_exact::point_on_plane_exact(coeffs, &nacre_exact::MeetPoint::Narrow(*foot)),
+        "the line lies on the face's plane"
+    );
+    let line_r2 = BigRat::zero();
     let zero = Rat::from_int(0);
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     // `w` is the direction across the line in the wall's plane; `StripSide::Plus` is its side.
@@ -1481,7 +1562,7 @@ fn line_runs_through_face(
         }
         let sides: Vec<StripSide> = pieces
             .iter()
-            .map(|c| c.strip_side(coeffs, o, m, r2))
+            .map(|c| c.strip_side(coeffs, foot, m, &line_r2))
             .collect();
         if sides.iter().all(|s| *s == StripSide::Plus)
             || sides.iter().all(|s| *s == StripSide::Minus)

@@ -46,10 +46,11 @@ pub(crate) enum Pinch {
 /// the wall plane is the wall **face**'s material side, and `cyl_orient` is `+1` for a boss
 /// (material inside) and `-1` for a bore. Those two bits fix all six memberships, because near the
 /// line the only boundaries are those two surfaces — which is why this is exact without touching
-/// the arrangement. (It is exact only where no *other* plane holds the tangent line; such a plane is
-/// a secant, so the picture there is six regions, and the population gate refuses the row
-/// (`TangentLineInAnotherPlane`) — or, where that line is an edge both faces end on, hands the
-/// question to the structure.)
+/// the arrangement. (It is exact only where no face on another plane class reaches the tangent
+/// line; such a plane is a secant, so the picture there is six regions, and the population gate
+/// refuses the row (`TangentLineInAnotherPlane`) — or, where that line is an edge both faces end
+/// on, hands the question to the structure. A plane that holds the line with no face reaching it
+/// divides nothing there.)
 pub(crate) fn pinch(
     kind: BoolKind,
     wall_solid: crate::planes::SolidSide,
@@ -120,14 +121,14 @@ pub(crate) fn pinch(
 /// bodies whenever one of them has a face anywhere on the wall's plane.
 ///
 /// **Every row here is one this verdict can read.** A row that could not be stated, or whose line
-/// a third plane holds other than as an edge (six regions, not three), was refused by the gate
-/// before anything was arranged (`planes::cylinder_gate`); what reaches here is stated, and its
-/// line is held by no other plane or is such an edge.
+/// a third class's face reaches other than as an edge (six regions, not three), was refused by the
+/// gate before anything was arranged (`planes::cylinder_gate`); what reaches here is stated, and
+/// no other class's face reaches its line, or the line is such an edge.
 pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), BoolError> {
     for t in tg.rows {
         // The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
         // on an edge four faces use, and the shell guard names that — this row has nothing to
-        // add, and the six regions around a line in a third plane are not its to judge. Said here
+        // add, and the six regions around a line a third class's face reaches are not its to judge. Said here
         // rather than left to the `!runs_through` acquittal below, which such a row also meets: that
         // is the gate's premise, and this verdict does not lean on it.
         if t.line_is_an_edge {
