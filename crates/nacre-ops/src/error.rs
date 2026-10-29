@@ -774,8 +774,8 @@ pub enum RejectReason {
     ///
     /// What raises it are **shapes the rulings split does not arrange**: a segment lying on the
     /// lateral along a line the gate did not record (`planes::SharedRuling` — the lines of two
-    /// secant classes, or of a secant and a tangent one of the other solid, that lie on a lateral
-    /// face), or on planes that degenerate against the cylinder there; a recorded line's segment
+    /// secant classes, of a secant and a tangent one of the other solid, or of a secant and a
+    /// sectioned class whose hinge it is, that lie on a lateral face), or on planes that degenerate against the cylinder there; a recorded line's segment
     /// that shares a stretch with a ruling piece without matching one end for end. And a lateral
     /// cell that straddles a θ the chart has no vertical line for — the arcs of one rim end
     /// disagreeing, a sector opened at one ruling of a cut rim, a sector holding every rim node

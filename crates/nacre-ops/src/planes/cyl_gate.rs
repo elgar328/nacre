@@ -172,10 +172,14 @@ pub(crate) fn cylinder_gate(
             .map(|(c, _)| c)
     };
 
-    // **A sectioned class shares no line of a lateral face with another record of that cylinder.**
-    // `shared_rulings` reads only the recorded pairs, so a line this class meets another recorded
-    // class in, lying on a lateral face, would be a ruling no record states. Every such pair is
-    // shown off the faces ([`line_off_lateral`]) or refused.
+    // **A sectioned class shares a line of a lateral face with another record of that cylinder only
+    // where the gate states it.** `shared_rulings` writes the pairs whose two planes have world
+    // coefficients; this class has none, so a line it meets another recorded class in, lying on a
+    // lateral face, would be a ruling no record states. Every such pair is shown off the faces
+    // ([`line_off_lateral`]), or — for a cutting class — shown to be this class's hinge
+    // ([`hinge_ruling`]) and recorded here, or refused. The hinge is the one world-rational line a
+    // class with no world statement can be shown to hold exactly: a turn off the quarters fixes
+    // only its own axis line, and an interval proves two points apart, never one.
     //
     // An apart class's line with another record is not asked off the lateral: its arrangement
     // draws none of the cylinder's rulings ([`WorkingCyl::draws_rulings`]). That a face of it on
@@ -184,6 +188,7 @@ pub(crate) fn cylinder_gate(
     // sectioned one — `Apart` asks for only whole rims and `Sectioned` for none ([`class_meet`]),
     // and every cylinder of the table has a lateral row (the table refuses a class with none), so
     // only whole rims means some.
+    let mut hinged: Vec<(usize, SharedRuling)> = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
         debug_assert!(
             meeting(ci, ClassMeet::Silent(Silence::Apart))
@@ -202,9 +207,24 @@ pub(crate) fn cylinder_gate(
                 .chain(tangent_walls_of(ci))
                 .chain(meeting(ci, ClassMeet::Silent(Silence::Sectioned)).filter(move |&x| x != c));
             for x in others {
-                if !line_off_lateral(jd, c, x, &cyl.def, fps) {
-                    return Err(undecided());
+                if line_off_lateral(jd, c, x, &cyl.def, fps) {
+                    continue;
                 }
+                // A cutting class states the line as a chart station; the sectioned class draws
+                // it on its own arrangement only, so it is not one of `stated_by`.
+                let at = (meets[ci][x] == ClassMeet::Cuts)
+                    .then(|| hinge_ruling(model, jd, c, x, &cyl.def))
+                    .flatten()
+                    .filter(|at| ruling_on_a_face(&cyl.def, fps, at) == Some(true))
+                    .ok_or_else(undecided)?;
+                hinged.push((
+                    ci,
+                    SharedRuling {
+                        line: (c.min(x), c.max(x)),
+                        stated_by: vec![x],
+                        at,
+                    },
+                ));
             }
         }
     }
@@ -319,6 +339,8 @@ pub(crate) fn cylinder_gate(
     }
     for (ci, sr) in shared_rulings(faces, jd, &cyls, &meets)
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
+        .into_iter()
+        .chain(hinged)
     {
         cyls[ci].shared.push(sr);
     }
@@ -695,7 +717,10 @@ fn class_meet(
 /// class that carries a face of the cylinder's other operand ([`ClassMeet::Tangent`]'s
 /// `other_owner`). A tangent class of the
 /// cylinder's own solid is its smooth edge — a fillet — and stays out, by the sentence
-/// `tangency_rows` already stands on: a valid solid's faces do not meet.
+/// `tangency_rows` already stands on: a valid solid's faces do not meet. And a class with no world
+/// statement that sections the cylinder ([`Silence::Sectioned`]) with a cutting class, where the
+/// line is the sectioned class's hinge ([`hinge_ruling`]) — written by the sectioned settlement in
+/// [`cylinder_gate`], since [`shared_rulings`] reads world coefficients.
 ///
 /// **And the line must lie on a lateral *face*, not only on the surface** — the four sites of this
 /// gate speak about faces, and so does this record. A fillet is a quarter of its cylinder: a slab
@@ -712,8 +737,13 @@ pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.
     pub(crate) line: (usize, usize),
     /// Which of the two state the ruling as a station of the cylinder's chart — the ones that cut
-    /// the cylinder, so one (a tangent partner) or both.
+    /// the cylinder, so one (a tangent or a sectioned partner) or both. Every class of the two
+    /// that draws the cylinder's rulings folds its own segments on the line onto them
+    /// (`split_rulings`); only these put the station on the chart.
     pub(crate) stated_by: Vec<usize>,
+    /// A point of the line, exact: the line is the ruling through it, so a reader needs neither
+    /// class's coefficients to say where it is — a sectioned partner has none.
+    pub(crate) at: [nacre_exact::Rat; 3],
 }
 
 /// The plane classes other than `wall` that hold `wall`'s tangent line to the cylinder `def` —
@@ -763,20 +793,7 @@ fn shared_rulings(
             .collect();
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         let fps = lateral_pieces(faces, cyl.surf);
-        // Whether the line through `p` along the axis lies on a lateral face of this cylinder
-        // ([`line_apart`]); `None` is arithmetic that could not say.
-        let on_a_face = |p: &[nacre_exact::Rat; 3]| -> Option<bool> {
-            let line = Footprint {
-                span: None,
-                theta: Theta::at_line(p, &o, &m)?,
-            };
-            for fp in &fps {
-                if !line_apart(&cyl.def, &line, fp)? {
-                    return Some(true);
-                }
-            }
-            Some(false)
-        };
+        let on_a_face = |p: &[nacre_exact::Rat; 3]| ruling_on_a_face(&cyl.def, &fps, p);
         for (i, &s) in secants.iter().enumerate() {
             let ws = jd.world_rat(s)?;
             for &t in &secants[i + 1..] {
@@ -790,6 +807,7 @@ fn shared_rulings(
                         SharedRuling {
                             line: (s, t),
                             stated_by: vec![s, t],
+                            at: line.base(),
                         },
                     ));
                 }
@@ -814,6 +832,7 @@ fn shared_rulings(
                         SharedRuling {
                             line: (s.min(t), s.max(t)),
                             stated_by: vec![s],
+                            at: foot,
                         },
                     ));
                 }
@@ -821,6 +840,49 @@ fn shared_rulings(
         }
     }
     Some(out)
+}
+
+/// Whether the line through `p` along the axis of `def` lies on one of the lateral faces `fps`
+/// ([`line_apart`]); `None` is arithmetic that could not say.
+fn ruling_on_a_face(
+    def: &nacre_topo::CylinderDef,
+    fps: &[Footprint],
+    p: &[nacre_exact::Rat; 3],
+) -> Option<bool> {
+    let line = Footprint {
+        span: None,
+        theta: Theta::at_line(p, &def.origin(), &def.dir())?,
+    };
+    for fp in fps {
+        if !line_apart(def, &line, fp)? {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
+/// **The ruling a sectioned class `c` shares with the cutting class `x`, as a proof** — `c`'s
+/// plane holds the line its chain turns it about ([`Model::plane_hinge`]), and that line lies on
+/// `x`'s plane and on the cylinder `def`: then `c ∩ x` is that ruling. `None` where any of it is
+/// not shown.
+fn hinge_ruling(
+    model: &Model,
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+    x: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 3]> {
+    use nacre_exact::Orient::Zero;
+    let (p, d) = model.plane_hinge(jd.planes[c].surf)?;
+    let w = jd.world_rat(x)?;
+    let (o, m) = (def.origin(), def.dir());
+    let along = nacre_exact::cross3_rat(&d, &m)?
+        .iter()
+        .all(|v| *v == nacre_exact::Rat::from_int(0));
+    let on_x = nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &d) == Zero
+        && nacre_exact::plane_residual_sign(&nacre_exact::PlaneName::Narrow(w), p) == 0;
+    let on_cyl = nacre_exact::quad::cylinder_radial_side(&p, &o, &m, def.r2()) == Zero;
+    (along && on_x && on_cyl).then_some(p)
 }
 
 /// **Does every face on plane class `c` provably miss this cylinder?** — the boundary question

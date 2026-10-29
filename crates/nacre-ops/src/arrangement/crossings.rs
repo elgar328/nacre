@@ -69,6 +69,7 @@ pub(super) fn split_circles(
         cyls,
         wc,
         segs,
+        aliases,
         &here,
         |si, sg, cyl| {
             let circ = &circles[index(cyl)];
@@ -145,8 +146,8 @@ pub(super) fn split_circles(
                 return on;
             };
             let off = !extents.is_empty()
-                && extents.iter().all(|&[p, q]| canon(p) != canon(q))
-                && !extents.iter().flatten().any(|&e| canon(e) == x)
+                && extents.iter().all(|&[p, q]| !aliases.one_point(p, q))
+                && !extents.iter().flatten().any(|&e| aliases.one_point(e, x))
                 && extents.iter().all(|&[p, q]| {
                     combinatorics::theta_between(jd, cyl, &cyls[cyl].def, p, q, x) == Some(false)
                 });
@@ -181,7 +182,7 @@ pub(super) fn split_circles(
         // arc is looked up by it below.
         let mut nodes: Vec<NodeId> = Vec::with_capacity(raw.len());
         for n in raw {
-            match nodes.iter().position(|&m| canon(m) == canon(n)) {
+            match nodes.iter().position(|&m| aliases.one_point(m, n)) {
                 Some(i) => {
                     if is_end(n) && !is_end(nodes[i]) {
                         nodes[i] = n;
@@ -202,7 +203,7 @@ pub(super) fn split_circles(
         let place = |x: NodeId| {
             nodes
                 .iter()
-                .position(|&m| canon(m) == canon(x))
+                .position(|&m| aliases.one_point(m, x))
                 .map(|i| at[i])
                 .expect("an extent's ends were fed into this very split")
         };
@@ -286,7 +287,7 @@ pub(super) fn split_segments_at(
         }
         nodes.sort_unstable();
         // Identity is the table's — two crossings the table knows as one point are one.
-        nodes.dedup_by(|a, b| aliases.canon_point(*a) == aliases.canon_point(*b));
+        nodes.dedup_by(|a, b| aliases.one_point(*a, *b));
         // **No ruler: the points are ordered by the rule, not by a parameter.** Solving every
         // crossing's `(line, s)`, putting both endpoints on that same line with `along`, and
         // sorting the parameters would stop at an end a cylinder pinned: it has no rational
@@ -346,7 +347,7 @@ pub(super) fn split_segments_at(
         let mut ends = (0usize, 0usize);
         for k in 0..2 {
             let same = |e: &(combinatorics::PointOn, NodeId, combinatorics::EndPin)| {
-                aliases.canon_point(e.1) == aliases.canon_point(sg.end[k])
+                aliases.one_point(e.1, sg.end[k])
             };
             let slot = match keyed.iter().position(same) {
                 Some(ix) => {
@@ -607,12 +608,14 @@ fn lateral_crossings(
             Err(reject(RejectReason::RulingBoundNotYet))
         }
         // Along the axis, the interval road cannot tell a line on the surface from one beside it;
-        // either way it crosses no ruling, and it touches a face only if it lies at an angle one
-        // holds — the question [`crate::planes::line_off_faces`] answers from a point of the segment.
+        // either way it crosses no ruling. A line the gate recorded is a ruling (the fold states
+        // it there); any other touches a face only if it lies at an angle one holds — the
+        // question [`crate::planes::line_off_faces`] answers from a point of the segment.
         LineMeet::Undecided
             if along_axis
-                && crate::planes::line_off_faces(jd, def, None, end_point, &pieces())
-                    == Some(true) =>
+                && (on_a_shared_line
+                    || crate::planes::line_off_faces(jd, def, None, end_point, &pieces())
+                        == Some(true)) =>
         {
             Ok(Some(Vec::new()))
         }
@@ -783,14 +786,18 @@ pub(super) fn split_rulings(
             cyl_list.push(r.cyl);
         }
     }
-    // The lines on this class that lie on a cylinder and that this class states as a ruling —
+    // The lines on this class that lie on a cylinder and that this class draws as a ruling — it
+    // states the line as a chart station, or sections the cylinder on its own arrangement —
     // `(the other class, cylinder, which of this class's two rulings)`, the pair read off the
     // gate's record, never decided here, and the side asked of the line once
     // ([`combinatorics::shared_line`], which the straight-angle cleaning reads too): it is the
     // identity a ruling piece carries (`MergedRuling::side`).
     let mut shared_here: Vec<(usize, usize, i8)> = Vec::new();
     for (ci, cy) in cyls.iter().enumerate() {
-        for sr in cy.shared.iter().filter(|sr| sr.stated_by.contains(&wc)) {
+        for sr in cy.shared.iter().filter(|sr| {
+            sr.stated_by.contains(&wc)
+                || ((sr.line.0 == wc || sr.line.1 == wc) && cy.draws_rulings(wc))
+        }) {
             let l = combinatorics::shared_line(jd, cyls, ci, sr, wc).ok_or_else(undecided)?;
             shared_here.push((l.other, ci, l.side));
         }
@@ -801,6 +808,7 @@ pub(super) fn split_rulings(
         cyls,
         wc,
         segs,
+        aliases,
         &cyl_list,
         |_si, sg, cyl| {
             let shared = shared_here
@@ -854,7 +862,7 @@ pub(super) fn split_rulings(
                     // share the point.
                     (Equal, _) | (_, Equal) => {
                         let end_n = if a == Equal { r.end[0] } else { r.end[1] };
-                        if aliases.canon_point(end_n) != aliases.canon_point(n) {
+                        if !aliases.one_point(end_n, n) {
                             return Landing::Fails(reject(RejectReason::CoincidentNodes));
                         }
                         landed = true;
@@ -1042,11 +1050,13 @@ type Crossing = (NodeId, Option<combinatorics::PiercePoint>);
 /// `land` is asked before the segment's question, so a crossing **shown off every piece** of the kind
 /// on this class leaves first. Only a proof counts: a landing the pieces cannot judge waits for the
 /// segment's answer and is refused only where the segment holds the crossing.
+#[allow(clippy::too_many_arguments)]
 fn collect(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     segs: &[MergedSeg],
+    aliases: &Aliases,
     here: &[usize],
     crossings: impl Fn(usize, &MergedSeg, usize) -> Result<Vec<Crossing>, BoolError>,
     land: impl Fn(usize, NodeId, Option<&combinatorics::PiercePoint>) -> Landing,
@@ -1072,27 +1082,40 @@ fn collect(
                 if matches!(landing, Landing::Off) {
                     continue;
                 }
-                let at =
-                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
-                        .ok_or_else(undecided)?;
-                if ends.is_none() {
-                    let mut it = (0..2).map(|k| {
-                        combinatorics::on_line(
-                            jd,
-                            cyls,
-                            wc,
-                            sg.wall,
-                            Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
-                        )
-                        .ok_or_else(undecided)
-                    });
-                    ends = Some([it.next().unwrap()?, it.next().unwrap()?]);
-                }
-                let located = ends.as_ref().expect("located just above");
-                if !combinatorics::closed_contains(jd, wc, sg.wall, &at, located)
-                    .ok_or_else(undecided)?
-                {
-                    continue;
+                // A crossing named as one of the segment's ends is that end — one point, which an
+                // interval cannot order against itself (a sectioned class names its own ruling's
+                // crossing, a point a shared line also names). Asked of the names before either is
+                // located: a segment whose crossing is an end never needs its ends' places.
+                let canon = |x| aliases.canon_point(x);
+                let on_an_end = sg.end.iter().any(|&e| aliases.one_point(e, n));
+                if !on_an_end {
+                    let at = combinatorics::locate(
+                        jd,
+                        cyls,
+                        wc,
+                        sg.wall,
+                        combinatorics::PointOn::Pierce(n),
+                    )
+                    .ok_or_else(undecided)?;
+                    if ends.is_none() {
+                        let mut it = (0..2).map(|k| {
+                            combinatorics::on_line(
+                                jd,
+                                cyls,
+                                wc,
+                                sg.wall,
+                                Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
+                            )
+                            .ok_or_else(undecided)
+                        });
+                        ends = Some([it.next().unwrap()?, it.next().unwrap()?]);
+                    }
+                    let located = ends.as_ref().expect("located just above");
+                    if !combinatorics::closed_contains(jd, wc, sg.wall, &at, located, &canon)
+                        .ok_or_else(undecided)?
+                    {
+                        continue;
+                    }
                 }
                 match landing {
                     Landing::Off => {}

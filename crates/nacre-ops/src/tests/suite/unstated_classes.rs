@@ -480,31 +480,6 @@ fn nameless_classes_beside_world_cylinders() {
             gate: Ok((3, 0, 1)),
             want: refused,
         },
-        // A sectioned class meeting another record of the fillet on one of its rulings. The other
-        // operand is one solid: the box `[41,60]×[−40,−24]×[2,8]`, whose walls `x = 41` and
-        // `y = −24` cut the fillet (crossings; `y = −24` meets it at `(43, −24)`), fused with a box
-        // whose wall `x = 43` is turned 37° about that ruling, overlapping the first far from the
-        // plate. The turned wall's class runs along the axis within the radius (`≈ 0.011` from it)
-        // with every face apart — a sectioned candidate — and it meets `x = 41` off the lateral
-        // (at `y ≈ −21.35`), but meets `y = −24` on the ruling `(43, −24)` itself (`C = 0`): a line
-        // on the lateral no record states, which the gate refuses. The three other turned walls
-        // clear the fillet's box. With that check planted away the gate passes `(3, 0, 1)` and the
-        // three operations refuse downstream as `WitnessNotRational`: the check names the refusal,
-        // it does not stand between the scoreboard and a wrong volume.
-        Family {
-            name: "a sectioned class meets a recorded wall on a fillet ruling",
-            build: |m| {
-                let plate = rounded_plate(m, 1, 0);
-                let a0 = cuboid(m, [41.0, -40.0, 2.0], [60.0, -24.0, 8.0]);
-                let t = cuboid(m, [38.0, -46.0, 0.0], [43.0, -41.0, 10.0]);
-                let t = turn(m, t, Axis::Z, 37, [43, -24, 0]);
-                let b = boolean(m, BoolKind::Fuse, a0, t).expect("the two boxes fuse");
-                assert_eq!(b.len(), 1, "the two boxes overlap into one solid");
-                (plate, b[0])
-            },
-            gate: Err(Undecided),
-            want: refused,
-        },
         // The operands the other way round: the box first. `B − A` is now the box less the plate,
         // `250 − 150`.
         Family {
@@ -618,6 +593,104 @@ fn nameless_classes_beside_world_cylinders() {
         },
     ];
     score(&fams, false);
+    // A sectioned class meeting another record of the fillet on one of its rulings.
+    score(&hinge_on_a_fillet_ruling(false), false);
+    score(&hinge_on_a_fillet_ruling(true), true);
+}
+
+/// **A sectioned class meeting another record of the fillet on one of its rulings.** The other
+/// operand is one solid: the box `a0 = [41,60]×[−40,−24]×[2,8]`, whose walls `x = 41` and
+/// `y = −24` cut the fillet (crossings; `y = −24` meets it at `(43, −24)`), fused with a box
+/// whose wall `x = 43` is turned 37° about that ruling, overlapping the first far from the
+/// plate. The turned wall's class runs along the axis within the radius (`≈ 0.011` from it)
+/// with every face apart — sectioned — and it meets `x = 41` off the lateral (at
+/// `y ≈ −21.35`), but meets `y = −24` on the ruling `(43, −24)` itself: the line the turn is
+/// about, which the gate proves the class holds and records as a line the two share. The
+/// three other turned walls clear the fillet's box.
+///
+/// The volumes: `a0` overlaps the plate in the strip `y ∈ [−25, −24]` past `x = 41`, cut by
+/// the fillet's circle about `(40, −20)`: `A = ∫ (√(25 − u²) − 1) du` over
+/// `u = y + 20 ∈ [−√24, −4]`, over the height 6. The turned box misses the plate (its `y` stays
+/// below −37) and overlaps `a0` in its square's band `y ∈ [−40, −24]` over the height 6 — its
+/// `x` range, `52.74 ± 3.49`, inside `a0`'s.
+///
+/// The two boxes fuse either way round, and that decides which of the two classes the table
+/// numbers first ([`the_hinge_is_read_whichever_class_is_numbered_first`]). With `swapped` the
+/// tool comes first, and `B − A` is the tool less the plate.
+fn hinge_on_a_fillet_ruling(swapped: bool) -> [Family; 2] {
+    let want = {
+        let plate = rounded_area(1, 0) * 12.0;
+        let f = |u: f64| u / 2.0 * (25.0 - u * u).sqrt() + 12.5 * (u / 5.0).asin();
+        let r24 = 24f64.sqrt();
+        let common = 6.0 * (f(r24) - f(4.0) - (r24 - 4.0));
+        let (s, c) = 37f64.to_radians().sin_cos();
+        let centre = [43.0 - 2.5 * c + 19.5 * s, -24.0 - 2.5 * s - 19.5 * c];
+        let tool = 1824.0 + 250.0 - 6.0 * turned_square_within(centre, 37.0, 1, -40.0, -24.0);
+        let cut = if swapped {
+            tool - common
+        } else {
+            plate - common
+        };
+        [
+            Built(1, plate + tool - common),
+            Built(1, cut),
+            Built(1, common),
+        ]
+    };
+    let family = |name, build| Family {
+        name,
+        build,
+        gate: Ok((3, 0, 1)),
+        want,
+    };
+    [
+        family(
+            "a sectioned class meets a recorded wall on a fillet ruling",
+            |m| (rounded_plate(m, 1, 0), hinge_tool(m, false)),
+        ),
+        family(
+            "a sectioned class meets a recorded wall on a fillet ruling, the turned box fused first",
+            |m| (rounded_plate(m, 1, 0), hinge_tool(m, true)),
+        ),
+    ]
+}
+
+/// [`hinge_on_a_fillet_ruling`]'s other operand: `a0` and the turned box, fused in the order
+/// `turned_first` says.
+fn hinge_tool(m: &mut Model, turned_first: bool) -> Handle<Solid> {
+    let a0 = cuboid(m, [41.0, -40.0, 2.0], [60.0, -24.0, 8.0]);
+    let t = cuboid(m, [38.0, -46.0, 0.0], [43.0, -41.0, 10.0]);
+    let t = turn(m, t, Axis::Z, 37, [43, -24, 0]);
+    let (x, y) = if turned_first { (t, a0) } else { (a0, t) };
+    let b = boolean(m, BoolKind::Fuse, x, y).expect("the two boxes fuse");
+    assert_eq!(b.len(), 1, "the two boxes overlap into one solid");
+    b[0]
+}
+
+/// **The hinge's record reads the same whichever of its two classes the table numbers first** —
+/// the aliases' representative is the cutting class's exact pierce name, never the one the
+/// sectioned class's interval places. The two fusing orders of [`hinge_on_a_fillet_ruling`]
+/// number the sectioned class after the cutting one and before it.
+#[test]
+fn the_hinge_is_read_whichever_class_is_numbered_first() {
+    let mut first = Vec::new();
+    for f in hinge_on_a_fillet_ruling(false) {
+        let mut m = Model::new();
+        let (a, b) = (f.build)(&mut m);
+        let setup = plane_index_setup(&m, a, b).expect("the gate passes");
+        let nameless = |c: usize| setup.geom[c].world.is_none();
+        let rows: Vec<bool> = setup
+            .cyls
+            .iter()
+            .flat_map(|cy| &cy.shared)
+            .filter(|sr| nameless(sr.line.0) != nameless(sr.line.1))
+            .map(|sr| nameless(sr.line.0))
+            .collect();
+        assert_eq!(rows.len(), 1, "{}: one hinge record", f.name);
+        first.push(rows[0]);
+    }
+    first.sort_unstable();
+    assert_eq!(first, [false, true], "both numberings are asked");
 }
 
 /// **Each family's gate verdict and its three answers** — what [`Family`] pins, checked. With

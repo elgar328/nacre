@@ -139,6 +139,10 @@ pub(crate) struct Aliases {
     point: HashMap<NodeId, NodeId>,
     /// Union-find over `(class, wall)` — walls of one class that carry the same line.
     wall: HashMap<(usize, usize), usize>,
+    /// The pierce names of a pair with a class of no world statement that the seed restates onto a
+    /// point another name states exactly ([`Aliases::record_shared_ruling`]) — names only an
+    /// interval places.
+    interval_only: std::collections::HashSet<NodeId>,
 }
 
 impl Aliases {
@@ -222,8 +226,9 @@ impl Aliases {
     /// [`Aliases::record`], read off the gate's record ([`crate::planes::SharedRuling`]) rather
     /// than off an operand's corners. Every class across the axis meets the line `t1 ∩ t2` in one
     /// point, and every name that point has is folded here: the three-plane `{c, t1, t2}`, each
-    /// secant's ruling crossing with `c` (the root that lies on the other plane), and a tangent
-    /// partner's double root. Asked of every class across the axis, not of the operands' corners:
+    /// secant's ruling crossing with `c` (the root on the recorded line), a tangent partner's double
+    /// root, and a sectioned partner's root, restated from the secant's
+    /// ([`combinatorics::restate_pierce`]). Asked of every class across the axis, not of the operands' corners:
     /// where the prism reaches past the cylinder's cap, the point on the cap is no corner of
     /// either operand, and it is the same point all the same.
     pub(super) fn record_shared_ruling(
@@ -239,8 +244,11 @@ impl Aliases {
         let def = &wcy.def;
         let (o, m, r2) = (def.origin(), def.dir(), def.r2());
         let (t1, t2) = sr.line;
-        let (Some(w1), Some(w2)) = (jd.world_rat(t1), jd.world_rat(t2)) else {
-            return;
+        // A plane holding the recorded line and no other ruling of `x`: through the line, normal
+        // `n_x × m`. A root of `c ∩ x` is on the line exactly when it is on that plane.
+        let across_x = |wx: &[nacre_exact::Rat; 4]| {
+            let q = nacre_exact::cross3_rat(&[wx[0], wx[1], wx[2]], &m)?;
+            nacre_exact::plane_from_point_normal(q, sr.at)
         };
         for c in 0..jd.planes.len() {
             let Some(wc) = jd.world_rat(c) else {
@@ -255,24 +263,42 @@ impl Aliases {
                 continue;
             };
             let point = NodeId::three_planes(t);
-            for (x, wx, other) in [(t1, &w1, &w2), (t2, &w2, &w1)] {
+            // The named class first: its roots are exact. A class with no world statement —
+            // a sectioned partner — then has its root restated from that name.
+            let mut named_root = None;
+            for x in [t1, t2] {
+                let Some(wx) = jd.world_rat(x) else { continue };
+                let Some(plane) = across_x(&wx) else { continue };
                 let on_line = |line: &nacre_exact::quad::MeetLine, sv: &QuadVal| {
-                    nacre_exact::quad::plane_side(other, line, sv) == nacre_exact::Orient::Zero
+                    nacre_exact::quad::plane_side(&plane, line, sv) == nacre_exact::Orient::Zero
                 };
-                match nacre_exact::quad::plane_plane_cylinder(&wc, wx, &o, &m, r2) {
+                match nacre_exact::quad::plane_plane_cylinder(&wc, &wx, &o, &m, r2) {
                     Some(CylinderMeet::Pair { line, s }) => {
                         for (root, sv) in [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])] {
                             if on_line(&line, sv) {
-                                self.union_point(point, NodeId::pierce(c, x, cyl, root));
+                                let n = NodeId::pierce(c, x, cyl, root);
+                                named_root = Some(n);
+                                self.union_point(point, n);
                             }
                         }
                     }
                     Some(CylinderMeet::Tangent { line, s })
                         if on_line(&line, &QuadVal::from_rat(s)) =>
                     {
-                        self.union_point(point, NodeId::pierce(c, x, cyl, QuadRoot::Double));
+                        let n = NodeId::pierce(c, x, cyl, QuadRoot::Double);
+                        named_root = Some(n);
+                        self.union_point(point, n);
                     }
                     _ => {}
+                }
+            }
+            let Some(n) = named_root else { continue };
+            for x in [t1, t2] {
+                if jd.planes[x].world.is_none()
+                    && let Some(r) = combinatorics::restate_pierce(jd, cyls, n, c, x)
+                {
+                    self.interval_only.insert(r);
+                    self.union_point(point, r);
                 }
             }
         }
@@ -289,6 +315,12 @@ impl Aliases {
         x
     }
 
+    /// **Whether two names are one point by this table** ([`combinatorics::same_name`] with
+    /// [`Aliases::canon_point`]).
+    pub(crate) fn one_point(&self, a: NodeId, b: NodeId) -> bool {
+        combinatorics::same_name(&|n| self.canon_point(n), a, b)
+    }
+
     /// **The representative of a point's names** — the one every key uses (`canon_point`).
     ///
     /// Among three-plane names it is the least, which is [`combinatorics::canonical_triple`]'s
@@ -297,10 +329,19 @@ impl Aliases {
     /// locates the point exactly *and* says which cylinder it lies on — the lateral chart's
     /// geometry (θ about the axis, `pierce_meet`) reads that from the name — while a three-plane
     /// name of the same point (a class through a tangent corner: `ThreePlane([cap, t, wc])`) is
-    /// a key only. So a pierce name outranks a three-plane name; among pierce names the least.
-    /// Either way the representative is a function of the class alone.
-    fn rep_rank(n: NodeId) -> (u8, NodeId) {
-        (u8::from(matches!(n.kind(), NodeKind::ThreePlane(_))), n)
+    /// a key only. So a pierce name outranks a three-plane name, and an exact pierce name one an
+    /// interval alone can place: a road that reads the representative on a line of two named
+    /// classes reads an exact name as that line's crossing, and an interval name there as a second
+    /// point it cannot order against the first. An interval name still outranks a three-plane one:
+    /// it says which cylinder the point is on. Among names of one rank the least. Either way the
+    /// representative is a function of the class alone.
+    fn rep_rank(&self, n: NodeId) -> (u8, NodeId) {
+        let rank = match n.kind() {
+            NodeKind::Pierce { .. } if self.interval_only.contains(&n) => 1,
+            NodeKind::Pierce { .. } => 0,
+            NodeKind::ThreePlane(_) => 2,
+        };
+        (rank, n)
     }
 
     fn union_point(&mut self, a: NodeId, b: NodeId) {
@@ -308,7 +349,7 @@ impl Aliases {
         if ra == rb {
             return;
         }
-        let (lo, hi) = if Self::rep_rank(ra) < Self::rep_rank(rb) {
+        let (lo, hi) = if self.rep_rank(ra) < self.rep_rank(rb) {
             (ra, rb)
         } else {
             (rb, ra)
@@ -378,6 +419,8 @@ impl Aliases {
     }
 
     pub(super) fn absorb(&mut self, other: &Aliases) {
+        self.interval_only
+            .extend(other.interval_only.iter().copied());
         for (&k, &v) in &other.point {
             self.union_point(k, v);
         }

@@ -647,3 +647,105 @@ fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
         other => panic!("an exact turn must transport, not record — got {other:?}"),
     }
 }
+
+/// **A turned plane holds the line it was turned about, and no other line is offered**
+/// ([`Model::plane_hinge`]). The box `[10,15]×[20,25]×[0,5]`, moved by the transform's own chain:
+/// a turn off the quarters about `(10, 12)` leaves its wall `x = 10` holding that vertical line,
+/// carried by an exact step after it (and turned about again there), and no exact node ever comes
+/// before the turn; the wall `y = 20`,
+/// which the line misses, has none; two turns about one line keep it and two lines keep none; a
+/// quarter turn folds, and the plane has a world name instead.
+#[test]
+fn a_turned_plane_holds_the_line_it_turned_about() {
+    use nacre_exact::{Isometry, Rotation};
+    let r = |x: i128| Rat::from_int(x);
+    let turn = |pivot: [i128; 2], deg: i128| {
+        Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            pivot: [r(pivot[0]), r(pivot[1]), r(0)],
+            angle: Angle::from_deg(r(deg)).unwrap(),
+        })
+    };
+    let shift = |v: [i128; 3]| Isometry::translation(v.map(r));
+    let x10 = [r(1), r(0), r(0), r(-10)];
+    let y20 = [r(0), r(1), r(0), r(-20)];
+    // The hinge of the moved box's face stated before its chain as `name`, the box first
+    // mirrored in `x = 12.5` (onto itself) where `mirrored`.
+    let hinge_after = |mirrored: bool, moves: &[Isometry], name: [Rat; 4]| {
+        let mut m = Model::new();
+        let mut s = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([10.0, 20.0, 0.0]),
+            Point3::from_array([15.0, 25.0, 5.0]),
+        );
+        if mirrored {
+            s = mirror(&mut m, s, Axis::X, Rat::new(25, 2).unwrap()).expect("the box mirrors");
+        }
+        for iso in moves {
+            s = transform(&mut m, s, iso).expect("the box moves");
+        }
+        let face = m
+            .shell(m.solid(s).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.face(fh).surface)
+            .find(|&sf| m.surface_name(sf).and_then(|n| n.narrow()) == Some(&name))
+            .expect("the face keeps its stated plane");
+        m.plane_hinge(face)
+    };
+    let hinge = |moves: &[Isometry], name: [Rat; 4]| hinge_after(false, moves, name);
+    let line = |x: i128, y: i128, z: i128| Some(([r(x), r(y), r(z)], [r(0), r(0), r(1)]));
+    assert_eq!(
+        hinge(&[turn([10, 12], -37)], x10),
+        line(10, 12, 0),
+        "turned about a line on it"
+    );
+    assert_eq!(
+        hinge(&[turn([10, 12], -37)], y20),
+        None,
+        "turned about a line off it"
+    );
+    assert_eq!(
+        hinge(&[turn([10, 12], -37), shift([1, 2, 3])], x10),
+        line(11, 14, 3),
+        "carried by an exact step after the turn"
+    );
+    // An exact motion of a plane with no history is carried into its statement, a mirror's too:
+    // the mirrored box's wall `x = 10` is the image of `x = 15`, stated anew, and the turn about
+    // `(15, 12)` is its chain's first node — about a line off it.
+    assert_eq!(
+        hinge_after(true, &[turn([15, 12], -37)], x10),
+        None,
+        "a mirror before the turn records no node"
+    );
+    assert_eq!(
+        hinge_after(true, &[turn([10, 12], -37)], x10),
+        line(10, 12, 0),
+        "the mirrored wall turned about a line on it"
+    );
+    assert_eq!(
+        hinge(
+            &[turn([10, 12], -37), shift([1, 0, 0]), turn([11, 12], 20)],
+            x10
+        ),
+        line(11, 12, 0),
+        "a second turn about the line an exact step carried"
+    );
+    assert_eq!(
+        hinge(&[turn([10, 12], -37), turn([10, 12], 20)], x10),
+        line(10, 12, 0),
+        "two turns about one line"
+    );
+    assert_eq!(
+        hinge(&[turn([10, 12], -37), turn([10, 13], 20)], x10),
+        None,
+        "two turns about two lines"
+    );
+    // A quarter turn is exact, so the wall is stated anew where it lands, `y = 12`.
+    let y12 = [r(0), r(1), r(0), r(-12)];
+    assert_eq!(
+        hinge(&[turn([10, 12], 90)], y12),
+        None,
+        "a quarter turn folds"
+    );
+}

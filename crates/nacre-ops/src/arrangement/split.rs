@@ -190,8 +190,14 @@ pub(super) fn split_at_crossings(
     // wall's crossing of every segment on **one other wall**, and the cover loop asks about
     // segments on **this** wall. Reading `segs[si].wall` at the question instead cost a touch of a
     // wide `MergedSeg` on a loop that runs millions of times — measured, and this is the fix.
-    let closed_contains = |si: usize, at: &combinatorics::Located<'_>, q: usize| -> Option<bool> {
-        combinatorics::closed_contains(jd, wc, q, at, &end_l[si])
+    // The alias table's representative comes with each question, not with the closure: the loops
+    // below add to the table between questions, and a containment reads what is known by then.
+    let closed_contains = |si: usize,
+                           at: &combinatorics::Located<'_>,
+                           q: usize,
+                           canon: &dyn Fn(NodeId) -> NodeId|
+     -> Option<bool> {
+        combinatorics::closed_contains(jd, wc, q, at, &end_l[si], &canon)
     };
 
     let walls: Vec<Wall> = direction_partition(jd, wc, segs.iter().map(|s| s.wall));
@@ -248,7 +254,7 @@ pub(super) fn split_at_crossings(
                     .ok_or_else(|| cause(&[w, r]))?;
                 let mut reaches = false;
                 for &i in &other.segs {
-                    match closed_contains(i, &at, r) {
+                    match closed_contains(i, &at, r, &|n| aliases.canon_point(n)) {
                         Some(true) => {
                             reaches = true;
                             break;
@@ -320,8 +326,8 @@ pub(super) fn split_at_crossings(
                          al: &mut Aliases,
                          tied_pierce: &mut bool| {
                 if group.len() > 1 && group.iter().any(|s| matches!(s, Split::Pierce { .. })) {
-                    let rep = al.canon_point(group[0].name(wc, w));
-                    if group.iter().all(|g| al.canon_point(g.name(wc, w)) == rep) {
+                    let first = group[0].name(wc, w);
+                    if group.iter().all(|g| al.one_point(g.name(wc, w), first)) {
                         reps.push(group[0]);
                     } else {
                         *tied_pierce = true;
@@ -438,10 +444,14 @@ pub(super) fn split_at_crossings(
                 // keeps the *declines* identical: a second question that cannot be formed is never
                 // reached when the first already ruled the segment out.
                 let undecided = || reject(RejectReason::WitnessNotRational);
-                if !closed_contains(i, &at_p, w).ok_or_else(undecided)? {
+                if !closed_contains(i, &at_p, w, &|n| aliases.canon_point(n))
+                    .ok_or_else(undecided)?
+                {
                     continue;
                 }
-                if closed_contains(i, &at_q, w).ok_or_else(undecided)? {
+                if closed_contains(i, &at_q, w, &|n| aliases.canon_point(n))
+                    .ok_or_else(undecided)?
+                {
                     merged.extend(segs[i].merged.iter().copied());
                 }
             }

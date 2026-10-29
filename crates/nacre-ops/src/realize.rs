@@ -1989,15 +1989,7 @@ fn plane_in_cylinder_frame(
         if !own.is_empty() {
             return None;
         }
-        let exact = match motion {
-            Motion::Translate { offset } => Some(nacre_exact::AxisAffine::translation(offset)),
-            Motion::Rotate { axis, pivot, angle } => {
-                nacre_exact::AxisAffine::rotation(nacre_exact::Rotation { axis, pivot, angle })
-            }
-            Motion::Mirror { axis, offset } => Some(nacre_exact::AxisAffine::mirror(axis, offset)),
-            Motion::Frame { .. } => None,
-        };
-        name = match (exact, motion) {
+        name = match (motion.exact_affine(), motion) {
             (Some(a), _) => a.inverse().plane_coeffs(name)?,
             (None, Motion::Rotate { axis, .. })
                 if nacre_exact::axis_rotation_fixes_plane(axis, &name) =>

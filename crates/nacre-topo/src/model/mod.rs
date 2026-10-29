@@ -230,15 +230,7 @@ impl Model {
         }
         let h = self.motions.push(node);
         self.motion_ids.insert(node, h);
-        let own = match motion {
-            Motion::Translate { offset } => Some(nacre_exact::AxisAffine::translation(offset)),
-            Motion::Rotate { axis, pivot, angle } => {
-                nacre_exact::AxisAffine::rotation(nacre_exact::Rotation { axis, pivot, angle })
-            }
-            Motion::Mirror { axis, offset } => Some(nacre_exact::AxisAffine::mirror(axis, offset)),
-            // A frame's basis is `1/√rational` — never a rational map.
-            Motion::Frame { .. } => None,
-        };
+        let own = motion.exact_affine();
         // Root first: the parent's chain is applied, then this node.
         let fold = match parent {
             None => own,

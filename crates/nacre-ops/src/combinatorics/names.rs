@@ -150,6 +150,15 @@ pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, QuadRoot)> {
 /// could not say. The result's naming asks it where the planes a result vertex's faces lie on
 /// are not the pair its name was minted from — a line two classes share on the cylinder names
 /// one point by several pairs, and the result keeps faces on only some of them.
+///
+/// **A pair with a class of no world statement is read on the caller's word** that the point lies
+/// on both planes — the gate's record of a line two classes share (`Aliases::record_shared_ruling`)
+/// or the faces through a result vertex. An interval proves two points apart and never one, so of
+/// the pair's two roots the one proved apart from the point is not it, and the other — whose box
+/// is formed and not proved apart — is. Any other reading is `None`: neither proved apart, a root
+/// with no box, a pair along the axis (whose roots have none — [`Judge::pierce`] needs the line
+/// proved off the axis direction). Both proved apart would put the true point in neither box, which
+/// the premise denies.
 pub(crate) fn restate_pierce(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -158,10 +167,29 @@ pub(crate) fn restate_pierce(
     b: usize,
 ) -> Option<NodeId> {
     use nacre_exact::quad::{CylinderMeet, QuadVal};
-    let (own, cyl, _) = pierce_name(node)?;
+    let (own, cyl, own_root) = pierce_name(node)?;
     let def = &cyls.get(cyl)?.def;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let (wa, wb) = (jd.world_rat(a)?, jd.world_rat(b)?);
+    let (Some(wa), Some(wb)) = (jd.world_rat(a), jd.world_rat(b)) else {
+        use nacre_judge::cylinder::{CylPoint, Roots};
+        let at = jd.pierce(own, cyl, def, own_root)?;
+        let roots = Roots::Boxes { planes: [a, b] };
+        // Per root: `None` where its box cannot be formed, else whether it is proved apart.
+        let apart = [QuadRoot::Lo, QuadRoot::Hi].map(|root| {
+            roots
+                .point(jd, cyl, def, root)
+                .map(|p| jd.points_apart(CylPoint::Pierce(&p), CylPoint::Pierce(&at)))
+        });
+        debug_assert!(
+            apart != [Some(true), Some(true)],
+            "both roots of a pair apart from a point the caller puts on both planes"
+        );
+        return match apart {
+            [Some(true), Some(false)] => Some(NodeId::pierce(a, b, cyl, QuadRoot::Hi)),
+            [Some(false), Some(true)] => Some(NodeId::pierce(a, b, cyl, QuadRoot::Lo)),
+            _ => None,
+        };
+    };
     let others: Vec<[nacre_exact::Rat; 4]> = own
         .iter()
         .filter(|&&p| p != a && p != b)
@@ -327,8 +355,12 @@ pub(crate) struct SharedLine {
 }
 
 /// **One record of the gate, read by `own`** — `None` when `own` is not one of its two classes,
-/// or when a description is missing or the arithmetic runs out (the gate records a shared line
-/// only from world coefficients, so a reader that cannot form them has nothing to compare).
+/// when the arithmetic runs out, or when the interval cannot tell which of a class's rulings with no
+/// world statement the line is. The line is the record's own ([`SharedRuling::at`]), so the
+/// other class's coefficients are not read; `own`'s side of it is exact where `own` has a world
+/// statement, and otherwise the interval sign ([`Judge::ruling_side_at`]).
+///
+/// [`SharedRuling::at`]: crate::planes::SharedRuling::at
 pub(crate) fn shared_line(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -336,7 +368,6 @@ pub(crate) fn shared_line(
     sr: &crate::planes::SharedRuling,
     own: usize,
 ) -> Option<SharedLine> {
-    use nacre_exact::quad::{CylinderMeet, QuadVal};
     let (a, b) = sr.line;
     let other = if a == own {
         b
@@ -346,18 +377,27 @@ pub(crate) fn shared_line(
         return None;
     };
     let def = &cyls.get(cyl)?.def;
-    let w = jd.world_rat(own)?;
-    let v = jd.world_rat(other)?;
-    let CylinderMeet::OnRuling(line) =
-        nacre_exact::quad::plane_plane_cylinder(&w, &v, &def.origin(), &def.dir(), def.r2())?
-    else {
-        return None;
+    let Some(w) = jd.world_rat(own) else {
+        // A class with no world statement shares the line only as a sectioned class, which
+        // cuts the lateral within the radius: the line is one of its two rulings, off the plane
+        // between them, so the interval sign answers.
+        let side = jd.ruling_side_at(own, def, &sr.at)?;
+        return Some(SharedLine { other, cyl, side });
     };
-    let side = ruling_side_signed(
-        &w,
-        def,
-        (&line, &QuadVal::from_rat(nacre_exact::Rat::from_int(0))),
-    )?;
+    // `ruling_side_signed`'s plane — through the axis, normal `m × n_own` — asked of the record's
+    // point of the line.
+    // The normal's own sign carries the convention, so the plane is not canonicalized.
+    let (o, m) = (def.origin(), def.dir());
+    let c = nacre_exact::cross3_rat(&m, &[w[0], w[1], w[2]])?;
+    let mut v = nacre_exact::Rat::from_int(0);
+    for k in 0..3 {
+        v = v.checked_add(c[k].checked_mul(sr.at[k].checked_sub(o[k])?)?)?;
+    }
+    let side = match v.cmp(&nacre_exact::Rat::from_int(0)) {
+        std::cmp::Ordering::Greater => 1,
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+    };
     Some(SharedLine { other, cyl, side })
 }
 
@@ -396,11 +436,16 @@ impl SharedLines {
     }
 
     /// **Is the line `a ∩ b` one the gate recorded on cylinder `cyl`** — a ruling lying on a
-    /// lateral face of it ([`crate::planes::SharedRuling`])?
+    /// lateral face of it ([`crate::planes::SharedRuling`])? Either class's reading answers, so
+    /// the order of `a` and `b` does not: a class with no world statement may not read its side of
+    /// the line ([`shared_line`]).
     pub(crate) fn on_cylinder(&self, a: usize, b: usize, cyl: usize) -> bool {
-        self.by_class
-            .get(&a)
-            .is_some_and(|ls| ls.iter().any(|l| l.other == b && l.cyl == cyl))
+        let reads = |own: usize, other: usize| {
+            self.by_class
+                .get(&own)
+                .is_some_and(|ls| ls.iter().any(|l| l.other == other && l.cyl == cyl))
+        };
+        reads(a, b) || reads(b, a)
     }
 
     /// **Do walls `a` and `b` of one face on `own` run along one line?** Equal walls do. A plane

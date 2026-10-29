@@ -487,6 +487,41 @@ impl<W: PlaneWitness> Judge<'_, W> {
         Some(off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec))
     }
 
+    /// **Which of plane `wall`'s two rulings of `def` the line along the axis through the rational
+    /// point `p` is** — [`PiercePoint::ruling_side`]'s sign, asked of a point given by value, at
+    /// the standard precision; `None` where the interval straddles zero.
+    pub fn ruling_side_at(&self, wall: usize, def: &CylinderDef, p: &[Rat; 3]) -> Option<i8> {
+        let prec = self.standard.prec;
+        sign_i8(&self.ruling_value(wall, def, &p.map(|x| HpBounded::of_rat(x, prec)), prec))
+    }
+
+    /// `(x − o) · (m × n_wall)` at `prec` — the side of the plane through the axis that tells
+    /// `wall`'s two rulings apart.
+    fn ruling_value(
+        &self,
+        wall: usize,
+        def: &CylinderDef,
+        at: &[HpBounded; 3],
+        prec: usize,
+    ) -> HpBounded {
+        let n = self.canon_hp(wall, prec);
+        let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
+        let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
+        let c = [
+            m[1].mul(&n[2], prec).sub(&m[2].mul(&n[1], prec), prec),
+            m[2].mul(&n[0], prec).sub(&m[0].mul(&n[2], prec), prec),
+            m[0].mul(&n[1], prec).sub(&m[1].mul(&n[0], prec), prec),
+        ];
+        let d = [
+            at[0].sub(&o[0], prec),
+            at[1].sub(&o[1], prec),
+            at[2].sub(&o[2], prec),
+        ];
+        d[0].mul(&c[0], prec)
+            .add(&d[1].mul(&c[1], prec), prec)
+            .add(&d[2].mul(&c[2], prec), prec)
+    }
+
     /// **Are two points proved apart?** — some coordinate of their interval boxes separated.
     /// `false` is «not shown» (a box that cannot be formed included), never «one point».
     pub fn points_apart(&self, a: CylPoint<'_>, b: CylPoint<'_>) -> bool {
@@ -954,7 +989,7 @@ impl PiercePoint {
         sign_i8(&self.ruling_value(jd, wall, def, jd.standard.prec)?)
     }
 
-    /// `(x − o) · (m × n_wall)` at `prec`.
+    /// `(x − o) · (m × n_wall)` at `prec` ([`Judge::ruling_value`]).
     fn ruling_value<W: PlaneWitness>(
         &self,
         jd: &Judge<'_, W>,
@@ -962,25 +997,7 @@ impl PiercePoint {
         def: &CylinderDef,
         prec: usize,
     ) -> Option<HpBounded> {
-        let at = self.point_hp_at(jd, prec)?;
-        let n = jd.canon_hp(wall, prec);
-        let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
-        let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
-        let c = [
-            m[1].mul(&n[2], prec).sub(&m[2].mul(&n[1], prec), prec),
-            m[2].mul(&n[0], prec).sub(&m[0].mul(&n[2], prec), prec),
-            m[0].mul(&n[1], prec).sub(&m[1].mul(&n[0], prec), prec),
-        ];
-        let d = [
-            at[0].sub(&o[0], prec),
-            at[1].sub(&o[1], prec),
-            at[2].sub(&o[2], prec),
-        ];
-        Some(
-            d[0].mul(&c[0], prec)
-                .add(&d[1].mul(&c[1], prec), prec)
-                .add(&d[2].mul(&c[2], prec), prec),
-        )
+        Some(jd.ruling_value(wall, def, &self.point_hp_at(jd, prec)?, prec))
     }
 }
 

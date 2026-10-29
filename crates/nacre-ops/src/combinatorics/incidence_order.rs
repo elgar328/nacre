@@ -210,9 +210,9 @@ pub(crate) enum OnLine {
     /// `at_a.orient3d(b.pin) × ds_b`, which is [`order_along`] with `a`'s half hoisted.
     /// **No `name`.** A plane-pinned point on `L = P ∩ Q` *is* `{p, q, pin}`, so the name is
     /// derivable, and storing it would put a 32-byte `NodeId` in a `Vec` the containment loop reads
-    /// millions of times. What a name would be for — identity against the other side — needs none:
-    /// a plane-pinned point can never *equal* a cylinder-pinned one, so cross-variant identity is
-    /// `false` by type, and a pierce point is ordered against this one by its side of `pin`.
+    /// millions of times. What a name would be for — identity against the other side — derives it:
+    /// a plane-pinned point can be a cylinder-pinned one (a third class through a pierce point),
+    /// and [`same_point`] asks that of the names, `{p, q, pin}` for this side.
     Class { pin: usize, ds: i8 },
     /// A point a cylinder pins: the meet line of its two planes and the root along it.
     ///
@@ -287,22 +287,54 @@ pub(crate) enum Located<'a> {
     },
 }
 
-/// Whether two located points are **the same point by identity**, without asking a predicate.
+/// **Whether two names are one point** — equal, or with one representative in the alias table
+/// (`canon` is that table's representative, `Aliases::canon_point`; this layer takes the function,
+/// not the table). The one spelling of «same name, same point»: the arrangement asks it through
+/// `Aliases::one_point`, and [`same_point`] of a point on a line with the representative it is
+/// handed.
+#[inline]
+pub(crate) fn same_name(canon: &impl Fn(NodeId) -> NodeId, a: NodeId, b: NodeId) -> bool {
+    a == b || canon(a) == canon(b)
+}
+
+/// Whether two located points on `L = p ∩ q` are **the same point by identity**, without asking a
+/// predicate.
 ///
 /// Two plane-pinned points compare by **pin**, which is the integer test the arrangement's
 /// overlay has always used: on one line `{p, q, pin}` is injective in `pin`, so equal pins are one
 /// point. It is a *sufficient* condition and not the whole test — where four planes meet, one point
-/// wears two pins — which is why callers still ask the order afterwards.
-/// Anything a cylinder pins has no pin payload to compare, so those compare by **name**.
+/// wears two pins — which is why callers still ask the order afterwards. That arm asks no table: it
+/// is the overlay's hot path.
+///
+/// Anything a cylinder pins compares by **name** ([`same_name`]), and so does a plane-pinned point
+/// against one a cylinder pins — its name on this line is `{p, q, pin}`. The two are one point where
+/// a third class passes through a pierce point — an operand's pierce corner, or a point of a line two
+/// classes share on a cylinder — which the alias table knows; where it holds a different
+/// three-plane name for the point (four planes or more through it), this misses and the order below
+/// asks instead.
+///
+/// This is identity for **containment**. The split pass orders a line's points by their raw names
+/// first (`split_at_crossings`), which is a different question.
 #[inline]
-pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
+pub(crate) fn same_point(
+    a: &Located<'_>,
+    b: &OnLine,
+    p: usize,
+    q: usize,
+    canon: &impl Fn(NodeId) -> NodeId,
+) -> bool {
+    let on_line = |pin: usize| NodeId::three_planes(Canon3::three([p, q, pin]));
     match (a, b) {
         (Located::Class { pin: x, .. }, OnLine::Class { pin: y, .. }) => x == y,
-        (Located::Pierce { name: x, .. }, OnLine::Pierce { name: y, .. }) => x == y,
-        // A point three planes name and a point a cylinder pins are never the same *name* — the
-        // two are different variants of `NodeId`. Whether they are the same **point** is a
-        // different question, and the order predicate below is what asks it.
-        _ => false,
+        (Located::Pierce { name: x, .. }, OnLine::Pierce { name: y, .. }) => {
+            same_name(canon, *x, *y)
+        }
+        (Located::Class { pin, .. }, OnLine::Pierce { name, .. }) => {
+            same_name(canon, on_line(*pin), *name)
+        }
+        (Located::Pierce { name, .. }, OnLine::Class { pin, .. }) => {
+            same_name(canon, *name, on_line(*pin))
+        }
     }
 }
 
@@ -331,6 +363,8 @@ pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
 /// edge there shares its Cramer parts. Taking a bare class instead would cap the sharing at one
 /// edge's two endpoints.
 ///
+/// `canon` is the alias table's representative ([`same_point`] reads it for names).
+///
 /// `None` is a description that could not be formed exactly, never a shape this cannot answer;
 /// the callers turn it into [`crate::RejectReason::WitnessNotRational`].
 #[inline]
@@ -340,9 +374,10 @@ pub(crate) fn closed_contains(
     q: usize,
     at: &Located<'_>,
     ends: &[OnLine; 2],
+    canon: &impl Fn(NodeId) -> NodeId,
 ) -> Option<bool> {
     let [l0, l1] = ends;
-    if same_point(at, l0) || same_point(at, l1) {
+    if same_point(at, l0, p, q, canon) || same_point(at, l1, p, q, canon) {
         return Some(true);
     }
     let a = order_located(jd, p, q, at, l0)?;

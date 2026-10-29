@@ -201,6 +201,22 @@ pub enum Motion {
     },
 }
 
+impl Motion {
+    /// **This motion as an exact rational map**, where it is one — a translation, an axis mirror,
+    /// a rotation by a quarter-turn multiple. `None` for a turn off the quarters and for a frame,
+    /// whose basis is `1/√rational`.
+    pub fn exact_affine(&self) -> Option<nacre_exact::AxisAffine> {
+        match *self {
+            Motion::Translate { offset } => Some(nacre_exact::AxisAffine::translation(offset)),
+            Motion::Rotate { axis, pivot, angle } => {
+                nacre_exact::AxisAffine::rotation(nacre_exact::Rotation { axis, pivot, angle })
+            }
+            Motion::Mirror { axis, offset } => Some(nacre_exact::AxisAffine::mirror(axis, offset)),
+            Motion::Frame { .. } => None,
+        }
+    }
+}
+
 /// Where a sketch frame sits on its plane — the derived convention, or the caller's values.
 /// The dichotomy mirrors `PlanePoints`: state a value when it can
 /// be written, derive when it cannot.

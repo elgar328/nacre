@@ -144,6 +144,81 @@ impl Model {
         self.chain_fixes(leaf, coeffs, false)
     }
 
+    /// **The line a plane's chain turns it about** — its hinge, in the world: `(point, dir)`, both
+    /// rational.
+    ///
+    /// A plane with no world statement sits on a chain with a turn off the quarters, and such a
+    /// turn leaves exactly one line in place: its own axis line, through the pivot along the
+    /// axis. When the chain's first node is such a turn about a line on the plane's name, and every
+    /// later turn off the quarters is about the same line (as the exact nodes between have carried
+    /// it), every node leaves the line's points in place or carries them exactly — so the plane
+    /// holds that line wherever the chain puts it. It comes out carried by the exact nodes after
+    /// the turn.
+    ///
+    /// `None` where that is not shown: no turn off the quarters (the chain folds, and the plane has
+    /// a world statement instead), a frame node anywhere on the chain, an exact first node (the
+    /// transform carries an exact motion into a plane's statement instead while the plane has no
+    /// history), two turns about different lines, a line off the name, an overflow. Nothing is read from an
+    /// approximation.
+    pub fn plane_hinge(
+        &self,
+        plane: Handle<Surface>,
+    ) -> Option<([nacre_exact::Rat; 3], [nacre_exact::Rat; 3])> {
+        use nacre_exact::Rat;
+        let name = self.surface_name(plane)?;
+        let mut nodes = Vec::new();
+        let mut cur = self.surface_motion(plane);
+        while let Some(h) = cur {
+            nodes.push(self.motion(h).motion);
+            cur = self.motion(h).parent;
+        }
+        let zero = Rat::from_int(0);
+        let axis_line = |motion: Motion| -> Option<([Rat; 3], [Rat; 3])> {
+            let Motion::Rotate { axis, pivot, .. } = motion else {
+                return None;
+            };
+            let mut dir = [zero; 3];
+            dir[match axis {
+                nacre_exact::Axis::X => 0,
+                nacre_exact::Axis::Y => 1,
+                nacre_exact::Axis::Z => 2,
+            }] = Rat::from_int(1);
+            Some((pivot, dir))
+        };
+        let mut nodes = nodes.into_iter().rev();
+        let first = nodes.next()?;
+        if first.exact_affine().is_some() {
+            return None;
+        }
+        let (mut p, mut d) = axis_line(first)?;
+        let n = name.narrow()?;
+        if nacre_exact::dot_sign_rat(&[n[0], n[1], n[2]], &d) != nacre_exact::Orient::Zero
+            || nacre_exact::plane_residual_sign(name, p) != 0
+        {
+            return None;
+        }
+        for motion in nodes {
+            if let Some(a) = motion.exact_affine() {
+                (p, d) = (a.point_rat(p)?, a.dir_rat(d)?);
+                continue;
+            }
+            // The same line: parallel, and the pivot on it.
+            let (q, e) = axis_line(motion)?;
+            let off = [
+                q[0].checked_sub(p[0])?,
+                q[1].checked_sub(p[1])?,
+                q[2].checked_sub(p[2])?,
+            ];
+            let on_line = |v: [Rat; 3]| {
+                nacre_exact::cross3_rat(&v, &d).is_some_and(|c| c.iter().all(|x| *x == zero))
+            };
+            if !on_line(e) || !on_line(off) {
+                return None;
+            }
+        }
+        Some((p, d))
+    }
+
     /// **A plane's canonical name in the world**, whatever frame its truth is written in — the
     /// door between "how this surface got here" and "where it is".
     ///

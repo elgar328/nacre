@@ -164,7 +164,7 @@ fn ruling_sweep(
     // and a corner the cycle carries can be one point under two names, and the plane roads have
     // already told the table so (`Aliases::record_on_cylinder`). Every "same node?" below asks
     // through it; the sweep never decides coincidence on its own.
-    let same = |x: NodeId, y: NodeId| aliases.canon_point(x) == aliases.canon_point(y);
+    let same = |x: NodeId, y: NodeId| aliases.one_point(x, y);
     let on_ruling = |c: usize| {
         combinatorics::crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling)
     };
