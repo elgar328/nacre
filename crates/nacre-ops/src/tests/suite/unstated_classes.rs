@@ -1006,3 +1006,91 @@ fn a_witness_naming_a_silent_class_is_asked_after_the_road_declines() {
         );
     }
 }
+
+/// The half of a `z` cylinder of radius 2 standing on `(10, 10)` over `z ∈ [0, 10]` that lies on
+/// `x ≤ 10` — its lateral has no whole rim, so a wall plane cutting it is sectioned. `20π`.
+fn half_bar(m: &mut Model) -> Handle<Solid> {
+    let c = z_cylinder(m, [10.0, 10.0, 0.0], 2.0, 10.0);
+    let cut = cuboid(m, [10.0, 0.0, -1.0], [20.0, 20.0, 11.0]);
+    op(m, BoolKind::Cut, c, cut)
+}
+
+/// A `5×5` box over `z`, turned 37° about `z` through the half bar's axis `(10, 10)`. Before the
+/// turn it spans `x ∈ [8.5, 13.5]` and `y ∈ [10 + y0, 15 + y0]`, so its wall `x = 8.5` turns into
+/// a plane 1.5 from the axis on the bar's round side, crossing its arc twice and missing its flat
+/// face (which reaches only 1.2 along that plane's normal); the other three walls stand 3.5, `y0`
+/// and `y0 + 5` from the axis.
+fn box_turned_about_the_bar(m: &mut Model, y0: f64, z: [f64; 2]) -> Handle<Solid> {
+    let b = cuboid(m, [8.5, 10.0 + y0, z[0]], [13.5, 15.0 + y0, z[1]]);
+    turn(m, b, Axis::Z, 37, [10, 10, 0])
+}
+
+/// **A section whose every corner is a pierce point is asked by a pierce corner.** A wall plane
+/// of a turned box crosses a half bar's round side twice: on that plane the bar's section is the
+/// strip between two rulings, closed by the two caps, and all four corners are pierce points of
+/// a class with no world statement — no three-plane name, no rational coordinate, no centre. Its
+/// nesting against the plane's other rings is asked from those corners, by rays along the cap's
+/// line on the wall plane, the corner placed on that line by the cylinder.
+///
+/// The gate: the wall 1.5 from the axis sections the bar, the other three walls stand beside it —
+/// `(3, 0, 1)`, every family. The answers, by derived volume, in both operand orders:
+/// - a box above the bar or beside it on the floor: the Cut and the Common build. The Fuse is two
+///   bodies, and the depth of one in the other is a question in space (`assembly::grouping`) whose
+///   rays from the box's corners run on the wall plane, where the bar's faces cannot be read yet —
+///   refused by name.
+/// - the bar inside a named block `[0,20]² × [−2,12]` with the box on the block: on the wall plane
+///   the bar's section lies inside the block's, and its corners answer «inside». The Fuse is the
+///   block and box, `5600 + 125`; the bar less the block is empty; the block less the bar keeps a
+///   cavity, whose depth in space is asked by a ray that meets a face the wall plane bounds or
+///   names a corner of, and cannot show it misses — refused by the gate's name.
+#[test]
+fn a_section_whose_every_corner_is_a_pierce_point_is_asked_by_one() {
+    use RejectReason::{CylinderGateUndecided, NoClearRay};
+    let pi = std::f64::consts::PI;
+    let bar = 20.0 * pi;
+    // Each family with the other order's Cut.
+    let fams = [
+        (
+            Family {
+                name: "a half bar, a turned box above it, a wall plane through the bar's round side only",
+                build: |m| (half_bar(m), box_turned_about_the_bar(m, 6.0, [20.0, 25.0])),
+                gate: Ok((3, 0, 1)),
+                want: [Refused(NoClearRay), Built(1, bar), Built(0, 0.0)],
+            },
+            Built(1, 125.0),
+        ),
+        (
+            Family {
+                name: "a half bar, a turned box beside it on the floor, a wall plane through the bar's round side only",
+                build: |m| (half_bar(m), box_turned_about_the_bar(m, 6.0, [0.0, 5.0])),
+                gate: Ok((3, 0, 1)),
+                want: [Refused(NoClearRay), Built(1, bar), Built(0, 0.0)],
+            },
+            Built(1, 125.0),
+        ),
+        (
+            Family {
+                name: "a half bar inside a named block, the turned box on the block",
+                build: |m| {
+                    let b = half_bar(m);
+                    let block = cuboid(m, [0.0, 0.0, -2.0], [20.0, 20.0, 12.0]);
+                    let t = box_turned_about_the_bar(m, 4.0, [12.0, 17.0]);
+                    (b, op(m, BoolKind::Fuse, block, t))
+                },
+                gate: Ok((3, 0, 1)),
+                want: [Built(1, 5725.0), Built(0, 0.0), Built(1, bar)],
+            },
+            Refused(CylinderGateUndecided),
+        ),
+    ];
+    let ab: Vec<Family> = fams.iter().map(|(f, _)| *f).collect();
+    let ba: Vec<Family> = fams
+        .iter()
+        .map(|(f, cut)| Family {
+            want: [f.want[0], *cut, f.want[2]],
+            ..*f
+        })
+        .collect();
+    score(&ab, false);
+    score(&ba, true);
+}

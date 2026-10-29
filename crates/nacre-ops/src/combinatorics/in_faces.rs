@@ -652,13 +652,17 @@ pub(crate) fn named_point_in_face(
                 if point_on_ring(jd, q, x, r)? {
                     return Ok(Some(RingSide::OnBoundary));
                 }
-                Ok(every_ray(jd, cyls, q, x, r)?.first().map(|&b| {
-                    if b {
-                        RingSide::Inside
-                    } else {
-                        RingSide::Outside
-                    }
-                }))
+                Ok(
+                    every_ray(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), r)?
+                        .first()
+                        .map(|&b| {
+                            if b {
+                                RingSide::Inside
+                            } else {
+                                RingSide::Outside
+                            }
+                        }),
+                )
             }
             BoundEdges::Circle(def) => Ok(named_point_in_disk(jd, cyls, x, def)),
             // Loops bound a cylinder, never a plane — a producer error, not an input.

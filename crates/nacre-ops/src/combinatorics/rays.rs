@@ -1,26 +1,33 @@
 use super::*;
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
 /// says so, which is a second machine for free.
+///
+/// `v` is a named point on plane `p`, either kind of name. A three-plane name casts along `p ∩ q`
+/// for each of its planes `q` other than `p`. A pierce name lies on its own pair's line and on no
+/// other line this road can state, so it casts along that line alone — and only when the pair holds
+/// `p`; a pierce name of another pair casts nothing here.
 pub(crate) fn every_ray(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     p: usize,
-    v: [usize; 3],
+    v: NodeId,
     ring: &[RingEdge],
 ) -> Result<Vec<bool>, BoolError> {
-    // The vertex name is a plane triple, so it obeys the same rule as a ring's: class roots only.
-    // A caller holding face indices (a hand-built table, a test) is normalized here rather than
-    // silently comparing a face against a class.
-    let mut v = [v[0], v[1], v[2]];
-    v.sort_unstable();
+    let rays: Vec<usize> = match v.kind() {
+        NodeKind::ThreePlane(t) => t.into_iter().filter(|&x| x != p).collect(),
+        NodeKind::Pierce { planes, .. } if planes.contains(&p) => {
+            planes.into_iter().filter(|&x| x != p).collect()
+        }
+        NodeKind::Pierce { .. } => Vec::new(),
+    };
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
     // **The unnameable check is the walk's, so it is asked per `qa` rather than once up
     // front**: a ring carrying a node the walk cannot read is refused by the first ray that
     // actually asks, not before any ray is cast. The two readings differ only when *every* `qa`
-    // answers `AllOn` — a ring lying in both cut planes — and that pairs with a pierce node nothing
-    // produces here, so the difference is unreachable twice over.
+    // answers `AllOn` — a ring lying in every cut plane, which for a pierce name's one ray is a
+    // ring lying on that line's other plane.
     //
     // A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
     // a dropped member would be a different polygon answered about confidently — which is why the
@@ -28,7 +35,7 @@ pub(crate) fn every_ray(
     // a caller drop a node (see [`three_plane_probes`], where dropping *is* honest).
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let mut out = Vec::new();
-    for &qa in v.iter().filter(|&&x| x != p) {
+    for qa in rays {
         // Where the ring meets the line — the reading every road that walks a plane face's ring
         // along a line shares ([`ClassLine`]).
         //
@@ -51,15 +58,32 @@ pub(crate) fn every_ray(
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
         };
-        // The plane `v` is ordered against along the line, by the rule every handle on a line
-        // takes: one of `v`'s own planes that cuts `p ∩ qa`. When `p` is not among `v`'s planes
-        // one of the other two can hold the line (a pencil), and read there it orders nothing.
-        let qb = pin_on_line(jd, p, qa, &v).ok_or_else(|| reject(RejectReason::RingNaming))?;
+        // Where `v` sits on the line, by the rule every handle on a line takes ([`pin_for`]): a
+        // three-plane name by one of its own planes that cuts `p ∩ qa` — when `p` is not among
+        // them one of the other two can hold the line (a pencil), and read there it orders nothing
+        // — and a pierce name, whose pair is this line, by its cylinder.
+        let v_at = end_on_line(jd, p, qa, v).ok_or_else(|| reject(RejectReason::RingNaming))?;
+        // A pierce `v` is placed once per ray, with the whole cylinder table: the walk's `table`
+        // withholds it from a ray plane with a world statement, and that withholding is about the
+        // ring's nodes, not about the point the ray starts from. A point the table cannot place
+        // casts no ray.
+        let v_line = match v_at {
+            PointOn::Class(_) => None,
+            PointOn::Pierce(_) => match on_line(jd, cyls, p, qa, v_at) {
+                Some(l) => Some(l),
+                None => continue,
+            },
+        };
         // Where a point on the line lies against `v` along `n_P × n_Qa` ([`order_on`]). Runs and
         // crossings both ask it.
         let against_v = |at: PointOn| -> Result<i8, BoolError> {
-            order_on(jd, table, p, qa, at, PointOn::Class(qb))
-                .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+            match &v_line {
+                None => order_on(jd, table, p, qa, at, v_at),
+                Some(vl) => {
+                    locate(jd, cyls, p, qa, at).and_then(|a| order_located(jd, p, qa, &a, vl))
+                }
+            }
+            .ok_or_else(|| reject(RejectReason::WitnessNotRational))
         };
         // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
         // A run is one interval of the line and the ring is simple, so it cannot double back

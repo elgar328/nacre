@@ -336,10 +336,12 @@ pub(crate) fn ring_against_plane(
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
 ///
 /// **A ray, cast along a line we already have.** Every ring edge lies on `P ∩ R`, and `v`
-/// lies on `P ∩ Q_a` for either of its own two planes. Those two lines meet at
-/// `X = {P, Q_a, R}`, which is *itself* a three-plane point — so "is `X` inside the edge"
-/// and "is `X` ahead of `v`" are both [`order_along`], the comparator already built
-/// for two three-plane points on one line. **No coordinate is read and no point is built.**
+/// lies on `P ∩ Q_a` for either of its own two planes (a pierce name: for the other plane of its
+/// pair, [`every_ray`]). Those two lines meet at `X = {P, Q_a, R}`, which is *itself* a three-plane
+/// point — so "is `X` inside the edge" and "is `X` ahead of `v`" are both [`order_along`], the
+/// comparator already built for two three-plane points on one line, and a pierce `v` is placed
+/// on the line by its cylinder ([`order_located`]). **No coordinate is read and no point is
+/// built.**
 ///
 /// **The flanks delete the special case, not the choice of ray.** A ring node *on* the ray's line
 /// leaves no room for "is `X` inside the edge" to decide anything; abandoning the candidate there
@@ -354,8 +356,8 @@ pub(crate) fn ring_against_plane(
 /// Nothing is counted twice: a crossing is strictly inside its edge, between two stretches off the
 /// line.
 ///
-/// Candidates are each node's two non-`P` planes, in ring order, `+d` before `-d`; the first
-/// usable one wins, which keeps the answer deterministic. `no_clear_ray` survives for the two
+/// Candidates are `v`'s non-`P` planes ([`every_ray`]), `+d` before `-d`; the first usable one
+/// wins, which keeps the answer deterministic. `no_clear_ray` survives for the two
 /// cases nothing can name: a ring lying wholly on `Q_a` (no flanks), and an on-line node whose own
 /// two walls are both parallel to the line (nothing pins it there). The answer must not depend on
 /// which candidate was chosen, and a golden says so.
@@ -367,7 +369,7 @@ pub(crate) fn point_in_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     p: usize,
-    v: [usize; 3],
+    v: NodeId,
     ring: &[RingEdge],
 ) -> Result<bool, BoolError> {
     every_ray(jd, cyls, p, v, ring)?

@@ -494,10 +494,9 @@ fn merge_component(
             let ring = outer.edges(jd, cyls, Some(wc))?;
             // A mixed outer takes the rational road - the (None, None) arm of the
             // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
-            // a probe against the mixed walk, and the vocabulary is that arm's — a list
-            // that ran out is `NoClearRay`, a list that was **empty** (a hole with no
-            // rational corner) is `RingHasNoWitness`. Neither has a population today
-            // (0 raises at this site); named so the first arrives under
+            // a probe against the mixed walk, then each pierce corner by its ray, and the
+            // vocabulary is that arm's — a list that ran out is `NoClearRay`. It has no
+            // population today (0 raises at this site); named so the first arrives under
             // the right word.
             // The rational road serves a mixed outer **and a hole with no three-plane corner**
             // (a slot's stadium, four tangent corners and nothing else): its witnesses

@@ -51,11 +51,11 @@ use crate::tolerant::Judge;
 /// `CylinderPairContact`) — so two
 /// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
 /// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
-/// it exactly once. Measured: **every** ring with an empty probe list is either such a chain — and
-/// each of those the circle's own centre answers — or a wall panel with no circle at all, which
-/// refuses by its own name ([`crate::RejectReason::RingHasNoWitness`]). Against refusing every
-/// empty probe list as `NoClearRay`, in cells: of the crossing census's 44, **8** build and **20**
-/// are renamed, the rest being the other road's (`boolean`).
+/// it exactly once. Measured: **every** ring with no three-plane corner and no rational one is
+/// either such a chain — and each of those the circle's own centre answers — or a wall panel with
+/// no circle at all, which only its pierce corners can ask (the last supply of [`witnesses`]).
+/// Against refusing every such ring as `NoClearRay`, in cells: of the crossing census's 44, **8**
+/// build and **20** are renamed, the rest being the other road's (`boolean`).
 /// Counted as *cells*, not as raises — a traced boolean runs twice in `debug`, and
 /// `reject_census`'s own note forbids reading raise counts as populations.
 fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_topo::CylinderDef> {
@@ -202,11 +202,20 @@ pub(crate) enum Cell<'a> {
 ///
 /// A `Named` witness needs no coordinates, and that is not a convenience: a **rotated** class has
 /// no rational description, so its points have no rational coordinates at all — the ray road is
-/// the only road there, and it runs on names.
+/// the only road there, and it runs on names. A name is either kind — three planes, or a pierce
+/// point placed on its pair's line by its cylinder ([`combinatorics::every_ray`]).
 #[derive(Clone, Copy, Debug)]
 enum Where {
-    Named([usize; 3]),
+    Named(NodeId),
     Coord([nacre_exact::Rat; 3]),
+}
+
+/// The plane classes a name holds — the three of a three-plane name, a pierce point's pair.
+fn name_planes(n: NodeId) -> Vec<usize> {
+    match n.kind() {
+        combinatorics::NodeKind::ThreePlane(t) => t.to_vec(),
+        combinatorics::NodeKind::Pierce { planes, .. } => planes.to_vec(),
+    }
 }
 
 /// **A point that can decide a nesting question — and how much it decides.**
@@ -427,8 +436,12 @@ pub(crate) fn rim_witness_count(
 /// Boundary witnesses first and in this order: the corners' three-plane **names** (the ray road,
 /// and the only road a rotated class has), then the corners' rational coordinates, then the
 /// rational **pierce** corners (a fillet tangency), then a whole chord's **midpoint**,
-/// then a rational point **inside** an edge whose ends are two solves' roots. An interior witness
-/// last, and only where there is one: a disk's centre, and a ring that *is* a circle.
+/// then a rational point **inside** an edge whose ends are two solves' roots. Then an interior
+/// witness, where there is one: a disk's centre, and a ring that *is* a circle. Last, the
+/// corners' **pierce names** — boundary points the ray road casts from on their pair's line, and
+/// the only supply a ring whose every corner is a pierce point on a class with no world statement
+/// has (a cylinder's section between two rulings). They come after everything else, so a question
+/// another witness answers is answered by that one.
 ///
 /// **A circle has no corner — and the conclusion drawn from that is false.**
 /// Every supply above reads the *arrangement*: names, nodes, chords, edge interiors. An uncut
@@ -468,7 +481,7 @@ fn witnesses<'a>(
         }
         Cell::Ring(r) => {
             let named = r.iter().filter_map(|e| {
-                combinatorics::three_plane_name(e.node).map(|t| Witness::On(Where::Named(t)))
+                combinatorics::three_plane_name(e.node).map(|_| Witness::On(Where::Named(e.node)))
             });
             let coords = r.iter().flat_map(move |e| {
                 combinatorics::edge_witness_points(jd, cyls, e)
@@ -491,7 +504,10 @@ fn witnesses<'a>(
             // so the module's own "lazy on purpose" rule is already broken here. Folding both
             // arms onto `rim_and_centre` fixes that in the same move.
             let centre = ring_own_circle(r).map(centre_of).into_iter();
-            Box::new(named.chain(coords).chain(centre))
+            let pierce = r.iter().filter_map(|e| {
+                combinatorics::pierce_name(e.node).map(|_| Witness::On(Where::Named(e.node)))
+            });
+            Box::new(named.chain(coords).chain(centre).chain(pierce))
         }
     }
 }
@@ -512,12 +528,12 @@ fn ask(
         nacre_geom::intersect::RingSide::OnBoundary => Said::Abstain,
     };
     Ok(match (w, target) {
-        (Where::Named(t), Cell::Ring(rb)) => {
+        (Where::Named(n), Cell::Ring(rb)) => {
             #[expect(
                 clippy::disallowed_methods,
                 reason = "one witness's answer; the retry over witnesses is `cell_inside`'s loop"
             )]
-            let inside = combinatorics::point_in_ring(jd, cyls, wc, *t, rb);
+            let inside = combinatorics::point_in_ring(jd, cyls, wc, *n, rb);
             match inside {
                 Ok(true) => Said::In,
                 Ok(false) => Said::Out,
@@ -533,8 +549,10 @@ fn ask(
                     // so no coordinate witness stands behind it when the ray road cannot place it.
                     // The one question its interval answers is whether it stands outside the
                     // ring's box — the coordinate arm's own question below, asked of the same box.
-                    Said::Declines | Said::Abstain if crate::planes::silent_among(cyls, t) => {
-                        match jd.three_hp(*t, jd.standard.prec) {
+                    Said::Declines | Said::Abstain
+                        if crate::planes::silent_among(cyls, &name_planes(*n)) =>
+                    {
+                        match combinatorics::node_point_hp(jd, cyls, *n) {
                             Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
                             _ => Said::Silent,
                         }
@@ -567,7 +585,13 @@ fn ask(
             }
             Err(_) => Said::Unformed,
         },
-        (Where::Named(t), Cell::Disk(def)) => {
+        (Where::Named(n), Cell::Disk(def)) => {
+            // A pierce name abstains against a disk: the shortcut below rests on a class of the
+            // name lying on one of the cell's faces, which a pierce pair chosen in a pencil need
+            // not.
+            let Some(t) = combinatorics::three_plane_name(*n) else {
+                return Ok(Said::Abstain);
+            };
             // **A corner on a class the gate proved apart from this disk's cylinder is outside
             // the disk, exactly** — here, and not in the shared reading below: the corner lies on
             // a face of that class (a class's segments are its faces met by the cell's plane),
@@ -584,7 +608,7 @@ fn ask(
             if apart {
                 return Ok(Said::Out);
             }
-            match combinatorics::named_point_in_disk(jd, cyls, *t, def) {
+            match combinatorics::named_point_in_disk(jd, cyls, t, def) {
                 Some(side) => disk(side),
                 None => Said::Unformed,
             }
@@ -673,8 +697,8 @@ fn inside(
         };
         // `ask` answers a name holding a class the gate passed silent by the ring's box, so only
         // the others would repeat the road's refusal.
-        let repeats =
-            declined && matches!(&p, Where::Named(t) if !crate::planes::silent_among(cyls, t));
+        let repeats = declined
+            && matches!(&p, Where::Named(n) if !crate::planes::silent_among(cyls, &name_planes(*n)));
         if repeats {
             continue;
         }
@@ -824,8 +848,8 @@ pub(crate) fn cell_in_cell(
             };
             let by_name = ra
                 .iter()
-                .filter_map(|e| combinatorics::three_plane_name(e.node))
-                .find_map(|t| decided(Where::Named(t)))?;
+                .filter(|e| combinatorics::three_plane_name(e.node).is_some())
+                .find_map(|e| decided(Where::Named(e.node)))?;
             let by_coord = ra
                 .iter()
                 .flat_map(|e| combinatorics::edge_witness_points(jd, cyls, e))

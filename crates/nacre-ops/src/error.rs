@@ -613,9 +613,10 @@ pub enum RejectReason {
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from
-    /// a ring's *corners*, and a ring cut out of a cylinder has only pierce-named ones; the 3D
-    /// depth classification draws them from a component's vertices and, failing those, from its
-    /// cut caps' interiors, and a thin segment of a disk can offer neither.
+    /// a ring's *corners*, and on a plane class every corner is one — a pierce-named corner casts
+    /// its ray along its pair's line; the 3D depth classification draws them from a component's
+    /// vertices and, failing those, from its cut caps' interiors, and a thin segment of a disk can
+    /// offer neither.
     ///
     /// The three names beside each other, once: [`Self::NoClearRay`] is «every witness we had was
     /// blocked», [`Self::WitnessNotRational`] is «a value we needed could not be formed
@@ -634,7 +635,7 @@ pub enum RejectReason {
     /// cut cap offers two points per **chord** (`ring_interior_candidates`). What would still
     /// reach it is a segment cut again along its chord's normal line, in a multi-body result.
     /// The remedy for every such shape at once is to widen the probe's **type** so a pierce
-    /// corner is itself a witness.
+    /// corner is itself a witness, as the plane classes' nesting already does.
     ///
     /// **A disk answers the converse through its rim.**
     /// [`crate::nesting`]'s reverse pass skips an interior witness without setting a flag, so a
