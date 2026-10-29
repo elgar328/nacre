@@ -4,7 +4,9 @@ use super::*;
 ///
 /// An original vertex is as implicit a point as a seam node, so a cycle's ring — which mixes
 /// them — is one uniform list and [`point_in_ring`] need not know the difference. Two
-/// adjacent edges on one neighbour plane would be a straight angle, and it rejects.
+/// adjacent edges on one neighbour plane make a straight run, and the corner is named as any
+/// other: by its definition when a cylinder made it, else by its incident faces' classes —
+/// refused when fewer than three of them, or three sharing a line, meet it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn face_vertex_triples(
     model: &Model,
@@ -28,9 +30,9 @@ pub(crate) fn face_vertex_triples(
 
 /// **A lateral face's boundary cycles**: every loop, outer first, each named by
 /// [`loop_triples`] like every other loop. A lateral is bounded by its loops alone — a face that
-/// wraps the axis by its two rims (each one closed rim edge, a [`LoopRing::Rim`], or a chain of
-/// arcs and rulings) and its holes, one that does not by its outer loop and its holes — so no loop
-/// is cut or joined to be read.
+/// wraps the axis by its two rims (each one closed rim edge, a [`LoopRing::Rim`]; arcs alone on
+/// one class, where corners split a rim; or a chain of arcs and rulings) and its holes, one that
+/// does not by its outer loop and its holes — so no loop is cut or joined to be read.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn lateral_cycles(
     model: &Model,
@@ -68,8 +70,9 @@ pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
     pub walls: Vec<crate::combinatorics::Wall>,
     /// Every **concurrency** this loop's corners revealed — a corner with four or more
-    /// plane classes incident, as the full sorted class set. Its name in `triples` is
-    /// [`canonical_triple`] of that set; the set itself goes to the arrangement's alias table
+    /// plane classes incident that no cylinder made, as the full sorted class set (a pierce
+    /// corner names itself and hands none on). Its name in `triples` is [`canonical_triple`] of
+    /// that set; the set itself goes to the arrangement's alias table
     /// (`arrangement::Aliases`) before any class is traced, so the arrangement's own discoveries
     /// fold onto the same representative.
     pub concurrencies: Vec<Vec<usize>>,
@@ -112,7 +115,8 @@ pub(crate) struct FaceLoops {
     pub holes: Option<Vec<LoopRing>>,
     /// A **lateral** face's every loop ([`lateral_cycles`]), outer first — or `None` when a loop
     /// could not be named. `None` on a plane row. The two lateral roads read these
-    /// (`arrangement::lateral_shape`) and nothing else of a lateral's loops.
+    /// (`arrangement::lateral_shape`) and nothing else of a lateral's loops; the arrangement's
+    /// alias seed (`arrangement::seed_from_operands`) reads their names.
     pub cycles: Option<Vec<LoopRing>>,
 }
 
@@ -156,9 +160,10 @@ pub(crate) fn trace_input(
         for sh in crate::planes::solid_shell_handles(model, solid) {
             for &fh in &model.shell(sh).faces {
                 let fp = surf_ix[&fh];
-                // A **lateral face's loops** are its `cycles` — its rims (each a whole rim or
-                // a chain) and holes, every one named like any ring — and the tracer's cylinder
-                // roads read those. So `outer` stays `None` here; it is a skip, not a decline.
+                // A **lateral face's loops** are its `cycles` — its rims (each a whole rim, a
+                // rim split into arcs, or a chain) and holes, every one named like any ring — and
+                // the tracer's cylinder roads read those. So `outer` stays `None` here; it is a
+                // skip, not a decline.
                 //
                 // **Its holes are named like every other face's.** A fuse can burn a hole
                 // into a band (a boss straddling a plate's wall), and that loop is an ordinary
@@ -192,9 +197,9 @@ pub(crate) fn trace_input(
 /// Each hole ring of face `f`, as three-plane triples.
 ///
 /// A rim edge's incidence is `[p, wall]`, so the neighbour plane is the wall on the other
-/// side of the rim — the same construction as an outer vertex, and the same rejection of a
-/// straight angle. The ring keeps its stored direction: clockwise about `f`'s outward
-/// normal, which is what makes it a hole.
+/// side of the rim — the same construction as an outer vertex, straight angles included. The ring
+/// keeps its stored direction: clockwise about `f`'s outward normal, which is what makes it a
+/// hole.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn hole_rings(
     model: &Model,
@@ -222,9 +227,10 @@ pub(crate) fn hole_rings(
 /// corner and its name is the face's own plane with the two neighbours' (no judgement asked).
 /// Four or more is a concurrency: one name, and the
 /// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table. A corner a
-/// cylinder made restates its own definition ([`pierce_name_from_def`]) against that same set, so
-/// a loop passing it twice names it once; the further classes through it reach the alias table by
-/// the arrangement's seed (`arrangement::seed_from_operands`, a pierce corner on a further class).
+/// cylinder made restates its own definition ([`pierce_name_from_def`]) against that same set, on
+/// every visit, so a loop passing it twice names it once; the further classes through it reach
+/// the alias table by the arrangement's seed (`arrangement::seed_from_operands`, a pierce corner
+/// on a further class).
 ///
 /// Naming from the loop instead — the face's own plane and the two neighbours the
 /// meeting edges carry, with a fallback to every plane touching the vertex only when both
@@ -307,39 +313,50 @@ fn loop_triples(
             corner,
             "a loop's edge starts where the previous one ends (OpenLoop)"
         );
-        // **A corner a cylinder made names itself too** — by its own definition, matched
-        // against **its incident faces'** plane classes, not against this visit's two
-        // neighbours. A loop may pass the corner twice (a cap pinched where a wedge's apex
-        // touches its rim), and a corner may lie on three planes and the cylinder: the two
-        // neighbours of one visit are then not the pair its definition chose, and the two visits
-        // would name one point twice — or not at all.
-        let restated = |k: usize| {
-            pierce_name_from_def(
-                model,
-                jd,
-                corner,
-                k,
-                &cyls[k],
-                &incident_plane_classes(corner, inc, plane_ix),
-            )
-            .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))
-        };
-        let pierce = match plane_ix[p] {
-            ClassIx::Plane(_) => match (plane_ix[a], plane_ix[b]) {
-                (ClassIx::Cyl(k), ClassIx::Plane(_)) | (ClassIx::Plane(_), ClassIx::Cyl(k)) => {
-                    Some(restated(k)?)
-                }
-                // Two laterals meeting at one corner is M6b's cylinder pair, not this road's.
-                (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
+        // **A corner a cylinder made names itself** — by its own definition, matched against
+        // **its incident faces'** plane classes, on every visit: the definition picks the road,
+        // not this visit's face and neighbours. A loop may pass the corner twice (a cap pinched
+        // where a wedge's apex touches its rim); a corner may lie on three planes and the
+        // cylinder, where one visit's neighbours are not the pair its definition chose; and a
+        // corner may lie on two planes only — a pin over a plate's edge, whose corner on the
+        // wall's loop sits between the plate's top and the overhang's underside, one class — where
+        // a visit between two plane faces has no three-plane name at all. Every visit names the
+        // point once and by the same name, the one the result side keeps for a pierce vertex
+        // whose planes and lateral meet it (`assembly::naming::name_result_vertices`). The lateral
+        // is there on valid input — a definition naming a surface no face at the vertex lies on
+        // is `VertexNamesAbsentSurface`.
+        let classes = incident_plane_classes(corner, inc, plane_ix);
+        // The laterals among this visit's face and neighbours. Two of them — a lateral's loop
+        // along a second lateral, or a plane face's corner between two — are the cylinder pair's
+        // road (`Vertex::CylinderPair`), not this one's; so is a lateral of a cylinder other than
+        // the one the corner's definition names.
+        let [lp, la, lb] = [p, a, b].map(|x| match plane_ix[x] {
+            ClassIx::Cyl(k) => Some(k),
+            ClassIx::Plane(_) => None,
+        });
+        let laterals = [lp, la, lb].into_iter().flatten();
+        if laterals.clone().count() > 1 {
+            return Err(reject(RejectReason::CurvedOperandBoundary));
+        }
+        let pierce = match *model.vertex(corner) {
+            Vertex::Pierce { cylinder, .. } => {
+                let k = cyls
+                    .iter()
+                    .position(|c| c.surf == cylinder)
+                    .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?;
+                if laterals.clone().any(|j| j != k) {
                     return Err(reject(RejectReason::CurvedOperandBoundary));
                 }
-                (ClassIx::Plane(_), ClassIx::Plane(_)) => None,
-            },
-            ClassIx::Cyl(k) => match (plane_ix[a], plane_ix[b]) {
-                (ClassIx::Plane(_), ClassIx::Plane(_)) => Some(restated(k)?),
-                // A lateral's loop running along a second lateral is M6b's cylinder pair too.
-                _ => return Err(reject(RejectReason::CurvedOperandBoundary)),
-            },
+                Some(
+                    pierce_name_from_def(model, jd, corner, k, &cyls[k], &classes)
+                        .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
+                )
+            }
+            // A corner a cylinder did not make, on a lateral or beside one, is not this road's.
+            _ if laterals.clone().next().is_some() => {
+                return Err(reject(RejectReason::CurvedOperandBoundary));
+            }
+            _ => None,
         };
         // Edge `i`'s carried wall, read off `inc` and the edge — total even where the vertex
         // *names* below have to fall back or decline (see [`NamedRing`]).
@@ -362,6 +379,13 @@ fn loop_triples(
                 unreachable!("a lateral face beside a lateral neighbour was rejected above")
             }
         });
+        // A pierce name is the corner's whole name: independence, the straight run through a
+        // shared line and the concurrency, below, are the three-plane name's. Handing a pierce
+        // corner's class set on as a concurrency refuses the crossing box at a fillet's tangent
+        // point under a prism (`CoincidentNodes` — the scoreboard's
+        // `four_planes_at_a_fillets_tangent_point_take_a_second_boolean`); without it the
+        // three-plane names through that point fold into the pierce name (the seed's pierce
+        // corner on each further class, and the gate's shared-ruling record).
         if let Some(n) = pierce {
             out.push(n);
             continue;
@@ -383,11 +407,10 @@ fn loop_triples(
         // per face: four names, and from the face whose two edges ride the planes sharing a line
         // with its own, a triple that names no point. The judge reads that «point» as lying on
         // every class, and the alias table folds everything onto a corner elsewhere.
-        let classes = incident_plane_classes(corner, inc, plane_ix);
         let Some(t) = canonical_triple(jd, &classes) else {
             // Fewer than three classes: the vertex lies on fewer than three planes, so no triple
-            // names it — a genuine straight angle (or a coplanar seam, which no producer
-            // makes). Three or more with no
+            // names it — a straight angle no cylinder made (a cylinder's corner took its pierce
+            // name above), or a coplanar seam, which no producer makes. Three or more with no
             // independent triple cannot happen: two distinct planes through a point meet in a
             // line, and a third off that line completes the point.
             return Err(reject(if classes.len() >= 3 {

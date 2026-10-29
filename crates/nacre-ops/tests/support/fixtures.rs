@@ -225,6 +225,31 @@ pub fn plate_with_bore(m: &mut Model) -> Handle<Solid> {
     out
 }
 
+/// The plate `[0,40]²×[0,10]` with a `z` pin of radius `r` and height `h` standing at `at` fused
+/// on — volume `16000 + πr²h` wherever the pin stands on the top (`at[2] = 10`) or under the bottom
+/// (`at[2] = −h`), inside the plate's outline or over its edge.
+pub fn plate_with_pin(m: &mut Model, at: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
+    let plate = nacre_ops::fixtures::cuboid(
+        m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    m.rebuild_adjacency();
+    let pin = nacre_ops::fixtures::cylinder_with_seam(
+        m,
+        Point3::from_array(at),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        r,
+        h,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let out = boolean(m, BoolKind::Fuse, plate, pin).expect("the pinned plate")[0];
+    m.rebuild_adjacency();
+    out
+}
+
 /// The bored plate with the wall `[9,11]×[0,40]×[5,15]` fused on — its plane `x = 9` runs within
 /// the bore's radius, and its face across the bore.
 pub fn walled_bore(m: &mut Model) -> Handle<Solid> {

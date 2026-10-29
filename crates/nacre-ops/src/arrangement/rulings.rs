@@ -317,8 +317,9 @@ fn ruling_sweep(
             if same(node, a) || same(node, b) {
                 // The arc ends on this ruling: an edge of this cycle must lie there — a run this
                 // sweep states, or a plane-pair line another face states (`quiet_nodes`) — or the
-                // boundary crosses the ruling at a vertex: not a shape the ring producer makes,
-                // and not one to answer "no" to silently.
+                // boundary crosses the ruling at a vertex, which is not one to answer "no" to
+                // silently. A rim split into arcs, a corner on the ruling, is read as a rim
+                // (`lateral_shape`) and is not a cycle of this sweep.
                 if !run_nodes
                     .iter()
                     .chain(quiet_nodes.iter())

@@ -136,9 +136,9 @@ enum LineEvent {
 /// cylinder made can be one.
 type ClassLineStation = (LineEvent, (NodeId, combinatorics::EndPin));
 
-/// A lateral face as its cycles state it: its axial range `[lo, hi]`, its whole rims `(station,
-/// plane class)` in station order (0, 1 or 2 of them), and every other boundary cycle with whether
-/// it is an inner loop.
+/// A lateral face as its cycles state it: its axial range `[lo, hi]`, its rims — closed, or split
+/// into arcs — `(station, plane class)` in station order (0, 1 or 2 of them), and every other
+/// boundary cycle with whether it is an inner loop.
 struct LateralShape {
     range: [Rat; 2],
     rims: Vec<(Rat, usize)>,

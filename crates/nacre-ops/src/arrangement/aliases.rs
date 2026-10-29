@@ -24,9 +24,9 @@ pub(super) fn decline_to_reject(kind: DeclineKind, face: Option<Handle<Face>>) -
     }
 }
 
-/// **The alias table learns from the operands first**: every concurrency an operand's
-/// own topology knows — a vertex with four or more incident plane classes, carried by its rings as
-/// `NamedRing::concurrencies` — is recorded before any class is traced. The representative the
+/// **The alias table learns from the operands first**: every concurrency an operand's own topology
+/// knows — a vertex no cylinder made with four or more incident plane classes, carried by its rings
+/// as `NamedRing::concurrencies` — is recorded before any class is traced. The representative the
 /// ring already named the vertex by (`canonical_triple`) is then the representative the
 /// arrangement's own discoveries (`{wc} ∪ t` at a run vertex, a wall family's line) fold onto.
 pub(super) fn seed_from_operands(

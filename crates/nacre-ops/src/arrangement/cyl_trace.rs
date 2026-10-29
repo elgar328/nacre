@@ -124,8 +124,9 @@ pub(super) fn circle_on_class(
 }
 
 /// **A lateral face's shape as its cycles state it** — what both lateral roads read of a
-/// lateral's loops: its axial `range`, its whole rims (station and plane class, in station order),
-/// and every other cycle — a panel, a chain rim, a hole — with whether it is an inner loop. The
+/// lateral's loops: its axial `range`, its rims — each a closed rim edge or a rim split into arcs
+/// ([`arcs_on_one_class`]) — (station and plane class, in station order), and every other cycle —
+/// a panel, a chain rim, a hole — with whether it is an inner loop. The
 /// stations are read
 /// from the planes' world coefficients, so `range` is a second derivation of
 /// `CylFaceInfo::footprint.span` (the model side's: the outer loop's ⊥ carriers), and the two are held
@@ -164,6 +165,23 @@ pub(super) fn lateral_shape(
                 rims.push((t, *plane));
             }
             ring => {
+                // **A rim split into arcs is a rim.** Corners on the rim's own plane (a pin over a
+                // plate's edge: the edge's wall meets the rim there) cut the closed rim edge into
+                // arcs, and the loop arrives as a ring — but a simple loop of arcs of one circle
+                // goes once round it, so it is the whole circle at that station, as
+                // `LoopRing::Rim` is. Read as a hole or a panel it lies wholly on its own class
+                // and has nothing to bound with. The ring stays as the model has it
+                // (`combinatorics::FaceLoops::cycles`): «is this a rim» is a question about the
+                // face's shape, asked here, where both lateral roads read it — a different question
+                // from the gate's whole rim (`planes::cyl_gate::only_whole_rims`).
+                if let Some(nr) = ring.poly()
+                    && let Some(plane) = arcs_on_one_class(&nr.walls)
+                {
+                    let t = station(plane)?;
+                    widen(t);
+                    rims.push((t, plane));
+                    continue;
+                }
                 // The cycle's arcs each lie on their rim's ⊥ class; its rulings have no station of
                 // their own.
                 if let Some(nr) = ring.poly() {
@@ -199,6 +217,31 @@ pub(super) fn lateral_shape(
         rims,
         cycles: rest,
     })
+}
+
+/// The one plane class every wall of a ring is an arc on, `None` when a wall is not an arc or two
+/// arcs ride different classes. A lateral's arcs are its own cylinder's, so they lie on one
+/// circle, and a simple loop of arcs of one circle runs one way round it — asserted, as the
+/// producer's premise.
+fn arcs_on_one_class(walls: &[crate::combinatorics::Wall]) -> Option<usize> {
+    use crate::combinatorics::Wall;
+    let Some(&Wall::Arc { plane, .. }) = walls.first() else {
+        return None;
+    };
+    if !walls
+        .iter()
+        .all(|w| matches!(*w, Wall::Arc { plane: c, .. } if c == plane))
+    {
+        return None;
+    }
+    debug_assert!(
+        walls.windows(2).all(|w| match (w[0], w[1]) {
+            (Wall::Arc { ccw: d0, .. }, Wall::Arc { ccw: d1, .. }) => d0 == d1,
+            _ => false,
+        }),
+        "a rim split into arcs runs one way round: {walls:?}"
+    );
+    Some(plane)
 }
 
 /// **Lay the carved extents over the outer answer and hand back *exclusive* spans.**
@@ -396,8 +439,10 @@ fn cycle_on_class(
         |_, _| Some(0),
     ) {
         combinatorics::RingWalk::Met(f) => f,
-        // A hole ring lying wholly in the class has no thickness to bound anything with, and a
-        // node the walk cannot name is the same refusal every other consumer makes of it.
+        // A hole ring lying wholly in the class has no thickness to bound anything with (a rim
+        // split into arcs lies wholly in its class too, and `lateral_shape` reads it as a rim
+        // before this road), and a node the walk cannot name is the same refusal every other
+        // consumer makes of it.
         combinatorics::RingWalk::AllOn | combinatorics::RingWalk::Unnameable => {
             return Err(DeclineKind::CylFaceHole);
         }

@@ -65,14 +65,6 @@ fn op(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Hand
     out
 }
 
-/// The plate with a pin of radius `r`, height 3, standing on its top at `(x, y)` — volume
-/// `16000 + 3πr²`.
-fn plate_with_pin(m: &mut Model, x: f64, y: f64, r: f64) -> Handle<Solid> {
-    let plate = cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
-    let pin = z_cylinder(m, [x, y, 10.0], r, 3.0);
-    op(m, BoolKind::Fuse, plate, pin)
-}
-
 /// A `5×5` box over `z0..z0+h`, turned `deg` about `z` around its own centre, centred on
 /// `(cx, cy)`.
 fn turned_box(m: &mut Model, deg: i128, c: [i128; 2], z0: f64, h: f64) -> Handle<Solid> {
@@ -223,7 +215,7 @@ fn nameless_classes_beside_world_cylinders() {
             name: "box turned 37 beside a pin",
             build: |m| {
                 (
-                    plate_with_pin(m, 10.0, 10.0, 2.0),
+                    plate_with_pin(m, [10.0, 10.0, 10.0], 2.0, 3.0),
                     turned_box(m, 37, [30, 30], 5.0, 10.0),
                 )
             },
@@ -240,7 +232,7 @@ fn nameless_classes_beside_world_cylinders() {
             name: "box turned 37 around a pin",
             build: |m| {
                 (
-                    plate_with_pin(m, 30.0, 30.0, 1.0),
+                    plate_with_pin(m, [30.0, 30.0, 10.0], 1.0, 3.0),
                     turned_box(m, 37, [30, 30], 8.0, 10.0),
                 )
             },
@@ -461,7 +453,7 @@ fn nameless_classes_beside_world_cylinders() {
             name: "a pin over the plate's edge, a wall plane through it",
             build: |m| {
                 (
-                    plate_with_pin(m, 39.0, 20.0, 2.0),
+                    plate_with_pin(m, [39.0, 20.0, 10.0], 2.0, 3.0),
                     turned_box(m, 37, [30, 28], 5.0, 10.0),
                 )
             },
@@ -868,7 +860,7 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                 build: |m| {
                     let t = turned_box(m, 37, [16, 18], 5.0, 10.0);
                     (
-                        plate_with_pin(m, 10.0, 10.0, 2.0),
+                        plate_with_pin(m, [10.0, 10.0, 10.0], 2.0, 3.0),
                         bar_and(m, [11.0, 13.0], [5.0, 15.0], t),
                     )
                 },

@@ -944,7 +944,7 @@ pub enum DeclineKind {
     /// `unreachable!()` with the whole suite and the ignored sweep green.
     NoPinOnLine,
     /// A cylinder face could not state its shape exactly — a loop could not be named, a class has
-    /// no exact station, or its whole rims are more than two or
+    /// no exact station, or its rims (closed, or split into arcs) are more than two or
     /// not at the ends of its range (a panel and a chain rim are stated, not
     /// declined).
     CylSpan,
