@@ -331,13 +331,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
   `MergedCircle`·`MergedRuling`)이고, 앞의 둘은 `Piece` 로의 `From` 이 있으며 `MergedCircle` 은 끝이 없고 기여마다 각 범위를 든다.
   분할의 입력을 `Piece` 로 할지는 재지 않았다. 링을 읽는 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)은 한 타입이
   아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다.
-- **공유 룰링의 선을 기록에서 읽는 독자와 계수에서 다시 구하는 독자.** 기록은 선 위의 유리수 점(`SharedRuling::at`)을 들고,
-  `shared_line`·`record_shared_ruling` 은 그 점에서 읽는다. 자기접촉 판정의 `ruling_meets_lateral`, 차트 정거장 접기의
-  `second_chord_first`, 결과 이름의 공유 선 갈래(`assembly/naming.rs` 의 `side_of == Some(0)`)는 두 클래스의 `world_rat` 에서
-  선을 다시 구해, 이름 없는 짝(단면 클래스의 경첩 기록)에서 기권한다. 오늘 그 기권은 닿지 않거나(단면 클래스의 면은 옆면
-  상자에서 떨어져 있어 그 선 위의 간선이 옆면 안에 없다; 정거장 접기는 `stated_by` 가 둘인 기록만 읽는다) 보수적이다(꼭짓점이
-  남는다). 모두 기록의 점을 읽게 하면 경첩 기록이 다른 기록과 같은 길로 읽힌다. `line_along_ruling` 은 세계 진술이 없는
-  클래스가 낀 짝을 저장 향의 구간 부호(`Judge::stored_line_along`)로 대신 읽는다.
 
 ### 구간 이름의 순위는 별도 집합이 든다
 
