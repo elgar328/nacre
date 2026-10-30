@@ -464,6 +464,72 @@ fn a_body_standing_on_itself_at_a_corner_is_refused() {
     }
 }
 
+/// **A body standing on itself at one point of a face with an arc is refused**, in either operand
+/// order — the notched twin of `a_body_standing_on_itself_at_a_corner_is_refused`: a cylinder
+/// notches the block's top at its far corner, so the top face's outline is a mixed ring. No edge of
+/// the body lies on that face at the corner, so only the point arm asks, and the corner — a
+/// three-plane point with rational coordinates — is read against that ring by
+/// `rational_point_in_ring`. The notch sits where no plane of the prism meets its side, so the gate
+/// passes the pair. The twin without the leg is two bodies.
+#[test]
+fn a_body_standing_on_its_own_notched_block_at_a_corner_is_refused() {
+    let square: &[[f64; 2]] = &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    let u_shape: &[[f64; 2]] = &[
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 4.0],
+        [-8.0, 4.0],
+        [-8.0, 1.0],
+        [0.0, 1.0],
+    ];
+    let notch = std::f64::consts::PI * 0.25 / 4.0 * 5.0; // a quarter disk of radius 0.5, 5 deep
+    for (what, top, joined) in [("alone", square, false), ("with a leg", u_shape, true)] {
+        for swapped in [false, true] {
+            let at = format!("{what}, swapped = {swapped}");
+            let mut m = Model::new();
+            let world = SketchFrame::world(&m, Axis::Z);
+            let block = block_below(
+                &mut m,
+                world,
+                [[-10.0, -8.0], [3.0, -8.0], [3.0, 4.0], [-10.0, 4.0]],
+            );
+            let floor = offset_of(&mut m, world, -6.0);
+            let disk = nacre_ops::from_paths(vec![
+                nacre_ops::Ring2d::circle(Point2::from_array([3.0, 4.0]), 0.5).expect("a circle"),
+            ])
+            .expect("a disk")
+            .remove(0);
+            let cutter = extrude_on(&mut m, floor, disk, 7.0);
+            let a = boolean(&mut m, BoolKind::Cut, block, cutter).expect("the notch")[0];
+            m.rebuild_adjacency();
+            let f = slanted(&mut m);
+            let b = prism_on(&mut m, f, top, 1.0);
+            let (x, y) = if swapped { (b, a) } else { (a, b) };
+            match (joined, boolean(&mut m, BoolKind::Fuse, x, y)) {
+                (
+                    true,
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::SelfTouchingResult,
+                        ..
+                    }),
+                ) => {}
+                (false, Ok(solids)) => {
+                    m.rebuild_adjacency();
+                    assert_eq!(solids.len(), 2, "{at}: two bodies");
+                    assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                    let vol: f64 = solids
+                        .iter()
+                        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                        .sum();
+                    let want = 780.0 - notch + 1.0;
+                    assert!((vol - want).abs() < 1e-6, "{at}: volume {vol}, want {want}");
+                }
+                (_, other) => panic!("{at}: {other:?}"),
+            }
+        }
+    }
+}
+
 /// **A bar resting on a notched face of its own block is refused** — the face's outline carries the
 /// arc a cylinder cut at its far corner; the bar's bottom edge lies inside the face, so the edge
 /// test reads it against that ring (its arc and pierce corners) and the point arm reads the edge's

@@ -1264,6 +1264,92 @@ fn the_gate_reads_faces_at_every_site() {
     assert!(out.is_empty(), "{out:?}");
 }
 
+/// **A component with no vertex is read on its face, holes and all.** A tube offers no vertex,
+/// so its witness is a point its annular cap names between its rims, and a pin standing in its
+/// bore is asked along rays that leave through the caps' holes. Both questions are the one
+/// coordinate reading of a face (`combinatorics::rational_point_in_face`), and here the first probe
+/// asked decides the nesting, so nothing behind it is reached.
+///
+/// (a) A thin tube (bore 2.5 in 3) round a pin of radius 2: the first candidate, at half the outer
+/// radius, lies in the bore and inside the pin, so a witness taken without asking the face would
+/// put the tube inside the pin. (b) A pin floating in a tube's bore: the first direction from the
+/// pin's cap, the axis, leaves through one cap's hole, so a face read without its holes would
+/// count one crossing and put the pin inside the tube. Either way the fuse is two bodies.
+#[test]
+fn a_component_with_no_vertex_is_read_on_its_face_holes_and_all() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism = |m: &mut Model, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, Axis::Z);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
+        };
+        solid
+    };
+    let shift = |m: &mut Model, s: Handle<Solid>, dz: f64| -> Handle<Solid> {
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_exact::Isometry::translation([r(0.0), r(0.0), r(dz)]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let volume = |m: &Model, s: Handle<Solid>| nacre_props::mass_props(m, s).expect("props").volume;
+    let pi = std::f64::consts::PI;
+    // `(tube's outer, bore, height)` and `(pin's radius, height, rise)`.
+    for (what, (big, bore, h), (r, ph, rise)) in [
+        (
+            "a thin tube round a thick pin",
+            (3.0, 2.5, 3.0),
+            (2.0, 5.0, -1.0),
+        ),
+        (
+            "a pin floating in a tube's bore",
+            (3.0, 1.5, 3.0),
+            (1.0, 2.0, 0.5),
+        ),
+    ] {
+        let want = pi * (big * big - bore * bore) * h + pi * r * r * ph;
+        let mut m = Model::new();
+        let tube = prism(
+            &mut m,
+            vec![
+                stated::circle(p2(2.0, 2.0), big),
+                stated::circle(p2(2.0, 2.0), bore),
+            ],
+            h,
+        );
+        let pin = prism(&mut m, vec![stated::circle(p2(2.0, 2.0), r)], ph);
+        let pin = shift(&mut m, pin, rise);
+        m.rebuild_adjacency();
+        let out =
+            boolean(&mut m, BoolKind::Fuse, tube, pin).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        assert_eq!(out.len(), 2, "{what}: two bodies, neither inside the other");
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{what}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
+        assert!((v - want).abs() < 1e-9, "{what}: {v} vs {want}");
+    }
+}
+
 /// **The common perpendicular is the only direction that sees this pair apart.**
 ///
 /// A 20 × 20 plate 8 thick, every corner filleted `5`, and a `d 7` drill laid along `x` through

@@ -2,8 +2,9 @@
 //!
 //! `clippy.toml` names calls the workspace makes only in the places that own them — the f64 cache
 //! write doors (product code reaches them through `nacre-ops`' realization funnel alone), rayon's
-//! parallel entry points (`par.rs` alone), and the two ring predicates a shared rule sits above
-//! (`point_in_ring` under `cell_inside`'s retry, `side_of` under `ring_against_plane`'s walk) — and
+//! parallel entry points (`par.rs` alone), and the three ring predicates a shared rule sits above
+//! (`point_in_ring` under `cell_inside`'s retry, `side_of` under `ring_against_plane`'s walk,
+//! `point_in_mixed_ring` under `rational_point_in_ring`'s order of causes) — and
 //! the pre-commit hook's `clippy -D warnings` refuses one anywhere else. An exemption is one
 //! attribute (`allow`, `expect`, a `cfg_attr` around either), so a caller who meets the lint could
 //! add one and be through. This makes that a second, visible step: every exemption in the
@@ -30,7 +31,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Every path `clippy.toml` disallows.
-const DISALLOWED: [&str; 20] = [
+const DISALLOWED: [&str; 21] = [
     "nacre_topo::Model::push_vertex",
     "nacre_topo::Model::refine_vertex_cache",
     "nacre_topo::Model::push_plane",
@@ -51,6 +52,7 @@ const DISALLOWED: [&str; 20] = [
     "rayon::scope",
     "nacre_ops::combinatorics::ring_walk::point_in_ring",
     "nacre_ops::combinatorics::ring_walk::side_of",
+    "nacre_ops::combinatorics::mixed_ring::point_in_mixed_ring",
 ];
 
 /// Every exemption, per file (relative to `crates/`): how many, and why it is not a way around.
@@ -96,9 +98,10 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     ),
     (
         "nacre-ops/src/combinatorics/in_faces.rs",
-        1,
+        2,
         "`side_of`: a point question in `point_in_component` (does the query lie on the face's \
-         plane)",
+         plane); `point_in_mixed_ring`: `rational_point_in_ring`'s mixed arm, the one coordinate \
+         reading of a ring",
     ),
     (
         "nacre-ops/src/arrangement/aliases.rs",

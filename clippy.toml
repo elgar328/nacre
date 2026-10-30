@@ -43,4 +43,8 @@ disallowed-methods = [
     # the `side_of` call: a road that walks a ring without it is outside — `point_in_mixed_ring`
     # walks chart coordinates (`QuadVal`), its corner rule `ray_step_crossing`'s, the planar roads'.
     { path = "nacre_ops::combinatorics::ring_walk::side_of", reason = "walk a ring through `ring_against_plane` (the flank rule lives there); a single point's side is asked with an `expect` saying so and its row in nacre-ops' tests/instruments/disallowed.rs" },
+    # A rational point is read against a ring once, in `rational_point_in_ring`, which says first
+    # what the point's circumstance cannot cure (a silent class's box, a corner with no rational
+    # meet) and forks a mixed ring to this walk. A caller that walks the ring itself skips both.
+    { path = "nacre_ops::combinatorics::mixed_ring::point_in_mixed_ring", reason = "read a rational point through `combinatorics::rational_point_in_ring` (or a face through `rational_point_in_face`): the order of causes lives there" },
 ]

@@ -186,9 +186,9 @@ fn ring_interior_candidates(
 /// The witness is a **cap disk's centre**: the face is planar with a circular outer bound, so the
 /// centre is the axis point at that plane's own axis parameter — the rule `bands.rs` already reads
 /// a class's position along an axis with ([`axis_param_of_plane`](crate::planes::axis_param_of_plane)).
-/// It is strictly inside the circle for any positive radius, so nothing needs to test that.
+/// It is strictly inside the circle for any positive radius, so a whole cap answers with it.
 ///
-/// **A holed cap names a point between its rims** ([`holed_cap_witness`]). The centre
+/// **A holed cap names a point between its rims** ([`holed_cap_candidates`]). The centre
 /// of an annulus is in its hole, not on the face, and a witness that is not on the boundary is a
 /// confidently wrong depth rather than an abstention — but passing a holed cap over
 /// leaves a **tube** (two annular caps, two bands, no vertex anywhere) with no witness at all and
@@ -197,13 +197,17 @@ fn ring_interior_candidates(
 /// cut cap already uses: candidates derived from the face's own radii, and the **face asked** which
 /// is on it. A face none of them is on is still passed over.
 ///
+/// **Which candidate is on the face is one question for every cap**, the one coordinate reading
+/// of a face ([`rational_point_in_face`]): the first it says [`Said::In`] of is the witness, and
+/// every other answer moves to the next candidate. `Err` is that reading's, a producer defect.
+///
 /// Several directions per point, because one ray can graze and the remedy is another direction;
 /// the order is not load-bearing.
 pub(crate) fn coord_probes(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     faces: &[CompFace],
-) -> Vec<Probe> {
+) -> Result<Vec<Probe>, BoolError> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let mut out = Vec::new();
@@ -216,7 +220,7 @@ pub(crate) fn coord_probes(
         // circle ([`face_circle`]); its centre may then
         // lie **on** the chord rather than inside the face — exactly what happens when the axis
         // rides the wall, which makes the chord a diameter. So the centre is offered as one
-        // candidate among several and the **ring itself** says which one is inside.
+        // candidate among several and the **face** says which one is on it.
         let def = match &f.outer {
             BoundEdges::Circle(def) => &**def,
             BoundEdges::Ring(r) => match face_circle(jd, *q, r) {
@@ -239,51 +243,45 @@ pub(crate) fn coord_probes(
         else {
             continue;
         };
-        let p = if !f.inner.is_empty() {
-            match holed_cap_witness(jd, cyls, *q, def, &centre, f) {
-                Some(p) => p,
-                None => continue,
-            }
+        let cand = if !f.inner.is_empty() {
+            holed_cap_candidates(def, &centre, f)
         } else {
             match &f.outer {
-                // A whole circle: the centre is strictly inside for any positive radius, and asking
-                // would only add a road where none is needed. Today's answer, unchanged.
-                BoundEdges::Circle(_) => centre,
-                // **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's own
-                // rational axes ([`Chart2dRat::axes`] — the one spelling for "a rational basis of this
-                // plane"), with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for `x = |e|²`, and
-                // `x/(x+1)² ≤ 1/4` at its maximum, so every candidate is strictly inside the circle —
-                // a rational inequality, no magic constant and no halving loop.
+                // A whole circle: the centre alone, strictly inside for any positive radius.
+                BoundEdges::Circle(_) => Some(vec![centre]),
+                // **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's
+                // own rational axes ([`Chart2dRat::axes`] — the one spelling for "a rational basis
+                // of this plane"), with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for
+                // `x = |e|²`, and `x/(x+1)² ≤ 1/4` at its maximum, so every candidate is strictly
+                // inside the circle — a rational inequality, no magic constant and no halving loop.
                 //
                 // **Which one is inside the *face* is asked, not derived.** Deriving it would
-                // mean spelling "the material side of the chord" in some frame, and this road has no
-                // oracle for that sign; the ring already answers the question exactly
-                // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
-                // centre goes first, so a cap the wall cuts off-centre still answers with it.
+                // mean spelling "the material side of the chord" in some frame, and this road has
+                // no oracle for that sign; the face already answers the question exactly
+                // ([`rational_point_in_face`]), and an abstention just moves to the next
+                // candidate. The centre goes first, so a cap the wall cuts off-centre still
+                // answers with it.
                 //
                 // Measured: the centre and the axis steps answer 40 of 40 faces of the
                 // through-axis corpus; the offset wall's thin segment answers by a chord point (8
                 // faces), and the fall-through below is the named residual — a segment cut again
                 // along the chord's own normal line.
-                _ => {
-                    let BoundEdges::Ring(r) = &f.outer else {
-                        continue;
-                    };
-                    let Some(cand) = ring_interior_candidates(jd, *q, def, &centre, r) else {
-                        continue;
-                    };
-                    let Some(coeffs) = jd.world_rat(*q) else {
-                        continue;
-                    };
-                    match cand
-                        .into_iter()
-                        .find(|c| point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true))
-                    {
-                        Some(c) => c,
-                        None => continue,
-                    }
-                }
+                BoundEdges::Ring(r) => ring_interior_candidates(jd, *q, def, &centre, r),
+                BoundEdges::Lateral(_) => continue,
             }
+        };
+        let Some(cand) = cand else {
+            continue;
+        };
+        let mut on_face = None;
+        for c in cand {
+            if matches!(rational_point_in_face(jd, cyls, *q, &c, f)?, Said::In) {
+                on_face = Some(c);
+                break;
+            }
+        }
+        let Some(p) = on_face else {
+            continue;
         };
         out.extend(
             probe_dirs(&def.dir())
@@ -291,7 +289,7 @@ pub(crate) fn coord_probes(
                 .map(|dir| Probe::Coord { p, dir }),
         );
     }
-    out
+    Ok(out)
 }
 
 /// The directions a coordinate probe casts along: the axis both ways and one perpendicular both
@@ -361,29 +359,27 @@ pub(crate) fn corner_probes(
     out
 }
 
-/// **A rational point on a holed planar cap** — a face whose outer bound is a circle (or a cut
+/// **The candidate points of a holed planar cap** — a face whose outer bound is a circle (or a cut
 /// cap that still has one, [`face_circle`]) and whose holes are circles or rings: the annular cap
 /// of a tube, a boss's cap around a pin's hole.
 ///
-/// The candidates are **derived from the face's own radii** and the cylinder's own rational
-/// frame, then the **face is asked**: `centre + ρ·û` for `û` each of the four rational unit
-/// directions of the circle's chart (`ref_dir/|ref_dir|`, `(m × ref_dir)/(|m||ref_dir|)` and
-/// their negatives — rational exactly when both norms are, which every prism on a world frame
-/// has; a rotated frame has none and the face is passed over) and `ρ` the half-radius and, per
-/// circle hole, the **mid-radius** `(R + r_hole)/2` — the ring between two concentric rims. Which
-/// candidate is *on the face* is an exact question: inside the outer (the circle's radial side,
-/// or the mixed ring's parity) and outside every hole.
+/// The candidates are **derived from the face's own radii** and the cylinder's own rational frame:
+/// `centre + ρ·û` for `û` each of the four rational unit directions of the circle's chart
+/// (`ref_dir/|ref_dir|`, `(m × ref_dir)/(|m||ref_dir|)` and their negatives — rational exactly when
+/// both norms are, which every prism on a world frame has; a rotated frame has none and the face is
+/// passed over) and `ρ` the half-radius and, per circle hole, the **mid-radius** `(R + r_hole)/2` —
+/// the ring between two concentric rims, in that order: radius by radius, each in the four
+/// directions. Which candidate is *on the face* is [`coord_probes`]' question, the one it asks of
+/// every cap's candidates.
 ///
-/// `None`: no rational frame, or no candidate on the face — the caller passes the face over.
-fn holed_cap_witness(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    plane: usize,
+/// `None`: no rational frame or radius — the caller passes the face over. A candidate whose
+/// arithmetic overflows ends the list there: those before it are still asked.
+fn holed_cap_candidates(
     def: &nacre_topo::CylinderDef,
     centre: &[nacre_exact::Rat; 3],
     f: &CompFace,
-) -> Option<[nacre_exact::Rat; 3]> {
-    use nacre_exact::{Orient, Rat, inv_sqrt_rat, quad::cylinder_radial_side};
+) -> Option<Vec<[nacre_exact::Rat; 3]>> {
+    use nacre_exact::{Rat, inv_sqrt_rat};
     let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
         let mut acc = Rat::from_int(0);
         for k in 0..3 {
@@ -408,7 +404,7 @@ fn holed_cap_witness(
     let dirs = [u1, neg(&u1)?, u2, neg(&u2)?];
     // Probe circles midway between the outer rim and each hole's, at rational radii — which
     // needs the radii themselves. A face whose squared radii have no rational root is not probed
-    // this way; `None` is the answer this function already gives when it cannot form a witness.
+    // this way; `None` is the answer this function already gives when it has no rational frame.
     let big_r = def.radius_rat()?;
     let half = Rat::new(1, 2)?;
     let mut radii = vec![big_r.checked_mul(half)?];
@@ -417,46 +413,24 @@ fn holed_cap_witness(
             radii.push(big_r.checked_add(h.radius_rat()?)?.checked_mul(half)?);
         }
     }
-    let coeffs = jd.world_rat(plane);
-    // On the face: inside the outer, outside every hole — each an exact question of the bound.
-    let on_face = |p: &[Rat; 3]| -> Option<bool> {
-        let inside_outer = match &f.outer {
-            BoundEdges::Circle(_) => {
-                cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) == Orient::Negative
-            }
-            BoundEdges::Ring(r) => point_in_mixed_ring(jd, cyls, coeffs.as_ref()?, p, r)?,
-            BoundEdges::Lateral(_) => return None,
-        };
-        if !inside_outer {
-            return Some(false);
-        }
-        for hole in &f.inner {
-            let inside_hole = match hole {
-                BoundEdges::Circle(h) => {
-                    cylinder_radial_side(p, &h.origin(), &h.dir(), h.r2()) != Orient::Positive
-                }
-                BoundEdges::Ring(r) => point_in_mixed_ring(jd, cyls, coeffs.as_ref()?, p, r)?,
-                BoundEdges::Lateral(_) => return None,
-            };
-            if inside_hole {
-                return Some(false);
-            }
-        }
-        Some(true)
-    };
+    let mut out = Vec::new();
     for rho in &radii {
         for u in &dirs {
-            let step = scale(u, *rho)?;
-            let mut p = *centre;
-            for k in 0..3 {
-                p[k] = p[k].checked_add(step[k])?;
-            }
-            if on_face(&p)? {
-                return Some(p);
-            }
+            let at = || -> Option<[Rat; 3]> {
+                let step = scale(u, *rho)?;
+                let mut p = *centre;
+                for k in 0..3 {
+                    p[k] = p[k].checked_add(step[k])?;
+                }
+                Some(p)
+            };
+            let Some(p) = at() else {
+                return Some(out);
+            };
+            out.push(p);
         }
     }
-    None
+    Some(out)
 }
 
 /// **Two rational planes whose meet is the line through `p` along `dir`.**

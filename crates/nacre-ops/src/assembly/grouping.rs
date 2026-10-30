@@ -115,7 +115,7 @@ pub(super) fn group_faces(
     // lone cylinder, whose boundary is two disks and a band and whose vertex count is therefore
     // **zero**. `coord_probes` names a
     // point on that boundary instead of a vertex of it.
-    let probes_of = |c: usize| -> Vec<combinatorics::Probe> {
+    let probes_of = |c: usize| -> Result<Vec<combinatorics::Probe>, BoolError> {
         // Each name once, in first-seen order: a vertex sits on three faces' rings, and offered
         // three times it makes an exhausted list cast the same rays three times over (the corner
         // Commons: six probes for two points). The first deciding probe is the same, so the answers
@@ -140,10 +140,10 @@ pub(super) fn group_faces(
                     .iter()
                     .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
             );
-            out.extend(combinatorics::coord_probes(jd, cyls, &comp_faces[c]));
-            out
+            out.extend(combinatorics::coord_probes(jd, cyls, &comp_faces[c])?);
+            Ok(out)
         } else {
-            named
+            Ok(named)
         }
     };
     // **The supply a component's *edges* name, tried only when its corners are exhausted**.
@@ -269,7 +269,7 @@ pub(super) fn group_faces(
         // component. Trying them in turn is what the cavity search does, and for the same reason —
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
-        let probes = probes_of(c);
+        let probes = probes_of(c)?;
         let mut said = combinatorics::WitnessTally::default();
         let depth = first_deciding(
             &probes,
@@ -313,7 +313,7 @@ pub(super) fn group_faces(
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let probes = probes_of(d);
+                let probes = probes_of(d)?;
                 let mut said = combinatorics::WitnessTally::default();
                 let containers = first_deciding(
                     &probes,
@@ -352,7 +352,7 @@ pub(super) fn group_faces(
                                 }
                                 let mut said = combinatorics::WitnessTally::default();
                                 let v = first_deciding(
-                                    &probes_of(c),
+                                    &probes_of(c)?,
                                     || edge_probes_of(c),
                                     &mut said,
                                     |x| {
