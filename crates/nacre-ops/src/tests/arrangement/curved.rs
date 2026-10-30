@@ -383,8 +383,8 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
 /// Pierce-named ends, no plain segments) and two cap chords (`Lo`/`Hi` roots on the cap classes).
 /// With the pair's record removed the same trace is empty: the negative control that pins "an
 /// empty record changes nothing", which is the population an unconditionally-firing arm would
-/// break (14 arc-family tests red, measured). With a sectioning record instead, the rulings and
-/// no chord.
+/// break (14 arc-family tests red, measured). With a sectioning record instead, the same rulings
+/// and chords.
 #[test]
 fn the_gates_record_arms_the_ruling_trace() {
     let (m, _plate, boss, mut setup, wc) = armed_through_boss();
@@ -456,10 +456,11 @@ fn the_gates_record_arms_the_ruling_trace() {
         tr0.rulings.is_empty() && tr0.segs.is_empty(),
         "empty record, empty road"
     );
-    // A sectioning record draws the rulings and no chord: the chord asks for a cut
-    // (`WorkingCyl::cuts`), the rulings for either (`WorkingCyl::draws_rulings`). The gate
-    // sections only a cylinder with no whole rim (`class_meet`'s `Sectioned` arm), so no boolean
-    // asks a sectioned pair for a chord, and the record is set by hand on the armed pair.
+    // A sectioning record draws the rulings and the chords: both ask whether the class draws the
+    // rulings (`WorkingCyl::draws_rulings`). The gate sections only a class with no world
+    // statement, so the record is set by hand on the armed (named) pair, and this pins the exact
+    // roots; a sectioned class's interval roots are the scoreboard's
+    // (`a_plane_along_the_axis_sections_a_cylinder_with_a_whole_rim`).
     setup.cyls[0].records.push((
         wc,
         crate::planes::CylRecord::Silent(crate::planes::Silence::Sectioned),
@@ -483,7 +484,14 @@ fn the_gates_record_arms_the_ruling_trace() {
         2,
         "a sectioning record draws the rulings"
     );
-    assert!(tr1.segs.is_empty(), "and no chord: {:?}", tr1.segs.len());
+    assert_eq!(tr1.segs.len(), 2, "and a chord per cap");
+    for c in &tr1.segs {
+        assert_eq!(
+            c.end_h,
+            [combinatorics::EndPin::Cylinder; 2],
+            "a sectioned chord's ends are the two roots"
+        );
+    }
 }
 
 /// **The armed arrangement digests the rectangle** — production bricks end to end on the

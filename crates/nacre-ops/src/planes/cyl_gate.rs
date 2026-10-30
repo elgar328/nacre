@@ -183,24 +183,15 @@ pub(crate) fn cylinder_gate(
     // only its own axis line, and an interval proves two points apart, never one.
     //
     // An apart class's line with another record is not asked off the lateral: its arrangement
-    // draws none of the cylinder's rulings ([`WorkingCyl::draws_rulings`]). That a face of it on
-    // such a line is safe is measured in one placement only (design 「인구 게이트」,
-    // `Silence::Apart`) — a risk, not a proof. Nor can an apart class share a cylinder with a
-    // sectioned one — `Apart` asks for only whole rims and `Sectioned` for none ([`class_meet`]),
-    // and every cylinder of the table has a lateral row (the table refuses a class with none), so
-    // only whole rims means some.
+    // draws none of the cylinder's rulings ([`WorkingCyl::draws_rulings`]), and that includes a
+    // sectioned class of the same cylinder. An apart plane that does not run along the axis meets
+    // any other record's plane along the axis in a line across it, which is no ruling. One that
+    // runs along the axis is apart only where neither the intervals nor the exact reading before
+    // its turn part it from the radius ([`class_meet`]); none has been built, so that such a
+    // plane's line with another record is safe on a lateral face is a risk, not a proof.
     let mut hinged: Vec<(usize, SharedRuling)> = Vec::new();
     let mut grazed: Vec<(usize, GrazeLine)> = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
-        debug_assert!(
-            meeting(ci, ClassMeet::Silent(Silence::Apart))
-                .next()
-                .is_none()
-                || meeting(ci, ClassMeet::Silent(Silence::Sectioned))
-                    .next()
-                    .is_none(),
-            "a cylinder with only whole rims is sectioned by another class"
-        );
         let mut pieces: Option<Vec<Footprint>> = None;
         for c in meeting(ci, ClassMeet::Silent(Silence::Sectioned)) {
             let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
@@ -455,8 +446,9 @@ struct PairCx<'a, 'j> {
 ///
 /// With `n` the class's rational normal and `m`/`o`/`r` the cylinder's raw axis/origin/radius:
 /// - a class with no world statement is silent about the cylinder or refused here
-///   ([`Silence`]; `Sectioned` is a candidate [`cylinder_gate`] settles once every pair is
-///   asked); a `Wide` name is refused for its width;
+///   ([`Silence`], asked beside, grazing, sectioned, apart in that order; `Sectioned` is a
+///   candidate [`cylinder_gate`] settles once every pair is asked); a `Wide` name is refused for
+///   its width;
 /// - `n × m = 0` — a perpendicular cut, [`ClassMeet::Across`], a cap seated flush on the other
 ///   body included;
 /// - `n · m = 0` — a wall parallel to the axis. It must provably miss the **rectangle** the
@@ -522,24 +514,22 @@ fn class_meet(
         if let Stance::Beside(side) = stance {
             return Ok((ClassMeet::Silent(Silence::Beside(side)), Vec::new()));
         }
+        let apart = faces_apart(model, faces, plane_ix, c, &cyl.boxes);
         // A tangent plane divides nothing, so the rims are not asked — before the filled reading,
         // which asks them.
-        if stance == Stance::Grazes && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
+        if stance == Stance::Grazes && apart {
             return Ok((ClassMeet::Silent(Silence::Grazes), Vec::new()));
         }
-        if whole_rims[ci] && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
-            return Ok((ClassMeet::Silent(Silence::Apart), Vec::new()));
-        }
         // With every face of the class apart from the lateral boxes, a plane cutting the
-        // lateral in rulings draws them on its own arrangement only ([`Silence::Sectioned`]).
-        // A cylinder with a whole rim is not sectioned: a planar face carries that rim as a
-        // circle loop, and the chord such a plane cuts from it is read only on a recorded
-        // pair.
-        if stance == Stance::Rulings
-            && !any_whole_rim(model, faces, cyl.surf)
-            && faces_apart(model, faces, plane_ix, c, &cyl.boxes)
-        {
+        // lateral in rulings draws them on its own arrangement only ([`Silence::Sectioned`]),
+        // and a disk of the cylinder on the class its chord — the section drawn truly, whatever
+        // the rims. Asked before the filled reading: a class that read one cylinder filled and
+        // another, inside it, truly would meet itself across the two readings (`LabelConflict`).
+        if stance == Stance::Rulings && apart {
             return Ok((ClassMeet::Silent(Silence::Sectioned), Vec::new()));
+        }
+        if whole_rims[ci] && apart {
+            return Ok((ClassMeet::Silent(Silence::Apart), Vec::new()));
         }
         return Err(undecided());
     };
@@ -1972,28 +1962,6 @@ fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> b
     })
 }
 
-/// Whether some lateral loop of the cylinder is a whole circle — a rim a planar face then carries
-/// as a circle loop (a disk's outer, a round hole). A lateral row with no face cannot say, and
-/// answers `true`.
-fn any_whole_rim(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> bool {
-    faces.iter().any(|row| {
-        let FaceRow::Cylinder(cf) = row else {
-            return false;
-        };
-        if cf.surf != surf {
-            return false;
-        }
-        let Some(fh) = cf.face else { return true };
-        let f = model.face(fh);
-        std::iter::once(&f.outer).chain(f.inner.iter()).any(|lp| {
-            lp.half_edges.len() == 1 && {
-                let [a, b] = model.edge(lp.half_edges[0].edge).vertices;
-                a == b
-            }
-        })
-    })
-}
-
 /// **Where a plane with no world statement stands against a cylinder** — what the gate's nameless
 /// arm reads before anything else.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2394,8 +2362,9 @@ pub(crate) fn lateral_pieces(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Fo
 /// point of the line, or the two planes it is the meet of ([`AxisLine`]), its direction off the
 /// axis against each face's arc ([`Judge::axis_line_off_arcs`] — a direction is the same along the
 /// whole line, so any point of it will do; the meet of two planes is off as well when it is off the
-/// surface): `Some(true)` where that proves the line off, `None` otherwise — a face whose angle is
-/// not an arc (`Theta::Whole`, or one direction) is not shown clear. Where both bodies can answer, a
+/// surface): `Some(true)` where that proves the line off, `None` otherwise. A whole lateral
+/// (`Theta::Whole`) is the whole turn, so a line of two planes is off it only off the surface, and a
+/// face at one direction (`Theta::At`) is not shown clear. Where both bodies can answer, a
 /// debug build checks the interval one never proves clear what the exact one does not.
 ///
 /// [`AxisLine`]: nacre_judge::cylinder::AxisLine
@@ -2415,7 +2384,14 @@ pub(crate) fn line_off_faces(
             .iter()
             .map(|fp| match fp.theta {
                 Theta::Arc(a) => Some([a.from, a.to]),
-                Theta::Whole | Theta::At(_) => None,
+                // A whole lateral holds every direction: two ends pointing one way are the whole
+                // turn whichever way that is, so `x` need not be radial, and its dot product with
+                // itself does not overflow.
+                Theta::Whole => {
+                    let x = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
+                    Some([x, x])
+                }
+                Theta::At(_) => None,
             })
             .collect();
         arcs.is_some_and(|arcs| jd.axis_line_off_arcs(def, at, &arcs))

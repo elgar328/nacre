@@ -125,11 +125,13 @@ struct Family {
     name: &'static str,
     build: fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
     /// The gate passes, with this many (cylinder, nameless class) pairs silent by each arm —
-    /// `(beside, apart, sectioned, grazes)`: the plane clears the cylinder; only the class's faces
-    /// stand apart from a cylinder with whole rims; the plane cuts the lateral in rulings with every
-    /// face apart, and the class draws them on its own arrangement; or the plane touches the
-    /// cylinder along one ruling with every face apart — or refuses. The counts are derived from the geometry, family by family, in the comments;
-    /// a family both arms could open is pinned to the arm that does, so either arm breaking shows.
+    /// `(beside, apart, sectioned, grazes)`: the plane clears the cylinder; the plane is not shown
+    /// to cut the lateral in rulings and only the class's faces stand apart from a cylinder with
+    /// whole rims; the plane cuts the lateral in rulings with every face apart, and the class draws
+    /// them on its own arrangement; or the plane touches the cylinder along one ruling with every
+    /// face apart — or refuses. The counts are derived from the geometry, family by family, in the
+    /// comments; a family both arms could open is pinned to the arm that does, so either arm
+    /// breaking shows.
     gate: Result<(usize, usize, usize, usize), RejectReason>,
     /// Fuse, Cut, Common.
     want: [Want; 3],
@@ -181,7 +183,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "box turned 37, a wall plane through the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 5.0, 10.0)),
-            gate: Ok((3, 1, 0, 0)),
+            gate: Ok((3, 0, 1, 0)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -192,7 +194,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "box turned 37, above the plate",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 20.0, 5.0)),
-            gate: Ok((3, 1, 0, 0)),
+            gate: Ok((3, 0, 1, 0)),
             want: [Built(2, bored + 125.0), Built(1, bored), Built(0, 0.0)],
         },
         // A cube turned 37° about `x`, centred on the plate's top: by its point symmetry half of
@@ -220,7 +222,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 5.0, 10.0),
                 )
             },
-            gate: Ok((3, 1, 0, 0)),
+            gate: Ok((3, 0, 1, 0)),
             want: [
                 Built(1, 16000.0 + 12.0 * pi + 125.0),
                 Built(1, 16000.0 + 12.0 * pi - 125.0),
@@ -274,7 +276,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 20.0, 5.0),
                 )
             },
-            gate: Ok((3, 1, 0, 0)),
+            gate: Ok((3, 0, 1, 0)),
             want: [
                 Built(2, 40.0 * pi + 125.0),
                 Built(1, 40.0 * pi),
@@ -318,7 +320,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Ok((14, 2, 0, 0)),
+            gate: Ok((14, 0, 2, 0)),
             want: [
                 Built(1, rounded_area(0, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(0, 4) * 12.0 - 150.0),
@@ -379,9 +381,8 @@ fn nameless_classes_beside_world_cylinders() {
         // The playground's example 003 shape (four fillets, four bores) with the box off the middle,
         // where wall planes run through fillets. Eight cylinders, four walls: thirty-two pairs,
         // counted the gate's way — a pair whose lateral box lies on one side of the wall, or whose
-        // axis lies beyond the radius from the wall's plane, is beside; else a bore (whole rims)
-        // with the class's faces apart is apart; else a fillet whose axis lies within the radius
-        // is sectioned. The bores whose box a wall plane straddles, with the axis's distance from
+        // axis lies beyond the radius from the wall's plane, is beside; else a bore or a fillet
+        // whose axis lies within the radius, the class's faces apart, is sectioned. The bores whose box a wall plane straddles, with the axis's distance from
         // it against the radius 3.5, by the box's centre: `(−12, −6)` — `(−38, 18)` 3.82 and
         // `(−38, −18)` 3.56, both beyond; `(−22, −14)` — 3.98 and 3.93, both beyond; `(−16, −10)` —
         // `(−38, 18)` 3.22 and 1.78 (two walls), within, and `(−38, −18)` 4.35, beyond; `(−20, 0)` —
@@ -424,7 +425,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-16, -10], 6.0, 10.0),
                 )
             },
-            gate: Ok((28, 2, 2, 0)),
+            gate: Ok((28, 0, 4, 0)),
             want: [
                 Built(1, rounded_area(4, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(4, 4) * 12.0 - 150.0),
@@ -439,27 +440,12 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Ok((28, 2, 2, 0)),
+            gate: Ok((28, 0, 4, 0)),
             want: [
                 Built(1, rounded_area(4, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(4, 4) * 12.0 - 150.0),
                 Built(1, 150.0),
             ],
-        },
-        // A pin standing over the plate's edge keeps its top rim whole (a disk cap) while its bottom
-        // rim is cut at the edge. A wall plane through it, every face apart: the class would cut the
-        // disk in a chord, which is drawn only for a recorded pair, so the gate does not section a
-        // cylinder with a whole rim — refused as before.
-        Family {
-            name: "a pin over the plate's edge, a wall plane through it",
-            build: |m| {
-                (
-                    plate_with_pin(m, [39.0, 20.0, 10.0], 2.0, 3.0),
-                    turned_box(m, 37, [30, 28], 5.0, 10.0),
-                )
-            },
-            gate: Err(Undecided),
-            want: refused,
         },
         // A wall plane that holds the fillet's tangent ruling `(40, −25, z)`: the box's wall
         // `x = 40` turned 37° about that ruling still holds it, runs along the axis within the
@@ -834,13 +820,15 @@ fn pivoted_box(m: &mut Model) -> Handle<Solid> {
 }
 
 /// **A nameless class apart from a cylinder passes beside the records other classes write on it.**
-/// The class's plane may cut the bore or pin, its faces stand apart from the lateral's box, and
-/// the cylinder has only whole rims (`Silence::Apart`); a named bar cuts the same cylinder or
-/// touches it, so that cylinder carries a record too. On the apart class the solid reads as the
-/// bore filled or the pin removed, and that differs from the truth only inside the lateral's box,
-/// where the class has no face. Every family pins, in both operand orders, the gate's tally, a
-/// record on each cylinder an apart class is silent about (else the family would be one of the
-/// record-free apart families of the scoreboard above), and the three answers by derived volume.
+/// The class's plane may cut the bore or pin and its faces stand apart from the lateral's box; a
+/// named bar cuts the same cylinder or touches it, so that cylinder carries a record too. A wall
+/// plane along the axis sections the cylinder (`Silence::Sectioned`) and is settled against the
+/// bar's record; a plane oblique to the axis reads the solid as the bore filled or the pin removed
+/// (`Silence::Apart` — the cylinder has only whole rims), which differs from the truth only inside
+/// the lateral's box, where the class has no face. Every family pins, in both operand orders, the
+/// gate's tally, a record on each cylinder such a class is silent about (else the family would be
+/// one of the record-free families of the scoreboard above), and the three answers by derived
+/// volume.
 ///
 /// The derivations: the bar's section of the plate is its width × 40 × 5, less the bore's strip
 /// `|x − 10| ∈ [1, 2]` (`5·(4π/3 − √3)`; over the pin, plus `3·(4π/3 − √3)`) or the half disk
@@ -897,7 +885,7 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
     );
     let fams = [
         // A bar `x ∈ [11, 13]` cuts the bore. The box at `(16, 18)`: its wall planes stand 0.28
-        // (within the radius 2 — apart), 5.28, 7.11 and 12.11 (beside) from the axis.
+        // (within the radius 2 — sectioned), 5.28, 7.11 and 12.11 (beside) from the axis.
         (
             Family {
                 name: "bar cutting the bore, box apart on the bar",
@@ -905,7 +893,7 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                     let t = turned_box(m, 37, [16, 18], 5.0, 10.0);
                     (plate_with_bore(m), bar_and(m, [11.0, 13.0], [5.0, 15.0], t))
                 },
-                gate: Ok((3, 1, 0, 0)),
+                gate: Ok((3, 0, 1, 0)),
                 want: three(bored, on_bar_bore.0, on_bar_bore.1),
             },
             Built(1, on_bar_bore.0 - on_bar_bore.1),
@@ -919,7 +907,7 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                     let t = turned_box(m, 37, [16, 18], 5.0, 10.0);
                     (plate_with_bore(m), bar_and(m, [12.0, 14.0], [5.0, 15.0], t))
                 },
-                gate: Ok((3, 1, 0, 0)),
+                gate: Ok((3, 0, 1, 0)),
                 want: [
                     Built(1, bored + on_bar_tangent.0 - on_bar_tangent.1),
                     Refused(SelfTouchingResult),
@@ -939,13 +927,13 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                         bar_and(m, [11.0, 13.0], [5.0, 15.0], t),
                     )
                 },
-                gate: Ok((3, 1, 0, 0)),
+                gate: Ok((3, 0, 1, 0)),
                 want: three(pinned, on_bar_pin.0, on_bar_pin.1),
             },
             Built(1, on_bar_pin.0 - on_bar_pin.1),
         ),
         // A bar through the axis, `x ∈ [10, 15]`, and the pivoted box: the wall plane turned about
-        // `(10, 12)` meets `x = 10` on the bar's ruling there. Its wall planes stand 1.20 (apart),
+        // `(10, 12)` meets `x = 10` on the bar's ruling there. Its wall planes stand 1.20 (sectioned),
         // 3.80, 9.60 and 14.60 (beside) from the axis.
         (
             Family {
@@ -954,12 +942,12 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                     let t = pivoted_box(m);
                     (plate_with_bore(m), bar_and(m, [10.0, 15.0], [5.0, 15.0], t))
                 },
-                gate: Ok((3, 1, 0, 0)),
+                gate: Ok((3, 0, 1, 0)),
                 want: three(bored, on_ruling.0, on_ruling.1),
             },
             Built(1, on_ruling.0 - on_ruling.1),
         ),
-        // The apart box on the bored plate's side, the bar alone on the other: each class's
+        // The box on the bored plate's side, the bar alone on the other: each class's
         // arrangement sections the other operand. The box at `(16, 18)` as above.
         (
             Family {
@@ -970,13 +958,13 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                         cuboid(m, [11.0, 0.0, 5.0], [13.0, 40.0, 15.0]),
                     )
                 },
-                gate: Ok((3, 1, 0, 0)),
+                gate: Ok((3, 0, 1, 0)),
                 want: three(bored + 125.0, on_plate.0, on_plate.1),
             },
             Built(1, on_plate.0 - on_plate.1),
         ),
         // The box moved to `(11, 16)`: its faces cross the bar's plane `x = 11` off the lateral's
-        // box. Its wall planes stand 1.69 and 1.91 (apart), 6.69 and 6.91 (beside) from the axis.
+        // box. Its wall planes stand 1.69 and 1.91 (sectioned), 6.69 and 6.91 (beside) from the axis.
         // `B − A` is two bodies: the box cuts the bar's upper half through.
         (
             Family {
@@ -987,7 +975,7 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
                         cuboid(m, [11.0, 0.0, 5.0], [13.0, 40.0, 15.0]),
                     )
                 },
-                gate: Ok((2, 2, 0, 0)),
+                gate: Ok((2, 0, 2, 0)),
                 want: three(bored + 125.0, across.0, across.1),
             },
             Built(2, across.0 - across.1),
@@ -1018,8 +1006,11 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
             let (a, b) = if swapped { (b, a) } else { (a, b) };
             let setup = plane_index_setup(&m, a, b).expect("the gate passes");
             for (ci, cy) in setup.cyls.iter().enumerate() {
-                let apart = crate::planes::CylRecord::Silent(crate::planes::Silence::Apart);
-                if !cy.records.iter().any(|&(_, r)| r == apart) {
+                let silent_apart = |r| {
+                    use crate::planes::{CylRecord::Silent, Silence};
+                    r == Silent(Silence::Apart) || r == Silent(Silence::Sectioned)
+                };
+                if !cy.records.iter().any(|&(_, r)| silent_apart(r)) {
                     continue;
                 }
                 let recorded = cy
@@ -1035,6 +1026,342 @@ fn an_apart_class_passes_beside_a_recorded_cylinder() {
             }
         }
     }
+    let ab: Vec<Family> = fams.iter().map(|(f, _)| *f).collect();
+    let ba: Vec<Family> = fams
+        .iter()
+        .map(|(f, cut)| Family {
+            want: [f.want[0], *cut, f.want[2]],
+            ..*f
+        })
+        .collect();
+    score(&ab, false);
+    score(&ba, true);
+}
+
+/// A `5×5` box `[cx, cx + 5] × [cy, cy + 5]` over `z` (`corner = (cx, cy)`), turned `deg` about `z`
+/// around the pivot — a wall's distance from the pivot's vertical line is the same after the turn
+/// as before it.
+fn box_turned_about(
+    m: &mut Model,
+    deg: i128,
+    pivot: [i128; 2],
+    corner: [f64; 2],
+    z: [f64; 2],
+) -> Handle<Solid> {
+    let b = cuboid(
+        m,
+        [corner[0], corner[1], z[0]],
+        [corner[0] + 5.0, corner[1] + 5.0, z[1]],
+    );
+    turn(m, b, Axis::Z, deg, [pivot[0], pivot[1], 0])
+}
+
+/// The centre of [`box_turned_about`]'s box, for [`turned_square_within`].
+fn turned_about_centre(deg: f64, pivot: [f64; 2], corner: [f64; 2]) -> [f64; 2] {
+    let (s, c) = deg.to_radians().sin_cos();
+    let (u, v) = (corner[0] + 2.5 - pivot[0], corner[1] + 2.5 - pivot[1]);
+    [pivot[0] + c * u - s * v, pivot[1] + s * u + c * v]
+}
+
+/// The plate with a step `[36,40]×[0,40]×[10,12]` on its top — `16320`.
+fn stepped_plate(m: &mut Model) -> Handle<Solid> {
+    let plate = cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
+    let step = cuboid(m, [36.0, 0.0, 10.0], [40.0, 40.0, 12.0]);
+    op(m, BoolKind::Fuse, plate, step)
+}
+
+/// The stepped plate bored through at `(37, 20)`, radius 2: the bottom rim whole (a round hole in
+/// the plate's bottom), the top one cut by the step's wall `x = 36`.
+fn stepped_plate_bored(m: &mut Model) -> Handle<Solid> {
+    let p = stepped_plate(m);
+    let c = z_cylinder(m, [37.0, 20.0, -1.0], 2.0, 14.0);
+    op(m, BoolKind::Cut, p, c)
+}
+
+/// The stepped plate with a pin of radius 2 at `(37, 20)` over `z ∈ [10, 15]`: the top rim whole
+/// (a disk cap), the bottom one cut by the step's wall `x = 36`.
+fn stepped_plate_pinned(m: &mut Model) -> Handle<Solid> {
+    let p = stepped_plate(m);
+    let c = z_cylinder(m, [37.0, 20.0, 10.0], 2.0, 5.0);
+    op(m, BoolKind::Fuse, p, c)
+}
+
+/// [`stepped_plate_pinned`] with a hole of radius 0.5 at `(hx, hy)` sunk 1 into its cap.
+fn stepped_pin_holed(m: &mut Model, hx: f64, hy: f64) -> Handle<Solid> {
+    let p = stepped_plate_pinned(m);
+    let h = z_cylinder(m, [hx, hy, 14.0], 0.5, 2.0);
+    op(m, BoolKind::Cut, p, h)
+}
+
+/// The plate with a ledge cut from its bottom `[30,40]×[0,40]×[0,2]`, a pin of radius 2 on its top
+/// at `(30, 20)` over `z ∈ [10, 15]` (only whole rims) and a bore of radius 0.5 through both on
+/// the same axis — its lower rim cut by the ledge's wall `x = 30`. `15200 + 20π − 3.5π`.
+fn ledge_pin_bore(m: &mut Model) -> Handle<Solid> {
+    let plate = cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
+    let ledge = cuboid(m, [30.0, 0.0, -1.0], [41.0, 40.0, 2.0]);
+    let p = op(m, BoolKind::Cut, plate, ledge);
+    let pin = z_cylinder(m, [30.0, 20.0, 10.0], 2.0, 5.0);
+    let p = op(m, BoolKind::Fuse, p, pin);
+    let bore = z_cylinder(m, [30.0, 20.0, -1.0], 0.5, 17.0);
+    op(m, BoolKind::Cut, p, bore)
+}
+
+/// **A plane along the axis sections a cylinder with a whole rim.** A wall plane of a box turned 37°
+/// runs along a cylinder's axis within its radius, and every face of the box stands apart from the
+/// lateral: the class draws the cylinder's two rulings on its own arrangement and, where the
+/// cylinder keeps a whole rim, the chord its plane cuts from the disk or the round hole — the
+/// section drawn truly (`Silence::Sectioned`). Most cylinders here have a whole rim and a cut one,
+/// or a whole rim nested in another cylinder, so the filled reading of the whole rims alone would
+/// not close (a pin over the plate's edge) or would meet the true reading of the other
+/// (`LabelConflict`, the bore in the pin) — the gate refused them before. The mixed family's bore
+/// keeps only whole rims, so it pins the two readings standing on one cylinder; the controls are
+/// named.
+///
+/// The families, every one built in both operand orders by derived volume, `validate` clean:
+/// - a pin of radius 2 over the plate's edge `x = 40` (its top rim whole, its bottom cut), the box at
+///   `(30, 28)` whose wall plane stands 0.13 from the axis;
+/// - the stepped plate's pin and bore at `(37, 20)` (one rim whole, the other cut by the step's
+///   wall), the box below the plate turned about the axis's foot: its wall through the axis, 1.5
+///   from it, 0.5 from it on the other side;
+/// - the pin with a hole sunk in its cap, the wall through the axis cutting the hole or passing
+///   beside it; the pin with a square pocket in its cap or a square boss on it across the wall;
+/// - the ledge plate's pin and the bore through it, the wall through both axes;
+/// - the bored plate with a cube turned 37° about `x` fused on and the box whose wall plane runs
+///   through the bore: the cube's walls are oblique to the bore and read it filled
+///   (`Silence::Apart`), the box's wall sections it — the two readings on one cylinder;
+/// - controls with named boxes (a quarter turn, an axis-aligned box below), which the gate leaves
+///   alone.
+///
+/// Volumes: the stepped plate is `16320`; its bore removes `40π` below `z = 10` and, in the step,
+/// the disk's part `x > 36` (`8π/3 + √3`) over 2; its pin adds `20π` less that same part over 2.
+/// A box below the plate overlaps it by `25 · 2`, or, under the ledge, by its part on `x < 30`.
+#[test]
+fn a_plane_along_the_axis_sections_a_cylinder_with_a_whole_rim() {
+    let pi = std::f64::consts::PI;
+    let s3 = 3f64.sqrt();
+    let pinned = 16000.0 + 12.0 * pi;
+    let step_bored = 16320.0 - 40.0 * pi - 16.0 * pi / 3.0 - 2.0 * s3;
+    let step_pinned = 16320.0 + 20.0 * pi - 16.0 * pi / 3.0 - 2.0 * s3;
+    let holed = step_pinned - pi / 4.0;
+    let ledge = 15200.0 + 16.5 * pi;
+    let ledge_common = 2.0
+        * turned_square_within(
+            turned_about_centre(37.0, [30.0, 20.0], [30.0, 26.0]),
+            37.0,
+            0,
+            f64::NEG_INFINITY,
+            30.0,
+        );
+    let cubed = 16000.0 - 40.0 * pi + 125.0
+        - 5.0 * turned_square_within([10.0, 12.0], 37.0, 1, f64::NEG_INFINITY, 10.0);
+    // `(|A|, |B|, |A ∩ B|)` → Fuse, Cut, Common, and the other order's Cut `|B| − |A ∩ B|`.
+    let three = |a: f64, b: f64, common: f64| {
+        (
+            [
+                Built(1, a + b - common),
+                Built(1, a - common),
+                Built(1, common),
+            ],
+            Built(1, b - common),
+        )
+    };
+    let fam = |name, build, gate, (want, cut)| {
+        (
+            Family {
+                name,
+                build,
+                gate,
+                want,
+            },
+            cut,
+        )
+    };
+    let fams = [
+        fam(
+            "a pin over the plate's edge, a wall plane through it",
+            |m| {
+                (
+                    plate_with_pin(m, [39.0, 20.0, 10.0], 2.0, 3.0),
+                    turned_box(m, 37, [30, 28], 5.0, 10.0),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(pinned, 250.0, 125.0),
+        ),
+        fam(
+            "a stepped pin, a wall through its axis",
+            |m| {
+                (
+                    stepped_plate_pinned(m),
+                    box_turned_about(m, 37, [37, 20], [37.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_pinned, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin, a wall 1.5 from its axis",
+            |m| {
+                (
+                    stepped_plate_pinned(m),
+                    box_turned_about(m, 37, [37, 20], [35.5, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_pinned, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin, a wall 0.5 from its axis on the other side",
+            |m| {
+                (
+                    stepped_plate_pinned(m),
+                    box_turned_about(m, 37, [37, 20], [37.5, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_pinned, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin with a hole in its cap the wall cuts",
+            |m| {
+                (
+                    stepped_pin_holed(m, 36.8, 20.4),
+                    box_turned_about(m, 37, [37, 20], [37.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((6, 0, 2, 0)),
+            three(holed, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin with a hole in its cap beside the wall",
+            |m| {
+                (
+                    stepped_pin_holed(m, 38.0, 20.0),
+                    box_turned_about(m, 37, [37, 20], [37.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((7, 0, 1, 0)),
+            three(holed, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin with a square pocket in its cap across the wall",
+            |m| {
+                let p = stepped_plate_pinned(m);
+                let k = cuboid(m, [36.25, 19.25, 14.0], [37.75, 20.75, 16.0]);
+                (
+                    op(m, BoolKind::Cut, p, k),
+                    box_turned_about(m, 37, [37, 20], [37.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_pinned - 2.25, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin with a square boss on its cap across the wall",
+            |m| {
+                let p = stepped_plate_pinned(m);
+                let k = cuboid(m, [36.25, 19.25, 15.0], [37.75, 20.75, 16.0]);
+                (
+                    op(m, BoolKind::Fuse, p, k),
+                    box_turned_about(m, 37, [37, 20], [37.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_pinned + 2.25, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped bore, a wall through its axis",
+            |m| {
+                (
+                    stepped_plate_bored(m),
+                    box_turned_about(m, 37, [37, 20], [37.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_bored, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped bore, a wall 1.5 from its axis",
+            |m| {
+                (
+                    stepped_plate_bored(m),
+                    box_turned_about(m, 37, [37, 20], [35.5, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_bored, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped bore, a wall 0.5 from its axis on the other side",
+            |m| {
+                (
+                    stepped_plate_bored(m),
+                    box_turned_about(m, 37, [37, 20], [37.5, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((3, 0, 1, 0)),
+            three(step_bored, 125.0, 50.0),
+        ),
+        fam(
+            "a pin with only whole rims holding a bore the ledge cuts, a wall through both",
+            |m| {
+                (
+                    ledge_pin_bore(m),
+                    box_turned_about(m, 37, [30, 20], [30.0, 26.0], [-3.0, 2.0]),
+                )
+            },
+            Ok((6, 0, 2, 0)),
+            three(ledge, 125.0, ledge_common),
+        ),
+        fam(
+            "a bored plate with an oblique cube, a wall plane through the bore",
+            |m| {
+                let c = cuboid(m, [-2.5; 3], [2.5; 3]);
+                let c = turn(m, c, Axis::X, 37, [0, 0, 0]);
+                let c = shift(m, c, [30, 10, 12]);
+                let p = plate_with_bore(m);
+                (
+                    op(m, BoolKind::Fuse, p, c),
+                    turned_box(m, 37, [30, 30], 5.0, 10.0),
+                )
+            },
+            Ok((5, 2, 1, 0)),
+            three(cubed, 250.0, 125.0),
+        ),
+        fam(
+            "control: the pin over the plate's edge, the box turned 90",
+            |m| {
+                (
+                    plate_with_pin(m, [39.0, 20.0, 10.0], 2.0, 3.0),
+                    turned_box(m, 90, [30, 28], 5.0, 10.0),
+                )
+            },
+            Ok((0, 0, 0, 0)),
+            three(pinned, 250.0, 125.0),
+        ),
+        fam(
+            "control: the stepped pin, a named box below",
+            |m| {
+                (
+                    stepped_plate_pinned(m),
+                    cuboid(m, [30.0, 25.0, -3.0], [35.0, 30.0, 2.0]),
+                )
+            },
+            Ok((0, 0, 0, 0)),
+            three(step_pinned, 125.0, 50.0),
+        ),
+        fam(
+            "control: the stepped bore, a named box below",
+            |m| {
+                (
+                    stepped_plate_bored(m),
+                    cuboid(m, [30.0, 25.0, -3.0], [35.0, 30.0, 2.0]),
+                )
+            },
+            Ok((0, 0, 0, 0)),
+            three(step_bored, 125.0, 50.0),
+        ),
+    ];
     let ab: Vec<Family> = fams.iter().map(|(f, _)| *f).collect();
     let ba: Vec<Family> = fams
         .iter()
@@ -1096,8 +1423,7 @@ fn half_bar(m: &mut Model) -> Handle<Solid> {
 /// face (which reaches only 1.2 along that plane's normal); the other three walls stand 3.5, `y0`
 /// and `y0 + 5` from the axis.
 fn box_turned_about_the_bar(m: &mut Model, y0: f64, z: [f64; 2]) -> Handle<Solid> {
-    let b = cuboid(m, [8.5, 10.0 + y0, z[0]], [13.5, 15.0 + y0, z[1]]);
-    turn(m, b, Axis::Z, 37, [10, 10, 0])
+    box_turned_about(m, 37, [10, 10], [8.5, 10.0 + y0], z)
 }
 
 /// **A section whose every corner is a pierce point is asked by a pierce corner.** A wall plane
@@ -1181,8 +1507,7 @@ fn box_turned_about_the_axis(
     y0: f64,
     z: [f64; 2],
 ) -> Handle<Solid> {
-    let b = cuboid(m, [x0, 10.0 + y0, z[0]], [x0 + 5.0, 15.0 + y0, z[1]]);
-    turn(m, b, Axis::Z, deg, [10, 10, 0])
+    box_turned_about(m, deg, [10, 10], [x0, 10.0 + y0], z)
 }
 
 /// A `z` cylinder of radius 2 standing on `(10, 10)` over `z ∈ [0, 10]` — whole rims. `40π`.
@@ -1227,8 +1552,9 @@ fn prism_on_the_diagonal(m: &mut Model, z: [f64; 2]) -> Handle<Solid> {
 ///   bar's section on the two walls answers the Fuse and the Common; the block less the bar asks the
 ///   same question in space and is refused by name.
 /// - a whole bar, the same boxes and block: the grazing wall is the fourth count (the filled reading
-///   would also take it), the through-axis wall filled (`Apart`), and everything builds but the block
-///   less the bar, refused as above.
+///   would also take it) and the other wall is sectioned — through the axis it meets the grazing
+///   wall on the ruling it draws (recorded), within the radius its line with it misses the surface;
+///   everything builds but the block less the bar, refused as above.
 /// - a named prism on `x = y` across the half bar and a box turned 45° whose wall `x = 8` touches the
 ///   bar on the ruling `x = y` cuts: a record's line with the grazing class on a lateral face that is
 ///   not a sectioned class's is refused at the gate. No face of either class reaches that line here
@@ -1308,11 +1634,11 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                         box_turned_about_the_axis(m, 37, 12.0, 0.0, [20.0, 25.0]),
                     )
                 },
-                gate: Ok((2, 1, 0, 1)),
+                gate: Ok((2, 0, 1, 1)),
                 want: [Built(2, whole + 125.0), Built(1, whole), Built(0, 0.0)],
             },
             [Built(2, whole + 125.0), Built(1, 125.0)],
-            0,
+            1,
         ),
         (
             Family {
@@ -1323,7 +1649,7 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                         box_turned_about_the_axis(m, 37, 12.0, 1.0, [20.0, 25.0]),
                     )
                 },
-                gate: Ok((2, 1, 0, 1)),
+                gate: Ok((2, 0, 1, 1)),
                 want: [Built(2, whole + 125.0), Built(1, whole), Built(0, 0.0)],
             },
             [Built(2, whole + 125.0), Built(1, 125.0)],
@@ -1353,11 +1679,11 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                     let t = box_turned_about_the_axis(m, 37, 12.0, 0.0, [12.0, 17.0]);
                     (b, op(m, BoolKind::Fuse, block, t))
                 },
-                gate: Ok((2, 1, 0, 1)),
+                gate: Ok((2, 0, 1, 1)),
                 want: [Built(1, 5725.0), Built(0, 0.0), Built(1, whole)],
             },
             [Built(1, 5725.0), Refused(CylinderGateUndecided)],
-            0,
+            1,
         ),
         (
             Family {

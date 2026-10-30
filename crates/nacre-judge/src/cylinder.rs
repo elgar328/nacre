@@ -365,15 +365,33 @@ impl<W: PlaneWitness> Judge<'_, W> {
         prec: usize,
     ) -> Option<HpBounded> {
         let (x, y) = (a.point_hp_at(self, prec)?, b.point_hp_at(self, prec)?);
-        let (np, nq) = (self.stored_hp(p, prec), self.stored_hp(q, prec));
-        let d = [
-            np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
-            np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),
-            np[0].mul(&nq[1], prec).sub(&np[1].mul(&nq[0], prec), prec),
-        ];
+        let d = self.stored_cross_hp(p, q, prec);
         (0..3)
             .map(|k| x[k].sub(&y[k], prec).mul(&d[k], prec))
             .reduce(|s, t| s.add(&t, prec))
+    }
+
+    /// **Which way the line `p ∩ q` runs along the direction `m`** — the sign of
+    /// `(n_p × n_q) · m` over the stored facings ([`Self::stored_hp`]), the direction a pierce
+    /// name's roots are ordered along, at the standard precision. `None` where the interval
+    /// straddles zero; a line along a cylinder's axis `m` keeps it away from zero.
+    pub fn stored_line_along(&self, p: usize, q: usize, m: &[Rat; 3]) -> Option<i8> {
+        let prec = self.standard.prec;
+        let d = self.stored_cross_hp(p, q, prec);
+        let along = (0..3)
+            .map(|k| d[k].mul(&HpBounded::of_rat(m[k], prec), prec))
+            .reduce(|s, t| s.add(&t, prec))?;
+        sign_i8(&along)
+    }
+
+    /// `n_p × n_q` over the stored facings at `prec` — the stored direction of the line `p ∩ q`.
+    fn stored_cross_hp(&self, p: usize, q: usize, prec: usize) -> [HpBounded; 3] {
+        let (np, nq) = (self.stored_hp(p, prec), self.stored_hp(q, prec));
+        [
+            np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
+            np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),
+            np[0].mul(&nq[1], prec).sub(&np[1].mul(&nq[0], prec), prec),
+        ]
     }
 
     /// **The order of two coordinates along cylinder `def`'s axis.** Two stated ones compare
@@ -534,9 +552,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
 
     /// **Does the line along cylinder `def`'s axis miss every arc of `arcs`?** — each arc two radial
     /// directions `[from, to]`, counter-clockwise about the axis direction `m` (ends included in the
-    /// arc; `from` and `to` pointing one way is the whole turn). The arcs are the lateral faces', so
-    /// an empty list is no face and the answer is `true`; a caller that could not state a face passes
-    /// no list rather than an empty one.
+    /// arc; `from` and `to` pointing one way is the whole turn, whatever that one direction is). The
+    /// arcs are the lateral faces', so an empty list is no face and the answer is `true`; a caller
+    /// that could not state a face passes no list rather than an empty one.
     ///
     /// The test reads only the line's direction off the axis, so it holds whether the line lies on
     /// the cylinder or beside it, which an interval cannot tell apart. A line through a point

@@ -526,21 +526,24 @@ pub(crate) enum Silence {
     /// point or an arc of the cylinder is on that side too, so the roads that side such a point
     /// against the class read it here.
     Beside(i8),
-    /// The class's plane may cut the cylinder, but every face on it stands apart from every
-    /// lateral face's box, and the cylinder leaves only whole rims. On that class the cylinder's
-    /// solid is sectioned as if the bore were filled or the boss removed. That reading and the true
-    /// one differ only inside the lateral boxes, which hold the bore or the boss, and everything the
-    /// class's faces put on an arrangement lies outside them — so the cylinder may carry other
-    /// records as well. A pierce point or an arc another record puts on the cylinder has no
+    /// The class's plane may cut the cylinder but is not shown to run along its axis within the
+    /// radius (it is oblique to the axis, or the intervals and the reading before its turn cannot
+    /// part it from the radius), every face on it stands apart from every lateral face's box, and
+    /// the cylinder leaves only whole rims. On that class the cylinder's solid is sectioned as if
+    /// the bore were filled or the boss removed. That reading and the true one differ only inside
+    /// the lateral boxes, which hold the bore or the boss, and everything the class's faces put on
+    /// an arrangement lies outside them — so the cylinder may carry other records as well, a
+    /// sectioned class among them. A pierce point or an arc another record puts on the cylinder has no
     /// recorded side of this class: a road that asks one reads it on the interval road
     /// ([`crate::combinatorics::PiercePoint`]), as it does of a [`Silence::Sectioned`] class.
     Apart,
-    /// The class's plane runs along the axis and cuts the lateral in two rulings, every face on it
-    /// stands apart from every lateral face's box, and the cylinder has no whole rim. On that
-    /// class's own arrangement the solid is sectioned truly — the rulings are drawn there and close
-    /// the section (their pierce points are interval boxes, [`crate::combinatorics::PiercePoint`]) —
-    /// and nowhere else: the lateral chart takes no ruling of it, since no face of the class reaches
-    /// the lateral, and the other classes see the class's faces apart from the cylinder.
+    /// The class's plane runs along the axis and cuts the lateral in two rulings, and every face on
+    /// it stands apart from every lateral face's box. On that class's own arrangement the solid is
+    /// sectioned truly — the rulings are drawn there, and a disk of the cylinder its chord, and
+    /// they close the section (their pierce points are interval boxes,
+    /// [`crate::combinatorics::PiercePoint`]) — and nowhere else: the lateral chart takes no ruling
+    /// of it, since no face of the class reaches the lateral, and the other classes see the class's
+    /// faces apart from the cylinder.
     Sectioned,
     /// The class's plane touches the cylinder along one ruling, proved exactly in the frame its
     /// statement is written in ([`Model::cylinder_before_chain`] — the plane's turn is about the

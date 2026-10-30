@@ -109,7 +109,8 @@ fn trace_transversal_face(
             // disk (the gate's plane test) or cuts an **irrational** chord this road cannot state
             // yet (the face-cleared family — its wrongly-silent trace lands in cells no face
             // reaches, today's recorded state), and a class with no world statement is one the
-            // gate proved clear of the whole cylinder. A disk the wall clears has holes the wall
+            // gate proved beside, apart from or grazing the cylinder — or one that sections it,
+            // which takes the chord as a cut does. A disk the wall clears has holes the wall
             // clears too, so the silence covers the holes as well.
             //
             // `None` is also how an *unnamed* ring arrives, but not for a face the tracer
@@ -166,8 +167,9 @@ fn trace_transversal_face(
             // on this class, and the rulings road is silent for it — so planting stations
             // would break the line against rulings that are (rightly) absent: measured, the
             // d = 0 boss-and-bore fixture walked its spur out and back and refused
-            // `StraightAngle`. A cut pair gets the stations; any other pair is skipped, and the
-            // two roads stay one rule.
+            // `StraightAngle`. A pair whose class draws the rulings — a cut, or a class that
+            // sections the cylinder — gets the stations; any other pair is skipped, and the two
+            // roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
                 match chord_stations(jd, faces, plane_ix, wc, fc, *cyl, cyls) {
                     Ok(Some(pair)) => stations.extend(pair),

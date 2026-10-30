@@ -1,25 +1,27 @@
 use super::*;
-/// A recorded chord [`chord_stations`] cannot state: no cylinder statement, no coefficients for the
-/// face's own class, or a meet that is not a pair of roots.
+/// A recorded chord [`chord_stations`] cannot state: no cylinder statement, or a meet that is not
+/// a pair of roots (a class with no narrow world name and no interval pair).
 pub(super) struct ChordUnstatable;
 
-/// **The two ends of the chord a recorded wall class `wc` cuts on a circle of a planar face** (the
-/// face lies in class `fc`, the circle rides cylinder `cyl`), as the two stations where the circle
-/// crosses the class line ([`sweep_line`]) — a diameter when the wall runs through the axis,
-/// any chord within the radius otherwise. `Ok(None)` for a pair the gate did not record:
-/// the wall clears the circle (the gate's plane test), or cuts an **irrational** chord this road
-/// cannot state yet — today's silence, and the same trigger the rulings road reads.
+/// **The two ends of the chord a wall class `wc` cuts on a circle of a planar face** (the face lies
+/// in class `fc`, the circle rides cylinder `cyl`), as the two stations where the circle crosses
+/// the class line ([`sweep_line`]) — a diameter when the wall runs through the axis, any chord
+/// within the radius otherwise. The wall is one whose arrangement draws the cylinder's rulings: a
+/// cut, or a class with no world statement that sections the cylinder on its own arrangement — the
+/// chord is part of that section, as the rulings are. `Ok(None)` for any other pair: the wall
+/// clears the circle (the gate's plane test), or cuts an **irrational** chord this road cannot
+/// state yet — today's silence, and the same trigger the rulings road reads.
 ///
 /// **The record is asked before the wall's coefficients**, as [`rulings_on_class`] asks it: an
-/// unrecorded pair says nothing whatever the wall's description, and a recorded one always has a
-/// world name — the gate records only classes it could state.
+/// unrecorded pair says nothing whatever the wall's description.
 ///
 /// **Written once because a disk's outer and a bored face's hole are the same circle asked the
 /// same question.**
 ///
-/// The record is the cylinder table's ([`WorkingCyl::cuts`](crate::planes::WorkingCyl::cuts)), so a
-/// caller that traces with no cylinder table draws no chord; the cylinder's statement comes from
-/// any face row on its class — the same table `merge_circles` indexes.
+/// The record is the cylinder table's
+/// ([`WorkingCyl::draws_rulings`](crate::planes::WorkingCyl::draws_rulings)), so a caller that
+/// traces with no cylinder table draws no chord; the cylinder's statement comes from any face row
+/// on its class — the same table `merge_circles` indexes.
 pub(super) fn chord_stations(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
@@ -29,11 +31,9 @@ pub(super) fn chord_stations(
     cyl: usize,
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Option<[ClassLineStation; 2]>, ChordUnstatable> {
-    use nacre_exact::quad::CylinderMeet;
-    if !cyls.get(cyl).is_some_and(|cy| cy.cuts(wc)) {
+    if !cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc)) {
         return Ok(None);
     }
-    let w = jd.world_rat(wc).ok_or(ChordUnstatable)?;
     let def = faces
         .iter()
         .zip(plane_ix)
@@ -42,17 +42,28 @@ pub(super) fn chord_stations(
             _ => None,
         })
         .ok_or(ChordUnstatable)?;
-    // The record is the crossing statement: a recorded pair's plane runs within the
-    // radius, so `L` enters the circle at one root and leaves at the other. The premise is the
-    // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never a
-    // cut; see `planes::Tangency`.)
-    debug_assert_eq!(
-        nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
-        nacre_exact::Orient::Negative,
-        "a recorded pair's plane runs within the radius"
-    );
-    let Some(CylinderMeet::Pair { .. }) = combinatorics::class_line_meets_cylinder(jd, wc, fc, def)
-    else {
+    // The record is the crossing statement: a recorded pair's plane runs within the radius, so `L`
+    // enters the circle at one root and leaves at the other. The premise is the gate's, asserted
+    // rather than re-derived — exactly for a cut, whose class has world coefficients; for a
+    // sectioned class only as «the intervals do not say beyond», since the gate may have proved it
+    // exactly before the class's turn, closer to the radius than the intervals part. (A *tangent*
+    // plane has one root and is neither; see `planes::Tangency`.)
+    #[cfg(debug_assertions)]
+    match jd.world_rat(wc) {
+        Some(w) => debug_assert_eq!(
+            nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
+            nacre_exact::Orient::Negative,
+            "a recorded pair's plane runs within the radius"
+        ),
+        None => debug_assert_ne!(
+            jd.plane_cuts(wc, def),
+            Some(false),
+            "a sectioned class's plane runs within the radius"
+        ),
+    }
+    // One meet for both: a cut pair's roots exactly, a sectioned one's as interval boxes — the same
+    // two `NodeId::pierce` roots either way.
+    let nacre_judge::cylinder::LineMeet::Pair(_) = jd.line_meet(wc, fc, def, false) else {
         return Err(ChordUnstatable);
     };
     let node = |root| {

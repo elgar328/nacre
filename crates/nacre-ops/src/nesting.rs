@@ -596,7 +596,9 @@ fn ask(
             // the disk, exactly** — here, and not in the shared reading below: the corner lies on
             // a face of that class (a class's segments are its faces met by the cell's plane),
             // those faces stand apart from the lateral boxes, and the disk lies in the box its rim
-            // does. A `Sectioned` class never gets here: its cylinder has no whole rim, so no disk.
+            // does. A `Sectioned` class reads the same: the chord it cuts from a disk lies on its
+            // own arrangement, and the disk's cells on the arrangement of the class ⊥ the axis, so
+            // a corner of such a cell that names the sectioned class comes from one of its faces.
             // The argument reads «a corner named by the class lies on one of its faces», which a
             // cell's corner keeps and a point off the class's faces does not; an alias that put the
             // class into the name of a point off its faces would break it unseen. The gate's shared

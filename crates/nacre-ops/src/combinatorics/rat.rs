@@ -142,9 +142,7 @@ pub(crate) fn circle_centre_rat(
 /// `Pair` roots the two points [`NodeId::pierce`] names on that line. `None` where a class has no
 /// world statement or the arithmetic runs out.
 ///
-/// One question with two askers: the tracer's chord across a circle bound
-/// (`arrangement::sides::chord_stations`) and the self-touch verdict's crossings of a circle hole
-/// along an edge's line ([`segment_meets_face`]).
+/// The self-touch verdict asks it of a circle hole along an edge's line ([`segment_meets_face`]).
 pub(crate) fn class_line_meets_cylinder(
     jd: &Judge<'_, WorkingPlane>,
     a: usize,

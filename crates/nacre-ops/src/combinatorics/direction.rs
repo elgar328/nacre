@@ -673,16 +673,23 @@ fn line_along_ruling(
     if turn(jd, p, a, b)? != 0 {
         return Ok(None);
     }
-    let d =
-        stored_line_dir(jd, p, carrier).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
-    let along = match nacre_exact::dot_sign_rat(&d, &r.axis) {
-        nacre_exact::Orient::Positive => sense,
-        nacre_exact::Orient::Negative => -sense,
-        // A zero turn puts the line along the axis, so `d · m` cannot vanish; if it does, the
-        // pair is not the shape this answers.
-        nacre_exact::Orient::Zero => return Ok(None),
+    let way = match stored_line_dir(jd, p, carrier) {
+        Some(d) => match nacre_exact::dot_sign_rat(&d, &r.axis) {
+            nacre_exact::Orient::Positive => 1,
+            nacre_exact::Orient::Negative => -1,
+            // A zero turn puts the line along the axis, so `d · m` cannot vanish; if it does, the
+            // pair is not the shape this answers.
+            nacre_exact::Orient::Zero => return Ok(None),
+        },
+        // A class with no world statement (a sectioned class here): the same product on the
+        // stored facings' intervals, which a line along the axis keeps away from zero. A named
+        // pair whose product fails (a wide name, an overflow) is not sent to the intervals.
+        None if jd.planes[p].world.is_none() || jd.planes[carrier].world.is_none() => jd
+            .stored_line_along(p, carrier, &r.axis)
+            .ok_or_else(|| reject(RejectReason::WitnessNotRational))?,
+        None => return Err(reject(RejectReason::WitnessNotRational)),
     };
-    Ok(Some((along > 0) == r.up))
+    Ok(Some((way * sense > 0) == r.up))
 }
 
 fn arc_side(
