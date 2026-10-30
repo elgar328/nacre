@@ -153,9 +153,9 @@ impl ChartCorner {
 ///
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
 /// across the ray, at an arc root inside the arc's closed span), a tangent ray, a horizontal
-/// tangent at an arc end the root lands on, checked-`Rat` overflow — and the caller keeps its
-/// `WitnessNotRational`. A root on the seam is
-/// none of them: the seam point is the cyclic order's first ([`arc_span`]).
+/// tangent at an arc end the root lands on, checked-`Rat` overflow — and its readers take it as one:
+/// the coordinate reading of a ring ([`rational_point_in_ring`]) as [`Said::Abstain`], the witness
+/// generators by passing over the candidate. A root on the seam is none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
 /// **A radical mismatch is not among them**, and nothing here can reach one: every value two
 /// corners are combined into goes through the line step's orientation above, which asks

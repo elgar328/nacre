@@ -38,7 +38,6 @@ pub(crate) fn point_in_faces_rat(
     faces: &[CompFace],
 ) -> Result<Said, BoolError> {
     use nacre_exact::Rat;
-    use nacre_geom::intersect::point_in_ring_2d_rat;
     let not_rational = || reject(RejectReason::WitnessNotRational);
     let zero = Rat::from_int(0);
     if dir.iter().all(|c| *c == zero) {
@@ -89,7 +88,7 @@ pub(crate) fn point_in_faces_rat(
         // What that cannot show — the ray may well cross the face — this ray cannot count, and
         // another direction may miss it. A face on a stated plane whose outline a silent class
         // names has an exact crossing, and is read like any stated face below; only the ring that
-        // class names answers by its box, the rule the 2-D coordinate witness reads.
+        // class names answers by its box, inside the one coordinate reading of a ring.
         let Some(coeffs) = jd.world_rat(q) else {
             let unstated = crate::planes::silent_among(cyls, &[q])
                 || std::iter::once(&f.outer)
@@ -137,56 +136,24 @@ pub(crate) fn point_in_faces_rat(
             Some(x)
         })()
         .ok_or_else(not_rational)?;
-        let chart = Chart2dRat::of_normal(&n).ok_or_else(not_rational)?;
-        let x2 = chart.project(&x).ok_or_else(not_rational)?;
-        // Each bound answers by its own kind — the same split the named road makes. A ring whose
-        // corners a silent class names has no rational corners; its box answers, and what the box
-        // cannot show leaves this ray to the gate's undecidedness.
+        // Each bound answers by its own kind — the same split the named road makes. A ring is read
+        // by the one coordinate reading of a ring ([`rational_point_in_ring`]); a ring a silent
+        // class names answers by its box there, and what the box cannot show leaves this ray to the
+        // gate's undecidedness. A value that reading could not form is raised here, not abstained
+        // on — the coordinate ray's rule.
         let mut silent = false;
         let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
             match b {
-                BoundEdges::Ring(r) if names_a_silent_class(cyls, r) => {
-                    let prec = jd.standard.prec;
-                    let xh = x.map(|v| nacre_exact::HpBounded::of_rat(v, prec));
-                    Ok(match ring_box_says(jd, cyls, q, &xh, r) {
-                        Said::Out => Some(RingSide::Outside),
-                        _ => {
-                            silent = true;
-                            None
-                        }
-                    })
-                }
-                BoundEdges::Ring(r) => {
-                    // A mixed ring forks to the rational walk here exactly as the named
-                    // road forks: the crossing x is already rational, and the chart-ring
-                    // derivation below has no spelling for a pierce corner or an arc step.
-                    if ring_is_mixed(r) {
-                        return Ok(mixed_side(point_in_mixed_ring(jd, cyls, &coeffs, &x, r)));
+                BoundEdges::Ring(r) => Ok(match rational_point_in_ring(jd, cyls, q, &x, r)? {
+                    Said::In => Some(RingSide::Inside),
+                    Said::Out => Some(RingSide::Outside),
+                    Said::Silent => {
+                        silent = true;
+                        None
                     }
-                    // Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
-                    // which would make a degenerate ring *invisible* to the parity instead of
-                    // loud. A **polygon** face of a valid solid has no such ring, so saying so is
-                    // free.
-                    //
-                    // **After the fork, not before it.** A half-disc cap's ring is two edges
-                    // — an arc and its chord — which is a perfectly good boundary and not a polygon
-                    // at all; "a face of a valid solid has no such ring" is true only of the road
-                    // *below*. Measured with the check before the fork: six census cells with a
-                    // wall boss's caps come here and are refused by name for being what they are.
-                    if r.len() < 3 {
-                        return Err(reject(RejectReason::DegenerateRing));
-                    }
-                    // The pierce check is spelled before the chart rather than left to
-                    // `node_coords_rat`'s `None`, so an unnamed vertex is reported as itself and
-                    // not as arithmetic that ran out of room — the same split `every_ray` makes.
-                    let nodes: Vec<NodeId> = r
-                        .iter()
-                        .map(|e| three_plane_name(e.node).map(|_| e.node))
-                        .collect::<Option<_>>()
-                        .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
-                    let ring2 = chart.ring(jd, &nodes).ok_or_else(not_rational)?;
-                    Ok(Some(point_in_ring_2d_rat(x2, &ring2)))
-                }
+                    Said::Unformed => return Err(not_rational()),
+                    Said::Abstain | Said::Declines => None,
+                }),
                 BoundEdges::Circle(def) => Ok(Some(point_in_disk(&x, def))),
                 BoundEdges::Lateral(_) => Ok(None),
             }
@@ -259,6 +226,83 @@ pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::Cylinde
         nacre_exact::Orient::Positive => RingSide::Outside,
         nacre_exact::Orient::Zero => RingSide::OnBoundary,
     }
+}
+
+/// **Is the rational point `p` on class `wc` inside this ring?** — the one exact reading of a
+/// coordinate against a ring. The 2-D coordinate witness (`nesting`) asks it of a cell, and the
+/// 3-D coordinate ray ([`point_in_faces_rat`]) of every ring its crossing lands in.
+///
+/// The answer is what one witness says ([`Said`]): `In` or `Out`; [`Said::Abstain`] where this
+/// point cannot rank itself — on the ring, or where the mixed walk abstains; [`Said::Silent`] for a
+/// ring whose corners name a class the gate passed silent, when the ring's box does not show the
+/// point outside; [`Said::Unformed`] for a value that could not be formed — a class with no rational
+/// description, or a corner or the chart past `Rat`. It never declines: a coordinate reads every
+/// ring kind. `Err` is a producer defect, a straight ring of fewer than three edges.
+///
+/// **The order is the rule; the cause that knows itself speaks first.**
+/// 1. A ring a silent class names has no rational corners, for the gate's own reason, so its box
+///    answers ([`ring_box_says`]) before anything reads a corner.
+/// 2. A straight ring of fewer than three edges is no boundary: the polygon walk would answer
+///    `Outside` by contract and make it invisible. A mixed ring that short is a lens — a chord and
+///    its arc, a half-disc cap — and is read below: asked of every ring, this refuses six census
+///    cells for being what they are, a boss straddling a bore and an annulus profile in each of the
+///    three operations (measured).
+/// 3. A three-plane corner with no rational meet is no circumstance of this point: every other
+///    witness of the ring meets it too, so it is `Unformed` and not an abstention of the mixed walk
+///    — which is why it is asked before the fork. The chart is formed here, once per ring, so its
+///    overflow has one name on both roads.
+/// 4. A ring with a pierce corner or an arc step takes [`point_in_mixed_ring`].
+/// 5. Every other ring is a polygon of rational corners in the class's chart
+///    ([`nacre_geom::intersect::point_in_ring_2d_rat`] — half-open in y, so a corner on the ray is
+///    decided rather than abstained on).
+pub(crate) fn rational_point_in_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    p: &[nacre_exact::Rat; 3],
+    ring: &[RingEdge],
+) -> Result<Said, BoolError> {
+    if names_a_silent_class(cyls, ring) {
+        let prec = jd.standard.prec;
+        let ph = p.map(|v| nacre_exact::HpBounded::of_rat(v, prec));
+        return Ok(ring_box_says(jd, cyls, wc, &ph, ring));
+    }
+    let mixed = ring_is_mixed(ring);
+    if !mixed && ring.len() < 3 {
+        return Err(reject(RejectReason::DegenerateRing));
+    }
+    let Some(coeffs) = jd.world_rat(wc) else {
+        return Ok(Said::Unformed);
+    };
+    let Some((chart, p2)) = Chart2dRat::of_normal(&[coeffs[0], coeffs[1], coeffs[2]])
+        .and_then(|chart| chart.project(p).map(|p2| (chart, p2)))
+    else {
+        return Ok(Said::Unformed);
+    };
+    if ring
+        .iter()
+        .any(|e| three_plane_name(e.node).is_some() && node_coords_rat(jd, e.node).is_none())
+    {
+        return Ok(Said::Unformed);
+    }
+    if mixed {
+        return Ok(match point_in_mixed_ring(jd, cyls, &coeffs, p, ring) {
+            Some(true) => Said::In,
+            Some(false) => Said::Out,
+            None => Said::Abstain,
+        });
+    }
+    let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
+    let Some(ring2) = chart.ring(jd, &nodes) else {
+        return Ok(Said::Unformed);
+    };
+    Ok(
+        match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
+            RingSide::Inside => Said::In,
+            RingSide::Outside => Said::Out,
+            RingSide::OnBoundary => Said::Abstain,
+        },
+    )
 }
 
 /// **Where the point named `t` is against the disk `def` bounds**, on a plane through both.

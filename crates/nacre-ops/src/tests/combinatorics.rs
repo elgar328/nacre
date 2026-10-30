@@ -927,3 +927,74 @@ fn a_witness_list_runs_out_by_its_strongest_cause() {
     // A deciding answer counts for nothing: the caller acts on it instead.
     assert_eq!(named(&[Said::In, Said::Out]), RingHasNoWitness);
 }
+
+/// **A rational point against a ring is one reading, and a straight ring too short to bound
+/// anything is refused by name** ([`rational_point_in_ring`]). On the top `z = 10` of the box
+/// `[0, 10]³` (beside a second box, so the table is a boolean's): the square of its four walls holds
+/// `(5, 5)`, not `(12, 5)`, and a point on its edge abstains; the ring that runs along `y = 0` and
+/// back is two straight edges, which the polygon walk would read as `Outside` by contract.
+#[test]
+fn a_straight_ring_of_two_edges_is_refused_and_a_square_is_read() {
+    use nacre_math::Point3;
+    let mut m = Model::new();
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 10.0]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0, 5.0, 5.0]),
+        Point3::from_array([15.0, 15.0, 15.0]),
+    );
+    m.rebuild_adjacency();
+    let setup = crate::arrangement::plane_index_setup(&m, a, b).expect("the gate passes");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let class = |p: [[f64; 3]; 3]| {
+        (0..setup.geom.len())
+            .find(|&wc| {
+                p.iter().all(|q| {
+                    setup.geom[wc]
+                        .plane
+                        .signed_distance(Point3::from_array(*q))
+                        .abs()
+                        < 1e-9
+                })
+            })
+            .expect("a class through the points")
+    };
+    let top = class([[0.0, 0.0, 10.0], [1.0, 0.0, 10.0], [0.0, 1.0, 10.0]]);
+    let x0 = class([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    let x10 = class([[10.0, 0.0, 0.0], [10.0, 1.0, 0.0], [10.0, 0.0, 1.0]]);
+    let y0 = class([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]);
+    let y10 = class([[0.0, 10.0, 0.0], [1.0, 10.0, 0.0], [0.0, 10.0, 1.0]]);
+    let corner = |wall: usize, pin: usize| NodeId::three_planes(Canon3::three([top, wall, pin]));
+    let edge = |wall: usize, from: usize, to: usize| RingEdge {
+        node: corner(wall, from),
+        to: corner(wall, to),
+        carrier: Carrier::Plane { wall, sense: None },
+        from_h: EndPin::Class(from),
+        to_h: EndPin::Class(to),
+    };
+    let square = [
+        edge(y0, x0, x10),
+        edge(x10, y0, y10),
+        edge(y10, x10, x0),
+        edge(x0, y10, y0),
+    ];
+    let at = |p: [i128; 3]| p.map(nacre_exact::Rat::from_int);
+    let read = |p: [i128; 3], ring: &[RingEdge]| {
+        rational_point_in_ring(&jd, &setup.cyls, top, &at(p), ring)
+    };
+    assert!(matches!(read([5, 5, 10], &square), Ok(Said::In)));
+    assert!(matches!(read([12, 5, 10], &square), Ok(Said::Out)));
+    assert!(matches!(read([10, 5, 10], &square), Ok(Said::Abstain)));
+    let there_and_back = [edge(y0, x0, x10), edge(y0, x10, x0)];
+    assert!(matches!(
+        read([5, 5, 10], &there_and_back),
+        Err(BoolError::Rejected {
+            reason: RejectReason::DegenerateRing,
+            ..
+        })
+    ));
+}

@@ -77,67 +77,6 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
     Some(&first.def)
 }
 
-/// **Is a rational point inside a ring?** — `Ok(None)` when *this point* cannot answer, `Err` when
-/// a **value** could not be formed exactly.
-///
-/// **The two are different facts and the split is the point of this function.** With one
-/// witness (a disk against a ring) a point *on* the ring and a class with no rational description
-/// can share a refusal; a caller with **several** witnesses must not read them the same way: a
-/// point on the ring has the **next witness as its remedy**, a value that cannot be formed does
-/// not — the lesson `point_in_component`'s doc states for the road one dimension up.
-///
-/// **And it dispatches to the strongest road it can.** A ring the rational chart can name takes
-/// [`nacre_geom::intersect::point_in_ring_2d_rat`], which is **half-open in y** and so decides
-/// even where a ring corner sits on the ray; only a ring with pierce corners or arc steps falls
-/// to `point_in_mixed_ring`, which abstains there. Anything that hands this a witness gets the
-/// better answer for free.
-fn rational_point_in_ring(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc: usize,
-    p: &[nacre_exact::Rat; 3],
-    ring: &[combinatorics::RingEdge],
-) -> Result<Option<bool>, BoolError> {
-    let undecided = || reject(RejectReason::WitnessNotRational);
-    let coeffs = jd.world_rat(wc).ok_or_else(undecided)?;
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let center = *p;
-    // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
-    // parity is affine-invariant, so the basis need not be orthonormal.
-    // **A ring the chart road cannot name takes the mixed road**: pierce corners have no
-    // rational coordinates and arc steps no straight chart
-    // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the chart road
-    // can name still take it — the mixed arm runs on exactly the population the chart road
-    // cannot name.
-    // A three-plane corner with no rational meet (a class with no world statement among its
-    // three) is a value this road cannot form, not this witness's circumstance — the mixed walk
-    // below would abstain on it, and an abstention sends the caller to its next witness, which
-    // meets the same corner.
-    if ring.iter().any(|e| {
-        combinatorics::three_plane_name(e.node).is_some()
-            && combinatorics::node_coords_rat(jd, e.node).is_none()
-    }) {
-        return Err(undecided());
-    }
-    if combinatorics::ring_is_mixed(ring) {
-        return Ok(combinatorics::point_in_mixed_ring(
-            jd, cyls, &coeffs, &center, ring,
-        ));
-    }
-    let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
-    let p2 = chart.project(&center).ok_or_else(undecided)?;
-    let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-    let ring2 = chart.ring(jd, &nodes).ok_or_else(undecided)?;
-    Ok(
-        match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
-            nacre_geom::intersect::RingSide::Inside => Some(true),
-            nacre_geom::intersect::RingSide::Outside => Some(false),
-            // On the boundary this witness says nothing — the caller's next one may.
-            nacre_geom::intersect::RingSide::OnBoundary => None,
-        },
-    )
-}
-
 /// **Whether the disk cylinder `a` cuts on class `wc` lies inside the disk `b` cuts there** — one
 /// rational inequality on the plane: `r_a < r_b` and `(r_b − r_a)² > |c_b − c_a|²`. A disk lies
 /// inside another iff its rim does, and the rims of two classes never meet (the gate proves the
@@ -520,26 +459,12 @@ fn ask(
                 },
             }
         }
-        (Where::Coord(p), Cell::Ring(rb)) => match rational_point_in_ring(jd, cyls, wc, p, rb) {
-            Ok(Some(true)) => Said::In,
-            Ok(Some(false)) => Said::Out,
-            Ok(None) => Said::Abstain,
-            // A **value** that could not be formed — the class has no rational description. Not
-            // an abstention: no coordinate witness will do better on this class. A ring whose
-            // corners a silent class names has no rational corners, and is still asked whether
-            // the point stands outside the ring's box — the one question intervals answer.
-            Err(_) if combinatorics::names_a_silent_class(cyls, rb) => {
-                let prec = jd.standard.prec;
-                combinatorics::ring_box_says(
-                    jd,
-                    cyls,
-                    wc,
-                    &p.map(|x| nacre_exact::HpBounded::of_rat(x, prec)),
-                    rb,
-                )
-            }
-            Err(_) => Said::Unformed,
-        },
+        // The one coordinate reading of a ring: it answers a silent class's ring by its box and
+        // names a value it could not form; a straight ring too short to bound anything is a
+        // producer defect and is raised, as the ray road's reading raises it.
+        (Where::Coord(p), Cell::Ring(rb)) => {
+            combinatorics::rational_point_in_ring(jd, cyls, wc, p, rb)?
+        }
         (Where::Named(n), Cell::Disk(def)) => {
             // A pierce name abstains against a disk: the shortcut below rests on a class of the
             // name lying on one of the cell's faces, which a pierce pair chosen in a pencil need

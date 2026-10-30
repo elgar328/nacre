@@ -320,7 +320,8 @@ fn outside_ring_box(
 /// **What a ring an exact road could not read says of a point** because a class the gate passed
 /// silent names its corners or the point — the one question intervals answer: outside the ring's
 /// box ([`outside_ring_box`]) is [`Said::Out`]; anything else is the gate's undecidedness,
-/// [`Said::Silent`]. The 2-D witnesses and the 3-D coordinate ray both read it.
+/// [`Said::Silent`]. Names read it through [`silent_name_by_box`], coordinates through the one
+/// coordinate reading of a ring ([`rational_point_in_ring`]).
 pub(crate) fn ring_box_says(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
