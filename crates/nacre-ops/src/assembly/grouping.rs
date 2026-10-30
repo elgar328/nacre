@@ -207,37 +207,32 @@ pub(super) fn group_faces(
     /// Trying it **after** the primary list means every question the primary list decides is
     /// decided on the same probe, in the same order; the second stage answers only questions the
     /// first ran out on.
+    ///
+    /// Every probe that does not decide is counted in `said`, whose name is the refusal when the
+    /// list runs out ([`combinatorics::WitnessTally`] — the rule the 2-D witnesses run out by). A
+    /// list that **started empty** is not a list that ran out: a component whose every corner is a
+    /// pierce name, whose caps offer no candidate their ring says is inside — a thin segment of a
+    /// disk — and whose edges name no interior point has no witness at all, and the tally says so
+    /// by the name the rings use for the same proposition.
     fn first_deciding<T>(
         probes: &[combinatorics::Probe],
         more: impl FnOnce() -> Vec<combinatorics::Probe>,
+        said: &mut combinatorics::WitnessTally,
         mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
         for x in probes {
-            if let Some(v) = f(x)? {
-                return Ok(Some(v));
+            match f(x)? {
+                Some(v) => return Ok(Some(v)),
+                None => said.note(&combinatorics::Said::Abstain),
             }
         }
         for x in &more() {
-            if let Some(v) = f(x)? {
-                return Ok(Some(v));
+            match f(x)? {
+                Some(v) => return Ok(Some(v)),
+                None => said.note(&combinatorics::Said::Abstain),
             }
         }
         Ok(None)
-    }
-    // A list that **started empty** is not a list that ran out: a component whose
-    // every corner is a pierce name and whose caps offer no candidate their ring says is inside
-    // — a thin segment of a disk — has no witness at all, and says so by the name the rings use
-    // for the same proposition.
-    ///
-    /// **Asked of both stages**: a component whose corners are all pierce names *and*
-    /// whose edges name no interior point has started empty; one whose edges did offer points has
-    /// run out.
-    fn no_witness(primary: &[combinatorics::Probe], extra: usize) -> RejectReason {
-        if primary.is_empty() && extra == 0 {
-            RejectReason::RingHasNoWitness
-        } else {
-            RejectReason::NoClearRay
-        }
     }
     // **Material or void is a question about nesting, not about normals.**
     //
@@ -269,14 +264,11 @@ pub(super) fn group_faces(
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
         let probes = probes_of(c);
-        let mut extra_len = 0usize;
+        let mut said = combinatorics::WitnessTally::default();
         let depth = first_deciding(
             &probes,
-            || {
-                let v = edge_probes_of(c);
-                extra_len = v.len();
-                v
-            },
+            || edge_probes_of(c),
+            &mut said,
             |x| {
                 let mut d = 0usize;
                 for other in (0..n).filter(|&o| o != c) {
@@ -289,7 +281,7 @@ pub(super) fn group_faces(
                 Ok(Some(d))
             },
         )?
-        .ok_or_else(|| reject(no_witness(&probes, extra_len)))?;
+        .ok_or_else(|| reject(said.reason()))?;
         if depth % 2 == 0 {
             positives.push(c);
         }
@@ -316,14 +308,11 @@ pub(super) fn group_faces(
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
                 let probes = probes_of(d);
-                let mut extra_len = 0usize;
+                let mut said = combinatorics::WitnessTally::default();
                 let containers = first_deciding(
                     &probes,
-                    || {
-                        let v = edge_probes_of(d);
-                        extra_len = v.len();
-                        v
-                    },
+                    || edge_probes_of(d),
+                    &mut said,
                     |x| {
                         let mut cs = Vec::new();
                         for &m in &positives {
@@ -336,7 +325,7 @@ pub(super) fn group_faces(
                         Ok(Some(cs))
                     },
                 )?
-                .ok_or_else(|| reject(no_witness(&probes, extra_len)))?;
+                .ok_or_else(|| reject(said.reason()))?;
                 let owner = match containers.as_slice() {
                     [] => return Err(reject(RejectReason::CavityNoOwner)),
                     [only] => *only,
@@ -357,6 +346,7 @@ pub(super) fn group_faces(
                                 let v = first_deciding(
                                     &probes_of(c),
                                     || edge_probes_of(c),
+                                    &mut combinatorics::WitnessTally::default(),
                                     |x| {
                                         combinatorics::probe_in_component(
                                             jd,

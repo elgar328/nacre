@@ -15,7 +15,7 @@
 //! another copy cannot be written outside it.
 
 use super::*;
-use crate::combinatorics::{self, NodeId};
+use crate::combinatorics::{self, NodeId, Said, WitnessTally, name_planes};
 use crate::planes::*;
 use crate::tolerant::Judge;
 
@@ -210,14 +210,6 @@ enum Where {
     Coord([nacre_exact::Rat; 3]),
 }
 
-/// The plane classes a name holds — the three of a three-plane name, a pierce point's pair.
-fn name_planes(n: NodeId) -> Vec<usize> {
-    match n.kind() {
-        combinatorics::NodeKind::ThreePlane(t) => t.to_vec(),
-        combinatorics::NodeKind::Pierce { planes, .. } => planes.to_vec(),
-    }
-}
-
 /// **A point that can decide a nesting question — and how much it decides.**
 ///
 /// **The distinction is the whole reason this is a type.** The two loops do not
@@ -233,33 +225,6 @@ enum Witness {
     /// A witness this cell *has* but whose value could not be formed exactly — checked-`Rat`
     /// overflow, a class with no rational description. Not the same as having none.
     Unformed,
-}
-
-/// What one witness said about the target.
-enum Said {
-    In,
-    Out,
-    /// This witness cannot rank itself against the target — it sits on the target's boundary, or
-    /// every ray from it grazes. **The next witness is the remedy**, which is why this is not an
-    /// error.
-    Abstain,
-    /// The value needed to ask could not be formed. The next witness may still answer, but if
-    /// none does, the honest name is the arithmetic one and not "no clear ray".
-    Unformed,
-    /// The question reads a plane class the gate proved silent about the cylinders
-    /// ([`crate::planes::WorkingCyl::is_silent`]) — a class with no world statement — and nothing
-    /// here could answer it without one. Not [`Said::Unformed`]: the same arithmetic also fails on
-    /// a `Wide` name or an overflow, and those are width, where this is the gate's own
-    /// undecidedness carried to the place that met it.
-    Silent,
-    /// **The road cannot read the target** — the ray road against a ring with a pierce corner,
-    /// cast from a plane with a world statement (no cylinder table there), or a two-edge lens. Not
-    /// [`Said::Abstain`]: that is one witness's circumstance and the next witness of the same road
-    /// is its remedy; here every witness whose name holds no class the gate passed silent would say
-    /// the same, so the rest of those are skipped and the other road (coordinates) answers. A
-    /// witness whose name holds one never says this: [`ask`] answers it by the ring's box. For the
-    /// refusal's name it counts as an abstention.
-    Declines,
 }
 
 impl Said {
@@ -545,17 +510,11 @@ fn ask(
                         .any(|x| combinatorics::pierce_name(x.node).is_some()),
                     combinatorics::ring_is_mixed(rb),
                 )? {
-                    // A corner on a class with no world statement has no rational coordinates,
-                    // so no coordinate witness stands behind it when the ray road cannot place it.
-                    // The one question its interval answers is whether it stands outside the
-                    // ring's box — the coordinate arm's own question below, asked of the same box.
+                    // The coordinate arm below asks the same box.
                     Said::Declines | Said::Abstain
                         if crate::planes::silent_among(cyls, &name_planes(*n)) =>
                     {
-                        match combinatorics::node_point_hp(jd, cyls, *n) {
-                            Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
-                            _ => Said::Silent,
-                        }
+                        combinatorics::silent_name_by_box(jd, cyls, wc, *n, rb)
                     }
                     said => said,
                 },
@@ -571,7 +530,7 @@ fn ask(
             // the point stands outside the ring's box — the one question intervals answer.
             Err(_) if combinatorics::names_a_silent_class(cyls, rb) => {
                 let prec = jd.standard.prec;
-                if outside_ring_box(
+                if combinatorics::outside_ring_box(
                     jd,
                     cyls,
                     wc,
@@ -624,31 +583,6 @@ fn ask(
     })
 }
 
-/// **Is `p` outside the box that holds the ring?** — then it is outside the ring. The box is
-/// [`combinatorics::ring_box_points_hp`]'s — every corner whatever names it, and every arc's own
-/// box — in the judge's interval arithmetic, and `p` is an interval too (a coordinate witness exactly,
-/// a corner on a class with no world statement as its witness triangles' meet). A comparison whose
-/// interval straddles zero proves nothing, and the answer is then `false`.
-fn outside_ring_box(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc: usize,
-    p: &[nacre_exact::HpBounded; 3],
-    rb: &[combinatorics::RingEdge],
-) -> bool {
-    let Some(points) = combinatorics::ring_box_points_hp(jd, cyls, wc, rb) else {
-        return false;
-    };
-    let prec = jd.standard.prec;
-    (0..3).any(|k| {
-        let signs: Vec<Option<bool>> = points
-            .iter()
-            .map(|x| p[k].sub(&x[k], prec).sign())
-            .collect();
-        signs.iter().all(|s| *s == Some(true)) || signs.iter().all(|s| *s == Some(false))
-    })
-}
-
 pub(crate) fn cell_inside(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -685,13 +619,13 @@ fn inside(
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
     // measured, not assumed: where both roads can answer they agree
     // (`the_two_roads_never_disagree`).
-    let (mut asked, mut unformed, mut declined, mut silent) = (false, false, false, false);
+    let (mut said, mut declined) = (WitnessTally::default(), false);
     #[cfg(test)]
     let mut tally = nesting_probe::DeclineTally::default();
     for w in witnesses(jd, cyls, wc, a) {
         let (p, interior) = match w {
             Witness::Unformed => {
-                unformed = true;
+                said.note(&Said::Unformed);
                 continue;
             }
             Witness::On(p) => (p, false),
@@ -718,33 +652,23 @@ fn inside(
             tally.silent_after += 1;
         }
         match ask(jd, cyls, wc, &p, b)? {
-            Said::Unformed => unformed = true,
-            Said::Silent => silent = true,
-            Said::Abstain => asked = true,
+            // A point of `a` outside `b`: whether it is a boundary point or an interior one, `a`
+            // is not inside `b`.
+            Said::Out => return Ok(false),
+            Said::In if !interior => return Ok(true),
+            Said::In => return Ok(!inside(jd, cyls, wc, b, a, false)?),
             Said::Declines => {
-                asked = true;
+                said.note(&Said::Declines);
                 declined = true;
                 #[cfg(test)]
                 {
                     tally.declines += 1;
                 }
             }
-            // A point of `a` outside `b`: whether it is a boundary point or an interior one, `a`
-            // is not inside `b`.
-            Said::Out => return Ok(false),
-            Said::In if !interior => return Ok(true),
-            Said::In => return Ok(!inside(jd, cyls, wc, b, a, false)?),
+            other => said.note(&other),
         }
     }
-    Err(reject(if silent {
-        RejectReason::CylinderGateUndecided
-    } else if unformed {
-        RejectReason::WitnessNotRational
-    } else if asked {
-        RejectReason::NoClearRay
-    } else {
-        RejectReason::RingHasNoWitness
-    }))
+    Err(reject(said.reason()))
 }
 
 /// **The arrangement's adapter onto [`cell_inside`]** — its cells arrive as indices into the

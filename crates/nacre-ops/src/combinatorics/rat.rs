@@ -292,6 +292,48 @@ pub(crate) fn ring_box_points_hp(
     Some(out)
 }
 
+/// **Is `p` outside the box that holds the ring?** — then it is outside the ring. The box is
+/// [`ring_box_points_hp`]'s — every corner whatever names it, and every arc's own box — in the
+/// judge's interval arithmetic, and `p` is an interval too (a coordinate witness exactly, a corner
+/// on a class with no world statement as its witness triangles' meet). A comparison whose interval
+/// straddles zero proves nothing, and the answer is then `false`.
+pub(crate) fn outside_ring_box(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    p: &[nacre_exact::HpBounded; 3],
+    rb: &[RingEdge],
+) -> bool {
+    let Some(points) = ring_box_points_hp(jd, cyls, wc, rb) else {
+        return false;
+    };
+    let prec = jd.standard.prec;
+    (0..3).any(|k| {
+        let signs: Vec<Option<bool>> = points
+            .iter()
+            .map(|x| p[k].sub(&x[k], prec).sign())
+            .collect();
+        signs.iter().all(|s| *s == Some(true)) || signs.iter().all(|s| *s == Some(false))
+    })
+}
+
+/// **A name holding a class the gate passed silent, against a ring on class `wc` an exact road
+/// could not read** — the one question its interval answers: whether it stands outside the ring's
+/// box ([`outside_ring_box`]). Such a name has no rational coordinates, so no coordinate witness
+/// stands behind it; what the box cannot show is the gate's undecidedness, [`Said::Silent`].
+pub(crate) fn silent_name_by_box(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    n: NodeId,
+    rb: &[RingEdge],
+) -> Said {
+    match node_point_hp(jd, cyls, n) {
+        Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
+        _ => Said::Silent,
+    }
+}
+
 /// **A node as an interval, whichever kind of name it is** — [`Judge::three_hp`] for three planes,
 /// [`PiercePoint::point_hp`] for a pierce point — exact or, with a plane of no world statement
 /// among its two, an interval box ([`PiercePoint::Bounded`]). `None` for a meet the precision could

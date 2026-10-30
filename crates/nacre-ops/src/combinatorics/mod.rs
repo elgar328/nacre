@@ -77,6 +77,72 @@ pub(crate) use sort::*;
 pub(crate) use winding::*;
 pub(crate) use witnesses::*;
 
+/// **What one witness said about a target** — a cell against a cell ([`crate::nesting`]), a
+/// component's probe against another component (`assembly::grouping`): the same question one
+/// dimension apart, so one vocabulary and one name for running out ([`WitnessTally`]).
+pub(crate) enum Said {
+    In,
+    Out,
+    /// This witness cannot rank itself against the target — it sits on the target's boundary, or
+    /// every ray from it grazes. **The next witness is the remedy**, which is why this is not an
+    /// error.
+    Abstain,
+    /// The value needed to ask could not be formed. The next witness may still answer, but if
+    /// none does, the honest name is the arithmetic one and not "no clear ray".
+    Unformed,
+    /// The question reads a plane class the gate proved silent about the cylinders
+    /// ([`crate::planes::WorkingCyl::is_silent`]) — a class with no world statement — and nothing
+    /// here could answer it without one. Not [`Said::Unformed`]: the same arithmetic also fails on
+    /// a `Wide` name or an overflow, and those are width, where this is the gate's own
+    /// undecidedness carried to the place that met it.
+    Silent,
+    /// **The road cannot read the target** — the ray road against a ring with a pierce corner,
+    /// cast from a plane with a world statement (no cylinder table there), or a two-edge lens. Not
+    /// [`Said::Abstain`]: that is one witness's circumstance and the next witness of the same road
+    /// is its remedy; here every witness whose name holds no class the gate passed silent would say
+    /// the same, so the rest of those are skipped and the other road (coordinates) answers. A
+    /// witness whose name holds one never says this: `nesting::ask` answers it by the ring's box.
+    /// For the refusal's name it counts as an abstention.
+    Declines,
+}
+
+/// **What a list of witnesses that all failed to decide is called** — the one rule for the name,
+/// read by both roads that try witnesses in turn. The cause that a later witness could not have
+/// cured wins: the gate's undecidedness ([`Said::Silent`]) over a value that could not be formed
+/// ([`Said::Unformed`]) over witnesses that only grazed; with none asked at all, the cell had no
+/// witness. It names the reason and does not raise it — the raise stays where the list runs out.
+#[derive(Default)]
+pub(crate) struct WitnessTally {
+    asked: bool,
+    unformed: bool,
+    silent: bool,
+}
+
+impl WitnessTally {
+    /// Count one witness that did not decide. A deciding answer (`In`, `Out`) is the caller's to
+    /// act on and counts for nothing here.
+    pub(crate) fn note(&mut self, said: &Said) {
+        match said {
+            Said::Abstain | Said::Declines => self.asked = true,
+            Said::Unformed => self.unformed = true,
+            Said::Silent => self.silent = true,
+            Said::In | Said::Out => {}
+        }
+    }
+
+    pub(crate) fn reason(&self) -> RejectReason {
+        if self.silent {
+            RejectReason::CylinderGateUndecided
+        } else if self.unformed {
+            RejectReason::WitnessNotRational
+        } else if self.asked {
+            RejectReason::NoClearRay
+        } else {
+            RejectReason::RingHasNoWitness
+        }
+    }
+}
+
 /// **A direction on a working plane**: the carrier that supplies it, and which way along it.
 ///
 /// **The arc and ruling payloads' fields are private, and that is the point.** Every rule that

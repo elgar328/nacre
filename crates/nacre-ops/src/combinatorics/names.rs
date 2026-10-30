@@ -96,6 +96,14 @@ impl NodeId {
     }
 }
 
+/// The plane classes a name holds — the three of a three-plane name, a pierce point's pair.
+pub(crate) fn name_planes(n: NodeId) -> Vec<usize> {
+    match n.kind() {
+        NodeKind::ThreePlane(t) => t.to_vec(),
+        NodeKind::Pierce { planes, .. } => planes.to_vec(),
+    }
+}
+
 /// **The one door out of the identity and into the machinery that assumes every vertex has a
 /// three-plane name** — the ray casts, the ring walks, the wall-and-handle derivations, and the
 /// comparison keys. They take `[usize; 3]`, and rightly: an in-flight probe point like
