@@ -602,10 +602,13 @@ impl<W: PlaneWitness> Judge<'_, W> {
             } else if ft < zero {
                 // The complement of the shorter way round from `to` to `from`.
                 turn(&t, &v) == Some(true) && turn(&v, &f) == Some(true)
-            } else if nacre_exact::dot3_rat(from, to).is_some_and(|d| d > zero) {
-                false // `from` and `to` point one way: the whole turn
             } else {
-                turn(&f, &v) == Some(false) // exactly a half turn
+                // `from` and `to` on one line: the dot product says which way. An overflow says
+                // neither, and reading it as a half turn would clear a whole one.
+                match nacre_exact::dot3_rat(from, to) {
+                    Some(d) if d < zero => turn(&f, &v) == Some(false), // exactly a half turn
+                    _ => false, // the whole turn, or not known
+                }
             }
         })
     }

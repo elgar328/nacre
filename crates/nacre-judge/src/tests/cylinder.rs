@@ -433,6 +433,13 @@ fn a_line_along_the_axis_is_off_an_arc_by_its_direction() {
             !off(&[[v(2, 0), v(2, 0)]]),
             "stated {stated}: the whole turn"
         );
+        // One way round, far enough out that the ends' dot product overflows while their cross
+        // does not: still the whole turn, not a half turn that would miss `+x`.
+        let k = 1i128 << 64;
+        assert!(
+            !off(&[[v(0, k), v(0, k)]]),
+            "stated {stated}: the whole turn, its dot product overflowing"
+        );
         assert!(
             !off(&[[v(0, 2), v(-2, 0)], [v(0, -2), v(2, 0)]]),
             "stated {stated}: off one arc, on the next"
