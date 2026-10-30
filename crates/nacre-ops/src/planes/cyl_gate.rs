@@ -86,6 +86,7 @@ pub(crate) fn cylinder_gate(
             realized: *cache,
             owner,
             shared: Vec::new(),
+            grazed: Vec::new(),
             records: Vec::new(),
             boxes: Vec::new(),
         });
@@ -189,6 +190,7 @@ pub(crate) fn cylinder_gate(
     // and every cylinder of the table has a lateral row (the table refuses a class with none), so
     // only whole rims means some.
     let mut hinged: Vec<(usize, SharedRuling)> = Vec::new();
+    let mut grazed: Vec<(usize, GrazeLine)> = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
         debug_assert!(
             meeting(ci, ClassMeet::Silent(Silence::Apart))
@@ -223,6 +225,37 @@ pub(crate) fn cylinder_gate(
                         line: (c.min(x), c.max(x)),
                         stated_by: vec![x],
                         at,
+                    },
+                ));
+            }
+        }
+        // A grazing class answers the same way: its tangent line is a ruling of the cylinder, so
+        // another record's line with it on a lateral face is shown off the faces, or — for a
+        // sectioned class, which draws that ruling — shown to be it before their common turn
+        // ([`graze_ruling`]) and recorded, or refused. A named plane can hold the tangent line too
+        // (a turn of 45° puts its points on `x − y = c`), so every record is asked.
+        for g in meeting(ci, ClassMeet::Silent(Silence::Grazes)) {
+            let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
+            let others = meeting(ci, ClassMeet::Cuts)
+                .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
+                .chain(tangent_walls_of(ci))
+                .chain(meeting(ci, ClassMeet::Silent(Silence::Sectioned)))
+                .chain(meeting(ci, ClassMeet::Silent(Silence::Grazes)).filter(move |&x| x != g));
+            for x in others {
+                if line_off_lateral(jd, g, x, &cyl.def, fps) {
+                    continue;
+                }
+                if meets[ci][x] != ClassMeet::Silent(Silence::Sectioned)
+                    || !graze_ruling(model, jd, x, g, &cyl.def)
+                {
+                    return Err(undecided());
+                }
+                grazed.push((
+                    ci,
+                    GrazeLine {
+                        section: x,
+                        graze: g,
+                        spans: fps.iter().filter_map(|fp| fp.span).collect(),
                     },
                 ));
             }
@@ -343,6 +376,9 @@ pub(crate) fn cylinder_gate(
         .chain(hinged)
     {
         cyls[ci].shared.push(sr);
+    }
+    for (ci, gl) in grazed {
+        cyls[ci].grazed.push(gl);
     }
     for t in &mut tangencies {
         t.line_is_an_edge = t.line_on_another_face
@@ -476,7 +512,7 @@ fn class_meet(
     // to speak about the world. `rotated` is not that question: a plane whose truth carries
     // a translation is *judged* through its chain and still has exact world coefficients,
     // and that is the population the rulings road serves. A class with no world name
-    // passes only as silent ([`Silence`] — beside, apart or sectioned), else it is
+    // passes only as silent ([`Silence`] — beside, apart, sectioned or grazing), else it is
     // geometry; a `Wide` one is width — the world holds it, `Rat` does not.
     let Some(coeffs) = jd.world_rat(c) else {
         if wp.world.is_some() {
@@ -485,6 +521,11 @@ fn class_meet(
         let stance = nameless_stance(model, jd, c, cyl);
         if let Stance::Beside(side) = stance {
             return Ok((ClassMeet::Silent(Silence::Beside(side)), Vec::new()));
+        }
+        // A tangent plane divides nothing, so the rims are not asked — before the filled reading,
+        // which asks them.
+        if stance == Stance::Grazes && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
+            return Ok((ClassMeet::Silent(Silence::Grazes), Vec::new()));
         }
         if whole_rims[ci] && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
             return Ok((ClassMeet::Silent(Silence::Apart), Vec::new()));
@@ -746,6 +787,24 @@ pub(crate) struct SharedRuling {
     pub(crate) at: [nacre_exact::Rat; 3],
 }
 
+/// **A sectioned class and a grazing class whose meet line is a ruling of the cylinder** — the
+/// ruling the sectioned class draws is the line the grazing class touches along. Every class across
+/// the axis meets that line in one point with two names — the three-plane one and a root of its
+/// pair with the sectioned class — and intervals never prove two names one point; the gate proves
+/// it before the two classes' common turn ([`graze_ruling`]) and records it here for the name table
+/// (`Aliases::record_graze_line`). [`SharedRuling`] cannot carry it: its point of the line is world
+/// rational, and a ruling turned off the quarters about the axis has none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GrazeLine {
+    /// The class that sections the cylinder ([`Silence::Sectioned`]).
+    pub(crate) section: usize,
+    /// The class touching the cylinder along the line ([`Silence::Grazes`]).
+    pub(crate) graze: usize,
+    /// The lateral faces' axis spans: a class across the axis meets the line on a face only where
+    /// its station falls within one.
+    pub(crate) spans: Vec<[nacre_exact::Rat; 2]>,
+}
+
 /// The plane classes other than `wall` that hold `wall`'s tangent line to the cylinder `def` —
 /// `plane_plane_cylinder` answering `OnRuling` (or the two classes being one plane). The one
 /// spelling of «this line lies on the cylinder» the record below uses for every pair. `None` is
@@ -936,10 +995,11 @@ fn wall_faces_clear(
 ///
 /// **A tangency is a graze, not a crossing.** The plane meets the lateral in one line and
 /// *divides nothing*, so it earns no cut ([`CylRecord::Cuts`]) — that record's proposition is
-/// "the plane runs **within** the radius", and the three roads gated on it assert exactly that
-/// ([`WorkingCyl::cuts`] has one reader and [`WorkingCyl::draws_rulings`] two, each with the
-/// matching `debug_assert`; the latter also take a class that sections the cylinder,
-/// `Silence::Sectioned`, whose premise is the gate's interval reading of the same inequality). The
+/// "the plane runs **within** the radius", and the roads gated on it assert exactly that, each with
+/// the matching `debug_assert` ([`WorkingCyl::draws_rulings`] also takes a class that sections the
+/// cylinder, `Silence::Sectioned`, whose premise is the same inequality — read exactly before the
+/// class's turn where it turns about the axis, on the interval road otherwise). A class with no
+/// world statement that touches the cylinder is no cut either: it grazes (`Silence::Grazes`). The
 /// arrangement therefore never sees this pair, which is why opening the gate needs no arrangement
 /// change at all (measured: of 21 cells, the 15 outside the third-plane population assemble with
 /// `validate` clean and exact volumes).
@@ -1943,12 +2003,14 @@ enum Stance {
     Beside(i8),
     /// The plane runs along the axis within the radius: it cuts the lateral in two rulings.
     Rulings,
+    /// The plane touches the cylinder along one ruling, proved exactly before its turn.
+    Grazes,
     /// Neither is proved.
     Unknown,
 }
 
 /// **Whether the whole cylinder stands on one side of a nameless class's plane, and if not, whether
-/// the plane cuts it in rulings** ([`Stance`]). `Beside` is one question with two witnesses, asked
+/// the plane cuts it in rulings or touches it along one** ([`Stance`]). `Beside` is one question with two witnesses, asked
 /// in this order, and both sides are minted where every side is ([`WorkingPlane::misses`], the
 /// judge's filter, which needs only the class's witness triangle):
 /// * every corner of the lateral faces' boxes ([`lateral_box`], stated exactly) strictly on one side
@@ -1963,6 +2025,14 @@ enum Stance {
 /// Within the radius such a plane cuts the lateral in two rulings, the one shape the ruling road
 /// draws. Asked before the class's faces are: a cylinder beside the class has nothing on it,
 /// whatever else that cylinder records.
+///
+/// **A plane whose turn is about the cylinder's own axis is asked exactly, before the turn**
+/// ([`Model::cylinder_before_chain`]): the turn leaves the cylinder in place, so the plane's name
+/// stands to the cylinder carried back as the plane stands to it in the world, and one clearance
+/// call answers three ways — beyond the radius (`Beside`, the second witness above with no interval
+/// to straddle), within it (`Rulings`), and exactly on it (`Grazes` — the answer an interval never
+/// gives, since it proves two quantities apart and never equal). Any other plane along the axis is
+/// asked on the interval road.
 fn nameless_stance(
     model: &Model,
     jd: &Judge<'_, WorkingPlane>,
@@ -1976,22 +2046,35 @@ fn nameless_stance(
     if model.plane_cylinder_relation(wp.surf, cyl.surf) != Some(nacre_exact::AxisRelation::Along) {
         return Stance::Unknown;
     }
+    let beside_the_axis = || {
+        let axis_point = nacre_judge::WitnessPoint::at(cyl.def.origin());
+        wp.misses(std::slice::from_ref(&axis_point))
+            .map_or(Stance::Unknown, Stance::Beside)
+    };
+    if let Some(before) = model.cylinder_before_chain(wp.surf, &cyl.def)
+        && let Some(name) = model
+            .surface_name(wp.surf)
+            .and_then(|n| n.narrow().copied())
+    {
+        return match nacre_exact::point_plane_clearance_rat(&name, &before.origin(), before.r2()) {
+            nacre_exact::Orient::Positive => beside_the_axis(),
+            nacre_exact::Orient::Negative => Stance::Rulings,
+            nacre_exact::Orient::Zero => Stance::Grazes,
+        };
+    }
     match jd.plane_cuts(c, &cyl.def) {
-        Some(false) => {
-            let axis_point = nacre_judge::WitnessPoint::at(cyl.def.origin());
-            wp.misses(std::slice::from_ref(&axis_point))
-                .map_or(Stance::Unknown, Stance::Beside)
-        }
+        Some(false) => beside_the_axis(),
         Some(true) => Stance::Rulings,
         None => Stance::Unknown,
     }
 }
 
-/// **Is the line `p ∩ x` off every lateral face of `def`?** — `p` a sectioned class (along the
-/// axis), `x` another class recorded on the same cylinder, `pieces` the cylinder's lateral faces
-/// ([`lateral_pieces`]). A named `x` not along the axis meets `p` in a line that crosses the axis
-/// direction, which no ruling does. Otherwise both run along the axis — a named `x` by its
-/// coefficients, a nameless one because it sections the cylinder too — and the line is off when
+/// **Is the line `p ∩ x` off every lateral face of `def`?** — `p` a class with no world statement
+/// along the axis that sections or grazes the cylinder, `x` another class recorded on the same
+/// cylinder, `pieces` the cylinder's lateral faces ([`lateral_pieces`]). A named `x` not along the
+/// axis meets `p` in a line that crosses the axis direction, which no ruling does. Otherwise both
+/// run along the axis — a named `x` by its coefficients, a nameless one because it sections or
+/// grazes the cylinder too — and the line is off when
 /// there is none, the two planes parallel ([`Judge::planes_parallel`]: two classes of one table are
 /// proved not coplanar, so parallel ones share no line), or when [`line_off_faces`] shows it off
 /// the faces from the two planes alone — off the surface, or at a direction no face's arc holds.
@@ -2014,6 +2097,42 @@ fn line_off_lateral(
     let meet = nacre_judge::cylinder::AxisLine::Meet(p, x);
     jd.planes_parallel(p, x) == Some(true)
         || line_off_faces(jd, def, None, Some(meet), pieces) == Some(true)
+}
+
+/// **Is the line of sectioned class `s` and grazing class `g` a ruling of cylinder `def`?** — asked
+/// where both are rational: the two planes on one chain ([`Model::surface_motion`]), the cylinder
+/// carried back before it ([`Model::cylinder_before_chain`]), their two names meeting on it
+/// ([`nacre_exact::quad::CylinderMeet::OnRuling`]). The chain turns both planes and leaves the
+/// cylinder in place, so the line it carries out is a ruling still. `false` where any step is not
+/// shown.
+fn graze_ruling(
+    model: &Model,
+    jd: &Judge<'_, WorkingPlane>,
+    s: usize,
+    g: usize,
+    def: &nacre_topo::CylinderDef,
+) -> bool {
+    let (ss, sg) = (jd.planes[s].surf, jd.planes[g].surf);
+    if model.surface_motion(ss) != model.surface_motion(sg) {
+        return false;
+    }
+    let Some(before) = model.cylinder_before_chain(ss, def) else {
+        return false;
+    };
+    let name = |p| model.surface_name(p).and_then(|n| n.narrow().copied());
+    let (Some(ns), Some(ng)) = (name(ss), name(sg)) else {
+        return false;
+    };
+    matches!(
+        nacre_exact::quad::plane_plane_cylinder(
+            &ns,
+            &ng,
+            &before.origin(),
+            &before.dir(),
+            before.r2()
+        ),
+        Some(nacre_exact::quad::CylinderMeet::OnRuling(_))
+    )
 }
 
 /// **Do the faces on class `c` stand apart from every lateral box?** — every face's edges are

@@ -219,6 +219,71 @@ impl Model {
         Some((p, d))
     }
 
+    /// **The cylinder `def`, stated in the world, carried back into the frame `plane`'s statement is
+    /// written in** — where the plane's name and the cylinder are both rational, so a relation
+    /// between them is asked exactly.
+    ///
+    /// A plane with no world statement sits on a chain with a turn off the quarters, and such a turn
+    /// has no rational inverse. It needs none when it turns about the cylinder's own axis line: the
+    /// turn then leaves the cylinder in place as a set, and the plane stands to it before the turn
+    /// as it does after. So the chain is walked from its leaf back to its root — an exact node
+    /// (translation, quarter turn, axis mirror) carries the cylinder back exactly, its squared
+    /// radius unchanged under a rigid motion; a turn off the quarters must turn about the cylinder's
+    /// axis line as it stands in that node's frame (parallel to the axis, its pivot on it).
+    ///
+    /// `None` where that is not shown: a turn about another line, a frame node, an overflow.
+    /// Nothing is read from an approximation.
+    pub fn cylinder_before_chain(
+        &self,
+        plane: Handle<Surface>,
+        def: &CylinderDef,
+    ) -> Option<CylinderDef> {
+        use nacre_exact::Rat;
+        let zero = Rat::from_int(0);
+        let mut out = def.clone();
+        let mut cur = self.surface_motion(plane);
+        while let Some(h) = cur {
+            let node = self.motion(h);
+            match node.motion.exact_affine() {
+                Some(a) => {
+                    let back = a.inverse();
+                    out = CylinderDef::new(
+                        back.point_rat(out.origin())?,
+                        back.dir_rat(out.dir())?,
+                        back.dir_rat(out.ref_dir())?,
+                        out.r2().clone(),
+                    )?;
+                }
+                None => {
+                    let Motion::Rotate { axis, pivot, .. } = node.motion else {
+                        return None;
+                    };
+                    let mut along = [zero; 3];
+                    along[match axis {
+                        nacre_exact::Axis::X => 0,
+                        nacre_exact::Axis::Y => 1,
+                        nacre_exact::Axis::Z => 2,
+                    }] = Rat::from_int(1);
+                    let o = out.origin();
+                    let off = [
+                        pivot[0].checked_sub(o[0])?,
+                        pivot[1].checked_sub(o[1])?,
+                        pivot[2].checked_sub(o[2])?,
+                    ];
+                    let on_axis = |v: [Rat; 3]| {
+                        nacre_exact::cross3_rat(&v, &out.dir())
+                            .is_some_and(|c| c.iter().all(|x| *x == zero))
+                    };
+                    if !on_axis(along) || !on_axis(off) {
+                        return None;
+                    }
+                }
+            }
+            cur = node.parent;
+        }
+        Some(out)
+    }
+
     /// **A plane's canonical name in the world**, whatever frame its truth is written in — the
     /// door between "how this surface got here" and "where it is".
     ///

@@ -76,6 +76,9 @@ pub(super) fn seed_from_operands(
         for sr in &cyl.shared {
             aliases.record_shared_ruling(jd, cyls, ci, sr);
         }
+        for gl in &cyl.grazed {
+            aliases.record_graze_line(jd, cyls, ci, gl);
+        }
     }
     corners.sort_unstable();
     corners.dedup();
@@ -301,6 +304,60 @@ impl Aliases {
                     self.union_point(point, r);
                 }
             }
+        }
+    }
+
+    /// **A ruling a sectioned class draws and a grazing class touches along** — the gate's record
+    /// ([`crate::planes::GrazeLine`]). Every class `k` across the axis whose station falls on a lateral
+    /// face meets the line in one point: the three-plane `{k, section, graze}` and the root of
+    /// `k ∩ section` the intervals leave ([`combinatorics::root_through`] — the record is the word that
+    /// the point lies on the cylinder). A station off the faces is left alone: the point is on the
+    /// infinite cylinder only, and folding it would hand a corner there (a box's, standing past the
+    /// lateral) a pierce name a class with no world statement cannot build into a vertex.
+    ///
+    /// The fold puts the grazing class into the name of a point off its faces, which the disk
+    /// shortcut in `nesting` would misread («a corner a silent class names lies on its faces»). It does
+    /// not, because the representative is the pierce name (`rep_rank` puts an interval pierce before
+    /// a three-plane one, and rings carry representatives) — asserted here, where the fold is made.
+    pub(super) fn record_graze_line(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
+        cyl: usize,
+        gl: &crate::planes::GrazeLine,
+    ) {
+        let Some(wcy) = cyls.get(cyl) else { return };
+        let def = &wcy.def;
+        let m = def.dir();
+        for k in 0..jd.planes.len() {
+            let Some(wk) = jd.world_rat(k) else {
+                continue;
+            };
+            if !class_carries_circle(&[wk[0], wk[1], wk[2]], &m) {
+                continue; // only a class across the axis meets the line in a point
+            }
+            let Some(t) = crate::planes::axis_param_of_plane(&wk, def) else {
+                continue;
+            };
+            if !gl.spans.iter().any(|[lo, hi]| *lo <= t && t <= *hi) {
+                continue;
+            }
+            let mut s = [k, gl.section, gl.graze];
+            s.sort_unstable();
+            let Some(tri) = combinatorics::canonical_triple(jd, &s) else {
+                continue;
+            };
+            let point = NodeId::three_planes(tri);
+            let at = nacre_judge::cylinder::CylPoint::Three(s);
+            let Some(r) = combinatorics::root_through(jd, cyl, def, [k, gl.section], at) else {
+                continue;
+            };
+            self.interval_only.insert(r);
+            self.union_point(point, r);
+            debug_assert!(
+                combinatorics::pierce_name(self.canon_point(point)).is_some(),
+                "a point folded onto a grazed ruling is represented by its pierce name"
+            );
         }
     }
 

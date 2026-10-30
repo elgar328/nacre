@@ -749,3 +749,86 @@ fn a_turned_plane_holds_the_line_it_turned_about() {
         "a quarter turn folds"
     );
 }
+
+/// **A turn about a cylinder's own axis carries the cylinder back unchanged, and a turn about any
+/// other line carries nothing** ([`Model::cylinder_before_chain`]). The box `[10,15]×[20,25]×[0,5]`
+/// is moved by the transform's own chain and its wall `x = 10` asked about the `z` cylinder of
+/// radius 2 on `(10, 12)` as the chain leaves it in the world: a turn off the quarters about that
+/// axis gives it back as it was; about `(11, 12)` there is no rational frame to give; an exact step
+/// after the turn is undone exactly; a quarter turn after it (recorded, the face has a history) is
+/// undone too, the axis direction with it.
+#[test]
+fn a_turn_about_the_axis_carries_the_cylinder_back() {
+    use nacre_exact::{Isometry, Rotation};
+    let r = |x: i128| Rat::from_int(x);
+    let turn = |axis: Axis, pivot: [i128; 3], deg: i128| {
+        Isometry::rotation(Rotation {
+            axis,
+            pivot: pivot.map(r),
+            angle: Angle::from_deg(r(deg)).unwrap(),
+        })
+    };
+    let x10 = [r(1), r(0), r(0), r(-10)];
+    let cyl = |o: [Rat; 3], d: [Rat; 3], e: [Rat; 3]| {
+        nacre_topo::CylinderDef::new(o, d, e, nacre_exact::BigRat::from(r(4))).unwrap()
+    };
+    let before = cyl([r(10), r(12), r(0)], [r(0), r(0), r(1)], [r(1), r(0), r(0)]);
+    // The cylinder carried back before the moved face's chain, from where the same chain puts it.
+    let back = |moves: &[Isometry]| {
+        let mut m = Model::new();
+        let mut s = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([10.0, 20.0, 0.0]),
+            Point3::from_array([15.0, 25.0, 5.0]),
+        );
+        // An exact step moves the cylinder with the box; a turn off the quarters has no rational
+        // image and leaves it where it stands — in place when the turn is about its axis.
+        let mut world = before.clone();
+        for iso in moves {
+            s = transform(&mut m, s, iso).expect("the box moves");
+            if let (Some(o), Some(d), Some(e)) = (
+                iso.point_rat(world.origin()),
+                iso.dir_rat(world.dir()),
+                iso.dir_rat(world.ref_dir()),
+            ) {
+                world = cyl(o, d, e);
+            }
+        }
+        let face = m
+            .shell(m.solid(s).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.face(fh).surface)
+            .find(|&sf| m.surface_name(sf).and_then(|n| n.narrow()) == Some(&x10))
+            .expect("the face keeps its stated plane");
+        m.cylinder_before_chain(face, &world)
+            .map(|d| (d.origin(), d.dir(), d.r2().clone()))
+    };
+    let stated = Some((before.origin(), before.dir(), before.r2().clone()));
+    assert_eq!(
+        back(&[turn(Axis::Z, [10, 12, 0], -37)]),
+        stated,
+        "turned about the axis"
+    );
+    assert_eq!(
+        back(&[turn(Axis::Z, [11, 12, 0], -37)]),
+        None,
+        "turned about another line"
+    );
+    assert_eq!(
+        back(&[
+            turn(Axis::Z, [10, 12, 0], -37),
+            Isometry::translation([r(1), r(2), r(3)])
+        ]),
+        stated,
+        "an exact step after the turn"
+    );
+    assert_eq!(
+        back(&[
+            turn(Axis::Z, [10, 12, 0], -37),
+            turn(Axis::X, [0, 0, 0], 90)
+        ]),
+        stated,
+        "a quarter turn after it, about another axis"
+    );
+}

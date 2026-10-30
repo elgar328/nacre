@@ -525,6 +525,7 @@ fn vertex_names(
                 realized: *cache,
                 owner: crate::planes::SolidSide::A,
                 shared: Vec::new(),
+                grazed: Vec::new(),
                 records: Vec::new(),
                 boxes: Vec::new(),
             }

@@ -485,6 +485,9 @@ pub(crate) struct WorkingCyl {
     /// record ([`SharedRuling`]), carried with the class like `owner` so every road that holds
     /// the table reads it rather than deciding it again.
     pub(crate) shared: Vec<SharedRuling>,
+    /// **The lines a sectioned class shares with a class grazing this cylinder** — the gate's
+    /// record ([`GrazeLine`]), proved before the two classes' common turn.
+    pub(crate) grazed: Vec<GrazeLine>,
     /// **What the gate hands the arrangement about plane classes and this cylinder** — one entry
     /// per class with something to say ([`CylRecord`]), read through the methods below. Every
     /// nameless class of the boolean is here, or the gate refused.
@@ -539,6 +542,14 @@ pub(crate) enum Silence {
     /// and nowhere else: the lateral chart takes no ruling of it, since no face of the class reaches
     /// the lateral, and the other classes see the class's faces apart from the cylinder.
     Sectioned,
+    /// The class's plane touches the cylinder along one ruling, proved exactly in the frame its
+    /// statement is written in ([`Model::cylinder_before_chain`] — the plane's turn is about the
+    /// cylinder's axis), and every face on it stands apart from every lateral face's box. A tangent
+    /// plane divides nothing: the cylinder lies on one side of it but for that one line, so the
+    /// filled reading and the true one are the same and no rim shape is asked. A line of the class
+    /// crosses no arc of the cylinder. The ruling it touches along may be one a sectioned class
+    /// draws — then the gate records the pair ([`GrazeLine`]) or refuses.
+    Grazes,
 }
 
 impl WorkingCyl {
@@ -548,6 +559,13 @@ impl WorkingCyl {
         self.records
             .iter()
             .any(|&(c, r)| c == wc && r == CylRecord::Silent(Silence::Sectioned))
+    }
+
+    /// Whether class `wc` touches this cylinder along one ruling ([`Silence::Grazes`]).
+    pub(crate) fn grazes(&self, wc: usize) -> bool {
+        self.records
+            .iter()
+            .any(|&(c, r)| c == wc && r == CylRecord::Silent(Silence::Grazes))
     }
 
     /// Whether class `wc`'s plane cuts this cylinder's lateral faces ([`CylRecord::Cuts`]).
@@ -574,7 +592,8 @@ impl WorkingCyl {
     pub(crate) fn beside_all(&self) -> impl Iterator<Item = (usize, i8)> + '_ {
         self.records.iter().filter_map(|&(c, r)| match r {
             CylRecord::Silent(Silence::Beside(side)) => Some((c, side)),
-            CylRecord::Silent(Silence::Apart | Silence::Sectioned) | CylRecord::Cuts => None,
+            CylRecord::Silent(Silence::Apart | Silence::Sectioned | Silence::Grazes)
+            | CylRecord::Cuts => None,
         })
     }
 

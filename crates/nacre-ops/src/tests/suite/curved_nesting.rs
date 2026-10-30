@@ -30,6 +30,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 3] {
                 realized: *cache,
                 owner: crate::planes::SolidSide::A,
                 shared: Vec::new(),
+                grazed: Vec::new(),
                 records: Vec::new(),
                 boxes: Vec::new(),
             }

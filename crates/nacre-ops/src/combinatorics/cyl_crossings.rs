@@ -231,9 +231,11 @@ pub(crate) fn arc_crossings(
     Some(inside)
 }
 
-/// [`arc_crossings`] behind the one shortcut the gate's record gives: an arc of a cylinder the gate
-/// proved clear of the class `wc` lies wholly on one side of it, so it crosses nothing — and a class
-/// with no world statement is not asked. What [`ClassLine`] counts and names an arc's crossings by.
+/// [`arc_crossings`] behind the gate's record: an arc of a cylinder the gate proved clear of the class
+/// `wc` lies wholly on one side of it, and an arc of a cylinder `wc` touches along one ruling
+/// ([`crate::planes::Silence::Grazes`]) lies on one side but for that line — so neither crosses, and
+/// a class with no world statement is not asked. What [`ClassLine`] counts and names an arc's
+/// crossings by.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn arc_crossings_of(
     jd: &Judge<'_, WorkingPlane>,
@@ -246,7 +248,7 @@ pub(crate) fn arc_crossings_of(
     on_end: Option<NodeId>,
 ) -> Option<Vec<NodeId>> {
     let wcy = cyls.get(cyl)?;
-    if wcy.beside(wc).is_some() {
+    if wcy.beside(wc).is_some() || wcy.grazes(wc) {
         return Some(Vec::new());
     }
     arc_crossings(jd, &wcy.def, wc, fc, cyl, ccw, ends, on_end)
@@ -257,8 +259,9 @@ pub(crate) fn arc_crossings_of(
 /// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
 ///
 /// A ruling edge lies in the face's own plane `fc` (a plane holding a ruling runs through the
-/// axis — or is tangent, which the gate passes but does **not** record, so no ruling of it ever
-/// reaches here), so the pair `{wc, fc}` cuts the cylinder in two
+/// axis — or is tangent, which the gate passes without a cut, a class with no world statement as
+/// grazing, and neither draws a ruling, so no ruling of it ever reaches here), so the pair
+/// `{wc, fc}` cuts the cylinder in two
 /// points, one on each of `fc`'s two rulings, and `(cyl, side)` — the identity
 /// [`Wall::Ruling`] carries, measured by
 /// [`ruling_side`] against its `plane` when the ring was named (on a plane

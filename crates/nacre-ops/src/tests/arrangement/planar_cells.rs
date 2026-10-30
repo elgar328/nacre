@@ -901,6 +901,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
                     realized: figure,
                     owner: SolidSide::A,
                     shared: Vec::new(),
+                    grazed: Vec::new(),
                     records: Vec::new(),
                     boxes: Vec::new(),
                 }

@@ -156,6 +156,7 @@ fn armed_boss_at(
             realized: *cache,
             owner: crate::planes::SolidSide::A,
             shared: Vec::new(),
+            grazed: Vec::new(),
             records: Vec::new(),
             boxes: Vec::new(),
         });
@@ -649,6 +650,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
         realized: *realized,
         owner: crate::planes::SolidSide::A,
         shared: Vec::new(),
+        grazed: Vec::new(),
         records: Vec::new(),
         boxes: Vec::new(),
     }];

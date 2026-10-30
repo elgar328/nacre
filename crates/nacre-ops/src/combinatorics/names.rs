@@ -143,6 +143,38 @@ pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, QuadRoot)> {
     }
 }
 
+/// **The root of the pair `a ∩ b` on cylinder `def` that is the point `at`**, on the caller's word
+/// that `at` lies on both planes and on the cylinder — so it is one of the pair's two roots. An
+/// interval proves two points apart and never one: the root proved apart from `at` is not it, and
+/// the other — whose box is formed and not proved apart — is. `None` for any other reading:
+/// neither proved apart, a root with no box, a pair along the axis (whose roots have none —
+/// [`Judge::pierce`] needs the line proved off the axis direction). Both proved apart would put the
+/// true point in neither box, which the premise denies.
+pub(crate) fn root_through(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    [a, b]: [usize; 2],
+    at: nacre_judge::cylinder::CylPoint<'_>,
+) -> Option<NodeId> {
+    let roots = nacre_judge::cylinder::Roots::Boxes { planes: [a, b] };
+    // Per root: `None` where its box cannot be formed, else whether it is proved apart.
+    let apart = [QuadRoot::Lo, QuadRoot::Hi].map(|root| {
+        roots
+            .point(jd, cyl, def, root)
+            .map(|p| jd.points_apart(nacre_judge::cylinder::CylPoint::Pierce(&p), at))
+    });
+    debug_assert!(
+        apart != [Some(true), Some(true)],
+        "both roots of a pair apart from a point the caller puts on both planes"
+    );
+    match apart {
+        [Some(true), Some(false)] => Some(NodeId::pierce(a, b, cyl, QuadRoot::Hi)),
+        [Some(false), Some(true)] => Some(NodeId::pierce(a, b, cyl, QuadRoot::Lo)),
+        _ => None,
+    }
+}
+
 /// **A pierce point restated on another pair of plane classes through it** — `Pierce{[a, b],
 /// cyl, root}` for the point `node` names, with the root that puts it there: of `a ∩ b`'s meets
 /// with the cylinder, the one lying on the name's own planes (a tangency's single `Double` root
@@ -153,12 +185,8 @@ pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, QuadRoot)> {
 ///
 /// **A pair with a class of no world statement is read on the caller's word** that the point lies
 /// on both planes — the gate's record of a line two classes share (`Aliases::record_shared_ruling`)
-/// or the faces through a result vertex. An interval proves two points apart and never one, so of
-/// the pair's two roots the one proved apart from the point is not it, and the other — whose box
-/// is formed and not proved apart — is. Any other reading is `None`: neither proved apart, a root
-/// with no box, a pair along the axis (whose roots have none — [`Judge::pierce`] needs the line
-/// proved off the axis direction). Both proved apart would put the true point in neither box, which
-/// the premise denies.
+/// or the faces through a result vertex — and its root is the one the intervals leave
+/// ([`root_through`]).
 pub(crate) fn restate_pierce(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -171,24 +199,14 @@ pub(crate) fn restate_pierce(
     let def = &cyls.get(cyl)?.def;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (Some(wa), Some(wb)) = (jd.world_rat(a), jd.world_rat(b)) else {
-        use nacre_judge::cylinder::{CylPoint, Roots};
         let at = jd.pierce(own, cyl, def, own_root)?;
-        let roots = Roots::Boxes { planes: [a, b] };
-        // Per root: `None` where its box cannot be formed, else whether it is proved apart.
-        let apart = [QuadRoot::Lo, QuadRoot::Hi].map(|root| {
-            roots
-                .point(jd, cyl, def, root)
-                .map(|p| jd.points_apart(CylPoint::Pierce(&p), CylPoint::Pierce(&at)))
-        });
-        debug_assert!(
-            apart != [Some(true), Some(true)],
-            "both roots of a pair apart from a point the caller puts on both planes"
+        return root_through(
+            jd,
+            cyl,
+            def,
+            [a, b],
+            nacre_judge::cylinder::CylPoint::Pierce(&at),
         );
-        return match apart {
-            [Some(true), Some(false)] => Some(NodeId::pierce(a, b, cyl, QuadRoot::Hi)),
-            [Some(false), Some(true)] => Some(NodeId::pierce(a, b, cyl, QuadRoot::Lo)),
-            _ => None,
-        };
     };
     let others: Vec<[nacre_exact::Rat; 4]> = own
         .iter()

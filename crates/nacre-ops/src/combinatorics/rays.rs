@@ -411,7 +411,9 @@ fn end_on_line(jd: &Judge<'_, WorkingPlane>, a: usize, b: usize, name: NodeId) -
 /// for that cylinder's arcs: how often one crosses the line `p ∩ q` is read off interval boxes
 /// ([`arc_crossings`] on the judge's interval road), the count the arrangement's own arc road gives the same arc. A class
 /// silent by `Silence::Apart` may cut the cylinder too and has no recorded side either, so its
-/// crossings are counted the same way.
+/// crossings are counted the same way. A class that grazes a cylinder (`Silence::Grazes`) has the
+/// whole cylinder on one side but for the line it touches along: an arc crosses `q` nowhere
+/// ([`arc_crossings_of`]), and a pierce corner's side is read off its interval box.
 fn silent_table(cyls: &[crate::planes::WorkingCyl], q: usize) -> &[crate::planes::WorkingCyl] {
     if crate::planes::silent_among(cyls, &[q]) {
         cyls

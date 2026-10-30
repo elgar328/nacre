@@ -599,8 +599,13 @@ fn ask(
             // does. A `Sectioned` class never gets here: its cylinder has no whole rim, so no disk.
             // The argument reads «a corner named by the class lies on one of its faces», which a
             // cell's corner keeps and a point off the class's faces does not; an alias that put the
-            // class into the name of a point off its faces would break it unseen. A class proved
-            // `Beside` the cylinder needs no such premise and is read by the shared rule.
+            // class into the name of a point off its faces would break it unseen. The gate's shared
+            // lines do fold such names — a point on a cylinder's rim into a three-plane name with a
+            // class of no world statement (`Aliases::record_shared_ruling`,
+            // `Aliases::record_graze_line`) — and what keeps this reading honest is the
+            // representative: a point on a cylinder is represented by its pierce name, which the arm
+            // abstains from above. A class proved `Beside` the cylinder needs no such premise and is
+            // read by the shared rule.
             let apart = cyls
                 .iter()
                 .find(|cy| cy.def == *def)
