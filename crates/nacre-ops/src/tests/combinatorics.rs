@@ -900,3 +900,30 @@ fn a_pierce_points_height_is_its_caps_not_an_oblique_planes() {
         "{msg}"
     );
 }
+
+/// **A list that ran out is named by the cause a later witness could not have cured** — the
+/// gate's undecidedness over a value that could not be formed over a graze, and nothing asked at
+/// all is no witness. The two roads that try witnesses in turn (`nesting::inside`,
+/// `assembly::grouping`) both raise this name. Each row's expected name is written by hand.
+#[test]
+fn a_witness_list_runs_out_by_its_strongest_cause() {
+    use RejectReason::{CylinderGateUndecided, NoClearRay, RingHasNoWitness, WitnessNotRational};
+    let named = |said: &[Said]| {
+        let mut t = WitnessTally::default();
+        for s in said {
+            t.note(s);
+        }
+        t.reason()
+    };
+    assert_eq!(named(&[]), RingHasNoWitness);
+    assert_eq!(named(&[Said::Abstain]), NoClearRay);
+    assert_eq!(named(&[Said::Declines]), NoClearRay);
+    assert_eq!(named(&[Said::Abstain, Said::Unformed]), WitnessNotRational);
+    assert_eq!(
+        named(&[Said::Unformed, Said::Silent, Said::Abstain]),
+        CylinderGateUndecided
+    );
+    assert_eq!(named(&[Said::Silent]), CylinderGateUndecided);
+    // A deciding answer counts for nothing: the caller acts on it instead.
+    assert_eq!(named(&[Said::In, Said::Out]), RingHasNoWitness);
+}

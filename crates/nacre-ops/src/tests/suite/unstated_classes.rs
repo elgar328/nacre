@@ -1435,18 +1435,18 @@ fn box_turned_about_the_bar(m: &mut Model, y0: f64, z: [f64; 2]) -> Handle<Solid
 ///
 /// The gate: the wall 1.5 from the axis sections the bar, the other three walls stand beside it —
 /// `(3, 0, 1)`, every family. The answers, by derived volume, in both operand orders:
-/// - a box above the bar or beside it on the floor: the Cut and the Common build. The Fuse is two
-///   bodies, and the depth of one in the other is a question in space (`assembly::grouping`) whose
-///   rays from the box's corners run on the wall plane, where the bar's faces cannot be read yet —
-///   refused by name.
+/// - a box above the bar or beside it on the floor: every operation builds. The Fuse is two bodies,
+///   and the depth of one in the other is a question in space (`assembly::grouping`): a ray from a
+///   box corner meets the bar's flat face or cap at a point named by the box's walls, which has no
+///   rational coordinates, and the face's ring answers it by its box — outside.
 /// - the bar inside a named block `[0,20]² × [−2,12]` with the box on the block: on the wall plane
 ///   the bar's section lies inside the block's, and its corners answer «inside». The Fuse is the
 ///   block and box, `5600 + 125`; the bar less the block is empty; the block less the bar keeps a
-///   cavity, whose depth in space is asked by a ray that meets a face the wall plane bounds or
-///   names a corner of, and cannot show it misses — refused by the gate's name.
+///   cavity, `5725 − 20π`. Its depth in space is asked from the bar's corners along the axis: the
+///   ray up passes beside the turned box and crosses the block's top face, read exactly, its hole
+///   under the box by that hole's box.
 #[test]
 fn a_section_whose_every_corner_is_a_pierce_point_is_asked_by_one() {
-    use RejectReason::{CylinderGateUndecided, NoClearRay};
     let pi = std::f64::consts::PI;
     let bar = 20.0 * pi;
     // Each family with the other order's Cut.
@@ -1456,7 +1456,7 @@ fn a_section_whose_every_corner_is_a_pierce_point_is_asked_by_one() {
                 name: "a half bar, a turned box above it, a wall plane through the bar's round side only",
                 build: |m| (half_bar(m), box_turned_about_the_bar(m, 6.0, [20.0, 25.0])),
                 gate: Ok((3, 0, 1, 0)),
-                want: [Refused(NoClearRay), Built(1, bar), Built(0, 0.0)],
+                want: [Built(2, bar + 125.0), Built(1, bar), Built(0, 0.0)],
             },
             Built(1, 125.0),
         ),
@@ -1465,7 +1465,7 @@ fn a_section_whose_every_corner_is_a_pierce_point_is_asked_by_one() {
                 name: "a half bar, a turned box beside it on the floor, a wall plane through the bar's round side only",
                 build: |m| (half_bar(m), box_turned_about_the_bar(m, 6.0, [0.0, 5.0])),
                 gate: Ok((3, 0, 1, 0)),
-                want: [Refused(NoClearRay), Built(1, bar), Built(0, 0.0)],
+                want: [Built(2, bar + 125.0), Built(1, bar), Built(0, 0.0)],
             },
             Built(1, 125.0),
         ),
@@ -1481,7 +1481,7 @@ fn a_section_whose_every_corner_is_a_pierce_point_is_asked_by_one() {
                 gate: Ok((3, 0, 1, 0)),
                 want: [Built(1, 5725.0), Built(0, 0.0), Built(1, bar)],
             },
-            Refused(CylinderGateUndecided),
+            Built(1, 5725.0 - bar),
         ),
     ];
     let ab: Vec<Family> = fams.iter().map(|(f, _)| *f).collect();
@@ -1545,16 +1545,15 @@ fn prism_on_the_diagonal(m: &mut Model, z: [f64; 2]) -> Handle<Solid> {
 /// The answers, by derived volume, in both operand orders:
 /// - a half bar, the box above it — the grazing wall with a wall within the radius whose line with
 ///   it misses the surface, or with a wall through the axis meeting it on the ruling that wall draws
-///   (recorded, `GrazeLine`): the Cut and the Common build. The Fuse is two bodies whose depth is a
-///   question in space (`assembly::grouping`), refused by name as for the half bar's other boxes
-///   (todo «3차원 덩어리 판정의 광선»).
+///   (recorded, `GrazeLine`): every operation builds, the Fuse as two bodies whose depth is a
+///   question in space (`assembly::grouping`), answered as for the half bar's other boxes.
 /// - the half bar inside a named block `[0,20]² × [−2,12]`, the through-axis box on the block: the
 ///   bar's section on the two walls answers the Fuse and the Common; the block less the bar asks the
-///   same question in space and is refused by name.
+///   same question in space and keeps the cavity.
 /// - a whole bar, the same boxes and block: the grazing wall is the fourth count (the filled reading
 ///   would also take it) and the other wall is sectioned — through the axis it meets the grazing
 ///   wall on the ruling it draws (recorded), within the radius its line with it misses the surface;
-///   everything builds but the block less the bar, refused as above.
+///   everything builds.
 /// - a named prism on `x = y` across the half bar and a box turned 45° whose wall `x = 8` touches the
 ///   bar on the ruling `x = y` cuts: a record's line with the grazing class on a lateral face that is
 ///   not a sectioned class's is refused at the gate. No face of either class reaches that line here
@@ -1567,7 +1566,7 @@ fn prism_on_the_diagonal(m: &mut Model, z: [f64; 2]) -> Handle<Solid> {
 ///   half bar's flat face in the winding's extreme-point search, a coincidence of the fixture.
 #[test]
 fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
-    use RejectReason::{CylinderGateUndecided, NoClearRay};
+    use RejectReason::CylinderGateUndecided;
     let pi = std::f64::consts::PI;
     let (half, whole) = (20.0 * pi, 40.0 * pi);
     // Each family with the other order's Fuse and Cut.
@@ -1582,13 +1581,9 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                     )
                 },
                 gate: Ok((2, 0, 1, 1)),
-                want: [
-                    Refused(CylinderGateUndecided),
-                    Built(1, half),
-                    Built(0, 0.0),
-                ],
+                want: [Built(2, half + 125.0), Built(1, half), Built(0, 0.0)],
             },
-            [Refused(NoClearRay), Built(1, 125.0)],
+            [Built(2, half + 125.0), Built(1, 125.0)],
             0,
         ),
         (
@@ -1601,13 +1596,9 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                     )
                 },
                 gate: Ok((2, 0, 1, 1)),
-                want: [
-                    Refused(CylinderGateUndecided),
-                    Built(1, half),
-                    Built(0, 0.0),
-                ],
+                want: [Built(2, half + 125.0), Built(1, half), Built(0, 0.0)],
             },
-            [Refused(NoClearRay), Built(1, 125.0)],
+            [Built(2, half + 125.0), Built(1, 125.0)],
             1,
         ),
         (
@@ -1622,7 +1613,7 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                 gate: Ok((2, 0, 1, 1)),
                 want: [Built(1, 5725.0), Built(0, 0.0), Built(1, half)],
             },
-            [Built(1, 5725.0), Refused(CylinderGateUndecided)],
+            [Built(1, 5725.0), Built(1, 5725.0 - half)],
             1,
         ),
         (
@@ -1682,7 +1673,7 @@ fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
                 gate: Ok((2, 0, 1, 1)),
                 want: [Built(1, 5725.0), Built(0, 0.0), Built(1, whole)],
             },
-            [Built(1, 5725.0), Refused(CylinderGateUndecided)],
+            [Built(1, 5725.0), Built(1, 5725.0 - whole)],
             1,
         ),
         (

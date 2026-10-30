@@ -5,20 +5,7 @@
 
 ## 지금
 
-### 3차원 덩어리 판정의 광선이 단면 클래스 위에서 읽지 못한다
-
-결과가 여러 덩어리이면 깊이를 공간의 광선으로 묻는다(`assembly::grouping`). 광선이 이름 없는 단면 평면 위를 달리거나
-그 평면의 면을 만나면 기권한다.
-
-- 이름 지은 탐침: 그 평면이 가르는 원통의 옆면은 `curved_count` 가 세계 진술이나 `Beside` 기록으로만 읽고,
-  호가 섞인 면은 `named_point_in_face` 가 유리수 좌표 도로로만 읽는다 — 광선 도로는 변이 둘인 렌즈를 걷지 못하고,
-  이름 있는 광선 평면에서 막히면 다른 평면을 시도하지 않는다.
-- 좌표 탐침: 단면 클래스의 면이나 그 클래스를 꼭짓점 이름에 든 면은 광선이 비키는지만 묻고, 못 보이면 게이트의
-  이름으로 거절한다(`in_faces` 의 `ray_misses_face`).
-
-인구는 점수판 `a_section_whose_every_corner_is_a_pierce_point_is_asked_by_one` 의 Fuse(`NoClearRay`)와 감싼 블록
-가족의 B − A(`CylinderGateUndecided`), 그리고 `a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn`
-의 반원기둥 Fuse 와 블록 − 막대(반원기둥·온 막대)다 — 모두 오늘 사용자가 만나는 거절이다.
+비어 있다 — 다음 단위는 아래 「다음」에서 고른다.
 
 ## 다음 — 사용자가 만나는 한계
 
@@ -351,6 +338,14 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
   상자에서 떨어져 있어 그 선 위의 간선이 옆면 안에 없다; 정거장 접기는 `stated_by` 가 둘인 기록만 읽는다) 보수적이다(꼭짓점이
   남는다). 모두 기록의 점을 읽게 하면 경첩 기록이 다른 기록과 같은 길로 읽힌다. `line_along_ruling` 은 세계 진술이 없는
   클래스가 낀 짝을 저장 향의 구간 부호(`Judge::stored_line_along`)로 대신 읽는다.
+
+### 유리수 점 대 링의 정확한 판독이 두 벌이다
+
+유리수 점이 진술된 클래스의 링 안인가를 2차원 좌표 증인(`nesting` 의 `rational_point_in_ring`)과 3차원 좌표 광선
+(`point_in_faces_rat` 의 경계 판독)이 따로 읽는다. 다른 점: 경계 위(`None` 대 `OnBoundary`), 퇴화한 직선 링(계약상
+`Outside` 대 `DegenerateRing`), 세 평면 꼭짓점의 유리수 여부를 섞인 링 갈래 앞에서 묻는가(2차원은 묻고 오류 → `Unformed`,
+3차원은 섞인 링 길이 기권). 같은 명제의 두 철자이고 실패의 뜻이 다르다 — 합치면 거절 이름이 바뀐다. 말 없는 꼭짓점의
+링을 상자로 읽는 갈래는 이미 하나다(`combinatorics::ring_box_says`).
 
 ### 구간 이름의 순위는 별도 집합이 든다
 

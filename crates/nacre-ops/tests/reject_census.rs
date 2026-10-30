@@ -466,7 +466,7 @@ const CORPUS: [Fixture; 14] = [
     Fixture {
         name: "diamond-void",
         // One site, and it is the one the caller is told about. The per-node probe's "this node
-        // cannot decide" is an abstention in its type (`Ok(None)`), not an error for the retry to
+        // cannot decide" is an abstention in what it answers, not an error for the retry to
         // catch (as an error it would ring `no_clear_ray` 24 times per boolean and surface once,
         // measured). What rings is what surfaces.
         //

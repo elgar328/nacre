@@ -530,17 +530,13 @@ fn ask(
             // the point stands outside the ring's box — the one question intervals answer.
             Err(_) if combinatorics::names_a_silent_class(cyls, rb) => {
                 let prec = jd.standard.prec;
-                if combinatorics::outside_ring_box(
+                combinatorics::ring_box_says(
                     jd,
                     cyls,
                     wc,
                     &p.map(|x| nacre_exact::HpBounded::of_rat(x, prec)),
                     rb,
-                ) {
-                    Said::Out
-                } else {
-                    Said::Silent
-                }
+                )
             }
             Err(_) => Said::Unformed,
         },

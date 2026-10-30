@@ -1,4 +1,5 @@
 use super::*;
+use crate::combinatorics::Said;
 /// **A result face as the ray reads it** — its surface's truth and every boundary in the
 /// engine's own vocabulary.
 ///
@@ -196,11 +197,11 @@ pub(super) fn group_faces(
         out
     };
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
-    // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
-    // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
-    // other nodes as its remedy, a failed judgement does not — retrying on `Err(_)` too would let
-    // a real cause masquerade as `NoClearRay` once every node hit it. `Ok(None)` here means every
-    // node abstained; that being a reject is the *caller's*
+    // (`Ok(Err(why))` — it grazed a boundary, or met the gate's undecidedness) is passed over for
+    // the next, and a failed judgement (`Err`) propagates immediately. The last part is the point
+    // of the shape: an abstention has other nodes as its remedy, a failed judgement does not —
+    // retrying on `Err(_)` too would let a real cause masquerade as `NoClearRay` once every node
+    // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
     // proposition to raise.
     /// **Two stages, the second built only on exhaustion**: `more` is the supply that
     /// costs something to derive, and a component whose first corner decides never pays for it.
@@ -213,23 +214,28 @@ pub(super) fn group_faces(
     /// list that **started empty** is not a list that ran out: a component whose every corner is a
     /// pierce name, whose caps offer no candidate their ring says is inside — a thin segment of a
     /// disk — and whose edges name no interior point has no witness at all, and the tally says so
-    /// by the name the rings use for the same proposition.
+    /// by the name the rings use for the same proposition. A list run out by [`Said::Silent`] has no
+    /// fixture here: no list in the suite runs out at all (the `reject-trace` sweep raises nothing
+    /// from this file), and the two placements built to reach it (a bar's cavity in a block with
+    /// turned boxes across every probe's ray — fused onto the block's sides, or standing off them on
+    /// named bridges) were refused first, by the circle nesting on the caps' planes and by the
+    /// gate's corner reading.
     fn first_deciding<T>(
         probes: &[combinatorics::Probe],
         more: impl FnOnce() -> Vec<combinatorics::Probe>,
         said: &mut combinatorics::WitnessTally,
-        mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
+        mut f: impl FnMut(&combinatorics::Probe) -> Result<Result<T, Said>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
         for x in probes {
             match f(x)? {
-                Some(v) => return Ok(Some(v)),
-                None => said.note(&combinatorics::Said::Abstain),
+                Ok(v) => return Ok(Some(v)),
+                Err(why) => said.note(&why),
             }
         }
         for x in &more() {
             match f(x)? {
-                Some(v) => return Ok(Some(v)),
-                None => said.note(&combinatorics::Said::Abstain),
+                Ok(v) => return Ok(Some(v)),
+                Err(why) => said.note(&why),
             }
         }
         Ok(None)
@@ -273,12 +279,12 @@ pub(super) fn group_faces(
                 let mut d = 0usize;
                 for other in (0..n).filter(|&o| o != c) {
                     match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
-                        Some(true) => d += 1,
-                        Some(false) => {}
-                        None => return Ok(None), // grazed — this node abstains
+                        Said::In => d += 1,
+                        Said::Out => {}
+                        why => return Ok(Err(why)), // this node abstains, and says why
                     }
                 }
-                Ok(Some(d))
+                Ok(Ok(d))
             },
         )?
         .ok_or_else(|| reject(said.reason()))?;
@@ -317,12 +323,12 @@ pub(super) fn group_faces(
                         let mut cs = Vec::new();
                         for &m in &positives {
                             match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
-                                Some(true) => cs.push(m),
-                                Some(false) => {}
-                                None => return Ok(None), // grazed against a material — abstain
+                                Said::In => cs.push(m),
+                                Said::Out => {}
+                                why => return Ok(Err(why)), // abstains against a material
                             }
                         }
-                        Ok(Some(cs))
+                        Ok(Ok(cs))
                     },
                 )?
                 .ok_or_else(|| reject(said.reason()))?;
@@ -333,30 +339,46 @@ pub(super) fn group_faces(
                         // Innermost: inside every other container. The pairwise facts are
                         // decided **before** the search, because the search closures speak
                         // bool and a failed judgement must propagate, not vanish into "not
-                        // inside". A pair where every node abstains stays `false` — no
-                        // evidence places `c` inside `o`. (Nested containers are a rare
-                        // population; deciding
-                        // the few pairs up front costs nothing measurable.)
+                        // inside". A pair where every node grazes stays `false` — no evidence
+                        // places `c` inside `o`; one where the gate's undecidedness stopped a
+                        // node is refused by the gate's name, which «not inside» would turn
+                        // into a cavity no material owns. (Nested containers are a rare
+                        // population; deciding the few pairs up front costs nothing measurable.)
                         let mut inside = HashMap::new();
                         for &c in &containers {
                             for &o in &containers {
                                 if o == c {
                                     continue;
                                 }
+                                let mut said = combinatorics::WitnessTally::default();
                                 let v = first_deciding(
                                     &probes_of(c),
                                     || edge_probes_of(c),
-                                    &mut combinatorics::WitnessTally::default(),
+                                    &mut said,
                                     |x| {
-                                        combinatorics::probe_in_component(
-                                            jd,
-                                            cyls,
-                                            x,
-                                            &comp_faces[o],
+                                        Ok(
+                                            match combinatorics::probe_in_component(
+                                                jd,
+                                                cyls,
+                                                x,
+                                                &comp_faces[o],
+                                            )? {
+                                                Said::In => Ok(true),
+                                                Said::Out => Ok(false),
+                                                why => Err(why),
+                                            },
                                         )
                                     },
-                                )?
-                                .unwrap_or(false);
+                                )?;
+                                let v = match v {
+                                    Some(v) => v,
+                                    None if said.reason()
+                                        == RejectReason::CylinderGateUndecided =>
+                                    {
+                                        return Err(reject(RejectReason::CylinderGateUndecided));
+                                    }
+                                    None => false,
+                                };
                                 inside.insert((c, o), v);
                             }
                         }

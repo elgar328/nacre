@@ -297,7 +297,7 @@ pub(crate) fn ring_box_points_hp(
 /// judge's interval arithmetic, and `p` is an interval too (a coordinate witness exactly, a corner
 /// on a class with no world statement as its witness triangles' meet). A comparison whose interval
 /// straddles zero proves nothing, and the answer is then `false`.
-pub(crate) fn outside_ring_box(
+fn outside_ring_box(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
@@ -317,10 +317,27 @@ pub(crate) fn outside_ring_box(
     })
 }
 
-/// **A name holding a class the gate passed silent, against a ring on class `wc` an exact road
-/// could not read** — the one question its interval answers: whether it stands outside the ring's
-/// box ([`outside_ring_box`]). Such a name has no rational coordinates, so no coordinate witness
-/// stands behind it; what the box cannot show is the gate's undecidedness, [`Said::Silent`].
+/// **What a ring an exact road could not read says of a point** because a class the gate passed
+/// silent names its corners or the point — the one question intervals answer: outside the ring's
+/// box ([`outside_ring_box`]) is [`Said::Out`]; anything else is the gate's undecidedness,
+/// [`Said::Silent`]. The 2-D witnesses and the 3-D coordinate ray both read it.
+pub(crate) fn ring_box_says(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    p: &[nacre_exact::HpBounded; 3],
+    rb: &[RingEdge],
+) -> Said {
+    if outside_ring_box(jd, cyls, wc, p, rb) {
+        Said::Out
+    } else {
+        Said::Silent
+    }
+}
+
+/// [`ring_box_says`] for a **name** holding a class the gate passed silent: such a name has no
+/// rational coordinates, so no coordinate witness stands behind it, and it is asked as its
+/// interval ([`node_point_hp`]).
 pub(crate) fn silent_name_by_box(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -329,8 +346,8 @@ pub(crate) fn silent_name_by_box(
     rb: &[RingEdge],
 ) -> Said {
     match node_point_hp(jd, cyls, n) {
-        Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
-        _ => Said::Silent,
+        Some(x) => ring_box_says(jd, cyls, wc, &x, rb),
+        None => Said::Silent,
     }
 }
 

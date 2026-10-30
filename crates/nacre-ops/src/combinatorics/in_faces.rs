@@ -26,14 +26,17 @@ use nacre_geom::intersect::RingSide;
 /// strip — a population the gate **serves** rather than refuses (a crossing or a
 /// tangency), so what owes this arm a fixture is the rulings road, not a refusal.
 ///
-/// `Ok(None)` = this ray grazed; the caller has other directions to try.
+/// [`Said::In`] or [`Said::Out`] decide; [`Said::Abstain`] is a ray that grazed, and
+/// [`Said::Silent`] one stopped by a class the gate passed silent — a face on such a class it could
+/// not show it misses, or a crossing a ring that class names could not show outside by its box.
+/// In both the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     p: &[nacre_exact::Rat; 3],
     dir: &[nacre_exact::Rat; 3],
     faces: &[CompFace],
-) -> Result<Option<bool>, BoolError> {
+) -> Result<Said, BoolError> {
     use nacre_exact::Rat;
     use nacre_geom::intersect::point_in_ring_2d_rat;
     let not_rational = || reject(RejectReason::WitnessNotRational);
@@ -67,35 +70,39 @@ pub(crate) fn point_in_faces_rat(
                 // A circle or polygon outer on a cylinder face has no producer; refusing to
                 // guess costs the caller another direction, never a wrong answer.
                 let BoundEdges::Lateral(loops) = &f.outer else {
-                    return Ok(None);
+                    return Ok(Said::Abstain);
                 };
                 match lateral_face_crossings(jd, [&line[0], &line[1]], def, loops, &ahead) {
                     Some(CurvedHit::Counted(k)) => {
                         count += k;
                         continue;
                     }
-                    Some(CurvedHit::Graze) | None => return Ok(None),
+                    Some(CurvedHit::Graze) | None => return Ok(Said::Abstain),
                 }
             }
             CompSurf::Plane(q) => *q,
         };
-        // **A face this road cannot state is asked only whether the ray misses it** — its class,
-        // or a corner of its outline, is one the gate proved silent about the cylinders: a class
-        // with no world statement, whose coefficients and corners have no rational spelling. The
-        // ray misses the face when every corner lies strictly to one side of a plane through the
-        // ray, or strictly behind its origin ([`ray_misses_face`]); what that cannot show, this
-        // road cannot answer, and the reason is the gate's.
-        let unstated = crate::planes::silent_among(cyls, &[q])
-            || std::iter::once(&f.outer)
-                .chain(&f.inner)
-                .any(|b| matches!(b, BoundEdges::Ring(r) if names_a_silent_class(cyls, r)));
-        if unstated {
+        // **The face is read by its cause.** A class with no world statement — one the gate proved
+        // silent about the cylinders — has no rational crossing with the ray, so the one question
+        // its interval answers is whether the ray misses the face: every corner strictly to one
+        // side of a plane through the ray, or strictly behind its origin ([`ray_misses_face`]).
+        // What that cannot show — the ray may well cross the face — this ray cannot count, and
+        // another direction may miss it. A face on a stated plane whose outline a silent class
+        // names has an exact crossing, and is read like any stated face below; only the ring that
+        // class names answers by its box, the rule the 2-D coordinate witness reads.
+        let Some(coeffs) = jd.world_rat(q) else {
+            let unstated = crate::planes::silent_among(cyls, &[q])
+                || std::iter::once(&f.outer)
+                    .chain(&f.inner)
+                    .any(|b| matches!(b, BoundEdges::Ring(r) if names_a_silent_class(cyls, r)));
+            if !unstated {
+                return Err(not_rational());
+            }
             if ray_misses_face(jd, cyls, q, &line, &ahead, f) {
                 continue;
             }
-            return Err(reject(RejectReason::CylinderGateUndecided));
-        }
-        let coeffs = jd.world_rat(q).ok_or_else(not_rational)?;
+            return Ok(Said::Silent);
+        };
         let n = [coeffs[0], coeffs[1], coeffs[2]];
         let nd = nacre_exact::dot3_rat(&n, dir).ok_or_else(not_rational)?;
         let residual = nacre_exact::dot3_rat(&n, p)
@@ -132,9 +139,23 @@ pub(crate) fn point_in_faces_rat(
         .ok_or_else(not_rational)?;
         let chart = Chart2dRat::of_normal(&n).ok_or_else(not_rational)?;
         let x2 = chart.project(&x).ok_or_else(not_rational)?;
-        // Each bound answers by its own kind — the same split the named road makes.
+        // Each bound answers by its own kind — the same split the named road makes. A ring whose
+        // corners a silent class names has no rational corners; its box answers, and what the box
+        // cannot show leaves this ray to the gate's undecidedness.
+        let mut silent = false;
         let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
             match b {
+                BoundEdges::Ring(r) if names_a_silent_class(cyls, r) => {
+                    let prec = jd.standard.prec;
+                    let xh = x.map(|v| nacre_exact::HpBounded::of_rat(v, prec));
+                    Ok(match ring_box_says(jd, cyls, q, &xh, r) {
+                        Said::Out => Some(RingSide::Outside),
+                        _ => {
+                            silent = true;
+                            None
+                        }
+                    })
+                }
                 BoundEdges::Ring(r) => {
                     // A mixed ring forks to the rational walk here exactly as the named
                     // road forks: the crossing x is already rational, and the chart-ring
@@ -171,7 +192,7 @@ pub(crate) fn point_in_faces_rat(
             }
         };
         let Some(material) = decided(material_of(f, inside)?) else {
-            return Ok(None);
+            return Ok(if silent { Said::Silent } else { Said::Abstain });
         };
         if t == zero {
             // The crossing is the ray's own origin — either the ray meets this plane there, or it
@@ -179,7 +200,7 @@ pub(crate) fn point_in_faces_rat(
             // "inside" has no answer; off it, the plane is touched (or run along) at points
             // outside the face and counts for nothing.
             if material {
-                return Ok(None);
+                return Ok(Said::Abstain);
             }
             continue;
         }
@@ -187,7 +208,7 @@ pub(crate) fn point_in_faces_rat(
             count += 1;
         }
     }
-    Ok(Some(count % 2 == 1))
+    Ok(if count % 2 == 1 { Said::In } else { Said::Out })
 }
 
 /// **Does the ray miss this face, provably?** — the points whose box holds the face's outline, in
@@ -279,8 +300,9 @@ fn mixed_side(inside: Option<bool>) -> Option<RingSide> {
 /// [`lateral_face_crossings`] for a probe ray named by three plane classes: it states the ray's
 /// two planes and the "behind" cut plane from the class table and hands them over.
 ///
-/// `Ok(None)` — as `Some(None)` here — is the abandon-this-ray answer; `Err` never happens because
-/// every failure this can meet is arithmetic, and arithmetic that cannot answer is an abstention.
+/// `Err` is the abandon-this-ray answer, and says why: [`Said::Silent`] for a ray on a class the
+/// gate passed silent, which has no statement to count with, [`Said::Abstain`] for the rest —
+/// a graze, a `Wide` name, arithmetic that cannot answer.
 fn curved_count(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -289,7 +311,7 @@ fn curved_count(
     c: usize,
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
-) -> Result<Option<usize>, BoolError> {
+) -> Result<usize, Said> {
     // **A ray on a plane the gate proved the whole cylinder beside crosses none of it.** The ray
     // lies in both `a` and `b`; if the gate recorded this cylinder beside either
     // ([`crate::planes::WorkingCyl::beside`] — by its boxes or by the axis's distance), the count is
@@ -300,12 +322,16 @@ fn curved_count(
     if let Some(cy) = cyls.iter().find(|cy| cy.def == *def)
         && (cy.beside(a).is_some() || cy.beside(b).is_some())
     {
-        return Ok(Some(0));
+        return Ok(0);
     }
     // A class with no rational description and no such proof: this ray cannot be counted, and the
     // caller casts the next one.
     let Some(((ca, cb), cc)) = jd.world_rat(a).zip(jd.world_rat(b)).zip(jd.world_rat(c)) else {
-        return Ok(None);
+        return Err(if crate::planes::silent_among(cyls, &[a, b, c]) {
+            Said::Silent
+        } else {
+            Said::Abstain
+        });
     };
     // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
     // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
@@ -315,14 +341,12 @@ fn curved_count(
         let d0 = nacre_exact::Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&d, &at)?)?;
         Some([d[0], d[1], d[2], d0])
     })() else {
-        return Ok(None);
+        return Err(Said::Abstain);
     };
-    Ok(
-        match lateral_face_crossings(jd, [&ca, &cb], def, loops, &half) {
-            Some(CurvedHit::Counted(k)) => Some(k),
-            Some(CurvedHit::Graze) | None => None,
-        },
-    )
+    match lateral_face_crossings(jd, [&ca, &cb], def, loops, &half) {
+        Some(CurvedHit::Counted(k)) => Ok(k),
+        Some(CurvedHit::Graze) | None => Err(Said::Abstain),
+    }
 }
 
 /// A rim's plane restated with the **axis** as its normal — `[m, −m·(o + t·m)]`, so
@@ -632,6 +656,10 @@ pub(crate) type ComponentFaces = Vec<CompFace>;
 /// walk cannot read a pierce corner against a class with a world statement (it sides nodes with
 /// no cylinder table there) — letting it try would refuse with `PierceVertexUnnamed`. That road does not tell a point on its ring from an
 /// abstention, so a point on a mixed ring is unknown.
+///
+/// **A name holding a class the gate passed silent** has no rational coordinates, so where a ring
+/// bound says nothing it is asked the one question its interval answers — whether it stands
+/// outside the ring's box ([`silent_name_by_box`], the rule the 2-D witnesses read).
 pub(crate) fn named_point_in_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -669,7 +697,16 @@ pub(crate) fn named_point_in_face(
             BoundEdges::Lateral(_) => Ok(None),
         }
     };
-    material_of(f, inside)
+    let silent = crate::planes::silent_among(cyls, &x);
+    material_of(f, |b| match (inside(b)?, b) {
+        (None, BoundEdges::Ring(r)) if silent => Ok(
+            match silent_name_by_box(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), r) {
+                Said::Out => Some(RingSide::Outside),
+                _ => None,
+            },
+        ),
+        (side, _) => Ok(side),
+    })
 }
 
 pub(crate) fn point_in_component(
@@ -677,14 +714,23 @@ pub(crate) fn point_in_component(
     cyls: &[crate::planes::WorkingCyl],
     query: [usize; 3],
     faces: &[CompFace],
-) -> Result<Option<bool>, BoolError> {
+) -> Result<Said, BoolError> {
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
     vplanes.dedup();
+    // A face reading that said nothing at a point whose name holds a class the gate passed silent
+    // is the gate's undecidedness; anything else that stops a ray is a graze.
+    let blocked = |x: &[usize]| {
+        if crate::planes::silent_among(cyls, x) {
+            Said::Silent
+        } else {
+            Said::Abstain
+        }
+    };
 
-    // One ray attempt along `L = a ∩ b`, located by the query point `{a,b,c}`. `Ok(None)` = the
-    // line grazed and the caller should try the next plane pair.
-    let attempt = |a: usize, b: usize, c: usize| -> Result<Option<bool>, BoolError> {
+    // One ray attempt along `L = a ∩ b`, located by the query point `{a,b,c}`. `In`/`Out` decide;
+    // anything else is why the line was given up, and the caller tries the next plane pair.
+    let attempt = |a: usize, b: usize, c: usize| -> Result<Said, BoolError> {
         let mut count = 0usize;
         for f in faces {
             // A cylindrical face is counted by its own arm — the crossings are roots of a
@@ -694,18 +740,18 @@ pub(crate) fn point_in_component(
                 // A circle or polygon outer on a cylinder face has no producer; refusing
                 // to guess costs the caller another node, never a wrong answer.
                 let BoundEdges::Lateral(loops) = &f.outer else {
-                    return Ok(None);
+                    return Ok(Said::Abstain);
                 };
-                match curved_count(jd, cyls, a, b, c, def, loops)? {
-                    Some(k) => {
+                match curved_count(jd, cyls, a, b, c, def, loops) {
+                    Ok(k) => {
                         count += k;
                         continue;
                     }
-                    None => return Ok(None),
+                    Err(said) => return Ok(said),
                 }
             }
             let CompSurf::Plane(q) = &f.surf else {
-                return Ok(None);
+                return Ok(Said::Abstain);
             };
             let q = *q;
             // Inside `q`'s material at the point `x`: inside the outer bound, outside every hole.
@@ -735,22 +781,26 @@ pub(crate) fn point_in_component(
                 )]
                 let on_plane =
                     side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q) == Some(0);
-                if on_plane && material(vq)? != Some(false) {
-                    return Ok(None);
+                if on_plane {
+                    match material(vq)? {
+                        Some(false) => {}
+                        Some(true) => return Ok(Said::Abstain),
+                        None => return Ok(blocked(&vq)),
+                    }
                 }
                 continue;
             }
             let mut x = [a, b, q];
             x.sort_unstable();
             let Some(in_g) = material(x)? else {
-                return Ok(None);
+                return Ok(blocked(&x));
             };
             let fwd = order_along(jd, a, b, c, q);
             if fwd == 0 {
                 // The crossing is the ray origin itself (query on plane `q`). Inside `q`'s
                 // material ⇒ query on the component's surface ⇒ undecidable → abandon.
                 if in_g {
-                    return Ok(None);
+                    return Ok(Said::Abstain);
                 }
                 continue;
             }
@@ -758,9 +808,12 @@ pub(crate) fn point_in_component(
                 count += 1; // one side of the line — parity is the same on either half
             }
         }
-        Ok(Some(count % 2 == 1))
+        Ok(if count % 2 == 1 { Said::In } else { Said::Out })
     };
 
+    // Every plane pair of this query blocked: the node abstains, and says [`Said::Silent`] if any
+    // pair was stopped by the gate's undecidedness — the name the caller's list runs out by.
+    let mut said = Said::Abstain;
     for i in 0..vplanes.len() {
         for j in (i + 1)..vplanes.len() {
             let (a, b) = (vplanes[i], vplanes[j]);
@@ -768,13 +821,12 @@ pub(crate) fn point_in_component(
             let Some(c) = pin_on_line(jd, a, b, &vplanes) else {
                 continue;
             };
-            if let Some(inside) = attempt(a, b, c)? {
-                return Ok(Some(inside));
+            match attempt(a, b, c)? {
+                decided @ (Said::In | Said::Out) => return Ok(decided),
+                Said::Silent => said = Said::Silent,
+                _ => {}
             }
         }
     }
-    // Every plane pair of this query was blocked: the node abstains. The inner `attempt` speaks
-    // this language per pair (`Ok(None)`); the boundary keeps it rather than dressing the
-    // abstention up as an error for the caller to catch and swallow.
-    Ok(None)
+    Ok(said)
 }

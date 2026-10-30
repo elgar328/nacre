@@ -304,18 +304,9 @@ fn a_pin_under_the_notch_inside_its_circle_box_builds() {
     );
 }
 
-/// [`apart`] with the Fuse refused as `CylinderGateUndecided`: the ray's road cannot show it misses
-/// the nameless top face.
-fn fuse_refused(plate: f64) -> [[Want; 3]; 2] {
-    let mut w = apart(plate);
-    w[0][0] = Want::Refused(RejectReason::CylinderGateUndecided);
-    w[1][0] = Want::Refused(RejectReason::CylinderGateUndecided);
-    w
-}
-
 /// `40 × 40 × 10` whose edge `x = 40` bulges out in a half round (`r = 3` about `(40, 20)`),
-/// carrying a `37°` box on top.
-fn bulged_with_box(m: &mut Model) -> Handle<Solid> {
+/// carrying a `37°` box centred on `c`, `z ∈ [5, 15]`.
+fn bulged_with_box(m: &mut Model, c: [f64; 2]) -> Handle<Solid> {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let edges = vec![
         line(p2(0.0, 0.0), p2(40.0, 0.0)),
@@ -339,24 +330,47 @@ fn bulged_with_box(m: &mut Model) -> Handle<Solid> {
         unreachable!()
     };
     m.rebuild_adjacency();
-    let t = turned_box(m, 37, [10.0, 10.0], 5.0, 10.0);
+    let t = turned_box(m, 37, c, 5.0, 10.0);
     op1(m, BoolKind::Fuse, solid, t)
 }
 
-/// **A pin under the bulge — the arc's own box holds it.** The half round bulges past the plate's
-/// straight corners, so the pin below it at `(41.5, 20)` is inside the arc's box and the Fuse's ray
-/// to the nameless top face cannot be shown to miss it: refused, rightly — the ray does cross the
-/// face. This is the lock on the arc's direction: read the other way round, the box is the
-/// complementary half's, which lies inside the corners' hull, and the ray would be shown to miss a
-/// face it crosses.
+/// **A pin under the bulge, the box inside the plate's outline.** The box leaves a hole in the top
+/// face whose corners its nameless walls name; the face's plane and outer ring are stated. The
+/// Fuse's ray up the pin's axis crosses the top face at a rational point, read exactly against the
+/// outer ring (the bulge, inside) and by its box against the hole (outside): the ray up counts the
+/// top and the bottom, and the pin is apart. Read as «the hole holds the crossing», the top would go
+/// uncounted and the pin would be inside the plate — the lock on that box reading.
 #[test]
-fn a_pin_under_a_bulging_arc_is_inside_its_box_and_the_fuse_refuses() {
+fn a_pin_under_a_bulging_arc_beside_a_nameless_hole_builds() {
     every_kind(
         |m| {
-            let a = bulged_with_box(m);
+            let a = bulged_with_box(m, [10.0, 10.0]);
             (a, zcyl(m, [41.5, 20.0, -4.0], 1.0, 2.0, [0.0, -1.0, 0.0]))
         },
-        fuse_refused(16_000.0 + 45.0 * PI + 125.0),
+        apart(16_000.0 + 45.0 * PI + 125.0),
+    );
+}
+
+/// **A pin under the bulge — the arc's own box holds it.** The box straddles the plate's edge
+/// `y = 40`, so the top face's outer ring itself carries corners its nameless walls name as well
+/// as the half round, and is read by its box alone. The half round bulges past the plate's straight
+/// corners, so the crossing of the Fuse's ray up the pin's axis is inside the arc's box: it cannot
+/// be shown outside — rightly, the ray does cross the face — and the ray down answers, the pin apart
+/// from the plate. This is the lock on the arc's direction: read the other way round, the box is the
+/// complementary half's, which lies inside the corners' hull, the crossing would be shown outside a
+/// face it is in, the ray up would count the bottom face alone and put the pin inside the plate. The
+/// lock rides on the ray up being asked before the ray down (`combinatorics::probe_dirs`'s order).
+///
+/// The box's centre is on the edge, and a centrally symmetric square is halved by any line through
+/// its centre: half its `z ∈ [5, 10]` part is in the plate, so it adds `125 + 62.5`.
+#[test]
+fn a_pin_under_a_bulging_arc_is_inside_its_box_and_the_ray_down_answers() {
+    every_kind(
+        |m| {
+            let a = bulged_with_box(m, [20.0, 40.0]);
+            (a, zcyl(m, [41.5, 20.0, -4.0], 1.0, 2.0, [0.0, -1.0, 0.0]))
+        },
+        apart(16_000.0 + 45.0 * PI + 187.5),
     );
 }
 

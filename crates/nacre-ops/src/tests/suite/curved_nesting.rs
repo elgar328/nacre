@@ -1771,7 +1771,7 @@ fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
 
 /// **A road that declined a ring is not asked again.** The plate with a boss on its `−y` wall, cut
 /// by the mid slab: the result's cells carry pierce corners, so the ray road cannot side them from
-/// any ray plane and declines ([`nesting`]'s `Said::Declines`); the coordinate witnesses answer.
+/// any ray plane and declines (`Said::Declines`); the coordinate witnesses answer.
 /// Every such question must show the refusal at least once — the fixture is not vacuous — and no
 /// **named** witness asked after it: no class here is silent, so each would put the same question
 /// to the same road.

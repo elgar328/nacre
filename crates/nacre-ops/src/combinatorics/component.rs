@@ -11,10 +11,11 @@ use nacre_geom::intersect::RingSide;
 /// reads `true` iff that material's outer shell nests the void.
 ///
 /// A ray grazing a face boundary, or an undecidable in-face containment, is abandoned for the
-/// query's next plane pair. **`Ok(None)` means every pair of this query's planes was blocked** —
-/// this *node* cannot decide the question, which is a fact about the node, not an error: the
+/// query's next plane pair. **[`Said::Abstain`] or [`Said::Silent`] means every pair of this
+/// query's planes was blocked** — `Silent` when the gate's undecidedness stopped one of them —
+/// and this *node* cannot decide the question, which is a fact about the node, not an error: the
 /// callers hold other nodes to try, and "every node abstained" is *their* proposition to reject
-/// (`NoClearRay`, raised where the retries actually run out). `Err` is reserved for the
+/// (by [`WitnessTally`]'s name, raised where the retries actually run out). `Err` is reserved for the
 /// judgement itself failing (`JudgeExhausted`, a ring that cannot be named, …) — those must
 /// propagate, never be traded for the next node: an abstention has other nodes as its remedy,
 /// a failed judgement does not, and retrying it would let a real cause masquerade as
@@ -156,12 +157,14 @@ pub(crate) enum Probe {
 }
 
 /// **Is this probe inside the component?** — the one door in front of the two roads.
+/// [`Said::In`]/[`Said::Out`] decide; [`Said::Abstain`] and [`Said::Silent`] are this probe's
+/// circumstance, and the next probe is their remedy.
 pub(crate) fn probe_in_component(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     probe: &Probe,
     faces: &[CompFace],
-) -> Result<Option<bool>, BoolError> {
+) -> Result<Said, BoolError> {
     match probe {
         Probe::Named(x) => point_in_component(jd, cyls, *x, faces),
         Probe::Coord { p, dir } => point_in_faces_rat(jd, cyls, p, dir, faces),

@@ -450,8 +450,9 @@ pub enum RejectReason {
     ///
     /// The gate's own name, and past the gate only where its record reaches: a class with no
     /// world name that the gate passed as silent about the cylinders (`WorkingCyl::is_silent`) and
-    /// that a later road meets without the description it needs — the circle nesting, the
-    /// coordinate ray — refuses there by this name, because the cause is the gate's. What the chart
+    /// that a later road meets without the description it needs — the circle nesting, the ray
+    /// that decides which result body lies inside which — refuses there by this name once no other
+    /// witness can answer, because the cause is the gate's. What the chart
     /// cannot read it names by cause — two sides that disagree are [`Self::LabelConflict`], a
     /// silent cell takes why its ends are silent (`cyl_chart::read_cell`), and a class table and
     /// face rows that disagree are [`Self::CylinderStagesDisagree`].
@@ -564,8 +565,8 @@ pub enum RejectReason {
     /// clear. Locked in `tests/probes/contact_separates.rs`.
     ///
     /// **Raised only where the retries actually run out.** A single node
-    /// failing to decide is an *abstention*, not an error — `point_in_component` says so in its
-    /// type (`Ok(None)`); saying it with this reason instead measured 122 of the whole suite's
+    /// failing to decide is an *abstention*, not an error — `point_in_component` answers it as
+    /// one; saying it with this reason instead measured 122 of the whole suite's
     /// 151 raises as that guard being caught and swallowed by
     /// its own retry loop. What raises this reason today is the caller whose node supply is
     /// exhausted (the 3D depth/cavity classification in `boolean`) — and, same shape one
