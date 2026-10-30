@@ -1280,8 +1280,9 @@ m.refine_surface_cache(h, s, standing)                     // 곡면 캐시의 �
 m.rebuild_edge_cache(solids, given) · m.rebuild_adjacency() // 통째 재생 — `given` 은 topo 가 못 내는 조각을 묻는다
 ```
 
-**캐시에 쓰는 문은 깔때기만 부른다.** (같은 `clippy.toml` 이 rayon 의 병렬 입구를 `par.rs` 에, 링 술어 둘 — `point_in_ring` 은
-`nesting::cell_inside` 의 재시도 아래, `side_of` 는 `ring_against_plane` 의 걷기 아래 — 을 제 자리에 묶는다. 허용 장치는 아래 하나다.)
+**캐시에 쓰는 문은 깔때기만 부른다.** (같은 `clippy.toml` 이 rayon 의 병렬 입구를 `par.rs` 에, 링 술어 셋 — `point_in_ring` 은
+`nesting::cell_inside` 의 재시도 아래, `side_of` 는 `ring_against_plane` 의 걷기 아래, `point_in_mixed_ring` 은
+`rational_point_in_ring` 의 원인 순서 아래 — 을 제 자리에 묶는다. 허용 장치는 아래 하나다.)
 위 쓰기 문 가운데 f64 캐시에 쓰는 여덟(`push_vertex`·`refine_vertex_cache`·`push_plane`·
 `push_plane_through`·`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache`)과 픽스처용 셋(`*_unregistered` 둘·이름을 심는 `plant_surface_name`), 그리고
 깔때기가 다 지은 캐시를 받는 `push_vertex_prerealized` 를 워크스페이스 루트의 `clippy.toml`(`disallowed-methods`)이 막는다 —
@@ -2401,9 +2402,11 @@ pierce 꼭짓점은 기권한다 — 그것을 지나는 평면 면은 축에 �
   이름·넘침에서도 실패하고 그것은 폭, `WitnessNotRational`). 성분의 3차원 깊이도 같은 두 규칙으로 읽는다: 이름
   탐침의 광선이 이름 있는 면과 만나는 점이 말 없는 클래스를 이름에 들고 그 면의 링을 정확한 도로가 못 읽으면 같은 상자가
   답하고(`named_point_in_face` → `combinatorics::silent_name_by_box`), 좌표 탐침의 광선은 면을 원인으로 갈라 읽는다 —
-  면의 평면에 세계 진술이 있으면 교점이 유리수이므로 경계마다 읽는다 — 링은 2차원 좌표 증인과 같은 한 함수가 읽고
-  (`combinatorics::rational_point_in_ring`), 말 없는 클래스가 꼭짓점을 부르는 링은 그 안에서 같은 상자가
-  답하며(`combinatorics::ring_box_says`), 평면 자체에 진술이 없으면 교점이 없어 비킨다고
+  면의 평면에 세계 진술이 있으면 교점이 유리수이므로 좌표로 면을 읽는 한 함수가 읽는다
+  (`combinatorics::rational_point_in_face` — 경계마다 종류대로 읽어 `material_of` 로 합친다). 링은 2차원 좌표 증인과
+  같은 한 함수가 읽고(`combinatorics::rational_point_in_ring`), 말 없는 클래스가 꼭짓점을 부르는 링은 그 안에서 같은
+  상자가 답한다(`combinatorics::ring_box_says`). 좌표 탐침을 고르는 생성기도 캡의 후보마다 같은 면 함수에 묻고
+  «안»만 받는다. 평면 자체에 진술이 없으면 교점이 없어 비킨다고
   보일 수 있을 뿐이다(`ray_misses_face`). 어느 쪽이든 못 보이면 그 광선만 `Silent` 로 버리고 다음 방향이 답한다. 3차원 도로가 만들지 않는
   사건은 둘이다 — `Declines` 는 없고, 좌표 탐침의 값을 못 만든 산술은 기권이 아니라 그 자리에서 `WitnessNotRational` 로
   올린다.
@@ -2430,10 +2433,11 @@ pierce 꼭짓점은 기권한다 — 그것을 지나는 평면 면은 축에 �
   축 방향과 무관하게 유리수). 원통에서 잘린 링은 코너가 전부 관통점이라 세 평면 이름도 유리수 좌표도 내지 못한다 — 원이면 중심이, 원이 아니면
   (이름 없는 평면 위, 룰링 둘 사이의 단면) 관통 이름이 답한다.
 - **잘린 캡도 원판이고 자기 내부의 점을 이름 짓는다** — 「이 링이 온전한 원인가」가 아니라
-  **「이 면을 어느 원이 두르는가」**를 묻는다. 어느 후보가 면 안인지는 **링에게 묻는다**(유도하려면
-  「현의 재료 쪽」 부호가 필요한데 그 도로엔 그 오라클이 없다). 후보는 차트의 두 축 걸음이다: 현이 한
-  축과 나란하면 다른 축의 광선이 seam 에서 원과 만나는데, seam 위의 근도 순환 순서의 첫째로 판정되므로
-  (`SeamOrder::seam_first`) 대각 걸음이 필요 없다.
+  **「이 면을 어느 원이 두르는가」**를 묻는다. 어느 후보가 면 안인지는 **면에게 묻는다**
+  (`combinatorics::rational_point_in_face` — 유도하려면 「현의 재료 쪽」 부호가 필요한데 그 도로엔 그 오라클이 없다).
+  후보는 차트의 두 축 걸음이다: 현이 한 축과 나란하면 다른 축의 광선이 seam 에서 원과 만나는데, seam 위의 근도
+  순환 순서의 첫째로 판정되므로(`SeamOrder::seam_first`) 대각 걸음이 필요 없다. 구멍 난 캡의 후보(반지름의 절반,
+  그리고 구멍마다 두 테 사이의 가운데 반지름)도 같은 면 함수가 고른다.
 - **링의 닫힘은 암묵적이고, 소비자가 그것을 알아야 한다.** 커널의 관례는 「링은 첫 점을 끝에
   반복하지 않는다」이다(메시 정점이라 반복하면 퇴화 삼각형). ⇒ 닫는 구간은 소비자가 만든다
   (`edge.vertices[0] == edge.vertices[1]` 이 그 사실이고, 계약은 `Tessellation` 의 말로 적혀 있어야 한다).
