@@ -556,6 +556,13 @@ pub(crate) enum Silence {
 }
 
 impl WorkingCyl {
+    /// The gate's record of the line plane classes `a` and `b` share on this cylinder's lateral
+    /// face ([`SharedRuling`]), in either order; `None` where the gate recorded none.
+    pub(crate) fn shared_of(&self, a: usize, b: usize) -> Option<&SharedRuling> {
+        let line = (a.min(b), a.max(b));
+        self.shared.iter().find(|sr| sr.line == line)
+    }
+
     /// Whether class `wc` sections this cylinder ([`Silence::Sectioned`]) — its own arrangement
     /// draws the cylinder's rulings.
     pub(crate) fn sections(&self, wc: usize) -> bool {

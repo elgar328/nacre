@@ -231,7 +231,7 @@ pub(crate) fn assemble_fuse_cut(
 ///
 /// **The curved arm** asks the same proposition of a **lateral** face, for the one edge family
 /// that can lie inside it: an edge two of the solid's plane faces share along a ruling of that
-/// cylinder. The sieve is the gate's record of such lines (`SharedLines::on_cylinder` — a line on
+/// cylinder. The sieve is the gate's record of such lines (`WorkingCyl::shared_of` — a line on
 /// a lateral *face* of an operand, which every result lateral lies within), so a boolean whose
 /// cylinders record none skips the arm, and the census asks it of no edge at all. The exact test is
 /// [`combinatorics::ruling_meets_lateral`]. The shapes it refuses are ones no other guard can
@@ -278,15 +278,13 @@ pub(super) fn self_touch_reject(
             held = Some((e, err));
         }
     };
-    // The curved arm's sieve, built the first time a solid with a lateral asks it.
-    let mut shared: Option<combinatorics::SharedLines> = None;
     let any_shared = cyls.iter().any(|c| !c.shared.is_empty());
     for g in groups {
         // **Two arms, one proposition** — "an edge of this solid lies in the interior of one of
         // its own faces". The planar arm asks it of plane faces, through boxes and exact plane
         // membership. The curved arm asks it of a lateral face, for the edges two of the
         // solid's plane faces share along a ruling of that cylinder (the gate's record,
-        // `SharedLines::on_cylinder`) — a wedge's apex edge lying along the solid's own bore wall,
+        // `WorkingCyl::shared_of`) — a wedge's apex edge lying along the solid's own bore wall,
         // say ([`combinatorics::ruling_meets_lateral`]). The point arm below asks a vertex
         // against a plane face. What none asks abstains rather than pretends, each for a reason
         // written down: an arc edge lies in a plane face only on its own circle's plane, where
@@ -492,19 +490,18 @@ pub(super) fn self_touch_reject(
         if laterals.is_empty() || !any_shared {
             continue;
         }
-        let shared = shared.get_or_insert_with(|| combinatorics::SharedLines::of(jd, cyls));
         // The lateral's loops, read once per face and only for a face some edge is asked against;
         // one the loops road cannot read (`RingNaming`) abstains like every other unreadable case.
         let mut loops_of: HashMap<usize, Option<Vec<combinatorics::LateralLoop>>> = HashMap::new();
         'ruling_edges: for (&[u, v], own) in &owners {
-            // Two faces on one plane (or one face passing the edge twice) ask `on_cylinder(p, p, k)`,
-            // which is false: the gate records a line of two classes, never of one with itself.
+            // Two faces on one plane (or one face passing the edge twice) find no record: the gate
+            // records a line of two classes, never of one with itself.
             let [f, h] = own[..] else { continue };
             let w = [faces[f].surf.plane(), faces[h].surf.plane()];
             for (li, &(k, lf)) in laterals.iter().enumerate() {
-                if !shared.on_cylinder(w[0], w[1], k) {
+                let Some(sr) = cyls[k].shared_of(w[0], w[1]) else {
                     continue;
-                }
+                };
                 let loops =
                     loops_of.entry(li).or_insert_with(|| {
                         match super::grouping::comp_face(jd, cyls, lf).ok()?.outer {
@@ -513,7 +510,7 @@ pub(super) fn self_touch_reject(
                         }
                     });
                 let Some(loops) = loops else { continue };
-                if combinatorics::ruling_meets_lateral(jd, &cyls[k].def, loops, w, [u, v])
+                if combinatorics::ruling_meets_lateral(jd, &cyls[k].def, loops, sr, [u, v])
                     == Some(true)
                 {
                     found_at(Touch::Edge([u, v]));

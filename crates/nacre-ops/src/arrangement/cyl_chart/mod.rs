@@ -489,7 +489,7 @@ fn fold_shared_stations(
     let undecided = || reject(RejectReason::WitnessNotRational);
     for sr in cyl.shared.iter().filter(|sr| sr.stated_by.len() == 2) {
         let (t1, t2) = sr.line;
-        let plus_is_t2 = second_chord_first(jd, &cyl.def, t1, t2).ok_or_else(undecided)?;
+        let plus_is_t2 = second_chord_first(jd, &cyl.def, sr).ok_or_else(undecided)?;
         let mut i = 0;
         while i < theta.len() {
             if theta[i].wall != t1 {
@@ -516,29 +516,20 @@ fn fold_shared_stations(
 }
 
 /// Whether plane class `t2`'s chord, not `t1`'s, is met first turning from the `+θ` tangent at
-/// their shared ruling inward — [`StationTwin::bounds_plus`]'s rule. `None` is arithmetic that
-/// could not answer, or two classes whose line is not a ruling of this cylinder.
+/// their shared ruling `sr` inward — [`StationTwin::bounds_plus`]'s rule. The line is the record's
+/// own ([`crate::planes::SharedRuling::radial`]); each chord's direction is its class's normal, so
+/// both classes' world statements are read — a record two classes state as a station is a secant
+/// pair, both stated. `None` is arithmetic that could not answer.
 fn second_chord_first(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
-    t1: usize,
-    t2: usize,
+    sr: &crate::planes::SharedRuling,
 ) -> Option<bool> {
     use nacre_exact::{Rat, cross3_rat, dot3_rat};
+    let (t1, t2) = sr.line;
     let (w1, w2) = (jd.world_rat(t1)?, jd.world_rat(t2)?);
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let nacre_exact::quad::CylinderMeet::OnRuling(line) =
-        nacre_exact::quad::plane_plane_cylinder(&w1, &w2, &o, &m, r2)?
-    else {
-        return None;
-    };
-    // The radial direction of the line, off the axis.
-    let base = line.base();
-    let mut w = [Rat::from_int(0); 3];
-    for k in 0..3 {
-        w[k] = base[k].checked_sub(o[k])?;
-    }
-    let r = nacre_exact::off_axis_rat(&w, &m)?;
+    let m = def.dir();
+    let r = sr.radial(def)?;
     // Each chord's direction, turned to point into the cylinder (against `r`).
     let inward = |wt: &[Rat; 4]| -> Option<[Rat; 3]> {
         let d = cross3_rat(&m, &[wt[0], wt[1], wt[2]])?;

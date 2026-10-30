@@ -428,8 +428,7 @@ pub(crate) fn shared_line(
 }
 
 /// **Every plane class's shared lines** — the table «do these two walls of one face run along
-/// one line?» reads ([`SharedLines::one_line`]), and «is this edge of two plane faces a ruling of
-/// that cylinder?» ([`SharedLines::on_cylinder`] — the self-touch verdict's sieve).
+/// one line?» reads ([`SharedLines::one_line`]).
 ///
 /// **Why a line has two spellings on one face.** A segment on a line the gate recorded is
 /// stated in the ruling vocabulary where it runs along the lateral (`split_rulings`' fold — the
@@ -459,19 +458,6 @@ impl SharedLines {
             }
         }
         Self { by_class }
-    }
-
-    /// **Is the line `a ∩ b` one the gate recorded on cylinder `cyl`** — a ruling lying on a
-    /// lateral face of it ([`crate::planes::SharedRuling`])? Either class's reading answers, so
-    /// the order of `a` and `b` does not: a class with no world statement may not read its side of
-    /// the line ([`shared_line`]).
-    pub(crate) fn on_cylinder(&self, a: usize, b: usize, cyl: usize) -> bool {
-        let reads = |own: usize, other: usize| {
-            self.by_class
-                .get(&own)
-                .is_some_and(|ls| ls.iter().any(|l| l.other == other && l.cyl == cyl))
-        };
-        reads(a, b) || reads(b, a)
     }
 
     /// **Do walls `a` and `b` of one face on `own` run along one line?** Equal walls do. A plane

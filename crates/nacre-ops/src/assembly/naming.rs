@@ -57,26 +57,35 @@ pub(crate) fn name_result_vertices(
     // above cannot find them there. A prism's edge along that line runs past the lateral's cap
     // (the keyhole's box taller than the bore), and the lateral's ruling ends at the cap's rim
     // point while the prism's wall — tangent, so no class split it — carries the edge whole. The
-    // point's being on the other class is asked of the point (`side_of`), once per line.
+    // point is on the line when the record holds it (`SharedRuling::holds`, against the point's
+    // own class), so the other class — a sectioned partner has no world statement — is not read.
     let pierced: Vec<NodeId> = by_pair.values().flatten().copied().collect();
     for cy in cyls {
+        let m = cy.def.dir();
         for sr in &cy.shared {
             let (a, b) = sr.line;
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "a point question: is this pierce point on the other class of the \
-                          shared ruling"
-            )]
+            // A point named by the pair itself is already under it, by its name.
+            let on_line_of = |n: NodeId| -> Option<bool> {
+                let (pl, ncyl, _) = combinatorics::pierce_name(n)?;
+                if pl == [a, b] {
+                    return Some(false);
+                }
+                let x = if pl.contains(&a) {
+                    a
+                } else if pl.contains(&b) {
+                    b
+                } else {
+                    return Some(false);
+                };
+                let ncy = cyls.get(ncyl)?;
+                let pt = combinatorics::pierce_meet(jd, ncyl, &ncy.def, n)?;
+                let (line, s) = pt.exact()?;
+                sr.holds(&jd.world_rat(x)?, &m, line, s)
+            };
             let on_line: Vec<NodeId> = pierced
                 .iter()
                 .copied()
-                .filter(|&n| {
-                    let Some((pl, _, _)) = combinatorics::pierce_name(n) else {
-                        return false;
-                    };
-                    (pl.contains(&a) && combinatorics::side_of(jd, cyls, n, b) == Some(0))
-                        || (pl.contains(&b) && combinatorics::side_of(jd, cyls, n, a) == Some(0))
-                })
+                .filter(|&n| on_line_of(n) == Some(true))
                 .collect();
             if on_line.is_empty() {
                 continue;

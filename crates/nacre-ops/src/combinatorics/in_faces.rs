@@ -602,16 +602,20 @@ pub(crate) fn lateral_face_crossings(
     Some(CurvedHit::Counted(count))
 }
 
-/// **Does the open segment of the line `w[0] ∩ w[1]`, a ruling of `def`, between the points
-/// `ends` meet the interior of the lateral face `loops` bounds?** — the self-touch question for
-/// an edge two plane faces of one solid share along that solid's own lateral.
+/// **Does the open segment of the ruling `sr` records on `def` between the points `ends` meet the
+/// interior of the lateral face `loops` bounds?** — the self-touch question for an edge two plane
+/// faces of one solid share along that solid's own lateral.
 ///
 /// Along a ruling only the face's arcs and rims can change whether a point is on the face (a
 /// ruling of the face at that angle makes the whole run its boundary), so the segment is cut at
-/// their axis parameters and one point per piece — at the piece's middle height, the root of the
-/// secant wall and that height's rim plane that lies on the other wall too — is asked by
+/// their axis parameters and one point per piece — at the piece's middle height — is asked by
 /// [`loop_parity`]. A piece inside answers for the edge; a piece on the boundary abstains, and
 /// so does the edge unless another piece is inside.
+///
+/// The line is the gate's record's own ([`crate::planes::SharedRuling::at`]): neither wall's
+/// coefficients are read for it, so a wall with no world statement asks as a named one does. The
+/// piece's point is where the plane touching the cylinder along the line meets that height's rim
+/// plane — a tangent meet, its one root rational because the record's point lies on the cylinder.
 ///
 /// **What a `true` stands on** is that one point: it lies on the edge and strictly inside the
 /// face, which is the proposition whole. So the ends' heights must be exact — they are read
@@ -624,26 +628,21 @@ pub(crate) fn lateral_face_crossings(
 /// arrangement makes that point a vertex, so the edge already ends at it; asking a piece at a time
 /// keeps the question «does the open segment meet the interior» rather than leaning on that.
 ///
-/// `None` is a point on the face's boundary, an end with no plane across the ruling, a loop the
-/// road cannot read, or arithmetic out — the guard calling this abstains then, it does not refuse.
+/// `None` is a point on the face's boundary, an end with no named plane across the ruling, a loop
+/// the road cannot read, or arithmetic out — the guard calling this abstains then, it does not
+/// refuse.
 pub(crate) fn ruling_meets_lateral(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
-    w: [usize; 2],
+    sr: &crate::planes::SharedRuling,
     ends: [NodeId; 2],
 ) -> Option<bool> {
-    use nacre_exact::quad::{CylinderMeet, plane_side};
-    use nacre_exact::{Orient, Rat, dot3_rat};
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
+    use nacre_exact::{Rat, dot3_rat};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let walls = [jd.world_rat(w[0])?, jd.world_rat(w[1])?];
-    let CylinderMeet::OnRuling(ruling) =
-        nacre_exact::quad::plane_plane_cylinder(&walls[0], &walls[1], &o, &m, r2)?
-    else {
-        return None;
-    };
-    // The ruling's base, as an axis parameter: `m·(base − o) / m·m`.
-    let base = ruling.base();
+    let base = sr.at;
+    // The ruling's point, as an axis parameter: `m·(base − o) / m·m`.
     let mm = dot3_rat(&m, &m)?;
     let mut d = [Rat::from_int(0); 3];
     for k in 0..3 {
@@ -682,24 +681,18 @@ pub(crate) fn ruling_meets_lateral(
     ts.retain(|t| *t >= lo && *t <= hi);
     ts.sort();
     ts.dedup();
+    let touching = nacre_exact::plane_from_point_normal(sr.radial(def)?, base)?;
     let half = Rat::new(1, 2)?;
     let mut abstained = false;
     for piece in ts.windows(2) {
         let mid = piece[0].checked_add(piece[1])?.checked_mul(half)?;
         let rim = rim_plane(def, mid)?;
-        // A secant wall meets the cylinder in two rulings at this height; the point is the one on
-        // the other wall too. (A tangent wall meets it in its own ruling alone — the other wall is
-        // then the secant one.)
-        let point = (0..2).find_map(|i| {
-            match nacre_exact::quad::plane_plane_cylinder(&walls[i], &rim, &o, &m, r2)? {
-                CylinderMeet::Pair { line, s } => s
-                    .into_iter()
-                    .find(|x| plane_side(&walls[1 - i], &line, x) == Orient::Zero)
-                    .map(|x| (line, x)),
-                _ => None,
-            }
-        });
-        match point.and_then(|(line, x)| loop_parity(jd, def, loops, &line, &x)) {
+        let CylinderMeet::Tangent { line, s } =
+            nacre_exact::quad::plane_plane_cylinder(&touching, &rim, &o, &m, r2)?
+        else {
+            return None;
+        };
+        match loop_parity(jd, def, loops, &line, &QuadVal::from_rat(s)) {
             Some(true) => return Some(true),
             Some(false) => {}
             None => abstained = true,

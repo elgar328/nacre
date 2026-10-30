@@ -109,12 +109,6 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "`side_of`: a point question in `seed_from_operands` (does a pierce corner lie on a class)",
     ),
     (
-        "nacre-ops/src/assembly/naming.rs",
-        1,
-        "`side_of`: a point question in `name_result_vertices` (is a pierce point on the other \
-         class of a shared ruling)",
-    ),
-    (
         "nacre-ops/src/assembly/self_touch.rs",
         1,
         "`side_of`: a point question in `self_touch_reject` (does a result node lie on a face's \

@@ -247,12 +247,6 @@ impl Aliases {
         let def = &wcy.def;
         let (o, m, r2) = (def.origin(), def.dir(), def.r2());
         let (t1, t2) = sr.line;
-        // A plane holding the recorded line and no other ruling of `x`: through the line, normal
-        // `n_x × m`. A root of `c ∩ x` is on the line exactly when it is on that plane.
-        let across_x = |wx: &[nacre_exact::Rat; 4]| {
-            let q = nacre_exact::cross3_rat(&[wx[0], wx[1], wx[2]], &m)?;
-            nacre_exact::plane_from_point_normal(q, sr.at)
-        };
         for c in 0..jd.planes.len() {
             let Some(wc) = jd.world_rat(c) else {
                 continue;
@@ -271,9 +265,9 @@ impl Aliases {
             let mut named_root = None;
             for x in [t1, t2] {
                 let Some(wx) = jd.world_rat(x) else { continue };
-                let Some(plane) = across_x(&wx) else { continue };
+                // A root of `c ∩ x` is on the line exactly when the record holds it.
                 let on_line = |line: &nacre_exact::quad::MeetLine, sv: &QuadVal| {
-                    nacre_exact::quad::plane_side(&plane, line, sv) == nacre_exact::Orient::Zero
+                    sr.holds(&wx, &m, line, sv) == Some(true)
                 };
                 match nacre_exact::quad::plane_plane_cylinder(&wc, &wx, &o, &m, r2) {
                     Some(CylinderMeet::Pair { line, s }) => {

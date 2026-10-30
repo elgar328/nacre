@@ -777,6 +777,36 @@ pub(crate) struct SharedRuling {
     pub(crate) at: [nacre_exact::Rat; 3],
 }
 
+impl SharedRuling {
+    /// The vector from the axis of `def` out to the line, square to the axis — the line's
+    /// direction across the cylinder, read off [`SharedRuling::at`]. `None` is overflow.
+    pub(crate) fn radial(&self, def: &nacre_topo::CylinderDef) -> Option<[nacre_exact::Rat; 3]> {
+        let o = def.origin();
+        let mut w = [nacre_exact::Rat::from_int(0); 3];
+        for k in 0..3 {
+            w[k] = self.at[k].checked_sub(o[k])?;
+        }
+        nacre_exact::off_axis_rat(&w, &def.dir())
+    }
+
+    /// **Whether a point on plane `wx` lies on the line** — the point `line + s·dir` against the
+    /// plane through the line with normal `n_x × m`. A plane holding a ruling runs along the axis
+    /// `m`, so that normal is not zero, and the two planes meet in the line alone: a point of `wx`
+    /// is on it exactly when it is on this plane — and that is so of a point of `wx`'s other
+    /// ruling, or of another cylinder, alike. `None` is overflow.
+    pub(crate) fn holds(
+        &self,
+        wx: &[nacre_exact::Rat; 4],
+        m: &[nacre_exact::Rat; 3],
+        line: &nacre_exact::quad::MeetLine,
+        s: &nacre_exact::quad::QuadVal,
+    ) -> Option<bool> {
+        let n = nacre_exact::cross3_rat(&[wx[0], wx[1], wx[2]], m)?;
+        let across = nacre_exact::plane_from_point_normal(n, self.at)?;
+        Some(nacre_exact::quad::plane_side(&across, line, s) == nacre_exact::Orient::Zero)
+    }
+}
+
 /// **A sectioned class and a grazing class whose meet line is a ruling of the cylinder** — the
 /// ruling the sectioned class draws is the line the grazing class touches along. Every class across
 /// the axis meets that line in one point with two names — the three-plane one and a root of its
