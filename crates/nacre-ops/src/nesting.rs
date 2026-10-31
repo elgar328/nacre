@@ -77,10 +77,13 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
     Some(&first.def)
 }
 
-/// **Whether the disk cylinder `a` cuts on class `wc` lies inside the disk `b` cuts there** — one
-/// rational inequality on the plane: `r_a < r_b` and `(r_b − r_a)² > |c_b − c_a|²`. A disk lies
-/// inside another iff its rim does, and the rims of two classes never meet (the gate proves the
-/// faces clear, or the solid is valid), so the two centres and radii decide — concentric or not.
+/// **Whether the disk cylinder `a` cuts on class `wc` lies inside the disk `b` cuts there** — for
+/// parallel axes, whether cylinder `a` lies strictly inside cylinder `b`: `r_a < r_b` and the
+/// distance between the axes below `r_b − r_a`. A section lies inside another iff its rim does,
+/// and the rims of two classes never meet (the gate proves the faces clear, or the solid is valid);
+/// on a class across parallel axes one section is inside the other exactly where one cylinder is
+/// inside the other, whether the class is perpendicular to them (two circles) or oblique (two
+/// ellipses) — concentric or not.
 ///
 /// **Written once because it is asked from two directions**: the arrangement's nesting
 /// ([`cell_in_cell`], a pin's trace under a boss's cap) and the coplanar merge (a region whose
@@ -94,20 +97,17 @@ pub(crate) fn disk_in_disk(
     let undecided = || reject(RejectReason::WitnessNotRational);
     let pa = combinatorics::circle_centre_rat(jd, wc, a).ok_or_else(undecided)?;
     let pb = combinatorics::circle_centre_rat(jd, wc, b).ok_or_else(undecided)?;
-    // **Radii decide only where both sections are circles**. On an oblique class each
-    // is an ellipse with semi-minor `r` and semi-major `r/|cos θ|`, and comparing radii is then
-    // wrong in both directions: it says "not inside" for a pair separated **along the major axis**
-    // that really nests (`ra 1`, `rb 2`, offset `4/3` on the `(3,4,0)` axis: `3·(4/3)/5 + 1 ≤ 2`),
-    // and it happens to be right when the offset is concentric or along the minor axis. Refusing
-    // the whole oblique population buys the first and sells the second — and the sold half is the
-    // trade this kernel's DNA asks for (`honest-reject > silent-wrong`).
-    // Asked **before** the `ra >= rb` return below: that return is sound for ellipses too (the
-    // semi-minor is exactly `r`, so `ra < rb` is necessary for nesting), so putting the guard
+    // **The axes must be parallel.** Across two parallel cylinders the sections nest exactly
+    // where the cylinders do, so the axis distance decides on any class the axes cross. Across two
+    // axes that are not parallel the sections are ellipses of different shapes on the class (or an
+    // ellipse and a circle), and neither the radii nor the axis distance says whether one holds the
+    // other; the gate refuses a class that would carry both (`ObliqueCylinderCut`), so this is
+    // the backstop's name.
+    // Asked **before** the `ra >= rb` return below: that return is sound for any section (its
+    // semi-minor axis is exactly `r`, so `ra < rb` is necessary for nesting), so putting the guard
     // after it would leave half the population unguarded. And asked **after** the two centres, so
-    // the class is known to have coefficients — no unreachable "what if it has none" arm.
-    let coeffs = jd.world_rat(wc).ok_or_else(undecided)?;
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    if !class_carries_circle(&n, &a.dir()) || !class_carries_circle(&n, &b.dir()) {
+    // the class is known to meet both axes — no unreachable "what if it has none" arm.
+    if !nacre_exact::parallel_rat(&a.dir(), &b.dir()) {
         return Err(reject(RejectReason::ObliqueCircleClass));
     }
     let (ra2, rb2) = (a.r2(), b.r2());
@@ -115,9 +115,8 @@ pub(crate) fn disk_in_disk(
         return Ok(false);
     }
     // `dist < r_b − r_a` with the radii as squares: the difference is never formed — the scalar
-    // door reads `√rb² > √dist² + √ra²` through the root-sum identity, in integers. Both centres
-    // lie on the class plane the axis is normal to, so the distance from `pb` to `a`'s axis is
-    // the distance between the centres, which is what this always compared.
+    // door reads `√rb² > √dist² + √ra²` through the root-sum identity, in integers. `pb` lies on
+    // `b`'s axis, so its distance from `a`'s axis is the distance between the parallel axes.
     Ok(
         nacre_exact::cylinders_nested(&pa, &a.dir(), ra2, &pb, rb2)
             == nacre_exact::Orient::Negative,
@@ -235,9 +234,9 @@ impl Said {
 /// refusal, so the rim is offered only to a class that carries the circle
 /// ([`class_carries_circle`]). On an oblique class
 /// `ask`'s radial arm is **right** (it reads the solid cylinder, and an
-/// elliptical section is exactly the plane's points within `r` of the axis), while `disk_in_disk`
-/// is wrong there — not for the centre distance (both
-/// centres lie *on* the plane) but for the **radii**, which are not an ellipse's width.
+/// elliptical section is exactly the plane's points within `r` of the axis), and so is
+/// `disk_in_disk` for parallel axes, which measures the distance between the axes rather than
+/// anything in the plane.
 ///
 /// A centre that cannot be formed keeps its own name ([`Witness::Unformed`] →
 /// [`crate::RejectReason::WitnessNotRational`]); a frame that cannot be formed suppresses the
@@ -634,7 +633,7 @@ pub(crate) fn cell_in_cell(
     // below sitting above all of them, **85% of its rows describe questions no witness is asked
     // for** (measured: 189,662 rows against 28,000 engine questions over the lib suite). A row
     // that says "the source had N witnesses" about a
-    // question answered by a shared node, or by two radii, is a lie the audit tests then read.
+    // question answered by a shared node, or by two disks, is a lie the audit tests then read.
     let route = if circle_ix[a].is_none() && circle_ix[b].is_none() {
         let (ra, rb) = (&rings[a], &rings[b]);
         if ra.iter().any(|e| rb.iter().any(|f| f.node == e.node)) {
@@ -724,8 +723,8 @@ pub(crate) fn cell_in_cell(
         });
     }
     // **Two disks are not a witness question at all**: a disk lies inside another iff
-    // its rim does, and the rims of two classes never meet, so the radii and the centre distance
-    // decide it exactly. Answering `None` here leaves two disk cells unnested and *silently*
+    // its rim does, and the rims of two classes never meet, so the radii and the distance between
+    // the axes decide it exactly ([`disk_in_disk`]). Answering `None` here leaves two disk cells unnested and *silently*
     // keeps both operands' caps: a pin stacked on a boss fuses into **two** untouched bodies.
     match route {
         Route::SharedNode => Ok(None),
@@ -749,7 +748,7 @@ pub(crate) fn cell_in_cell(
 pub(crate) enum Route {
     /// Two loops that share a node touch rather than nest: not comparable, no witness asked.
     SharedNode,
-    /// Two disks: radii and centre distance decide, exactly ([`disk_in_disk`]). It carries the
+    /// Two disks: radii and the distance between the axes decide, exactly ([`disk_in_disk`]). It carries the
     /// two circle indices rather than letting the arm re-derive them — the decision already knows
     /// them, and a second `let … else { unreachable!() }` would be the rule spelled twice.
     DiskPair { ca: usize, cb: usize },
@@ -761,7 +760,7 @@ pub(crate) enum Route {
 ///
 /// **A row is not a population, and for two reasons — both measured.**
 /// 1. **Most rows are about questions no witness was asked for.** This pushes from
-///    [`cell_in_cell`], which answers three ways ([`Route`]): a shared node, two radii, or the
+///    [`cell_in_cell`], which answers three ways ([`Route`]): a shared node, two disks, or the
 ///    engine. Sampled over the lib suite at the moment the 28,000th engine question ran, the
 ///    adapter had been entered **189,662** times — so roughly **six of every seven rows** describe
 ///    an offer nobody read. Filter on [`Row::route`] before counting anything,

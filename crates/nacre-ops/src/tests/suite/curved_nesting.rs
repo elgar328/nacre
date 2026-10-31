@@ -1293,21 +1293,20 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     );
 }
 
-/// **And radii do not decide an ellipse.** `disk_in_disk` compares `(r_b − r_a)²`
-/// with the centre distance, which is the right question only when both sections are circles.
+/// **Two sections of parallel cylinders nest where the cylinders do, on an oblique class too.**
 ///
-/// This fixture is the half where it is **silently wrong**, not merely conservative: both axes are
-/// `(3,4,0)`, so each section is an ellipse elongated along `ŷ` (semi-minor `r`, semi-major `5r/3`),
-/// and the two centres are separated by `4/3` **along that major axis**. Shrinking `ŷ` by `3/5`
-/// turns both into circles and the offset into `4/5`, so `4/5 + 1 ≤ 2` — the small disk really is
-/// inside the big one. Comparing radii would answer `Ok(false)` — `(2−1)² = 1` is not
-/// `> (4/3)² = 16/9` — so an oblique class is refused by name (`ObliqueCircleClass`).
+/// Both axes are `(3,4,0)` and the class is an `x`-normal wall, so each section is an ellipse
+/// elongated along `ŷ` (semi-minor `r`, semi-major `5r/3`), and the two centres are `4/3` apart
+/// **along that major axis**. The axes are `4/5` apart, and `4/5 + 1 < 2`: the small cylinder lies
+/// inside the big one, so its section lies inside the big one's. An in-plane comparison of the
+/// centre distance with the radii — `(2−1)² = 1` against `(4/3)² = 16/9` — would say «not inside»;
+/// `disk_in_disk` measures the distance between the axes. The offset along the major axis is what
+/// makes the two readings differ: a concentric or minor-axis offset agrees under both.
 ///
-/// Concentric or minor-axis offsets are answered **correctly** even on an oblique class, so a
-/// fixture that did not pin the offset's direction would show the guard "answering" rather than
-/// the radius comparison being wrong.
+/// Its other half: a section of a cylinder whose axis is not parallel — a circle of an `x` axis —
+/// is refused by the backstop's name.
 #[test]
-fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
+fn an_oblique_class_nests_sections_of_parallel_cylinders_by_their_axes() {
     let q = nacre_exact::Rat::from_int;
     let zero = q(0);
     let mut m = Model::new();
@@ -1352,8 +1351,23 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
         delta,
         vec![zero, nacre_exact::Rat::new(4, 3).unwrap(), zero]
     );
-    let err = crate::nesting::disk_in_disk(&jd, wall, &small, &big)
-        .expect_err("radii cannot decide an ellipse");
+    assert!(
+        crate::nesting::disk_in_disk(&jd, wall, &small, &big).expect("parallel axes decide"),
+        "the small cylinder lies inside the big one"
+    );
+    assert!(
+        !crate::nesting::disk_in_disk(&jd, wall, &big, &small).expect("parallel axes decide"),
+        "and not the other way round"
+    );
+    let across = nacre_topo::CylinderDef::new(
+        [zero; 3],
+        [q(1), zero, zero],
+        seam,
+        nacre_exact::BigRat::from(q(1)),
+    )
+    .expect("across");
+    let err = crate::nesting::disk_in_disk(&jd, wall, &across, &big)
+        .expect_err("axes that are not parallel decide nothing");
     assert!(
         matches!(
             err,

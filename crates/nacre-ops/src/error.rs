@@ -407,7 +407,8 @@ pub enum RejectReason {
     ///
     /// Nothing raises it today, and that is the point: the alternative at its two sites is not a
     /// refusal but a **silently wrong containment answer** — a rim witness off the cell's own
-    /// plane, or two radii compared as if an ellipse's width were its radius.
+    /// plane, or two sections of cylinders whose axes are not parallel compared as if they nested
+    /// as the cylinders do.
     ///
     /// The result assembly raises it too, for the same broken promise read at an edge: a rim, an
     /// arc or a ruling whose plane and cylinder the truth calls oblique
