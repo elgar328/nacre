@@ -1145,6 +1145,7 @@ mod frames;
 mod loop_nesting;
 mod motion;
 mod naming;
+mod oblique_sections;
 mod overhang_corners;
 mod parallel;
 mod pierce_corners;
