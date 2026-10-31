@@ -645,8 +645,10 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
 /// Disabling the pierce arm reddens both fixtures (and the walls-fallback cannot fake a pierce def
 /// past its arc-carrier guard). The fallback itself has **zero population**: under the split-twin
 /// subdivision the bitten corner's twins match, so its def comes down the far-plane road and no
-/// probe reddens on the fallback alone; the subdivision has its own fence
-/// (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
+/// probe reddens on the fallback alone. The subdivision is locked by the tests whose edges it
+/// splits: `a_keyhole_builds` and `a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure`
+/// redden with it disabled, and `a_vertex_on_a_cap_circle_builds_or_is_refused_by_name` with its
+/// order reversed.
 #[test]
 fn every_result_vertex_of_the_arc_population_is_named() {
     for (origin, axis, bites_corner) in [
@@ -794,7 +796,10 @@ fn every_result_vertex_of_the_arc_population_is_named() {
 /// the chord and the two arcs between one pierce pair do not fold into a single `norm_edge` key,
 /// and the chord's line key counts exactly its two coplanar faces.
 ///
-/// red: with the subdivision disabled, the pre-split single-use keys come back.
+/// Both fixtures' neighbour edges reach the naming already cut at the pierce nodes: the
+/// subdivision inserts nothing here (measured: 14 calls, every list empty), and disabling it
+/// leaves this green. What reddens with the subdivision disabled are the tests whose edges it
+/// splits (`a_keyhole_builds`, `a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure`).
 #[test]
 fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
     for (origin, axis) in [

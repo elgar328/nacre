@@ -34,10 +34,11 @@ pub(crate) fn name_result_vertices(
     // twin's plane (a result vertex is defined from the planes of the faces whose rings
     // visit it), and the future edge welding has no twins to weld.
     //
-    // A pierce node lies on an edge's carrier line exactly when its plane pair *is* the edge's
-    // `{own, wall}` — a name fact, no geometry — and betweenness is `pierce_between`'s exact
-    // half. An edge whose order cannot be formed is left unsplit (a corner short of a plane,
-    // `StraightAngle`): the conservative arm degrades to the unsplit edge, never to something new.
+    // An edge's candidates are the pierce nodes whose plane pair *is* its `{own, wall}` — a name
+    // fact, no geometry — and those another pair names on a line two classes share (the shared-line
+    // block below); betweenness is `between_on_line`'s. An edge whose order cannot be formed is
+    // left unsplit (a corner short of a plane, `StraightAngle`): the conservative arm degrades to
+    // the unsplit edge, never to something new.
     // Identity for every non-arc input: no pierce nodes, no pairs, no rewrite.
     let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
     for lf in faces {
@@ -124,7 +125,8 @@ pub(crate) fn name_result_vertices(
                     let Some(cands) = by_pair.get(&pair) else {
                         continue;
                     };
-                    if let Some(bet) = combinatorics::pierce_between(jd, cyls, a, b, cands) {
+                    if let Some(bet) = combinatorics::between_on_line(jd, cyls, own, w, a, b, cands)
+                    {
                         for x in bet {
                             nodes.push(x);
                             walls.push(Wall::Plane(w));

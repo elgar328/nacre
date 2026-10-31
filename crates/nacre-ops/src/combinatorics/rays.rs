@@ -394,12 +394,6 @@ pub(super) fn point_on_ring(
     Ok(false)
 }
 
-/// **A named point on the line `a ∩ b`, as the place a comparison along it takes** — pinned by
-/// [`pin_for`]; `None` where nothing of the name pins it there.
-fn end_on_line(jd: &Judge<'_, WorkingPlane>, a: usize, b: usize, name: NodeId) -> Option<PointOn> {
-    Some(PointOn::of((name, pin_for(jd, a, b, name)?)))
-}
-
 /// **The cylinder table [`every_ray`] reads a ring against plane `q` with** ([`ClassLine`]). This road
 /// carries none for a class with a world statement: a pierce corner there has no side here and the
 /// walk declines, as an arc's crossings and departure do — the coordinate road answers instead. A

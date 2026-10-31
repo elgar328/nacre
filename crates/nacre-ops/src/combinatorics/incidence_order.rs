@@ -147,6 +147,85 @@ pub(crate) fn order_on(
     order_located(jd, p, q, &a, &b)
 }
 
+/// **A named point on the line `a ∩ b`, as the place a comparison along it takes** — pinned by
+/// [`pin_for`]; `None` where nothing of the name pins it there.
+pub(crate) fn end_on_line(
+    jd: &Judge<'_, WorkingPlane>,
+    a: usize,
+    b: usize,
+    name: NodeId,
+) -> Option<PointOn> {
+    Some(PointOn::of((name, pin_for(jd, a, b, name)?)))
+}
+
+/// **The candidates lying strictly between two named points of `L = P ∩ Q`, nearer `a` first** —
+/// the order half of the result naming's split-twin subdivision
+/// (`assembly::name_result_vertices`' opening pass), by the one rule [`order_located`].
+///
+/// **Every point is pinned from its name and the line, candidates included** ([`end_on_line`]).
+/// A candidate is not always named by the line's own pair: a pierce point on a line two classes
+/// share on the cylinder can carry another pair through it, and that name is pinned on `L` by its
+/// other plane, not by the cylinder. Each point is located once and asked many times, as
+/// [`Located`] argues.
+///
+/// `None` when an order cannot be formed — an end or a candidate nothing pins on `L`, a missing
+/// description, `a` and `b` one point, or two candidates at one point (two names for one point on
+/// a shared line). The caller leaves such an edge **unsplit**: the far-plane road starves there
+/// and the walls-fallback net answers, so the conservative arm degrades to the unsplit state,
+/// never to something new.
+pub(crate) fn between_on_line(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    q: usize,
+    a: NodeId,
+    b: NodeId,
+    candidates: &[NodeId],
+) -> Option<Vec<NodeId>> {
+    let pinned = |n: NodeId| end_on_line(jd, p, q, n);
+    let la = locate(jd, cyls, p, q, pinned(a)?)?;
+    let ob = on_line(jd, cyls, p, q, pinned(b)?)?;
+    // `+1` = "the first lies further along `n_p × n_q`", so `dir` is the a→b sense and "strictly
+    // between" is both hops running that way.
+    let dir = order_located(jd, p, q, &la, &ob)?;
+    if dir == 0 {
+        return None;
+    }
+    let mut mid: Vec<(NodeId, Located<'_>, OnLine)> = Vec::new();
+    for &c in candidates {
+        if c == a || c == b {
+            continue;
+        }
+        let pc = pinned(c)?;
+        let (lc, oc) = (locate(jd, cyls, p, q, pc)?, on_line(jd, cyls, p, q, pc)?);
+        if order_located(jd, p, q, &la, &oc)? == dir && order_located(jd, p, q, &lc, &ob)? == dir {
+            mid.push((c, lc, oc));
+        }
+    }
+    let mut order: Vec<usize> = (0..mid.len()).collect();
+    try_sort_by(&mut order, |&i, &j| {
+        order_located(jd, p, q, &mid[i].1, &mid[j].2)
+            .map(|s| {
+                if s == dir {
+                    std::cmp::Ordering::Less
+                } else if s == -dir {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+            .ok_or(())
+    })
+    .ok()?;
+    // Two candidates at one point sort next to each other, and a tie is unsplittable.
+    for w in order.windows(2) {
+        if order_located(jd, p, q, &mid[w[0]].1, &mid[w[1]].2)? == 0 {
+            return None;
+        }
+    }
+    Some(order.into_iter().map(|i| mid[i].0).collect())
+}
+
 /// **What a point on `L = P ∩ Q` is given as** — the input [`locate`] and [`on_line`] take.
 ///
 /// **A plane pin brings no name, and that is the point.** `{p, q, pin}` *is* the name, so
