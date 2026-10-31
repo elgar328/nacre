@@ -256,10 +256,10 @@ fn rim_and_centre<'a>(
     // class plane and a `Witness::On` there is a lie `inside` answers **without the converse** —
     // a silent wrong answer, not a refusal. The centre stays: it is the ellipse's centre either
     // way, and `ask`'s radial arm reads the solid cylinder, which is right for any section.
-    // The guard is total ([`class_carries_circle`]) and fires nowhere today; the
-    // gate is what empties its population, and this is what says so where the point is made.
+    // The guard is total ([`class_carries_circle`]) and fires on a class sectioning the cylinder
+    // obliquely (`CylRecord::Sections`), whose ellipse is offered its centre alone.
     // `is_some_and` folds a *second* cause in — a class with no rational description also loses
-    // its rim. That population is empty too: such a class passes the gate only as silent about
+    // its rim. That population is empty: such a class passes the gate only as silent about
     // every cylinder (`WorkingCyl::is_silent`), and a silent class carries no circle. If it ever stops
     // being empty the cell falls to `RingHasNoWitness` rather than to a wrong answer, which is the
     // direction this kernel takes.

@@ -118,7 +118,7 @@ impl KeyCmp<'_> {
     ///   pierce) the axis is normal to, or an exact meet line running flat along the axis — and
     ///   they are compared exactly;
     /// * **one ruling**: two such pierce points on one nameless plane that **sections** the cylinder
-    ///   ([`crate::planes::WorkingCyl::sections`] — along the axis, within the radius), on one ruling
+    ///   ([`crate::planes::WorkingCyl::sections_along`] — along the axis, within the radius), on one ruling
     ///   of it, share every coordinate the ruling holds constant (the axis's component is `0`) —
     ///   equal by name, which no interval could prove. The section is what makes the rule true: an
     ///   oblique plane meets the cylinder in an ellipse, which `ruling_side`'s sign only halves, and
@@ -154,7 +154,9 @@ impl KeyCmp<'_> {
             && cx == cy
             && let Some(cyl) = self.cyls.get(cx)
             && cyl.def.dir()[axis] == zero
-            && let Some(&w) = px.iter().find(|&&c| py.contains(&c) && cyl.sections(c))
+            && let Some(&w) = px
+                .iter()
+                .find(|&&c| py.contains(&c) && cyl.sections_along(c))
             && let (Some(sx), Some(sy)) = (
                 x.ruling_side(jd, w, &cyl.def),
                 y.ruling_side(jd, w, &cyl.def),

@@ -775,3 +775,104 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
         })
     );
 }
+
+/// **Where an oblique plane meets a band, read off its two rims.** The cylinder stands on the `z`
+/// axis, radius 2, over `z ∈ [0, 10]`; each plane is `z = k·y + c`, and its section's height runs
+/// over `c ± 2k`. Between the rims it is a whole ellipse, beyond both it misses, and a plane that
+/// reaches a rim — even at one point, `c − 2k = 0` — crosses it: the answer is about closed rims.
+#[test]
+fn an_oblique_plane_meets_a_span_within_beyond_or_across_its_rims() {
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let z = |v: i128| Rat::from_int(v);
+    let def = nacre_topo::CylinderDef::new(
+        [z(0); 3],
+        [z(0), z(0), z(1)],
+        [z(1), z(0), z(0)],
+        nacre_exact::BigRat::from(z(4)),
+    )
+    .unwrap();
+    let span = [z(0), z(10)];
+    // `z = k·y + c` is `−k·y + z − c = 0`.
+    let plane = |k: Rat, c: Rat| {
+        [
+            z(0),
+            z(0).checked_sub(k).unwrap(),
+            z(1),
+            z(0).checked_sub(c).unwrap(),
+        ]
+    };
+    let at = |k: Rat, c: Rat| section_in_span(&def, span, &plane(k, c));
+    assert_eq!(
+        at(q(1, 4), q(5, 2)),
+        Some(SectionSpan::Within),
+        "z ∈ [2, 3]"
+    );
+    assert_eq!(
+        at(q(1, 4), z(-5)),
+        Some(SectionSpan::Clear),
+        "below the band"
+    );
+    assert_eq!(at(q(1, 4), z(13)), Some(SectionSpan::Clear), "above it");
+    assert_eq!(
+        at(z(3), z(5)),
+        Some(SectionSpan::Crosses),
+        "z ∈ [−1, 11]: across both rims"
+    );
+    assert_eq!(
+        at(q(1, 4), q(1, 2)),
+        Some(SectionSpan::Crosses),
+        "z ∈ [0, 1]: a rim's point"
+    );
+    assert_eq!(
+        at(q(1, 4), q(19, 2)),
+        Some(SectionSpan::Crosses),
+        "z ∈ [9, 10]"
+    );
+    // A raw axis that is not a unit scales the stations, not the answer: `dir = (0, 0, 2)` puts
+    // `z = 10` at station 5.
+    let long = nacre_topo::CylinderDef::new(
+        [z(0); 3],
+        [z(0), z(0), z(2)],
+        [z(1), z(0), z(0)],
+        nacre_exact::BigRat::from(z(4)),
+    )
+    .unwrap();
+    assert_eq!(
+        section_in_span(&long, [z(0), z(5)], &plane(q(1, 4), q(5, 2))),
+        Some(SectionSpan::Within)
+    );
+    assert_eq!(
+        section_in_span(&long, [z(0), z(5)], &plane(q(1, 4), q(19, 2))),
+        Some(SectionSpan::Crosses)
+    );
+}
+
+/// **A class carries closed traces no road nests** when an oblique section stands beside a circle
+/// or a section of an axis that is not parallel — and not when the axes agree, nor beside rulings,
+/// nor with no section at all.
+#[test]
+fn a_section_beside_another_axis_carries_traces_no_road_nests() {
+    let z = |v: i128| Rat::from_int(v);
+    let (up, up_long, along) = ([z(0), z(0), z(1)], [z(0), z(0), z(3)], [z(1), z(0), z(0)]);
+    let (sec, across, cuts) = (ClassMeet::Sections, ClassMeet::Across, ClassMeet::Cuts);
+    assert!(
+        carries_unnested(&[(up, &sec), (along, &across)]),
+        "a section beside a circle"
+    );
+    assert!(
+        carries_unnested(&[(up, &sec), (along, &sec)]),
+        "two sections of crossing axes"
+    );
+    assert!(
+        !carries_unnested(&[(up, &sec), (up_long, &sec)]),
+        "two sections of parallel axes"
+    );
+    assert!(
+        !carries_unnested(&[(up, &sec), (along, &cuts)]),
+        "a section beside rulings"
+    );
+    assert!(
+        !carries_unnested(&[(up, &across), (along, &across)]),
+        "no section: the class is not asked"
+    );
+}

@@ -79,7 +79,11 @@ pub(super) fn split_circles(
             // *more*, not less.** `segment_meets_cylinder` needs both endpoints' coordinates; where
             // one is a pierce point the question goes straight to `circle_crossings`, which answers
             // `Miss` exactly when the line misses. Losing the filter costs a solve, never an answer.
-            if let [Some(p0), Some(p1)] = &seg_coords[si]
+            // Its premise is a segment ⊥ the axis — every segment of a class across the axis — so
+            // a class sectioning the cylinder obliquely skips it: there the filter would read a
+            // segment that leans along the axis as one that does not, and drop a real crossing.
+            if !cyls[cyl].sections_oblique(wc)
+                && let [Some(p0), Some(p1)] = &seg_coords[si]
                 && (p0 == p1 || !nacre_exact::segment_meets_cylinder(p0, p1, &o, &m, r2))
             {
                 return Ok(Vec::new());
@@ -172,6 +176,15 @@ pub(super) fn split_circles(
         if raw.is_empty() {
             out_circles.push(circ.clone());
             continue;
+        }
+        // **An oblique section stays whole.** The class draws it as one closed trace
+        // ([`crate::planes::CylRecord::Sections`]), and a segment of the class crossing it would
+        // cut it into arcs of the ellipse, whose directions, extrema and boxes no road reads — so
+        // the cut is refused as the oblique coverage it is. A tangency mints no node (above), as on
+        // a class across the axis; a crossing that cannot be placed has already been refused by its
+        // own name.
+        if cyls[circ.cyl].sections_oblique(wc) {
+            return Err(reject(RejectReason::ObliqueCylinderCut));
         }
         let is_end = |n: NodeId| {
             circ.merged
@@ -452,19 +465,19 @@ pub(super) fn split_segments_at(
 /// road names has nowhere to go. On that road the door's answer is the exact meet's.
 ///
 /// **Only a crossing pair, a tangency or a miss of [`nacre_judge::cylinder::LineMeet`]'s shapes can
-/// arrive here (or an overflow), and that is provable.** A plane cuts a cylinder in a *circle* only
-/// when it is ⊥ to the axis, so `wc ∩ sg.wall` is always ⊥ to the axis too, and the other shapes
-/// cannot occur:
+/// arrive here (or an overflow), and that is provable.** A class carries a cylinder's closed trace
+/// only when it meets the axis — ⊥ to it (a circle, [`class_carries_circle`]) or oblique
+/// (a section, [`crate::planes::CylRecord::Sections`]) — so `n·m ≠ 0`, no line on `wc` is ∥ to the
+/// axis, and the other shapes cannot occur:
 /// - `CoincidentPlanes`/`ParallelPlanes` — the segment lies on that line, so the line exists;
 /// - `OnRuling` — a line on the cylinder and on `wc` would have to lie inside `cylinder ∩ wc`,
-///   which is a circle, and a circle contains no line;
-/// - `AxisParallelMiss` — a line ⊥ to the axis is not ∥ to it.
+///   which is a circle or an ellipse, and neither contains a line;
+/// - `AxisParallelMiss` — a line on `wc` is not ∥ to the axis.
 ///
-/// The last two are the gate's promise that no class oblique to the axis carries a circle
-/// ([`class_carries_circle`]); if it breaks, the answer would be a silent «no
-/// crossing», so it is refused by that promise's name (`ObliqueCircleClass`) where a debug build
-/// stops. The quadratic cannot degenerate either: its leading coefficient is `|d|² > 0` because
-/// `d ⊥ m`.
+/// The last two are the gate's promise that a class along the axis carries no closed trace; if it
+/// breaks, the answer would be a silent «no crossing», so it is refused by that promise's name
+/// (`ObliqueCircleClass`) where a debug build stops. The quadratic cannot degenerate either: its
+/// leading coefficient is the squared off-axis part of `d`, positive because `d` is not ∥ `m`.
 ///
 /// `Ok(None)` is a plane with no narrow world statement, or overflow (the caller refuses by width).
 ///
@@ -506,8 +519,8 @@ fn circle_crossings(
         shape @ (LineMeet::OnRuling(_) | LineMeet::AxisParallelMiss) => {
             debug_assert!(
                 false,
-                "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \
-                 can only miss, touch or cross the cylinder — got {shape:?}"
+                "a closed trace's class meets the axis, so its meet with any wall is not ∥ to the \
+                 axis and can only miss, touch or cross the cylinder — got {shape:?}"
             );
             return Err(reject(RejectReason::ObliqueCircleClass));
         }

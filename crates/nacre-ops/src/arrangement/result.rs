@@ -469,7 +469,7 @@ pub(super) fn trace_result_faces(
             // at the assembly's very end, intercepting every stage between via the
             // `deferred.unwrap_or(e)` below — so a refused population carries one name out
             // however far the pipeline gets. The arc population is supported and the socket holds
-            // `None`; the ladder stays for the next out-of-coverage class (ellipses).
+            // `None`; the ladder stays for the next out-of-coverage class.
             //
             // `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
             // *with* the boolean, so it stays green when both slide to the same wrong name; asking
@@ -478,9 +478,10 @@ pub(super) fn trace_result_faces(
             // **The stopper socket.** A stopper is made here — per class, raised at
             // the assembly's very end, intercepting every stage between (seven layers of
             // `deferred.unwrap_or` down the whole pipeline). The arc population is supported,
-            // so the socket holds `None`; the next out-of-coverage class (ellipses,
-            // say) plugs its own deferred reject in here and inherits the entire interception
-            // ladder instead of re-plumbing it.
+            // so the socket holds `None`; the next out-of-coverage class plugs its own deferred
+            // reject in here and inherits the entire interception ladder instead of re-plumbing
+            // it. An oblique section a segment crosses is not one: the split refuses it before
+            // any stage that could fail under another name (`split_circles`).
             let deferred: Option<BoolError> = None;
             let s = match staged {
                 Ok(s) => s,

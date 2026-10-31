@@ -386,29 +386,41 @@ pub enum RejectReason {
     /// unbounded surface is not named by it. The solid's volume would be right and its names
     /// wrong, so the boolean refuses rather than return it.
     VertexNamesAbsentSurface,
-    /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
-    /// could not be shown to miss the plane — where they meet, the intersection is an ellipse
-    /// (vocabulary the kernel does not have yet). A slanted plane that runs past every lateral
-    /// face of the cylinder (a gusset beside a plate's holes) passes. The plane is what is asked,
-    /// not the faces on it: a slanted face standing clear of the cylinder is refused too when its
-    /// plane, extended, cuts a lateral face, since the boolean sections both solids by that whole
-    /// plane.
+    /// A plane class neither perpendicular nor parallel to a cylinder's axis that meets the
+    /// cylinder in a curve the kernel does not build — an arc of an ellipse. A slanted plane that
+    /// runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes. So
+    /// does one whose faces all have straight edges and stand, by the box of their corners, beyond
+    /// the box of every lateral face of the cylinder, while the plane, extended, cuts it in whole
+    /// ellipses — each strictly between a lateral face's two whole rims (a gusset whose plane runs
+    /// through a plate's bore between its faces). Refused:
+    /// - a face on the plane not shown apart from a lateral face that way — reaching it, near it,
+    ///   or bounded by a curved edge (the cap of a slanted cylinder);
+    /// - the plane reaching a lateral face's rim, or cutting a face that is not a whole band
+    ///   between two rims (a fillet's quarter);
+    /// - another face of the operands crossing such an ellipse on the plane, or a ruling another
+    ///   cylinder leaves on the plane not shown apart from it;
+    /// - the plane sectioning two cylinders whose axes are not parallel, or sectioning one while it
+    ///   lies across the axis of another — however far that other cylinder stands.
     ObliqueCylinderCut,
-    /// **A cell called a circle sits on a class that is not perpendicular to its axis** — so its
-    /// boundary is an ellipse and every rule that reads a *radius* as that boundary's width is
-    /// wrong there.
+    /// **A cylinder's closed trace sits on a class the gate did not record it on** — a section of a
+    /// class oblique to its axis that is no recorded section, or the traces of two cylinders whose
+    /// axes are not parallel on one class — so a rule that reads it as a circle, or nests it
+    /// against the other by the distance between the axes, is wrong there.
     ///
     /// **A backstop, deliberately, and it is classified as one.** [`Self::ObliqueCylinderCut`] says
     /// *the kernel's coverage ends here* and judges nothing about the input; this says something
-    /// stronger and different — the gate promised no oblique class would carry a circle (see
-    /// [`crate::planes::class_carries_circle`]) and the promise did not hold. Sharing
+    /// stronger and different — the gate promised that no class carries a closed trace it did not
+    /// name (a circle across the axis, see [`crate::planes::class_carries_circle`], or an oblique
+    /// section, [`crate::planes::CylRecord::Sections`]) and that one class carries the traces of
+    /// parallel axes only, and the promise did not hold. Sharing
     /// [`Self::ObliqueCylinderCut`] would put two sentences under one label. The vessel-guard
     /// precedent is [`Self::PartialCircleUncut`], and it takes the same class.
     ///
-    /// Nothing raises it today, and that is the point: the alternative at its two sites is not a
-    /// refusal but a **silently wrong containment answer** — a rim witness off the cell's own
-    /// plane, or two sections of cylinders whose axes are not parallel compared as if they nested
-    /// as the cylinders do.
+    /// Nothing raises it today, and that is the point: the alternative at each of its sites in the
+    /// arrangement is not a refusal but a **silently wrong answer** — a wall meeting the class along
+    /// a line parallel to the axis read as «no crossing», two sections of cylinders whose axes are
+    /// not parallel nested as if the cylinders were, a label of a class that is not one of the
+    /// lateral chart's horizontals filed at its axis meet.
     ///
     /// The result assembly raises it too, for the same broken promise read at an edge: a rim, an
     /// arc or a ruling whose plane and cylinder the truth calls oblique

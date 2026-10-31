@@ -35,24 +35,54 @@ pub(super) fn per_class(
         C_LABEL,
         label_cells(&cells, &face_of, edges, &nesting, [false; 4])
     )?;
-    let (faces, disk_labels, arc_labels) = timed!(
+    let (faces, mut disk_labels, mut arc_labels) = timed!(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
-    // **A sectioned class's rulings close its own section and nothing else.** The gate proved
-    // every face on the class apart from the lateral boxes (`Silence::Sectioned`), so no face this
-    // class emits borders one of those rulings — and the lateral chart is not told of them below,
-    // so a face that did would have no lateral partner. Checked here, where the stage can refuse.
-    let sectioned = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections(wc));
-    if faces.iter().any(|f| {
-        f.poly_rings().any(|r| {
-            r.walls.iter().any(
-                |w| matches!(*w, crate::combinatorics::Wall::Ruling { cyl, .. } if sectioned(cyl)),
-            )
-        })
-    }) {
+    // **A sectioned class's section closes its own arrangement and nothing else.** The gate proved
+    // every face on the class apart from the lateral boxes — its rulings along the axis
+    // (`Silence::Sectioned`), its ellipse across it (`CylRecord::Sections`) — so no face this class
+    // emits borders one of those curves, and the lateral chart is not told of them below: a face
+    // that did would have no lateral partner, and an edge on an ellipse no curve to carry it.
+    // Checked here, where the stage can refuse; every bound is read, a whole circle included,
+    // which the polygon rings leave out.
+    let along = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections_along(wc));
+    let oblique = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc));
+    let borders = |b: &crate::draft::Bound| match b {
+        crate::draft::Bound::Circle { cyl } => oblique(*cyl),
+        _ => b.ring().is_some_and(|r| {
+            r.walls.iter().any(|w| match *w {
+                crate::combinatorics::Wall::Ruling { cyl, .. } => along(cyl),
+                crate::combinatorics::Wall::Arc { cyl, .. } => oblique(cyl),
+                crate::combinatorics::Wall::Plane(_) => false,
+            })
+        }),
+    };
+    if faces
+        .iter()
+        .any(|f| std::iter::once(&f.outer).chain(&f.inner).any(borders))
+    {
         return Err(reject(RejectReason::CylinderStagesDisagree));
     }
+    // An oblique section's labels are not the chart's: the class is no line of the lateral's
+    // chart, whose horizontals are addressed by their station on the axis (`cyl_chart::Lines`), and
+    // an oblique plane's axis meet read as one would label a class it is not. Dropped by the gate's
+    // record; the geometry ([`cyl_chart::is_horizontal`]) says the same of every trace that carries
+    // a label, asserted here and asked again by the chart's backstop, which refuses a key off its
+    // horizontals rather than filing it — so a label neither horizontal nor a recorded section is
+    // refused, not dropped.
+    let horizontal = |cyl: usize| {
+        let section = oblique(cyl);
+        debug_assert_eq!(
+            section,
+            cyls.get(cyl)
+                .is_some_and(|cy| !cyl_chart::is_horizontal(jd, wc, &cy.def)),
+            "a closed trace off the chart's horizontals is a recorded oblique section"
+        );
+        !section
+    };
+    disk_labels.retain(|&(cyl, _)| horizontal(cyl));
+    arc_labels.retain(|&(cyl, _)| horizontal(cyl));
     // The cylinder chart's **vertical** lines, read off the pieces this class already made. Both
     // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
     // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
@@ -68,7 +98,7 @@ pub(super) fn per_class(
             let def = &cyls[cyl].def;
             // A sectioned class's ruling is not a line of the lateral's chart: no face of the class
             // reaches the lateral, so it splits no cell there (see the check above).
-            if sectioned(cyl) {
+            if along(cyl) {
                 return None;
             }
             let z = [
@@ -174,27 +204,52 @@ pub(super) fn per_class(
     })
 }
 
-/// **Does this circle actually meet that ruling?** — asked of the class's own tables.
+/// **Does this circle actually meet that ruling?** — asked of the class's own tables: `Ok` is the
+/// measured answer ([`crossing_measured`]), `Err` the name a pair that could not be measured is
+/// refused by. On a class sectioning the circle's cylinder obliquely
+/// ([`crate::planes::CylRecord::Sections`]) that is the oblique coverage's end
+/// (`ObliqueCylinderCut` — an ellipse against a ruling is not measured yet), and anywhere else the
+/// net's own backstop (`CircleCrossesRuling`). Named here, once, so every way the measure can fail
+/// carries the same name.
 ///
 /// This is the check `RejectReason::CircleCrossesRuling` is raised from, so it ships.
+fn circle_crosses_ruling(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    circle: &MergedCircle,
+    ruling: &MergedRuling,
+) -> Result<bool, RejectReason> {
+    let unmeasured = if cyls[circle.cyl].sections_oblique(wc) {
+        RejectReason::ObliqueCylinderCut
+    } else {
+        RejectReason::CircleCrossesRuling
+    };
+    crossing_measured(jd, cyls, wc, circle, ruling).ok_or(unmeasured)
+}
+
+/// **[`circle_crosses_ruling`]'s measure.**
 ///
 /// **First, the pair rule's own question, of the two edges as pieces**
-/// ([`crate::planes::pieces_clear`]): an arc is the piece `[t, t]` × its arc on its cylinder, a
+/// ([`crate::planes::pieces_clear`]): an arc is the piece of the axis band its curve sweeps × its
+/// arc on its cylinder — `[t, t]` for a circle, `t ± Δ` for an oblique section's ellipse — and a
 /// ruling its axis span × the whole circle on its own (one ruling's angle is seldom rational, and
 /// the whole circle is wider, never narrower). So the net and the gate ask one predicate, and
 /// what it is asked about is the bounded piece — the ruling's segment, not the line it lies on.
-/// Of its three witnesses only two can speak here: a circle and a ruling stand on one class only
-/// when the two axes are perpendicular, so the parallel cross-section never runs, and the common
-/// perpendicular is the strip direction below, where the ruling's whole-circle reach says less
-/// than the strip does. What this guards, then, is that the edges the arrangement drew lie in the
-/// faces the gate proved apart (a whole circle drawn where a face used a quarter of it is wider
-/// than the face).
+/// Of its three witnesses only two can speak here: the class runs along the ruling's axis and
+/// meets the circle's, so the two axes are never parallel and the parallel cross-section never
+/// runs; on a class across the circle's axis the common perpendicular is the strip direction
+/// below, where the ruling's whole-circle reach says less than the strip does. What this guards, then, is that the edges the
+/// arrangement drew lie in the faces the gate proved apart (a whole circle drawn where a face used
+/// a quarter of it is wider than the face).
 ///
-/// Then the strip: [`nacre_exact::cylinder_ruling_reached_extent`] — the arc's reach across the
-/// strip, against the one named ruling's line — which reads a tangency as no crossing, as this net
-/// must (a disjointness proof is about closed sets and cannot). `None` stays "could not be
-/// measured", never "no"; a piece that cannot be stated only skips the first question.
-fn circle_crosses_ruling(
+/// Then the strip, for a circle: [`nacre_exact::cylinder_ruling_reached_extent`] — the arc's reach
+/// across the strip, against the one named ruling's line — which reads a tangency as no crossing,
+/// as this net must (a disjointness proof is about closed sets and cannot). The strip's arc ends
+/// are a circle's ([`crate::planes::arc_ends_along`]), so an ellipse the pieces do not part is not
+/// measured. `None` stays "could not be measured", never "no"; a piece that cannot be stated only
+/// skips the first question.
+fn crossing_measured(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
@@ -221,13 +276,14 @@ fn circle_crosses_ruling(
             theta: crate::planes::Theta::Whole,
         })
     })();
-    let circle_t = crate::planes::axis_param_of_plane(&coeffs, circle_def);
+    let oblique = !crate::planes::class_carries_circle(&n, &circle_def.dir());
+    let circle_band = trace_band(&coeffs, circle_def);
     let apart = |theta: crate::planes::Theta| -> bool {
-        match (&ruling_piece, circle_t) {
-            (Some(rp), Some(t)) => crate::planes::pieces_clear(
+        match (&ruling_piece, circle_band) {
+            (Some(rp), Some(band)) => crate::planes::pieces_clear(
                 circle_def,
                 &crate::planes::Footprint {
-                    span: Some([t, t]),
+                    span: Some(band),
                     theta,
                 },
                 ruling_def,
@@ -275,6 +331,8 @@ fn circle_crosses_ruling(
         let whole = crate::planes::Theta::Whole;
         return if apart(whole) {
             Some(false)
+        } else if oblique {
+            None
         } else {
             ask(&whole)
         };
@@ -286,11 +344,43 @@ fn circle_crosses_ruling(
         if apart(theta) {
             continue;
         }
+        if oblique {
+            return None;
+        }
         if ask(&theta)? {
             return Some(true);
         }
     }
     Some(false)
+}
+
+/// **The band of its own axis a cylinder's closed trace on the plane `coeffs` sweeps** —
+/// `[t − Δ, t + Δ]` in the axis parameter of the raw `def.dir()`, about the plane's axis meet `t`.
+/// A point of the cylinder is `o + s·m + r·û` (`û` a unit radial vector), and on the plane
+/// `s = t − r(n·û)/(n·m)`; `n·û` peaks at `|n⊥|`, the normal off the axis, so `Δ = r|n⊥|/|n·m|`,
+/// formed as `Δ²` and rounded outward ([`crate::planes::sqrt_at_least`]) — never narrower than the
+/// ellipse. Across the axis `Δ = 0`: the circle's own `[t, t]`, with no radius asked. `None` is a
+/// plane along the axis, `Rat` overflow, or a radius wider than `Rat` on an oblique plane.
+fn trace_band(
+    coeffs: &[nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 2]> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let m = def.dir();
+    let t = crate::planes::axis_param_of_plane(coeffs, def)?;
+    if crate::planes::class_carries_circle(&n, &m) {
+        return Some([t, t]);
+    }
+    let nperp = nacre_exact::off_axis_rat(&n, &m)?;
+    let nm = nacre_exact::dot3_rat(&n, &m)?;
+    let nm2 = nm.checked_mul(nm)?;
+    let delta2 = def
+        .r2()
+        .narrow()?
+        .checked_mul(nacre_exact::dot3_rat(&nperp, &nperp)?)?
+        .checked_mul(nacre_exact::Rat::new(nm2.denom(), nm2.numer())?)?;
+    let delta = crate::planes::sqrt_at_least(delta2)?;
+    Some([t.checked_sub(delta)?, t.checked_add(delta)?])
 }
 
 /// How many `(circle, ruling)` pairs the net above looked at, and how many it **could not
@@ -362,14 +452,16 @@ impl<'a> ClassEdges<'a> {
         //
         // **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
         // ruling×ruling are cut by nothing, and all three are safe for the same reason: **a
-        // class's edge is some face's boundary**, so two of them from different cylinders meeting
-        // puts two lateral faces on one point. Only this pair carries a check, because only this
+        // class's edge is some face's boundary** (or, for an oblique section, a curve on a
+        // lateral face), so two of them from different cylinders meeting puts two lateral
+        // faces on one point. Only this pair carries a check, because only this
         // pair has a cheap exact predicate; building detectors for populations that cannot arrive
         // measures nothing.
         //
-        // `None` — the decomposition could not be stated — refuses with the same name:
-        // honest-reject over silent-wrong, and measured to fire on nothing today (`unmeasured` is
-        // 0 across the corpus, the census and the kit).
+        // A pair that could not be measured refuses too — by the net's name, or on an oblique
+        // section by the coverage's (`circle_crosses_ruling`): honest-reject over silent-wrong, and
+        // measured to fire on nothing today (`unmeasured` is 0 across the corpus, the census and
+        // the kit).
         if !rulings.is_empty() && !circles.is_empty() {
             for c in circles {
                 for ru in rulings {
@@ -378,12 +470,14 @@ impl<'a> ClassEdges<'a> {
                     {
                         use std::sync::atomic::Ordering;
                         MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
-                        if crosses.is_none() {
+                        if crosses.is_err() {
                             MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    if crosses != Some(false) {
-                        return Err(reject(RejectReason::CircleCrossesRuling));
+                    match crosses {
+                        Ok(false) => {}
+                        Ok(true) => return Err(reject(RejectReason::CircleCrossesRuling)),
+                        Err(reason) => return Err(reject(reason)),
                     }
                 }
             }
@@ -480,3 +574,7 @@ impl<'a> ClassEdges<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/per_class.rs"]
+mod tests;

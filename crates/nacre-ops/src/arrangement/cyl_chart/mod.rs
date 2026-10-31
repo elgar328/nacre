@@ -24,7 +24,7 @@
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
 //! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | — |
 //! | `n ⊥ m` | `d > r` | nothing | 1494 |
-//! | oblique | — | refused, `ObliqueCylinderCut` | 2 |
+//! | oblique | — | **nothing**: the class's faces stand apart from every lateral face and its whole ellipse is drawn on its own arrangement (`CylRecord::Sections`); otherwise refused, `ObliqueCylinderCut` | 2 |
 //!
 //! So the chart carries **axis-parallel segments only**. Not a grid, though: a ruling exists over a
 //! finite axis interval and a cut circle is arcs, so the cells are what rectilinear *segments* cut
@@ -409,6 +409,9 @@ pub(crate) fn chart_of(
     curved: &Curved,
 ) -> Result<Chart, BoolError> {
     let def = &cyls[k].def;
+    // The rim classes are read without asking whether they are horizontals: one that is not (a cut
+    // rim of an oblique section, which the split refuses before it exists) would be filed at its
+    // axis meet here, and `Lines::of`, which every emit reads after this chart, refuses it by name.
     let mut classes: Vec<usize> = rim_classes(k, plane_faces, curved);
     let push = |c: usize, v: &mut Vec<usize>| {
         if !v.contains(&c) {
@@ -547,6 +550,21 @@ fn second_chord_first(
     Some(dot3_rat(&cross3_rat(&d1, &d2)?, &m)? < Rat::from_int(0))
 }
 
+/// **Is class `c` a horizontal of cylinder `def`'s chart** — a class across the axis, whose trace on
+/// the lateral is a circle at one station of the axis ([`class_carries_circle`])? A class oblique to
+/// the axis is not: its section is no line of the chart. A class with no world statement reads as
+/// one; the chart asks its station by name and refuses it there (`bands::axis_param`). The chart's
+/// backstop for a label filed off its horizontals ([`Lines::of`]); the per-class stage asserts it
+/// agrees with the gate's record.
+pub(crate) fn is_horizontal(
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+    def: &nacre_topo::CylinderDef,
+) -> bool {
+    jd.world_rat(c)
+        .is_none_or(|w| class_carries_circle(&[w[0], w[1], w[2]], &def.dir()))
+}
+
 /// The lines of one chart, looked up **by axis parameter** — never by class index. Two ⊥ classes
 /// at one `t` are one plane, and `chart_of` keeps an arbitrary one of their indices, so the label
 /// tables (keyed by class) are joined through `t`. Built once per chart; the cells then pay no
@@ -576,6 +594,19 @@ impl Lines {
             // reject census records at the raise whether or not the caller looks. `chart_of`
             // (iii) already asked this of every ⊥ class, so a refusal here cannot be reached after
             // a chart was built — the `?` removes a silent arm rather than adding a population.
+            // An oblique class's axis meet is no station of the chart, and filed here it would
+            // relabel the class whose station it equals. The per-class stage keeps a recorded
+            // section's labels out by the gate's record; this backstop asks the geometry
+            // ([`is_horizontal`]) of every key, the cut-rim keys too, which no stage filters — so
+            // the two readings parting is a refusal by name, never a label filed at a false
+            // station.
+            if !is_horizontal(jd, c, def) {
+                debug_assert!(
+                    false,
+                    "a label of cylinder {k} filed under class {c}, which is not across its axis"
+                );
+                return Err(reject(RejectReason::ObliqueCircleClass));
+            }
             let t = crate::bands::axis_param(jd, c, def)?;
             let v = by_t.entry(t).or_default();
             if !v.contains(&c) {

@@ -32,7 +32,7 @@ pub(super) fn rulings_on_class(
     // (or never in question), and contributing its rectangle anyway breaks the straddling family:
     // the boss's own wall class is a d=0 pair, and its coplanar bottom cap's chord lands on a line
     // the plate already traces. The gate records exactly the pairs that need the rectangle.
-    let sections = cyls.get(k).is_some_and(|cy| cy.sections(wc));
+    let sections = cyls.get(k).is_some_and(|cy| cy.sections_along(wc));
     if !cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc)) {
         return Ok((Vec::new(), Vec::new()));
     }

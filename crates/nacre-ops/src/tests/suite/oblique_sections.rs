@@ -16,11 +16,11 @@
 use super::*;
 use Want::{Built, Refused};
 
-type Sketch = [(f64, f64); 3];
+pub(crate) type Sketch = [(f64, f64); 3];
 
 /// The gusset on the slanted plane: `(y, z)` corners `(14, 6)`, `(34, 6)`, `(34, 11)` — area 50.
 /// In the plate it sinks to the top face `z = 10`, which it crosses at `y = 30`: 48 below, 2 above.
-const SUNK: Sketch = [(14.0, 6.0), (34.0, 6.0), (34.0, 11.0)];
+pub(crate) const SUNK: Sketch = [(14.0, 6.0), (34.0, 6.0), (34.0, 11.0)];
 
 /// [`SUNK`] slid up its own plane past the plate's `y = 40` wall — the same class, apart from the
 /// plate.
@@ -59,7 +59,7 @@ fn op(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Hand
 
 /// A triangle in the `yz` plane, `(y, z)` corners counter-clockwise, extruded over
 /// `x ∈ [x0, x0 + 1]`.
-fn gusset(m: &mut Model, tri: Sketch, x0: f64) -> Handle<Solid> {
+pub(crate) fn gusset(m: &mut Model, tri: Sketch, x0: f64) -> Handle<Solid> {
     let p2 = |(y, z): (f64, f64)| nacre_math::Point2::from_array([y, z]);
     let edges = vec![
         line(p2(tri[0]), p2(tri[1])),
@@ -95,10 +95,9 @@ fn gusset(m: &mut Model, tri: Sketch, x0: f64) -> Handle<Solid> {
 }
 
 /// Whether the gate recorded `r` as a class's section of a cylinder drawn on the class's own
-/// arrangement. No record states one: the gate refuses every named class oblique to a cylinder
-/// whose plane meets a lateral face.
-fn states_a_section(_r: crate::planes::CylRecord) -> bool {
-    false
+/// arrangement.
+fn states_a_section(r: crate::planes::CylRecord) -> bool {
+    r == crate::planes::CylRecord::Sections
 }
 
 /// **The gate's verdict, in both operand orders** — `Ok` with the number of (cylinder, class)
@@ -144,21 +143,39 @@ fn bored() -> f64 {
 const OBLIQUE: Want = Refused(RejectReason::ObliqueCylinderCut);
 const REFUSED: [[Want; 3]; 2] = [[OBLIQUE; 3]; 2];
 
+/// What a gusset of [`SUNK`] makes with an operand `a` it sinks into by 48 of its 50: Fuse adds the
+/// 2 above the top, Cut takes the 48 below it, Common is those 48 — and the other way round, the
+/// gusset less the operand is the 2.
+fn sunk(a: f64) -> [[Want; 3]; 2] {
+    [
+        [Built(1, a + 2.0), Built(1, a - 48.0), Built(1, 48.0)],
+        [Built(1, a + 2.0), Built(1, 2.0), Built(1, 48.0)],
+    ]
+}
+
+/// What a gusset of area 50 apart from an operand `a` makes with it: two bodies, then each alone.
+fn apart(a: f64) -> [[Want; 3]; 2] {
+    [
+        [Built(2, a + 50.0), Built(1, a), Built(0, 0.0)],
+        [Built(2, a + 50.0), Built(1, 50.0), Built(0, 0.0)],
+    ]
+}
+
 /// The sunk gusset beside the bored plate: the class's section of the bore is a whole ellipse
-/// between the plate's faces, and the gate refuses the pair.
+/// between the plate's faces, drawn on the class's own arrangement.
 #[test]
 fn a_gusset_sunk_into_a_bored_plate() {
     let build = |m: &mut Model| (plate_with_bore(m), gusset(m, SUNK, 30.0));
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
-    every_kind(build, REFUSED);
+    gate(build, Ok(1));
+    every_kind(build, sunk(bored()));
 }
 
 /// The same plane, the gusset clear of the plate.
 #[test]
 fn a_gusset_apart_from_a_bored_plate() {
     let build = |m: &mut Model| (plate_with_bore(m), gusset(m, APART, 30.0));
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
-    every_kind(build, REFUSED);
+    gate(build, Ok(1));
+    every_kind(build, apart(bored()));
 }
 
 /// Two bores, `(10, 10)` and `(10, 20)`, both met by the plane between the plate's faces (the
@@ -170,8 +187,8 @@ fn a_gusset_sunk_into_a_plate_with_two_bores() {
         let second = z_cylinder(m, [10.0, 20.0, -1.0], 2.0, 12.0);
         (op(m, BoolKind::Cut, p, second), gusset(m, SUNK, 30.0))
     };
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
-    every_kind(build, REFUSED);
+    gate(build, Ok(2));
+    every_kind(build, sunk(16000.0 - 80.0 * pi()));
 }
 
 /// A tube — radius 2 about `(10, 10)` less radius 1, `z ∈ [0, 10]`, volume `30π` — beside the
@@ -183,8 +200,8 @@ fn a_gusset_beside_a_tube() {
         let inner = z_cylinder(m, [10.0, 10.0, -1.0], 1.0, 12.0);
         (op(m, BoolKind::Cut, outer, inner), gusset(m, SUNK, 30.0))
     };
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
-    every_kind(build, REFUSED);
+    gate(build, Ok(2));
+    every_kind(build, apart(30.0 * pi()));
 }
 
 /// A pin — radius 2 about `(10, 10)`, `z ∈ [0, 10]`, volume `40π` — beside the gusset.
@@ -196,8 +213,8 @@ fn a_gusset_beside_a_pin() {
             gusset(m, SUNK, 30.0),
         )
     };
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
-    every_kind(build, REFUSED);
+    gate(build, Ok(1));
+    every_kind(build, apart(40.0 * pi()));
 }
 
 /// The control: a gusset on `z = y/4 − 5`, which meets the bore's cylinder below the plate, so the
@@ -239,8 +256,11 @@ fn a_gusset_sunk_into_a_bored_plate_with_a_pin_along_its_plane() {
         );
         (op(m, BoolKind::Fuse, p, pin), gusset(m, SUNK, 30.0))
     };
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
-    every_kind(build, REFUSED);
+    gate(build, Ok(1));
+    every_kind(
+        build,
+        sunk(bored() + 18.0 * (2.0 * pi() / 3.0 + 3f64.sqrt() / 4.0)),
+    );
 }
 
 /// A steeper plane, `z = 3y − 25`, meets the bore across both of the plate's faces: the section is
@@ -286,7 +306,7 @@ fn a_gusset_whose_other_faces_cut_the_bore_is_refused() {
         m.rebuild_adjacency();
         (plate_with_bore(m), op(m, BoolKind::Fuse, g, block))
     };
-    gate(build, Err(RejectReason::ObliqueCylinderCut));
+    gate(build, Ok(1));
     every_kind(build, REFUSED);
 }
 

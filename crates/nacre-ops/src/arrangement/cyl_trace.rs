@@ -1,10 +1,12 @@
 use super::*;
-/// What a lateral face leaves on a ⊥ plane class — see [`circle_on_class`], which answers it
-/// **per angular extent** ([`CircleSpan`]) rather than once for the whole circle.
+/// What a lateral face leaves on a plane class across its axis — see [`circle_on_class`], which
+/// answers it **per angular extent** ([`CircleSpan`]) rather than once for the whole circle. On a ⊥
+/// class the trace is a circle; on a class sectioning the cylinder obliquely
+/// ([`crate::planes::CylRecord::Sections`]) it is the whole ellipse, read the same way.
 ///
-/// The empty answer is "this class leaves nothing here": a non-⊥ class carries no circle at all,
-/// a ⊥ class beyond both rims never meets the face, and a class the gate proved silent about the
-/// cylinder stands clear of it. `Err` is "the face cannot answer" (no rim span) — declining beats a
+/// The empty answer is "this class leaves nothing here": a class along the axis carries no circle
+/// at all, a ⊥ class beyond both rims never meets the face, an oblique section misses it, and a
+/// class the gate proved silent about the cylinder stands clear of it. `Err` is "the face cannot answer" (no rim span) — declining beats a
 /// silently missing circle, which would corrupt every label on the class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CylOnClass {
@@ -44,9 +46,30 @@ pub(super) fn circle_on_class(
     };
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let m = def.dir();
+    // **An oblique section** ([`crate::planes::CylRecord::Sections`]): the gate proved the class's
+    // plane meets each lateral face nowhere or in a whole ellipse between a band's two rims, read
+    // off the face's span by the predicate this road asks too ([`crate::planes::section_in_span`]).
+    // The ellipse is one closed trace with no node, and the face's solid straddles the class along
+    // it — a circle's `Crosses` on a class across the axis. Any other reading is the gate and this
+    // road disagreeing.
+    if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
+        use crate::planes::SectionSpan;
+        let section = cf
+            .footprint
+            .span
+            .and_then(|span| crate::planes::section_in_span(def, span, &coeffs));
+        return match section {
+            Some(SectionSpan::Clear) => Ok(Vec::new()),
+            Some(SectionSpan::Within) => Ok(vec![CircleSpan {
+                arc: None,
+                on: CylOnClass::Crosses,
+            }]),
+            Some(SectionSpan::Crosses) | None => Err(DeclineKind::CylSpan),
+        };
+    }
     // ⊥ to the axis, decided **totally** (`class_carries_circle` clears denominators and answers
-    // in integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
-    // all — a miss, like a parallel plane, not a decline.
+    // in integers, so this cannot decline for want of bits). Any other class carries no circle
+    // at all — a miss, like a parallel plane, not a decline.
     if !class_carries_circle(&n, &m) {
         return Ok(Vec::new());
     }

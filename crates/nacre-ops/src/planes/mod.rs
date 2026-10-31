@@ -516,6 +516,14 @@ pub(crate) enum CylRecord {
     /// roads that would ask the class's coefficients about this cylinder answer from the record
     /// instead.
     Silent(Silence),
+    /// A named class oblique to the axis whose faces all stand apart from every lateral face's
+    /// box, while its plane meets each lateral face either nowhere or in a whole ellipse strictly
+    /// between the two whole rims of a band ([`section_in_span`]). The class's own arrangement
+    /// draws the cylinder's section truly — the ellipse, a closed trace with no node on it — and
+    /// nothing else: no face of the class reaches a lateral face, so the lateral chart takes nothing
+    /// from the class. The named twin of [`Silence::Sectioned`]: the class has world coefficients,
+    /// so the roads that answer a silent class from its record ask those instead.
+    Sections,
 }
 
 /// **What the gate proved of a nameless class it passed as silent about a cylinder.**
@@ -563,12 +571,20 @@ impl WorkingCyl {
         self.shared.iter().find(|sr| sr.line == line)
     }
 
-    /// Whether class `wc` sections this cylinder ([`Silence::Sectioned`]) — its own arrangement
-    /// draws the cylinder's rulings.
-    pub(crate) fn sections(&self, wc: usize) -> bool {
+    /// Whether class `wc` sections this cylinder along its axis ([`Silence::Sectioned`]) — its own
+    /// arrangement draws the cylinder's rulings.
+    pub(crate) fn sections_along(&self, wc: usize) -> bool {
         self.records
             .iter()
             .any(|&(c, r)| c == wc && r == CylRecord::Silent(Silence::Sectioned))
+    }
+
+    /// Whether class `wc` sections this cylinder obliquely ([`CylRecord::Sections`]) — its own
+    /// arrangement draws the cylinder's ellipse.
+    pub(crate) fn sections_oblique(&self, wc: usize) -> bool {
+        self.records
+            .iter()
+            .any(|&(c, r)| c == wc && r == CylRecord::Sections)
     }
 
     /// Whether class `wc` touches this cylinder along one ruling ([`Silence::Grazes`]).
@@ -586,9 +602,10 @@ impl WorkingCyl {
     }
 
     /// Whether class `wc`'s arrangement draws this cylinder's rulings — the class cuts the
-    /// lateral ([`CylRecord::Cuts`]) or sections it on its own arrangement ([`Silence::Sectioned`]).
+    /// lateral ([`CylRecord::Cuts`]) or sections it along the axis on its own arrangement
+    /// ([`Silence::Sectioned`]). An oblique section draws an ellipse, never a ruling.
     pub(crate) fn draws_rulings(&self, wc: usize) -> bool {
-        self.cuts(wc) || self.sections(wc)
+        self.cuts(wc) || self.sections_along(wc)
     }
 
     /// Whether the gate proved class `wc` silent about this cylinder.
@@ -603,7 +620,8 @@ impl WorkingCyl {
         self.records.iter().filter_map(|&(c, r)| match r {
             CylRecord::Silent(Silence::Beside(side)) => Some((c, side)),
             CylRecord::Silent(Silence::Apart | Silence::Sectioned | Silence::Grazes)
-            | CylRecord::Cuts => None,
+            | CylRecord::Cuts
+            | CylRecord::Sections => None,
         })
     }
 

@@ -1,6 +1,7 @@
 use super::*;
 /// **The population gate** — decides, exactly, whether this operand pair stays inside
-/// the axis-perpendicular population the cylinder arrangement serves, and names the refusal
+/// the population the cylinder arrangement serves — plane classes across the axis, along it, or
+/// oblique to it in whole sections — and names the refusal
 /// otherwise. All arithmetic is checked `Rat` on world-stated descriptions, and a refusal says
 /// which of two things stopped it: a description that cannot be put in the world in one frame (a
 /// rotated class, a cylinder on a chain that does not fold) is geometry,
@@ -9,11 +10,12 @@ use super::*;
 /// never a guess.
 ///
 /// Per (plane class, cylinder) pair, [`class_meet`] answers what the class receives — a circle,
-/// nothing, two rulings, a grazing line, silence, an ellipse — and every pair is answered before
-/// anything reads the answers. The gate is then what can and cannot be drawn: it settles the
-/// sectioned candidates against the cylinder's other records, refuses an ellipse
+/// nothing, two rulings, a grazing line, silence, a whole oblique section, an arc of an ellipse —
+/// and every pair is answered before anything reads the answers. The gate is then what can and
+/// cannot be drawn: it settles the sectioned candidates against the cylinder's other records,
+/// refuses an arc of an ellipse and a class carrying the traces of axes that are not parallel
 /// ([`RejectReason::ObliqueCylinderCut`]), and hands the arrangement the records it reads — the
-/// cuts and silences ([`WorkingCyl::records`]), the [`Tangency`] rows and the lines two
+/// cuts, oblique sections and silences ([`WorkingCyl::records`]), the [`Tangency`] rows and the lines two
 /// classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row its verdict cannot
 /// judge ([`RejectReason::TangentLineInAnotherPlane`]).
 ///
@@ -259,6 +261,7 @@ pub(crate) fn cylinder_gate(
             .filter_map(|(c, meet)| match meet {
                 ClassMeet::Silent(s) => Some((c, CylRecord::Silent(*s))),
                 ClassMeet::Cuts => Some((c, CylRecord::Cuts)),
+                ClassMeet::Sections => Some((c, CylRecord::Sections)),
                 ClassMeet::Across
                 | ClassMeet::Clear
                 | ClassMeet::Tangent { .. }
@@ -273,12 +276,24 @@ pub(crate) fn cylinder_gate(
         "every nameless class is silent about every cylinder, or the gate refused"
     );
 
-    // An ellipse is drawn by no road ([`class_meet`]'s oblique arm).
+    // An arc of an ellipse is drawn by no road ([`class_meet`]'s oblique arm).
     if meets
         .iter()
         .flatten()
         .any(|meet| *meet == ClassMeet::Ellipse)
     {
+        return Err(reject(RejectReason::ObliqueCylinderCut));
+    }
+    // **A class's sections of two cylinders nest only across parallel axes** ([`carries_unnested`]).
+    let mixed = (0..geom.len()).any(|c| {
+        let row: Vec<([nacre_exact::Rat; 3], &ClassMeet)> = cyls
+            .iter()
+            .zip(&meets)
+            .map(|(cy, meets)| (cy.def.dir(), &meets[c]))
+            .collect();
+        carries_unnested(&row)
+    });
+    if mixed {
         return Err(reject(RejectReason::ObliqueCylinderCut));
     }
 
@@ -425,7 +440,12 @@ enum ClassMeet {
     /// A class with no world statement, silent about the cylinder. `Sectioned` is a candidate
     /// until [`cylinder_gate`] settles it.
     Silent(Silence),
-    /// An oblique plane not shown to miss the lateral faces: an ellipse, which no road draws.
+    /// An oblique plane whose class's faces stand apart from every lateral face's box, meeting
+    /// each lateral face nowhere or in a whole ellipse between a band's two rims: the class draws
+    /// the section on its own arrangement ([`CylRecord::Sections`]).
+    Sections,
+    /// An oblique plane not shown to miss the lateral faces, nor to section them in whole
+    /// ellipses: an arc of an ellipse, which no road draws.
     Ellipse,
 }
 
@@ -473,9 +493,11 @@ struct PairCx<'a, 'j> {
 ///   the row's own name), before anything is arranged.
 /// - anything else — an oblique plane, [`ClassMeet::Clear`] when every lateral face of the
 ///   cylinder provably misses the plane — the face's reach along `n` against the plane's station
-///   ([`lateral_reach`], [`laterals_clear_plane`]) — and otherwise [`ClassMeet::Ellipse`]. Every
-///   one of these sites speaks about faces; a gusset whose slanted plane runs past a plate's holes
-///   is not refused for the plane alone.
+///   ([`lateral_reach`], [`laterals_clear_plane`]) — then [`ClassMeet::Sections`] when the class's
+///   faces stand apart from every lateral face and the plane meets each one nowhere or in a whole
+///   ellipse between a band's rims ([`sections_whole`]), and otherwise [`ClassMeet::Ellipse`].
+///   Every one of these sites speaks about faces; a gusset whose slanted plane runs past a plate's
+///   holes, or through a bore between the plate's faces, is not refused for the plane alone.
 ///
 /// The order of the questions is the order of the refusals they can raise, and so part of what
 /// this function answers: a `Zero` pair asks the lateral faces before the classes holding its
@@ -565,20 +587,22 @@ fn class_meet(
             // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],
             // the question its doc was written for): if every face provably misses the
             // infinite plane, no face of that plane's class can meet the lateral, and the
-            // caps are the plane–plane arrangement's business. A pair not shown to miss is an
-            // ellipse; the gate refuses it once every pair is asked.
+            // caps are the plane–plane arrangement's business. A pair not shown to miss meets
+            // the cylinder in an ellipse.
             //
             // The class's faces standing apart from the lateral (the parallel arm's second
-            // question) do not suffice here: the class's arrangement sections the
-            // cylinder's own solid by the whole plane, and that section runs along the
-            // ellipse. Measured with such a pair passed — a rib whose slanted face stands
-            // two units from a plate's fillet while its plane, extended, cuts it — the
-            // boolean is refused one step later as `DeclineKind::CurvedRingWall`.
+            // question) do not suffice alone: the class's arrangement sections the cylinder's
+            // own solid by the whole plane, and that section runs along the ellipse. Where the
+            // plane meets each lateral face nowhere or in a whole ellipse between a band's two
+            // rims, the section is one closed trace with no node on it, which the class draws on
+            // its own arrangement ([`ClassMeet::Sections`], [`sections_whole`]); an arc of the
+            // ellipse — a plane across a rim, or a face that is no band — is refused.
             let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
             let meet = if laterals_clear_plane(&cyl.def, fps, &coeffs) {
                 ClassMeet::Clear
             } else {
-                ClassMeet::Ellipse
+                sections_whole(model, faces, plane_ix, c, cyl, fps, &coeffs)
+                    .unwrap_or(ClassMeet::Ellipse)
             };
             return Ok((meet, Vec::new()));
         }
@@ -1957,12 +1981,7 @@ pub(crate) fn round_slack(x: f64) -> f64 {
 /// traced boundary still closes. A disk with a polygon in it would not — the disk's own trace
 /// stops before its holes are read.
 fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> bool {
-    let whole = |lp: &nacre_topo::Loop| {
-        lp.half_edges.len() == 1 && {
-            let [a, b] = model.edge(lp.half_edges[0].edge).vertices;
-            a == b
-        }
-    };
+    let whole = |lp: &nacre_topo::Loop| whole_rim(model, lp);
     let loops = |f: &nacre_topo::Face| {
         std::iter::once(&f.outer)
             .chain(f.inner.iter())
@@ -2316,6 +2335,139 @@ fn laterals_clear_plane(
     footprints.iter().all(|fp| {
         lateral_reach(def, fp, &n).and_then(|reach| reach_clears(&reach, station, station))
             == Some(true)
+    })
+}
+
+/// **Does one class carry closed traces of cylinders no road nests?** — `row` is the class's
+/// answer about each cylinder ([`class_meet`]) beside that cylinder's axis. Two closed traces on
+/// one class are nested by [`crate::nesting::disk_in_disk`], which answers for parallel axes
+/// alone. On a perpendicular class every circle is of a cylinder whose axis is the class's normal,
+/// so they are all parallel; an oblique section beside a circle, or beside the section of another
+/// axis, is a pair no road nests. A class across a cylinder's axis is counted by that relation
+/// alone, whether or not the cylinder reaches the class — wider than the pairs that meet, never
+/// narrower. Parallelism is transitive, so neighbours in the row suffice.
+fn carries_unnested(row: &[([nacre_exact::Rat; 3], &ClassMeet)]) -> bool {
+    let carried: Vec<&[nacre_exact::Rat; 3]> = row
+        .iter()
+        .filter(|(_, meet)| matches!(meet, ClassMeet::Sections | ClassMeet::Across))
+        .map(|(dir, _)| dir)
+        .collect();
+    row.iter().any(|(_, meet)| **meet == ClassMeet::Sections)
+        && carried
+            .windows(2)
+            .any(|w| !nacre_exact::parallel_rat(w[0], w[1]))
+}
+
+/// Where a plane oblique to a cylinder's axis meets a span of it — [`section_in_span`]'s answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SectionSpan {
+    /// Both rim circles lie strictly on one side of the plane: the plane misses the span.
+    Clear,
+    /// The rim circles lie strictly on opposite sides: every generator crosses the plane once,
+    /// strictly between the rims, so the section is a whole ellipse inside the span.
+    Within,
+    /// A rim circle touches or crosses the plane: the section reaches a rim.
+    Crosses,
+}
+
+/// **Where the plane `n·p + d = 0` meets the cylinder between the stations `span`** — read off
+/// the two rim circles. The circle at station `s` reaches along `n` over `n·o + s(n·m) ± r|n⊥|`
+/// ([`lateral_reach`] of the whole circle at `[s, s]`) and the plane's station is `−d`, so each
+/// circle lies strictly on one side or not. Along one generator the plane's sign is linear in the
+/// station, so the two rims' sides decide the whole span: one side is [`SectionSpan::Clear`],
+/// opposite sides [`SectionSpan::Within`], a rim on the plane's reach [`SectionSpan::Crosses`].
+///
+/// One predicate for the gate ([`sections_whole`]) and the tracer
+/// (`arrangement::circle_on_class`), both reading the face's [`Footprint::span`], so the two
+/// cannot part. `None` is `Rat` overflow or a radius wider than `Rat`.
+pub(crate) fn section_in_span(
+    def: &nacre_topo::CylinderDef,
+    span: [nacre_exact::Rat; 2],
+    coeffs: &[nacre_exact::Rat; 4],
+) -> Option<SectionSpan> {
+    use nacre_exact::Rat;
+    let zero = Rat::from_int(0);
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let station = zero.checked_sub(coeffs[3])?;
+    let side = |s: Rat| -> Option<i8> {
+        let rim = Footprint {
+            span: Some([s, s]),
+            theta: Theta::Whole,
+        };
+        let reach = lateral_reach(def, &rim, &n)?;
+        // A reach clear of the station lies wholly on one side of it, so its base says which.
+        Some(if !reach_clears(&reach, station, station)? {
+            0
+        } else if reach.lo > station {
+            1
+        } else {
+            -1
+        })
+    };
+    Some(match (side(span[0])?, side(span[1])?) {
+        (0, _) | (_, 0) => SectionSpan::Crosses,
+        (a, b) if a == b => SectionSpan::Clear,
+        _ => SectionSpan::Within,
+    })
+}
+
+/// **Is this loop a whole circle** — one edge that closes on itself, the spelling a rim is read by
+/// ([`lateral_spans`])?
+fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
+    lp.half_edges.len() == 1 && {
+        let [a, b] = model.edge(lp.half_edges[0].edge).vertices;
+        a == b
+    }
+}
+
+/// **Is this lateral face a band** — two loops, each a whole rim ([`whole_rim`])? Then the face is
+/// the whole cylinder between its two rims, and a plane strictly between them at every angle cuts
+/// it in a whole ellipse.
+fn is_band(model: &Model, f: &nacre_topo::Face) -> bool {
+    f.inner.len() == 1
+        && std::iter::once(&f.outer)
+            .chain(&f.inner)
+            .all(|lp| whole_rim(model, lp))
+}
+
+/// **Does oblique class `c` section this cylinder in whole ellipses?** — [`ClassMeet::Sections`]'
+/// proof: every face on the class stands apart from every lateral face's box ([`faces_apart`]),
+/// and the plane meets each lateral face of the cylinder either nowhere or in a whole ellipse
+/// between the two whole rims of a band ([`section_in_span`], [`is_band`]). `Some(Clear)` when
+/// every face is missed, `Some(Sections)` when one is sectioned, `None` when either is not shown —
+/// a footprint with no box or no span, a face that is no band, a rim the plane reaches.
+fn sections_whole(
+    model: &Model,
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    c: usize,
+    cyl: &WorkingCyl,
+    fps: &[Footprint],
+    coeffs: &[nacre_exact::Rat; 4],
+) -> Option<ClassMeet> {
+    let boxes = fps
+        .iter()
+        .map(|fp| lateral_box(&cyl.def, fp))
+        .collect::<Option<Vec<_>>>()?;
+    if !faces_apart(model, faces, plane_ix, c, &boxes) {
+        return None;
+    }
+    let mut sectioned = false;
+    for row in faces {
+        let FaceRow::Cylinder(cf) = row else { continue };
+        if cf.surf != cyl.surf {
+            continue;
+        }
+        match section_in_span(&cyl.def, cf.footprint.span?, coeffs)? {
+            SectionSpan::Clear => {}
+            SectionSpan::Within if is_band(model, model.face(cf.face?)) => sectioned = true,
+            SectionSpan::Within | SectionSpan::Crosses => return None,
+        }
+    }
+    Some(if sectioned {
+        ClassMeet::Sections
+    } else {
+        ClassMeet::Clear
     })
 }
 

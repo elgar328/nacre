@@ -22,9 +22,10 @@ use super::*;
 ///
 /// **"The gate refuses an oblique cylinder cut" is false as a blanket sentence**:
 /// the gate lets an oblique plane through when every lateral face
-/// of the cylinder provably misses it. The conclusion stands on a narrower fact: this ring holds
-/// an **arc** of that cylinder, so the plane does not miss it, and an oblique pair that meets is
-/// what the gate refuses. [`crate::planes::class_carries_circle`] carries the argument.
+/// of the cylinder provably misses it, or sections it in whole ellipses. The conclusion stands on a
+/// narrower fact: this ring holds an **arc** of that cylinder, so the plane does not miss it, and an
+/// oblique pair that meets is refused unless its section stays whole — and a whole section has no
+/// arc. [`crate::planes::class_carries_circle`] carries the argument.
 fn face_circle<'a>(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,

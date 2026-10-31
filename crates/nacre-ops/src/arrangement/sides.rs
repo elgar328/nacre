@@ -9,8 +9,9 @@ pub(super) struct ChordUnstatable;
 /// within the radius otherwise. The wall is one whose arrangement draws the cylinder's rulings: a
 /// cut, or a class with no world statement that sections the cylinder on its own arrangement — the
 /// chord is part of that section, as the rulings are. `Ok(None)` for any other pair: the wall
-/// clears the circle (the gate's plane test), or cuts an **irrational** chord this road cannot
-/// state yet — today's silence, and the same trigger the rulings road reads.
+/// clears the circle (the gate's plane test), cuts an **irrational** chord this road cannot
+/// state yet — today's silence, and the same trigger the rulings road reads — or is a class
+/// sectioning the cylinder obliquely, whose line misses every rim circle.
 ///
 /// **The record is asked before the wall's coefficients**, as [`rulings_on_class`] asks it: an
 /// unrecorded pair says nothing whatever the wall's description.
@@ -31,17 +32,35 @@ pub(super) fn chord_stations(
     cyl: usize,
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Option<[ClassLineStation; 2]>, ChordUnstatable> {
+    let def_of = || {
+        faces
+            .iter()
+            .zip(plane_ix)
+            .find_map(|(row, ix)| match (row, ix) {
+                (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) if *k == cyl => cf.def.as_ref(),
+                _ => None,
+            })
+    };
     if !cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc)) {
+        // A class sectioning the cylinder obliquely leaves no chord on a circle of it: a circle a
+        // face carries is a rim of a lateral face, and the gate proved the plane strictly off every
+        // rim (`planes::section_in_span`), so the class line misses it.
+        #[cfg(debug_assertions)]
+        if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc))
+            && let Some(def) = def_of()
+        {
+            debug_assert!(
+                !matches!(
+                    jd.line_meet(wc, fc, def, false),
+                    nacre_judge::cylinder::LineMeet::Pair(_)
+                        | nacre_judge::cylinder::LineMeet::Tangent(..)
+                ),
+                "an oblique section's class line misses every rim circle"
+            );
+        }
         return Ok(None);
     }
-    let def = faces
-        .iter()
-        .zip(plane_ix)
-        .find_map(|(row, ix)| match (row, ix) {
-            (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) if *k == cyl => cf.def.as_ref(),
-            _ => None,
-        })
-        .ok_or(ChordUnstatable)?;
+    let def = def_of().ok_or(ChordUnstatable)?;
     // The record is the crossing statement: a recorded pair's plane runs within the radius, so `L`
     // enters the circle at one root and leaves at the other. The premise is the gate's, asserted
     // rather than re-derived — exactly for a cut, whose class has world coefficients; for a

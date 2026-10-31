@@ -11,7 +11,7 @@ use fixtures::{
     outer_points, p2, plate_with_pin, pythagorean_frame, regular_ngon, rotated_l_prism, square,
     stacked_cubes, two_boxes, u_and_slab, u_prism, walled_bore, walled_bore_volume,
 };
-// Reached from outside this module (`bands`', `tolerant`'s and `combinatorics`' tests) as
+// Reached from outside this module (`bands`', `tolerant`'s, `combinatorics`' and `per_class`' tests) as
 // `crate::tests::…`.
 pub(crate) use fixtures::{
     decimal_coincidence, extrude_log_op, plate_with_bore, rounded_corner_walls, rounded_twin_walls,
@@ -1146,6 +1146,7 @@ mod loop_nesting;
 mod motion;
 mod naming;
 mod oblique_sections;
+pub(crate) use oblique_sections::{SUNK, gusset};
 mod overhang_corners;
 mod parallel;
 mod pierce_corners;

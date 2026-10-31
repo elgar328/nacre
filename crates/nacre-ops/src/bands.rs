@@ -11,13 +11,14 @@
 //!
 //! The plane arrangement decides one plane class at a time; a cylinder's wall is not a plane, so
 //! it is decided here instead — and it is decided *coarsely*, because in this population it can
-//! be. The gate admits only ⊥ cuts and ∥ walls whose **faces** stand clear of the lateral
-//! surface, and those two facts together give the **uniform-slab theorem**:
+//! be. The gate admits only ⊥ cuts, ∥ walls whose **faces** stand clear of the lateral surface,
+//! and oblique planes that miss every lateral face or whose faces stand beyond every lateral face's
+//! box, and those facts together give the **uniform-slab theorem**:
 //!
 //! > Between two consecutive ⊥ cuts, the other operand's boundary does not meet the open
-//! > cylinder slab at all — the ⊥ faces are the cuts themselves and every ∥ wall **face** misses
-//! > the lateral. So membership in the other operand is **uniform** over that slab, and one
-//! > witness decides the whole band.
+//! > cylinder slab at all — the ⊥ faces are the cuts themselves, and every ∥ wall **face** and
+//! > every oblique face misses the lateral. So membership in the other operand is **uniform** over
+//! > that slab, and one witness decides the whole band.
 //!
 //! **Faces, because that is what a boundary is made of.** Testing each ∥ wall's infinite *plane*
 //! instead is a cheaper sufficient condition and reads almost the same — but it refuses bodies

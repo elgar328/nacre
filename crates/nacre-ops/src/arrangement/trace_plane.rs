@@ -541,8 +541,9 @@ pub(super) fn trace_one(
         let fp = *fp;
         // A **lateral face** (a cylinder row): what it leaves on a ⊥ class is a **transversal**
         // circle where the class cuts it in two and a **graze** where the class carries one of its
-        // rims — see [`circle_on_class`]. Beyond the span it leaves nothing. Non-⊥ classes cannot
-        // carry a circle, and the population gate has already named every such interaction.
+        // rims — see [`circle_on_class`]. Beyond the span it leaves nothing. A class oblique to the
+        // axis carries the whole ellipse where the gate recorded it as the class's section
+        // (`CylRecord::Sections`), and the population gate has named every other such interaction.
         if let ClassIx::Cyl(k) = plane_ix[fp] {
             let cf = match &faces[fp] {
                 FaceRow::Cylinder(cf) => cf,
@@ -563,8 +564,9 @@ pub(super) fn trace_one(
                     }));
                 }
                 // No circle: a wall class **within the radius** leaves two rulings instead (the
-                // rulings road, through the axis or offset from it); any other non-⊥ class still
-                // leaves nothing, silently — the population gate names those interactions.
+                // rulings road, through the axis or offset from it); any other class along or
+                // oblique to the axis still leaves nothing, silently — the population gate names
+                // those interactions.
                 Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, cyls, aliases) {
                     Ok((v, grazes)) => {
                         out.rulings.extend(v);
@@ -754,7 +756,8 @@ pub(super) fn trace_one(
     // **The seated walk's silence over a curved edge, checked rather than argued.** It emits
     // no segment there because the cylinder's own lateral face already put the element on this
     // class. That follows from the population gate — a class meeting a cylinder is ⊥ to its axis
-    // (a circle), carries its axis (two rulings), or was refused long before here — but an
+    // (a circle), carries its axis (two rulings), sections it obliquely with every face of the
+    // class apart from it (no ring rides the ellipse), or was refused long before here — but an
     // argument is not a measurement, and an element that goes missing does not raise: it silently
     // relabels the class.
     //
