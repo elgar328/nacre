@@ -1044,9 +1044,10 @@ fn expect_fuse(
 /// world frame and a 3-4-5 one, in either operand order.
 ///
 /// Around it: the chord left open at one end (one step only) is the same refusal; a tipped bar
-/// whose edge line meets a fillet arc never reaches the check, because one of its faces through
-/// that line is a plane slanted to the cylinder's axis through a point of its side
-/// (`ObliqueCylinderCut` named, `CylinderGateUndecided` turned); a wedge whose two faces through
+/// with no steps, whose edge line runs on to meet the fillet circles, is two bodies touching along
+/// that line — its slanted faces stand apart from the fillets and their classes draw the fillets'
+/// sections, arcs of ellipses — and, turned 30° about `z`, never reaches the check
+/// (`CylinderGateUndecided`: a turned plane has no world statement); a wedge whose two faces through
 /// the edge both lean away from the fillet circles its line crosses off their arcs passes the
 /// gate, the circles count no crossing there (`arc_crossings`), and it is refused like the bar
 /// (its raised twin builds); and a 3-4-5 column standing on a plate against the notched
@@ -1098,9 +1099,11 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
         let b = tipped_bar(&mut m, axes, [-12.0, 4.0], 0.0);
         expect_fuse(&mut m, a, b, want, true, &format!("one step, {trim:?}"));
     }
-    for (turned, reason) in [
-        (false, RejectReason::ObliqueCylinderCut),
-        (true, RejectReason::CylinderGateUndecided),
+    // The block 16 × 11.25 × 6 less its fillets, and the bar 12 × 1 × 1 beside it on the top
+    // face's line `y = 0`: two bodies touching along a line, as on the plain block.
+    for (turned, want) in [
+        (false, Want::Built(2, 1080.0 - fillets(6.0) + 12.0)),
+        (true, Want::Refused(RejectReason::CylinderGateUndecided)),
     ] {
         let mut m = Model::new();
         let (base, axes) = base_frame(&mut m, false);
@@ -1110,7 +1113,7 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
             b = xf(&mut m, b, rot30());
         }
         let at = format!("an edge line across a fillet arc, turned = {turned}");
-        expect_fuse(&mut m, a, b, Want::Refused(reason), true, &at);
+        expect_fuse(&mut m, a, b, want, true, &at);
     }
     for lift in [0.0, 0.5] {
         let mut m = Model::new();

@@ -1,8 +1,10 @@
 use super::*;
-/// What a lateral face leaves on a plane class across its axis — see [`circle_on_class`], which
+/// What a lateral face leaves on a plane class that crosses its axis — see [`circle_on_class`], which
 /// answers it **per angular extent** ([`CircleSpan`]) rather than once for the whole circle. On a ⊥
 /// class the trace is a circle; on a class sectioning the cylinder obliquely
-/// ([`crate::planes::CylRecord::Sections`]) it is the whole ellipse, read the same way.
+/// ([`crate::planes::CylRecord::Sections`]) it is the ellipse, read the same way — its extents are
+/// angles about the axis, which order the ellipse's points as they order the circle's
+/// ([`section_on_class`]).
 ///
 /// The empty answer is "this class leaves nothing here": a class along the axis carries no circle
 /// at all, a ⊥ class beyond both rims never meets the face, an oblique section misses it, and a
@@ -46,26 +48,11 @@ pub(super) fn circle_on_class(
     };
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let m = def.dir();
-    // **An oblique section** ([`crate::planes::CylRecord::Sections`]): the gate proved the class's
-    // plane meets each lateral face nowhere or in a whole ellipse between a band's two rims, read
-    // off the face's span by the predicate this road asks too ([`crate::planes::section_in_span`]).
-    // The ellipse is one closed trace with no node, and the face's solid straddles the class along
-    // it — a circle's `Crosses` on a class across the axis. Any other reading is the gate and this
-    // road disagreeing.
+    // **An oblique section** ([`crate::planes::CylRecord::Sections`]) — the class draws the
+    // cylinder's ellipse on its own arrangement, cut where the face's boundary crosses it
+    // ([`section_on_class`]).
     if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
-        use crate::planes::SectionSpan;
-        let section = cf
-            .footprint
-            .span
-            .and_then(|span| crate::planes::section_in_span(def, span, &coeffs));
-        return match section {
-            Some(SectionSpan::Clear) => Ok(Vec::new()),
-            Some(SectionSpan::Within) => Ok(vec![CircleSpan {
-                arc: None,
-                on: CylOnClass::Crosses,
-            }]),
-            Some(SectionSpan::Crosses) | None => Err(DeclineKind::CylSpan),
-        };
+        return section_on_class(jd, cyls, cf, fl, def, wc, cyl, world, &coeffs);
     }
     // ⊥ to the axis, decided **totally** (`class_carries_circle` clears denominators and answers
     // in integers, so this cannot decline for want of bits). Any other class carries no circle
@@ -133,7 +120,19 @@ pub(super) fn circle_on_class(
         let Some(nr) = ring.poly() else {
             return Err(DeclineKind::CylFaceHole);
         };
-        cycle_on_class(jd, cyls, cf, def, wc, cyl, up, *inner, nr, &mut carved)?;
+        cycle_on_class(
+            jd,
+            cyls,
+            cf,
+            def,
+            wc,
+            cyl,
+            up,
+            *inner,
+            nr,
+            None,
+            &mut carved,
+        )?;
     }
     let spans = if carved.is_empty() {
         match outer {
@@ -144,6 +143,133 @@ pub(super) fn circle_on_class(
         assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)?
     };
     Ok(spans)
+}
+
+/// **What a lateral face leaves on a class sectioning its cylinder obliquely** — the extents of the
+/// section ([`crate::planes::CylRecord::Sections`]'s ellipse) the face covers, read off the face's
+/// boundary the way a class across the axis reads its circle ([`cycle_on_class`]).
+///
+/// **The same carving, with the boundary crossing the trace.** The section goes once round the
+/// cylinder — every generator meets the plane once — so the outer answer is the whole ellipse,
+/// `Crosses`, and each closed piece of the face's boundary takes away the extents where the face
+/// is absent: below the low rim, above the high one, inside a hole, outside a panel. Across the
+/// axis a rim *is* the class's circle and a ring's arcs lie on it; here every boundary crosses the
+/// section at points, and which side of each point is absent comes from the two directions there
+/// — the boundary's, which says where its material is, and the section's own climb along the axis
+/// ([`section_climb`]). Then [`assemble_spans`] lays the extents over the whole, unchanged.
+///
+/// - **A rim** has no ring to walk ([`lateral_shape`] gives its station): the plane meets the rim
+///   circle by [`crate::planes::rim_against_plane`] — the gate's reading — and a crossing rim
+///   meets the section in the two roots of the line `wc ∩ plane`
+///   ([`combinatorics::rim_crossings`], the names a cap's chord ends at too). The face lies toward `+t`
+///   from its low rim and `−t` from its high one, so going counter-clockwise from a root the
+///   section enters the face exactly when it climbs that way.
+/// - **Any other cycle** — a fillet's quarter, a hole, a panel — is walked by [`cycle_on_class`]
+///   with the class's normal, which counts and names the crossings of its arcs and rulings.
+///
+/// **No crossing at all** leaves the section wholly in the face or wholly out of it. A face with
+/// two whole rims covers every angle between them — a hole that does not meet the section cannot
+/// hold it, since the section winds round the cylinder and a hole does not — so the rims' sides
+/// decide ([`crate::planes::section_in_span`]: `Within` is the whole ellipse, the gate's
+/// whole-section case); any other face is declined, because a chain of boundary can still wrap the
+/// cylinder at some heights and hold the whole section, which this does not read. So are a touch,
+/// a corner of the boundary on the section, and a meet that cannot be stated — once the face's
+/// shape is read ([`lateral_shape`], and a cycle that has a ring), every decline here is one name,
+/// [`DeclineKind::ObliqueSection`], which the boolean reports as the oblique coverage's end.
+#[allow(clippy::too_many_arguments)]
+fn section_on_class(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cf: &crate::planes::CylFaceInfo,
+    fl: &combinatorics::FaceLoops,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    cyl: usize,
+    world: &crate::planes::WorldName,
+    coeffs: &[Rat; 4],
+) -> Result<Vec<CircleSpan>, DeclineKind> {
+    let LateralShape {
+        range,
+        rims,
+        cycles,
+    } = lateral_shape(jd, cf, fl, def)?;
+    let mut rings: Vec<(bool, &combinatorics::NamedRing)> = Vec::with_capacity(cycles.len());
+    for (inner, ring) in &cycles {
+        rings.push((*inner, ring.poly().ok_or(DeclineKind::CylFaceHole)?));
+    }
+    // The face's shape is read; whatever the section then cannot be drawn from is the oblique
+    // coverage's end, one name for every way it ends.
+    section_extents(
+        jd, cyls, cf, def, wc, cyl, world, coeffs, range, &rims, &rings,
+    )
+    .map_err(|_| DeclineKind::ObliqueSection)
+}
+
+/// [`section_on_class`]'s body, past the face's shape: the extents of the section the face covers.
+#[allow(clippy::too_many_arguments)]
+fn section_extents(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cf: &crate::planes::CylFaceInfo,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    cyl: usize,
+    world: &crate::planes::WorldName,
+    coeffs: &[Rat; 4],
+    range: [Rat; 2],
+    rims: &[(Rat, usize)],
+    rings: &[(bool, &combinatorics::NamedRing)],
+) -> Result<Vec<CircleSpan>, DeclineKind> {
+    use crate::planes::{RimMeet, SectionSpan};
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let up = crate::planes::plus_t_is_above(world, def);
+    let mut carved: Vec<Carved> = Vec::new();
+    for &(s, plane) in rims {
+        match crate::planes::rim_against_plane(def, s, coeffs) {
+            Some(RimMeet::Side(_)) => continue,
+            Some(RimMeet::Crosses) => {}
+            Some(RimMeet::Touches) | None => return Err(DeclineKind::ObliqueSection),
+        }
+        let Some(Some(roots)) = combinatorics::rim_crossings(jd, def, wc, plane, cyl) else {
+            return Err(DeclineKind::ObliqueSection);
+        };
+        let toward = if s == range[0] { 1 } else { -1 };
+        let mut cuts: Vec<(NodeId, bool)> = Vec::with_capacity(2);
+        for node in roots {
+            let climb = section_climb(jd, cyl, def, &n, node)?;
+            cuts.push((node, climb != toward));
+        }
+        carve_between(jd, cyl, def, &cuts, &mut carved)?;
+    }
+    for &(inner, nr) in rings {
+        cycle_on_class(
+            jd,
+            cyls,
+            cf,
+            def,
+            wc,
+            cyl,
+            up,
+            inner,
+            nr,
+            Some(&n),
+            &mut carved,
+        )?;
+    }
+    if carved.is_empty() {
+        if rims.len() != 2 {
+            return Err(DeclineKind::ObliqueSection);
+        }
+        return match crate::planes::section_in_span(def, range, coeffs) {
+            Some(SectionSpan::Within) => Ok(vec![CircleSpan {
+                arc: None,
+                on: CylOnClass::Crosses,
+            }]),
+            Some(SectionSpan::Clear) => Ok(Vec::new()),
+            Some(SectionSpan::Crosses) | None => Err(DeclineKind::ObliqueSection),
+        };
+    }
+    assemble_spans(jd, cyl, def, &carved, Some(CylOnClass::Crosses))
 }
 
 /// **A lateral face's shape as its cycles state it** — what both lateral roads read of a
@@ -398,8 +524,9 @@ pub(crate) fn plus_theta_is_above(
     Some(-(kappa * side) == 1)
 }
 
-/// **One boundary cycle — a hole, a panel, a chain rim — read against one ⊥ class**: the walk's
-/// features turned into extents. A hole is carved out of a whole-circle outer answer; a panel or a
+/// **One boundary cycle — a hole, a panel, a chain rim — read against one class crossing the
+/// axis**: the walk's features turned into extents — against a ⊥ class's circle, or, with
+/// `oblique` the class's normal, an oblique class's section ([`section_on_class`]). A hole is carved out of a whole-circle outer answer; a panel or a
 /// chain is carved out of one that may be absent — the same arms, because neither reads
 /// "inside" or "outside": only the ring's winding, below.
 ///
@@ -425,6 +552,11 @@ pub(crate) fn plus_theta_is_above(
 ///   along `(σ·r̂) × (ν·θ̂) = σ·ν·m̂`, so `ν = σ·μ` where `μ` is the axis direction the face occupies
 ///   — which is the opposite of the side the run's flanks sit on. That fixes the rim arc's CCW
 ///   orientation without reading a coordinate.
+/// - **An arc edge crossing an oblique section** travels `ν·θ̂` too, so material lies along
+///   `σ·ν·m̂`; the section, going counter-clockwise from the crossing, climbs along `m̂` by the sign
+///   of its tangent's axial part ([`section_climb`]) — into the material when the two agree, so the
+///   hole then runs clockwise. (A ruling crossing an oblique section reads as across the axis: travel
+///   along the ruling crosses the plane toward `+n` exactly when it runs the way `up` says.)
 ///
 /// `up` is `plus_t_is_above`: whether the class's **stored** normal points along `+m̂`. It is the
 /// bridge between the two frames here, because [`combinatorics::side_of`] answers in the class
@@ -441,25 +573,53 @@ fn cycle_on_class(
     up: bool,
     inner: bool,
     nr: &combinatorics::NamedRing,
+    oblique: Option<&[Rat; 3]>,
     out: &mut Vec<Carved>,
 ) -> Result<(), DeclineKind> {
+    use crate::combinatorics::Wall;
     let _ = inner; // the ledger's, under test
     #[cfg(test)]
     let start = out.len();
-    // **`true` here is not a shrug — the meet on this road is a *circle*, and an arc can lie on
-    // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
-    // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
-    // `Run` arm below asks that directly (declining, rather than splitting, is this road's scope).
-    // No edge of a lateral's ring crosses a ⊥ class strictly inside: its arcs lie in ⊥ planes
-    // parallel to `wc` and its rulings are straight — so every edge answers `0`, whichever the
-    // wall says it is.
+    let ring = &nr.triples;
+    let n = ring.len();
+    // **Across the axis, `true` here is not a shrug — the meet on this road is a *circle*, and an
+    // arc can lie on one.** A rim arc of the hole at this very axis parameter *is* the class's
+    // meet, so "not an arc" would cut runs that are genuinely continuous. What decides it is the
+    // carrier, and the `Run` arm below asks that directly (declining, rather than splitting, is
+    // this road's scope). No edge of a lateral's ring crosses a ⊥ class strictly inside: its arcs
+    // lie in ⊥ planes parallel to `wc` and its rulings are straight — so every edge answers `0`,
+    // whichever the wall says it is.
+    //
+    // **On an oblique section (`oblique` is the class's normal) the edges cross it.** A ruling is a
+    // line along the axis and meets the plane once, at a sign change of its ends — a straight edge,
+    // `0` inside. An arc lies in its rim's plane across the axis, which meets the class in a line,
+    // and it crosses the section where it holds a root of that line ([`combinatorics::arc_crossings`],
+    // the count the planar trace reads too); with both ends on the class it leaves to the side its
+    // tangent points ([`combinatorics::arc_departure_side`]). An end on the class is a corner on
+    // the section — a fourth plane through it, which this road does not name: declined below.
+    let arc_ends = |i: usize| [ring[i], ring[(i + 1) % n]];
     let features = match combinatorics::ring_against_plane(
         jd,
         cyls,
-        &nr.triples,
+        ring,
         wc,
-        |_| Some(combinatorics::EdgeMeet::On),
-        |_, _| Some(0),
+        |i| match (oblique, nr.walls[i]) {
+            (None, _) => Some(combinatorics::EdgeMeet::On),
+            (Some(_), Wall::Arc { cyl: c, ccw, plane }) => {
+                combinatorics::arc_departure_side(jd, cyls, ring[i], plane, wc, c, ccw)
+                    .map(combinatorics::EdgeMeet::Departs)
+            }
+            (Some(_), Wall::Ruling { .. } | Wall::Plane(_)) => None,
+        },
+        |i, on_end| match (oblique, nr.walls[i]) {
+            (Some(_), Wall::Arc { cyl: c, ccw, plane }) if on_end.is_none() => {
+                let def = &cyls.get(c)?.def;
+                combinatorics::arc_crossings(jd, def, wc, plane, c, ccw, arc_ends(i), None)
+                    .and_then(|roots| u8::try_from(roots.len()).ok())
+            }
+            (Some(_), Wall::Arc { .. }) => None,
+            _ => Some(0),
+        },
     ) {
         combinatorics::RingWalk::Met(f) => f,
         // A hole ring lying wholly in the class has no thickness to bound anything with (a rim
@@ -470,8 +630,6 @@ fn cycle_on_class(
             return Err(DeclineKind::CylFaceHole);
         }
     };
-    let ring = &nr.triples;
-    let n = ring.len();
     let sigma = i32::from(cf.orient_sign);
     let fs = i32::from(jd.planes[wc].frame_sign);
     let axis_of = |stored_side: i32| if up { stored_side } else { -stored_side };
@@ -487,8 +645,9 @@ fn cycle_on_class(
             } => {
                 // A run whose flanks differ is a rim the hole continues *through* — it is both an
                 // extent and a parity toggle, and no fixture makes one. Declined and counted
-                // rather than guessed at.
-                if flanks_differ {
+                // rather than guessed at. On an oblique section no edge of the ring lies on the
+                // class, so a run is a corner on the section, which is declined (above).
+                if flanks_differ || oblique.is_some() {
                     return Err(DeclineKind::CylHoleFeature);
                 }
                 // A single on-line vertex with equal flanks is the hole's corner touching the
@@ -538,9 +697,38 @@ fn cycle_on_class(
                     arc_probe::record(jd, cyl, def, inner, &out[start..]);
                 }
             }
-            combinatorics::Feature::Crossing { edge, from, .. } => {
+            combinatorics::Feature::Crossing { edge, from, nth } => {
                 // The crossed edge's carrier, **carried** from the producer rather than re-derived
                 // from the two endpoint names.
+                //
+                // **An arc crossing an oblique section** is the pierce node `wc ∩ plane ∩ cyl` the
+                // arc holds — the `nth` in its travel ([`combinatorics::arc_crossings`]), the name
+                // the planar trace gives the cap's own crossing there. The arc travels `ν·θ̂` and
+                // material lies along `(σ·r̂) × (ν·θ̂) = σ·ν·m̂`; the section, going
+                // counter-clockwise from the node, climbs along `m̂` by the sign of its tangent's
+                // axial part ([`section_climb`]) — into the material when the two agree, so the
+                // hole then runs clockwise.
+                if let (Some(nrm), Wall::Arc { cyl: c, ccw, plane }) = (oblique, nr.walls[edge]) {
+                    if c != cyl {
+                        return Err(DeclineKind::CylHoleFeature);
+                    }
+                    let cut = combinatorics::arc_crossings(
+                        jd,
+                        def,
+                        wc,
+                        plane,
+                        cyl,
+                        ccw,
+                        arc_ends(edge),
+                        None,
+                    )
+                    .and_then(|roots| roots.get(usize::from(nth)).copied())
+                    .ok_or(DeclineKind::CylHoleFeature)?;
+                    let mu = sigma * if ccw { 1 } else { -1 };
+                    let climb = section_climb(jd, cyl, def, nrm, cut)?;
+                    cuts.push((cut, i32::from(climb) != mu));
+                    continue;
+                }
                 // The ruling is read off the wall alone — its cylinder, its side and the plane the
                 // side was measured against — not off the corner's name: a corner on three planes
                 // is named by the pair its definition chose, which need not hold `j`.
@@ -559,7 +747,8 @@ fn cycle_on_class(
                 // carries (`curved_wall`) — picks the root of `{wc, j}` on the cylinder; restating
                 // the corner's root by the axis senses of the two ⊥ classes would be a second
                 // spelling of the same point. `j` must hold a ruling (a wall plane within the
-                // radius) and `wc` be ⊥, which the door checks; anything else is not this feature.
+                // radius) and `wc` cross the axis, which the door checks; anything else is not this
+                // feature.
                 let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
                 let cut = combinatorics::crossing_on_ruling(jd, wdef, wc, j, ncyl, side)
                     .map_err(|_| DeclineKind::CylHoleFeature)?;
@@ -574,34 +763,75 @@ fn cycle_on_class(
             }
         }
     }
-    // A closed ring enters and leaves the circle equally often.
+    #[cfg(test)]
+    let before = out.len();
+    carve_between(jd, cyl, def, &cuts, out)?;
+    #[cfg(test)]
+    for k in before..out.len() {
+        arc_probe::record(jd, cyl, def, inner, &out[start..=k]);
+    }
+    Ok(())
+}
+
+/// **Pair one closed boundary's crossings of the trace into the extents it takes away** — `cuts`
+/// is each crossing with whether the absent side runs counter-clockwise from it. A closed boundary
+/// enters and leaves the trace equally often and the crossings alternate in θ, so sorting them and
+/// pairing each "absent ahead" with the next is the whole assignment — the circle twin of the sweep
+/// along a line ([`sweep_line`]).
+fn carve_between(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    cuts: &[(NodeId, bool)],
+    out: &mut Vec<Carved>,
+) -> Result<(), DeclineKind> {
     if cuts.len() % 2 != 0 {
         return Err(DeclineKind::CylHoleFeature);
     }
-    // The crossings alternate in θ, so sorting them and pairing each "hole ahead" with the next
-    // boundary is the whole assignment — the circle twin of the sweep along a line
-    // ([`sweep_line`]).
-    if !cuts.is_empty() {
-        let nodes: Vec<NodeId> = cuts.iter().map(|c| c.0).collect();
-        let order = combinatorics::circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
-            combinatorics::CircleOrderFail::Undecided => DeclineKind::CylSpan,
-            combinatorics::CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
-        })?;
-        for k in 0..order.len() {
-            let (a, ahead) = cuts[order[k]];
-            let (b, next_ahead) = cuts[order[(k + 1) % order.len()]];
-            if ahead == next_ahead {
-                return Err(DeclineKind::CylHoleFeature); // the boundaries did not alternate
-            }
-            if ahead {
-                out.push(Carved {
-                    arc: [a, b],
-                    on: None,
-                });
-                #[cfg(test)]
-                arc_probe::record(jd, cyl, def, inner, &out[start..]);
-            }
+    if cuts.is_empty() {
+        return Ok(());
+    }
+    let nodes: Vec<NodeId> = cuts.iter().map(|c| c.0).collect();
+    let order = combinatorics::circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
+        combinatorics::CircleOrderFail::Undecided => DeclineKind::CylSpan,
+        combinatorics::CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
+    })?;
+    for k in 0..order.len() {
+        let (a, ahead) = cuts[order[k]];
+        let (b, next_ahead) = cuts[order[(k + 1) % order.len()]];
+        if ahead == next_ahead {
+            return Err(DeclineKind::CylHoleFeature); // the boundaries did not alternate
+        }
+        if ahead {
+            out.push(Carved {
+                arc: [a, b],
+                on: None,
+            });
         }
     }
     Ok(())
+}
+
+/// **Which way an oblique section climbs at one of its points** — `+1` when, travelling
+/// counter-clockwise about the axis, it moves along `+m` (the raw `def.dir()`, the direction the
+/// axis parameter grows in): the axial part of its tangent,
+/// [`nacre_exact::quad::ccw_tangent_side`] against `m` for the class of normal `n`. Never `0` where
+/// a boundary crosses the section transversally — a level tangent there is a touch, which
+/// `planes::rim_against_plane` refuses at a rim and [`combinatorics::arc_crossings`] reads as no
+/// crossing elsewhere — so a `0` declines rather than guessing.
+fn section_climb(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    n: &[Rat; 3],
+    node: NodeId,
+) -> Result<i8, DeclineKind> {
+    let (line, s) = combinatorics::pierce_meet(jd, cyl, def, node)
+        .and_then(combinatorics::PiercePoint::into_exact)
+        .ok_or(DeclineKind::ObliqueSection)?;
+    let m = def.dir();
+    match nacre_exact::quad::ccw_tangent_side(n, &m, &def.origin(), &m, (&line, &s)) {
+        Some(c) if c != 0 => Ok(c),
+        _ => Err(DeclineKind::ObliqueSection),
+    }
 }

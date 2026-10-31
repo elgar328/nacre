@@ -6,12 +6,14 @@ pub(super) struct ChordUnstatable;
 /// **The two ends of the chord a wall class `wc` cuts on a circle of a planar face** (the face lies
 /// in class `fc`, the circle rides cylinder `cyl`), as the two stations where the circle crosses
 /// the class line ([`sweep_line`]) — a diameter when the wall runs through the axis, any chord
-/// within the radius otherwise. The wall is one whose arrangement draws the cylinder's rulings: a
-/// cut, or a class with no world statement that sections the cylinder on its own arrangement — the
-/// chord is part of that section, as the rulings are. `Ok(None)` for any other pair: the wall
-/// clears the circle (the gate's plane test), cuts an **irrational** chord this road cannot
-/// state yet — today's silence, and the same trigger the rulings road reads — or is a class
-/// sectioning the cylinder obliquely, whose line misses every rim circle.
+/// within the radius otherwise. The wall is one whose arrangement draws the cylinder's section: a
+/// cut, a class with no world statement that sections the cylinder along its axis on its own
+/// arrangement, or a named class oblique to the axis that draws its ellipse
+/// ([`crate::planes::CylRecord::Sections`]) — the chord is part of that section, as the rulings and
+/// the ellipse's arcs are, and ends where they do. `Ok(None)` for any other pair: the wall clears
+/// the circle (the gate's plane test; for an oblique class, a line missing that rim circle), or
+/// cuts an **irrational** chord this road cannot state yet — today's silence, and the same trigger
+/// the rulings road reads.
 ///
 /// **The record is asked before the wall's coefficients**, as [`rulings_on_class`] asks it: an
 /// unrecorded pair says nothing whatever the wall's description.
@@ -41,23 +43,27 @@ pub(super) fn chord_stations(
                 _ => None,
             })
     };
+    let node = |id: NodeId| (LineEvent::Toggle, (id, combinatorics::EndPin::Cylinder));
+    // **An oblique section's chord is the rim's own two crossings.** A circle a face carries is a
+    // rim of a lateral face, and the class line meets it where the section crosses that rim —
+    // the same two pierce names the tracer ends the ellipse's arcs at. A line missing the circle
+    // leaves no chord; a touch the gate refused (`planes::rim_against_plane`), and the radius
+    // premise below — a distance from the axis — means nothing for a plane that crosses the axis.
+    if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
+        let def = def_of().ok_or(ChordUnstatable)?;
+        return match combinatorics::rim_crossings(jd, def, wc, fc, cyl) {
+            Some(Some([lo, hi])) => Ok(Some([node(lo), node(hi)])),
+            Some(None) => Ok(None),
+            None => {
+                debug_assert!(
+                    false,
+                    "an oblique section's class line crosses or misses a rim circle"
+                );
+                Err(ChordUnstatable)
+            }
+        };
+    }
     if !cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc)) {
-        // A class sectioning the cylinder obliquely leaves no chord on a circle of it: a circle a
-        // face carries is a rim of a lateral face, and the gate proved the plane strictly off every
-        // rim (`planes::section_in_span`), so the class line misses it.
-        #[cfg(debug_assertions)]
-        if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc))
-            && let Some(def) = def_of()
-        {
-            debug_assert!(
-                !matches!(
-                    jd.line_meet(wc, fc, def, false),
-                    nacre_judge::cylinder::LineMeet::Pair(_)
-                        | nacre_judge::cylinder::LineMeet::Tangent(..)
-                ),
-                "an oblique section's class line misses every rim circle"
-            );
-        }
         return Ok(None);
     }
     let def = def_of().ok_or(ChordUnstatable)?;
@@ -85,18 +91,19 @@ pub(super) fn chord_stations(
     let nacre_judge::cylinder::LineMeet::Pair(_) = jd.line_meet(wc, fc, def, false) else {
         return Err(ChordUnstatable);
     };
-    let node = |root| {
-        (
-            LineEvent::Toggle,
-            (
-                NodeId::pierce(wc, fc, cyl, root),
-                combinatorics::EndPin::Cylinder,
-            ),
-        )
-    };
     Ok(Some([
-        node(crate::combinatorics::QuadRoot::Lo),
-        node(crate::combinatorics::QuadRoot::Hi),
+        node(NodeId::pierce(
+            wc,
+            fc,
+            cyl,
+            crate::combinatorics::QuadRoot::Lo,
+        )),
+        node(NodeId::pierce(
+            wc,
+            fc,
+            cyl,
+            crate::combinatorics::QuadRoot::Hi,
+        )),
     ]))
 }
 

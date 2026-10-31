@@ -177,15 +177,6 @@ pub(super) fn split_circles(
             out_circles.push(circ.clone());
             continue;
         }
-        // **An oblique section stays whole.** The class draws it as one closed trace
-        // ([`crate::planes::CylRecord::Sections`]), and a segment of the class crossing it would
-        // cut it into arcs of the ellipse, whose directions, extrema and boxes no road reads — so
-        // the cut is refused as the oblique coverage it is. A tangency mints no node (above), as on
-        // a class across the axis; a crossing that cannot be placed has already been refused by its
-        // own name.
-        if cyls[circ.cyl].sections_oblique(wc) {
-            return Err(reject(RejectReason::ObliqueCylinderCut));
-        }
         let is_end = |n: NodeId| {
             circ.merged
                 .iter()
@@ -258,12 +249,17 @@ pub(super) fn split_circles(
                 merged,
             });
         }
-        cut_rims.push((
-            circ.cyl,
-            CutRim {
-                nodes: order.iter().map(|&k| nodes[k]).collect(),
-            },
-        ));
+        // A cut rim tells the lateral's chart where a horizontal of it is cut; an oblique section
+        // is no horizontal of the chart ([`crate::planes::CylRecord::Sections`] — the chart takes
+        // nothing from the class), so its cuts stay on this class's arcs.
+        if !cyls[circ.cyl].sections_oblique(wc) {
+            cut_rims.push((
+                circ.cyl,
+                CutRim {
+                    nodes: order.iter().map(|&k| nodes[k]).collect(),
+                },
+            ));
+        }
     }
     // ---- segments → sub-segments, in line order ----
     let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg, aliases)?;

@@ -231,6 +231,31 @@ pub(crate) fn arc_crossings(
     Some(inside)
 }
 
+/// **Where a class oblique to a cylinder's axis crosses one of its rim circles** — the circle on
+/// class `plane`, across the axis: the line `wc ∩ plane` meets it in the two roots named on the
+/// cylinder (`NodeId::pierce(wc, plane, cyl, Lo | Hi)`), the names a cap's chord and the section's
+/// arcs both end at. `Some(Some(_))` for the two crossings, `Some(None)` for a line that misses
+/// the circle, `None` for any other meet — a touch (`planes::rim_against_plane` refuses it at the
+/// gate), or one that cannot be stated. The two readers take a miss differently: a chord is then
+/// absent, while the section's tracer asks only of a rim it has read as crossed.
+pub(crate) fn rim_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    plane: usize,
+    cyl: usize,
+) -> Option<Option<[NodeId; 2]>> {
+    use nacre_judge::cylinder::LineMeet;
+    match jd.line_meet(wc, plane, def, false) {
+        LineMeet::Pair(_) => Some(Some([
+            NodeId::pierce(wc, plane, cyl, QuadRoot::Lo),
+            NodeId::pierce(wc, plane, cyl, QuadRoot::Hi),
+        ])),
+        LineMeet::Miss | LineMeet::ParallelPlanes => Some(None),
+        _ => None,
+    }
+}
+
 /// [`arc_crossings`] behind the gate's record: an arc of a cylinder the gate proved clear of the class
 /// `wc` lies wholly on one side of it, and an arc of a cylinder `wc` touches along one ruling
 /// ([`crate::planes::Silence::Grazes`]) lies on one side but for that line — so neither crosses, and
@@ -266,17 +291,15 @@ pub(crate) fn arc_crossings_of(
 /// [`Wall::Ruling`] carries, measured by
 /// [`ruling_side`] against its `plane` when the ring was named (on a plane
 /// face's ring, `fc` itself; on a lateral's, the plane across the edge, which the caller passes
-/// as `fc`) — says which. The same predicate asked of each root picks it. `wc` must be ⊥
-/// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
-/// refused at the gate).
+/// as `fc`) — says which. The same predicate asked of each root picks it. `wc` must cross the
+/// axis for the class to cross a ruling in a point at all (∥ contains it) — across it or oblique to
+/// it; this asks nothing more.
 ///
 /// Solved in the caller's order `(wc, fc)`, as `rulings_on_class` and `chord_stations`
 /// spell it — [`NodeId::pierce`] canonicalizes the pair and the root together, so this is the one
 /// name every road gives the point. The lateral face names the same point when its hole ring
-/// crosses the class (`cycle_on_class`'s crossing arm restates the hole corner's own root to
-/// `wc` by the axis senses of the two ⊥ classes); the two spellings agree because the roots of
-/// `{⊥, wall}` are ordered along `ε·k·(m̂ × n_wall)`, so «which root» and «which side of `wall`»
-/// are the same question — a derivation the exact-volume rows of the crossing census check.
+/// crosses the class — `cycle_on_class`'s crossing arm asks this very door with the ruling's own
+/// side — so the planar scan and the lateral's walk cannot name it apart.
 ///
 /// `Err` says why there is no such point, in two causes ([`RulingNameFail`]): a description past
 /// `Rat`, or classes that name no crossing of that wall's ruling — a wall not parallel to the
@@ -294,7 +317,7 @@ pub(crate) fn crossing_on_ruling(
     use RulingNameFail::{NoCrossing, Undecided, Width};
     use nacre_judge::cylinder::LineMeet;
     let w = jd.world_rat(wc).ok_or(NoCrossing)?;
-    if !crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
+    if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) == nacre_exact::Orient::Zero {
         return Err(NoCrossing);
     }
     let meet = jd.line_meet(wc, fc, def, false);

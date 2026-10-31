@@ -92,22 +92,25 @@ pub(crate) fn trace_band(
 /// `class_meet`), so a reader asking whether a class carries a circle asks this rather than
 /// respelling the test.
 ///
-/// **The one place this rule is named, and it is load-bearing far past its callers.**
-/// Sites reason from "a circle's arcs lie on a class ⊥ to its axis" without asking — the
-/// segment-vs-arc turn sign in `combinatorics::direction` and the circle crossings' two meet
-/// shapes the premise rules out, refused as [`crate::RejectReason::ObliqueCircleClass`] should it
-/// break — and the proposition they share is held by the gate. The sites a whole oblique section
-/// reaches ask: `circle_crosses_ruling`'s band, the circle crossings' `segment_meets_cylinder`
-/// filter (its precondition `(p1 − p0)·m = 0` holds only across the axis), [`crate::nesting`]'s rim
-/// witnesses and `disk_in_disk`.
+/// **The one place this rule is named.** An arc of a cylinder on a class is the cylinder's section
+/// by the class's plane — a circle when this answers `true`, an ellipse otherwise — and the readers
+/// that only need the section's shape read it whatever the plane: an arc's direction, side and
+/// extreme off the axis ([`nacre_exact::quad::axial_side`],
+/// [`nacre_exact::quad::ccw_tangent_side`]), its box over the band the section sweeps
+/// ([`trace_band`]), its order about the axis. The sites that read a **circle** ask this:
+/// `circle_crosses_ruling`'s strip (an ellipse it does not measure), the circle crossings'
+/// `segment_meets_cylinder` filter (its precondition `(p1 − p0)·m = 0` holds only across the
+/// axis), [`crate::nesting`]'s rim witnesses and `disk_in_disk`, a planar face's own circle for
+/// interior witnesses (`face_circle`), and the alias folds of a line along the axis, which a class
+/// across it meets at its station.
 ///
-/// **What actually holds it** ([`cylinder_gate`]): the gate runs whenever the input
-/// has a cylinder at all and sweeps **every (plane class × cylinder)** pair; an oblique pair whose
-/// lateral faces cannot be *proved* to miss the plane is refused
+/// **What holds the oblique arcs to what those roads can draw** ([`cylinder_gate`]): the gate runs
+/// whenever the input has a cylinder at all and sweeps **every (plane class × cylinder)** pair; an
+/// oblique pair whose lateral faces cannot be *proved* to miss the plane is refused
 /// ([`crate::RejectReason::ObliqueCylinderCut`]) unless it is recorded as the class's section of
-/// the cylinder ([`crate::planes::CylRecord::Sections`]) — a whole ellipse, which the roads that
-/// read a circle's arcs never see, since the section is never cut. So a class that carries a
-/// circle's arcs is a class whose plane **meets** that cylinder across its axis. The seated producer has a second, stronger
+/// the cylinder ([`crate::planes::CylRecord::Sections`]) — drawn on the class's own arrangement,
+/// whole or in arcs, with no face of the class reaching a lateral face, so no result face is
+/// bounded by an ellipse. The seated producer has a second, stronger
 /// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
 /// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
 /// its own plane, while a cylinder's *circular* section is ⊥ to the axis.

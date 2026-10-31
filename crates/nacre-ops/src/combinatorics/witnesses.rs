@@ -6,26 +6,27 @@ use super::*;
 /// so says `None` for a **cut** cap, which is a disk just the same with a chord across it. What a
 /// face needs in order to name a point of its own interior is only *which circle bounds it*, and
 /// that is: the ring's **arcs all ride one cylinder**, and the face's plane is **perpendicular to
-/// that axis** (so the section really is a circle rather than an ellipse the gate would have
-/// refused anyway). A ring with no arc at all has no circle — which is how a **wall panel**
+/// that axis** (so the section really is a circle: on a class oblique to the axis the arcs are an
+/// ellipse's, and the chord algebra below is the circle's). A ring with no arc at all has no
+/// circle — which is how a **wall panel**
 /// (`[plane, ruling, plane, ruling]`) is turned away here rather than guessed at.
 ///
 /// `ring_own_circle` is the special case with no chords; the two are kept apart because they answer
 /// different questions — "is the ring a circle" versus "which circle bounds the face".
 ///
-/// **Measured over the lib suite: 40 acceptances, and the only clause that ever refuses is the
-/// first** — 20 rings with no arc at all (the wall panels). Two cylinders' arcs on one planar face
-/// and a plane that is *not* perpendicular to the axis both refuse **0 times**, and they stay: the
-/// first would take a circle that bounds only part of the ring, the second would call an ellipse a
-/// circle and put the "centre" off the face — and a producer that stops holding either proposition
-/// should be caught here rather than two layers down.
+/// **Measured over the lib suite: 123 acceptances, and the clause that refuses most is the
+/// first** — 65 rings with no arc at all (the wall panels). Two cylinders' arcs on one planar face
+/// refuse twice (`curved_nesting`'s ring with no three-plane corner) and a plane that is *not*
+/// perpendicular to the axis **0 times**, and both stay: the first would take a circle that bounds
+/// only part of the ring, the second would call an ellipse a circle and put the "centre" off the
+/// face — and a producer that stops holding either proposition should be caught here rather than
+/// two layers down.
 ///
-/// **"The gate refuses an oblique cylinder cut" is false as a blanket sentence**:
-/// the gate lets an oblique plane through when every lateral face
-/// of the cylinder provably misses it, or sections it in whole ellipses. The conclusion stands on a
-/// narrower fact: this ring holds an **arc** of that cylinder, so the plane does not miss it, and an
-/// oblique pair that meets is refused unless its section stays whole — and a whole section has no
-/// arc. [`crate::planes::class_carries_circle`] carries the argument.
+/// **The perpendicular test is not redundant with the gate**: the gate lets an oblique plane
+/// through when every lateral face of the cylinder provably misses it, or when the class draws the
+/// cylinder's section on its own arrangement — whole, or in arcs whose rings this sees. On such a
+/// ring the test turns the ellipse away, and the face's other witnesses answer.
+/// [`crate::planes::class_carries_circle`] carries the argument.
 fn face_circle<'a>(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,

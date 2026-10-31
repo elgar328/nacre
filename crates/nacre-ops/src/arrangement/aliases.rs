@@ -10,8 +10,10 @@ use super::*;
 /// The reject a declined face reports to the caller.
 ///
 /// Most kinds *are* the answer — the tracer says what it could not do, and `face` says where.
-/// [`DeclineKind::FourPlane`] is the exception: the naming failure is a symptom, and reporting it
-/// as one would hide the substrate limit that caused it, so it is raised as the cause. The face
+/// Two are exceptions, raised as their cause. [`DeclineKind::FourPlane`]: the naming failure is a
+/// symptom, and reporting it as one would hide the substrate limit that caused it.
+/// [`DeclineKind::ObliqueSection`]: an oblique section the trace does not read is the oblique
+/// coverage's end, which [`RejectReason::ObliqueCylinderCut`] names wherever else it ends. The face
 /// handle is dropped there because [`RejectReason::FourPlane`] carries no payload; per-face detail
 /// remains in the class audit, which is where `TraceDeclined`'s own docs put it.
 ///
@@ -20,6 +22,7 @@ use super::*;
 pub(super) fn decline_to_reject(kind: DeclineKind, face: Option<Handle<Face>>) -> RejectReason {
     match kind {
         DeclineKind::FourPlane => RejectReason::FourPlane,
+        DeclineKind::ObliqueSection => RejectReason::ObliqueCylinderCut,
         kind => RejectReason::TraceDeclined { kind, face },
     }
 }

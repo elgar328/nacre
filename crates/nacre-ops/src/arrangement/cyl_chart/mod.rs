@@ -24,7 +24,7 @@
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
 //! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | — |
 //! | `n ⊥ m` | `d > r` | nothing | 1494 |
-//! | oblique | — | **nothing**: the class's faces stand apart from every lateral face and its whole ellipse is drawn on its own arrangement (`CylRecord::Sections`); otherwise refused, `ObliqueCylinderCut` | 2 |
+//! | oblique | — | **nothing**: the class's faces stand apart from every lateral face and its section — a whole ellipse or arcs of one — is drawn on its own arrangement (`CylRecord::Sections`); otherwise refused, `ObliqueCylinderCut` | 2 |
 //!
 //! So the chart carries **axis-parallel segments only**. Not a grid, though: a ruling exists over a
 //! finite axis interval and a cut circle is arcs, so the cells are what rectilinear *segments* cut

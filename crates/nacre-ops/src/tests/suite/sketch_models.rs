@@ -892,7 +892,8 @@ fn the_users_plate_slot_and_gusset_fold() {
 /// oblique plane's reach (a quarter-cylinder sector beside a gusset whose slanted plane runs
 /// within the radius but past the arc) and the parallel pair's cross-section (two half-cylinder
 /// prisms whose infinite surfaces cross while their arcs face away). Each has its negative
-/// control: the same plane through the arc, the same pair with the arcs facing each other.
+/// control: the same plane through the arc — which the gusset's class then sections, recorded —
+/// and the same pair with the arcs facing each other.
 #[test]
 fn the_gate_reads_the_arc_not_the_circle() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
@@ -971,27 +972,35 @@ fn the_gate_reads_the_arc_not_the_circle() {
         );
         shift(m, g, [2.0, 0.0, 0.0])
     };
-    let mut m = Model::new();
-    let a = sector(&mut m);
-    let b = gusset(&mut m, 1.0);
-    m.rebuild_adjacency();
-    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the plane runs past the arc");
-    assert_eq!(out.len(), 2, "two bodies, apart");
-    m.rebuild_adjacency();
-    clean(&m);
-    let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
-    let want = 0.5625 * std::f64::consts::PI + 5.0625;
-    assert!((v - want).abs() < 1e-9, "sector + gusset: {v} vs {want}");
     // Negative control: the gusset mirrored in y, its slanted face `−2y − z = 1.5` at
-    // `y ∈ [−1.25, −0.75]` — through the sector's arc. An ellipse the kernel does not build.
-    let mut m = Model::new();
-    let a = sector(&mut m);
-    let b = gusset(&mut m, -1.0);
-    m.rebuild_adjacency();
-    rejects(
-        boolean(&mut m, BoolKind::Fuse, a, b),
-        RejectReason::ObliqueCylinderCut,
-    );
+    // `y ∈ [−1.25, −0.75]` — through the sector's arc, so the gusset's class draws the section, an
+    // arc of the ellipse ending on the sector's rims. Both build the same two bodies; what tells
+    // them apart is the gate's record of a section — none where the plane runs past the arc.
+    for (mirror_y, sections) in [(1.0, 0), (-1.0, 1)] {
+        let mut m = Model::new();
+        let a = sector(&mut m);
+        let b = gusset(&mut m, mirror_y);
+        m.rebuild_adjacency();
+        let recorded: usize = plane_index_setup(&m, a, b)
+            .expect("the gate passes")
+            .cyls
+            .iter()
+            .map(|cy| {
+                cy.records
+                    .iter()
+                    .filter(|&&(_, r)| r == crate::planes::CylRecord::Sections)
+                    .count()
+            })
+            .sum();
+        assert_eq!(recorded, sections, "mirror {mirror_y}: sections recorded");
+        let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("two bodies, apart");
+        assert_eq!(out.len(), 2, "two bodies, apart");
+        m.rebuild_adjacency();
+        clean(&m);
+        let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
+        let want = 0.5625 * std::f64::consts::PI + 5.0625;
+        assert!((v - want).abs() < 1e-9, "sector + gusset: {v} vs {want}");
+    }
 
     // (b) Two half-cylinder prisms of radius 1.5 on parallel axes 2.5 apart — closer than the
     // radii's sum, so the infinite surfaces cross — with the flat sides facing each other and the

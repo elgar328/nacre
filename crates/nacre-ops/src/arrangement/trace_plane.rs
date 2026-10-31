@@ -330,7 +330,7 @@ fn trace_transversal_face(
                     // clear has no root inside any arc — a crossing named here on an unrecorded pair
                     // would meet no ruling on the lateral's side.
                     if let crate::combinatorics::Wall::Arc { cyl, .. } = walls[edge]
-                        && !cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc))
+                        && !cyls.get(cyl).is_some_and(|cy| cy.draws_section(wc))
                     {
                         declined = Some(DeclineKind::CurvedRingWall);
                         break 'rings;
@@ -542,8 +542,9 @@ pub(super) fn trace_one(
         // A **lateral face** (a cylinder row): what it leaves on a ⊥ class is a **transversal**
         // circle where the class cuts it in two and a **graze** where the class carries one of its
         // rims — see [`circle_on_class`]. Beyond the span it leaves nothing. A class oblique to the
-        // axis carries the whole ellipse where the gate recorded it as the class's section
-        // (`CylRecord::Sections`), and the population gate has named every other such interaction.
+        // axis carries the section where the gate recorded it as the class's own
+        // (`CylRecord::Sections`) — the whole ellipse or the arcs of it the face covers — and the
+        // population gate has named every other such interaction.
         if let ClassIx::Cyl(k) = plane_ix[fp] {
             let cf = match &faces[fp] {
                 FaceRow::Cylinder(cf) => cf,

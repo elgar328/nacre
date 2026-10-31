@@ -386,19 +386,19 @@ pub enum RejectReason {
     /// unbounded surface is not named by it. The solid's volume would be right and its names
     /// wrong, so the boolean refuses rather than return it.
     VertexNamesAbsentSurface,
-    /// A plane class neither perpendicular nor parallel to a cylinder's axis that meets the
-    /// cylinder in a curve the kernel does not build — an arc of an ellipse. A slanted plane that
-    /// runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes. So
-    /// does one whose faces all have straight edges and stand, by the box of their corners, beyond
-    /// the box of every lateral face of the cylinder, while the plane, extended, cuts it in whole
-    /// ellipses — each strictly between a lateral face's two whole rims (a gusset whose plane runs
-    /// through a plate's bore between its faces). Refused:
+    /// A plane class neither perpendicular nor parallel to a cylinder's axis whose meet with the
+    /// cylinder — an ellipse, or arcs of one — the kernel does not build there. A slanted plane
+    /// that runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes.
+    /// So does one whose faces all have straight edges and stand, by the box of their corners,
+    /// beyond the box of every lateral face of the cylinder, however the plane, extended, cuts the
+    /// cylinder: through a plate's bore between its faces, across the bore's rims, through a
+    /// fillet's quarter. Refused:
     /// - a face on the plane not shown apart from a lateral face that way — reaching it, near it,
     ///   or bounded by a curved edge (the cap of a slanted cylinder);
-    /// - the plane reaching a lateral face's rim, or cutting a face that is not a whole band
-    ///   between two rims (a fillet's quarter);
-    /// - another face of the operands crossing such an ellipse on the plane, or a ruling another
-    ///   cylinder leaves on the plane not shown apart from it;
+    /// - the plane touching a rim of a lateral face at a single point, or running through a corner
+    ///   of a lateral face's boundary, or a section in a shape the trace does not read
+    ///   ([`DeclineKind::ObliqueSection`]);
+    /// - a ruling another cylinder leaves on the plane not shown apart from the section;
     /// - the plane sectioning two cylinders whose axes are not parallel, or sectioning one while it
     ///   lies across the axis of another — however far that other cylinder stands.
     ObliqueCylinderCut,
@@ -1010,6 +1010,14 @@ pub enum DeclineKind {
     /// circle is a cut point only on an arc. Both populations build; what remains here is the
     /// exact-arithmetic decline the variant is for.
     Ruling,
+    /// A lateral face's mark on a class **oblique** to its axis — the cylinder's section the class
+    /// draws on its own arrangement ([`crate::planes::CylRecord::Sections`]) — in a shape this
+    /// road does not read: the plane runs through a corner of the face's boundary (a fourth surface
+    /// at the point the section would end on), the section crosses no boundary of a face without
+    /// two whole rims, the boundary crossings do not alternate, or a point of the section cannot be
+    /// stated (`Rat` overflow among them). Raised as [`RejectReason::ObliqueCylinderCut`] rather
+    /// than as a `TraceDeclined`: it is the oblique coverage's end, the sentence that name says.
+    ObliqueSection,
 }
 
 impl DeclineKind {
@@ -1034,6 +1042,7 @@ impl DeclineKind {
             Self::CylFaceHole => "cyl-face-hole",
             Self::CylHoleFeature => "cyl-hole-feature",
             Self::Ruling => "ruling",
+            Self::ObliqueSection => "oblique-section",
         }
     }
 }

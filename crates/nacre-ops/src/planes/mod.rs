@@ -517,12 +517,12 @@ pub(crate) enum CylRecord {
     /// instead.
     Silent(Silence),
     /// A named class oblique to the axis whose faces all stand apart from every lateral face's
-    /// box, while its plane meets each lateral face either nowhere or in a whole ellipse strictly
-    /// between the two whole rims of a band ([`section_in_span`]). The class's own arrangement
-    /// draws the cylinder's section truly — the ellipse, a closed trace with no node on it — and
-    /// nothing else: no face of the class reaches a lateral face, so the lateral chart takes nothing
-    /// from the class. The named twin of [`Silence::Sectioned`]: the class has world coefficients,
-    /// so the roads that answer a silent class from its record ask those instead.
+    /// box, while its plane touches no rim ([`rim_against_plane`]). The class's own arrangement
+    /// draws the cylinder's section truly — the ellipse, whole between a band's rims or cut into
+    /// arcs where a rim, a ruling or a segment of the class crosses it — and nothing else: no face
+    /// of the class reaches a lateral face, so the lateral chart takes nothing from the class. The
+    /// named twin of [`Silence::Sectioned`]: the class has world coefficients, so the roads that
+    /// answer a silent class from its record ask those instead.
     Sections,
 }
 
@@ -606,6 +606,14 @@ impl WorkingCyl {
     /// ([`Silence::Sectioned`]). An oblique section draws an ellipse, never a ruling.
     pub(crate) fn draws_rulings(&self, wc: usize) -> bool {
         self.cuts(wc) || self.sections_along(wc)
+    }
+
+    /// Whether class `wc`'s arrangement draws this cylinder's section at all — its rulings
+    /// ([`Self::draws_rulings`]) or its ellipse ([`Self::sections_oblique`]): where a face of the
+    /// class's own trace crosses an arc of the cylinder, the crossing is a point of the section,
+    /// named on the cylinder.
+    pub(crate) fn draws_section(&self, wc: usize) -> bool {
+        self.draws_rulings(wc) || self.sections_oblique(wc)
     }
 
     /// Whether the gate proved class `wc` silent about this cylinder.

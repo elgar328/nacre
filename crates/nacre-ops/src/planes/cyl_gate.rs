@@ -10,10 +10,11 @@ use super::*;
 /// never a guess.
 ///
 /// Per (plane class, cylinder) pair, [`class_meet`] answers what the class receives — a circle,
-/// nothing, two rulings, a grazing line, silence, a whole oblique section, an arc of an ellipse —
-/// and every pair is answered before anything reads the answers. The gate is then what can and
-/// cannot be drawn: it settles the sectioned candidates against the cylinder's other records,
-/// refuses an arc of an ellipse and a class carrying the traces of axes that are not parallel
+/// nothing, two rulings, a grazing line, silence, an oblique section drawn on the class's own
+/// arrangement, an oblique section it cannot draw — and every pair is answered before anything
+/// reads the answers. The gate is then what can and cannot be drawn: it settles the sectioned
+/// candidates against the cylinder's other records, refuses an oblique section the class cannot
+/// draw and a class carrying the traces of axes that are not parallel
 /// ([`RejectReason::ObliqueCylinderCut`]), and hands the arrangement the records it reads — the
 /// cuts, oblique sections and silences ([`WorkingCyl::records`]), the [`Tangency`] rows and the lines two
 /// classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row its verdict cannot
@@ -265,7 +266,7 @@ pub(crate) fn cylinder_gate(
                 ClassMeet::Across
                 | ClassMeet::Clear
                 | ClassMeet::Tangent { .. }
-                | ClassMeet::Ellipse => None,
+                | ClassMeet::Undrawable => None,
             })
             .collect();
     }
@@ -276,11 +277,12 @@ pub(crate) fn cylinder_gate(
         "every nameless class is silent about every cylinder, or the gate refused"
     );
 
-    // An arc of an ellipse is drawn by no road ([`class_meet`]'s oblique arm).
+    // An oblique section whose class reaches a lateral face, or whose plane touches a rim, is
+    // drawn by no road ([`class_meet`]'s oblique arm).
     if meets
         .iter()
         .flatten()
-        .any(|meet| *meet == ClassMeet::Ellipse)
+        .any(|meet| *meet == ClassMeet::Undrawable)
     {
         return Err(reject(RejectReason::ObliqueCylinderCut));
     }
@@ -440,13 +442,14 @@ enum ClassMeet {
     /// A class with no world statement, silent about the cylinder. `Sectioned` is a candidate
     /// until [`cylinder_gate`] settles it.
     Silent(Silence),
-    /// An oblique plane whose class's faces stand apart from every lateral face's box, meeting
-    /// each lateral face nowhere or in a whole ellipse between a band's two rims: the class draws
-    /// the section on its own arrangement ([`CylRecord::Sections`]).
+    /// An oblique plane whose class's faces stand apart from every lateral face's box, touching
+    /// no rim: the class draws the section — a whole ellipse or arcs of one — on its own
+    /// arrangement ([`CylRecord::Sections`]).
     Sections,
-    /// An oblique plane not shown to miss the lateral faces, nor to section them in whole
-    /// ellipses: an arc of an ellipse, which no road draws.
-    Ellipse,
+    /// An oblique plane not shown to miss the lateral faces whose section the class cannot draw:
+    /// a face of the class not shown apart from them — the section would bound it, and the
+    /// lateral's chart takes nothing from an oblique class — or the plane touching a rim.
+    Undrawable,
 }
 
 /// What [`class_meet`] reads besides the pair: the operands' face table and the judge, and which
@@ -494,10 +497,10 @@ struct PairCx<'a, 'j> {
 /// - anything else — an oblique plane, [`ClassMeet::Clear`] when every lateral face of the
 ///   cylinder provably misses the plane — the face's reach along `n` against the plane's station
 ///   ([`lateral_reach`], [`laterals_clear_plane`]) — then [`ClassMeet::Sections`] when the class's
-///   faces stand apart from every lateral face and the plane meets each one nowhere or in a whole
-///   ellipse between a band's rims ([`sections_whole`]), and otherwise [`ClassMeet::Ellipse`].
-///   Every one of these sites speaks about faces; a gusset whose slanted plane runs past a plate's
-///   holes, or through a bore between the plate's faces, is not refused for the plane alone.
+///   faces stand apart from every lateral face and the plane touches no rim ([`sections_apart`]),
+///   and otherwise [`ClassMeet::Undrawable`]. Every one of these sites speaks about faces; a gusset
+///   whose slanted plane runs past a plate's holes, through a bore, across its rims or through a
+///   fillet's quarter is not refused for the plane alone.
 ///
 /// The order of the questions is the order of the refusals they can raise, and so part of what
 /// this function answers: a `Zero` pair asks the lateral faces before the classes holding its
@@ -591,18 +594,17 @@ fn class_meet(
             // the cylinder in an ellipse.
             //
             // The class's faces standing apart from the lateral (the parallel arm's second
-            // question) do not suffice alone: the class's arrangement sections the cylinder's
-            // own solid by the whole plane, and that section runs along the ellipse. Where the
-            // plane meets each lateral face nowhere or in a whole ellipse between a band's two
-            // rims, the section is one closed trace with no node on it, which the class draws on
-            // its own arrangement ([`ClassMeet::Sections`], [`sections_whole`]); an arc of the
-            // ellipse — a plane across a rim, or a face that is no band — is refused.
+            // question) are what lets it through: the class's arrangement sections the
+            // cylinder's own solid by the whole plane, and that section runs along the ellipse —
+            // whole between a band's rims, or arcs of it ending where a rim, a ruling or a
+            // segment of the class crosses it — which the class draws on its own arrangement and
+            // no face it keeps reaches ([`ClassMeet::Sections`], [`sections_apart`]).
             let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
             let meet = if laterals_clear_plane(&cyl.def, fps, &coeffs) {
                 ClassMeet::Clear
             } else {
-                sections_whole(model, faces, plane_ix, c, cyl, fps, &coeffs)
-                    .unwrap_or(ClassMeet::Ellipse)
+                sections_apart(model, faces, plane_ix, c, cyl, fps, &coeffs)
+                    .unwrap_or(ClassMeet::Undrawable)
             };
             return Ok((meet, Vec::new()));
         }
@@ -2370,45 +2372,89 @@ pub(crate) enum SectionSpan {
     Crosses,
 }
 
+/// How one rim circle of a cylinder meets a plane oblique to its axis — [`rim_against_plane`]'s
+/// answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RimMeet {
+    /// The circle lies strictly on this side of the plane (`+1` toward its normal).
+    Side(i8),
+    /// The plane cuts the circle in two points: the section crosses the rim there.
+    Crosses,
+    /// The plane touches the circle in one point: the section meets the rim there and turns back.
+    Touches,
+}
+
+/// **How the plane `n·p + d = 0` meets the rim circle of cylinder `def` at station `s`** — the
+/// circle reaches along `n` over `n·o + s(n·m) ± r|n⊥|` ([`lateral_reach`] of the whole circle at
+/// `[s, s]`) and the plane's station is `−d`: clear of that reach is a side, at one of its ends a
+/// touch, strictly inside it two crossings. The one reading of a rim against an oblique plane — the
+/// gate's ([`section_in_span`], and the touch it refuses) and the tracer's
+/// (`arrangement::section_on_class`, which names the two crossings) — so the two cannot part. `None`
+/// is `Rat` overflow or a radius wider than `Rat`.
+pub(crate) fn rim_against_plane(
+    def: &nacre_topo::CylinderDef,
+    s: nacre_exact::Rat,
+    coeffs: &[nacre_exact::Rat; 4],
+) -> Option<RimMeet> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let station = nacre_exact::Rat::from_int(0).checked_sub(coeffs[3])?;
+    let rim = Footprint {
+        span: Some([s, s]),
+        theta: Theta::Whole,
+    };
+    let reach = lateral_reach(def, &rim, &n)?;
+    // A reach clear of the station lies wholly on one side of it, so its base says which.
+    if reach_clears(&reach, station, station)? {
+        return Some(RimMeet::Side(if reach.lo > station { 1 } else { -1 }));
+    }
+    // Not clear: the station is in the closed reach `[lo − √ρ²_lo, hi + √ρ²_hi]`. At an end it is
+    // a touch — `lo − station ≥ 0` with its square `ρ²_lo`, or the mirror at `hi`.
+    let at_end = |gap: nacre_exact::Rat, rho2: nacre_exact::Rat| -> Option<bool> {
+        Some(gap >= nacre_exact::Rat::from_int(0) && gap.checked_mul(gap)? == rho2)
+    };
+    Some(
+        if at_end(reach.lo.checked_sub(station)?, reach.rho2_lo)?
+            || at_end(station.checked_sub(reach.hi)?, reach.rho2_hi)?
+        {
+            RimMeet::Touches
+        } else {
+            RimMeet::Crosses
+        },
+    )
+}
+
 /// **Where the plane `n·p + d = 0` meets the cylinder between the stations `span`** — read off
-/// the two rim circles. The circle at station `s` reaches along `n` over `n·o + s(n·m) ± r|n⊥|`
-/// ([`lateral_reach`] of the whole circle at `[s, s]`) and the plane's station is `−d`, so each
-/// circle lies strictly on one side or not. Along one generator the plane's sign is linear in the
-/// station, so the two rims' sides decide the whole span: one side is [`SectionSpan::Clear`],
-/// opposite sides [`SectionSpan::Within`], a rim on the plane's reach [`SectionSpan::Crosses`].
+/// the two rim circles ([`rim_against_plane`]). Along one generator the plane's sign is linear in
+/// the station, so the two rims' sides decide the whole span: one side is [`SectionSpan::Clear`],
+/// opposite sides [`SectionSpan::Within`], a rim the plane touches or crosses
+/// [`SectionSpan::Crosses`].
 ///
-/// One predicate for the gate ([`sections_whole`]) and the tracer
-/// (`arrangement::circle_on_class`), both reading the face's [`Footprint::span`], so the two
+/// One predicate for the gate ([`sections_apart`]) and the tracer
+/// (`arrangement::section_on_class`), both reading the face's [`Footprint::span`], so the two
 /// cannot part. `None` is `Rat` overflow or a radius wider than `Rat`.
 pub(crate) fn section_in_span(
     def: &nacre_topo::CylinderDef,
     span: [nacre_exact::Rat; 2],
     coeffs: &[nacre_exact::Rat; 4],
 ) -> Option<SectionSpan> {
-    use nacre_exact::Rat;
-    let zero = Rat::from_int(0);
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let station = zero.checked_sub(coeffs[3])?;
-    let side = |s: Rat| -> Option<i8> {
-        let rim = Footprint {
-            span: Some([s, s]),
-            theta: Theta::Whole,
-        };
-        let reach = lateral_reach(def, &rim, &n)?;
-        // A reach clear of the station lies wholly on one side of it, so its base says which.
-        Some(if !reach_clears(&reach, station, station)? {
-            0
-        } else if reach.lo > station {
-            1
-        } else {
-            -1
-        })
+    Some(
+        span_of_rims([
+            rim_against_plane(def, span[0], coeffs)?,
+            rim_against_plane(def, span[1], coeffs)?,
+        ])
+        .0,
+    )
+}
+
+/// [`section_in_span`] of a span's two rim readings, and whether the plane touches either.
+fn span_of_rims(rims: [RimMeet; 2]) -> (SectionSpan, bool) {
+    let touches = rims.contains(&RimMeet::Touches);
+    let span = match rims {
+        [RimMeet::Side(a), RimMeet::Side(b)] if a == b => SectionSpan::Clear,
+        [RimMeet::Side(_), RimMeet::Side(_)] => SectionSpan::Within,
+        _ => SectionSpan::Crosses,
     };
-    Some(match (side(span[0])?, side(span[1])?) {
-        (0, _) | (_, 0) => SectionSpan::Crosses,
-        (a, b) if a == b => SectionSpan::Clear,
-        _ => SectionSpan::Within,
-    })
+    (span, touches)
 }
 
 /// **Is this loop a whole circle** — one edge that closes on itself, the spelling a rim is read by
@@ -2420,23 +2466,18 @@ fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
     }
 }
 
-/// **Is this lateral face a band** — two loops, each a whole rim ([`whole_rim`])? Then the face is
-/// the whole cylinder between its two rims, and a plane strictly between them at every angle cuts
-/// it in a whole ellipse.
-fn is_band(model: &Model, f: &nacre_topo::Face) -> bool {
-    f.inner.len() == 1
-        && std::iter::once(&f.outer)
-            .chain(&f.inner)
-            .all(|lp| whole_rim(model, lp))
-}
-
-/// **Does oblique class `c` section this cylinder in whole ellipses?** — [`ClassMeet::Sections`]'
-/// proof: every face on the class stands apart from every lateral face's box ([`faces_apart`]),
-/// and the plane meets each lateral face of the cylinder either nowhere or in a whole ellipse
-/// between the two whole rims of a band ([`section_in_span`], [`is_band`]). `Some(Clear)` when
-/// every face is missed, `Some(Sections)` when one is sectioned, `None` when either is not shown —
-/// a footprint with no box or no span, a face that is no band, a rim the plane reaches.
-fn sections_whole(
+/// **Does oblique class `c` section this cylinder on its own arrangement?** —
+/// [`ClassMeet::Sections`]' proof: every face on the class stands apart from every lateral face's
+/// box ([`faces_apart`]), so no face the class keeps reaches the section, and the plane touches no
+/// rim circle at either end of a lateral face's span ([`rim_against_plane`] — a touch is a point
+/// the section and the rim's cap share with no crossing to name it by). Then the class draws the
+/// section — a whole ellipse, or arcs of it cut by rims, rulings and the class's other segments —
+/// and the tracer reads which from the faces' boundaries. The touch test asks the rim's whole
+/// circle, also where the face holds only an arc of it (a fillet's quarter): wider than the faces,
+/// never narrower. `Some(Clear)` when every face's span is missed ([`section_in_span`]),
+/// `Some(Sections)` when one is met, `None` when either proof fails — a footprint with no box or no
+/// span, a touch, overflow.
+fn sections_apart(
     model: &Model,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
@@ -2458,10 +2499,16 @@ fn sections_whole(
         if cf.surf != cyl.surf {
             continue;
         }
-        match section_in_span(&cyl.def, cf.footprint.span?, coeffs)? {
-            SectionSpan::Clear => {}
-            SectionSpan::Within if is_band(model, model.face(cf.face?)) => sectioned = true,
-            SectionSpan::Within | SectionSpan::Crosses => return None,
+        let [s0, s1] = cf.footprint.span?;
+        let (span, touches) = span_of_rims([
+            rim_against_plane(&cyl.def, s0, coeffs)?,
+            rim_against_plane(&cyl.def, s1, coeffs)?,
+        ]);
+        if touches {
+            return None;
+        }
+        if span != SectionSpan::Clear {
+            sectioned = true;
         }
     }
     Some(if sectioned {

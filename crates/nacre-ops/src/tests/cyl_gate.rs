@@ -847,6 +847,56 @@ fn an_oblique_plane_meets_a_span_within_beyond_or_across_its_rims() {
     );
 }
 
+/// **One rim circle against an oblique plane: a side, two crossings, or a touch.** The cylinder of
+/// [`an_oblique_plane_meets_a_span_within_beyond_or_across_its_rims`], its rim at `z = 0`; the
+/// plane `z = k·y + c` reaches it over `c ± 2k`. A reach clear of `0` is a side — below the plane,
+/// `−1` against its normal `(0, −k, 1)` — a reach with `0` strictly inside it is two crossings, and
+/// a reach ending exactly at `0`, from above or from below, is one point: a touch, which the gate
+/// refuses and the tracer would have no crossing to name by.
+#[test]
+fn a_rim_circle_meets_an_oblique_plane_on_a_side_across_or_at_a_touch() {
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let z = |v: i128| Rat::from_int(v);
+    let def = nacre_topo::CylinderDef::new(
+        [z(0); 3],
+        [z(0), z(0), z(1)],
+        [z(1), z(0), z(0)],
+        nacre_exact::BigRat::from(z(4)),
+    )
+    .unwrap();
+    let plane = |k: Rat, c: Rat| {
+        [
+            z(0),
+            z(0).checked_sub(k).unwrap(),
+            z(1),
+            z(0).checked_sub(c).unwrap(),
+        ]
+    };
+    let rim = |k: Rat, c: Rat| rim_against_plane(&def, z(0), &plane(k, c));
+    assert_eq!(
+        rim(q(1, 4), z(1)),
+        Some(RimMeet::Side(-1)),
+        "z ∈ [1/2, 3/2]"
+    );
+    assert_eq!(
+        rim(q(1, 4), z(-1)),
+        Some(RimMeet::Side(1)),
+        "z ∈ [−3/2, −1/2]"
+    );
+    assert_eq!(rim(z(3), z(5)), Some(RimMeet::Crosses), "z ∈ [−1, 11]");
+    assert_eq!(
+        rim(q(1, 4), q(2, 5)),
+        Some(RimMeet::Crosses),
+        "z ∈ [−1/10, 9/10]"
+    );
+    assert_eq!(rim(q(1, 4), q(1, 2)), Some(RimMeet::Touches), "z ∈ [0, 1]");
+    assert_eq!(
+        rim(q(1, 4), q(-1, 2)),
+        Some(RimMeet::Touches),
+        "z ∈ [−1, 0]"
+    );
+}
+
 /// **A class carries closed traces no road nests** when an oblique section stands beside a circle
 /// or a section of an axis that is not parallel — and not when the axes agree, nor beside rulings,
 /// nor with no section at all.
