@@ -207,7 +207,9 @@ pub(super) fn lateral_t_range(
 /// angle it covers, its upper and lower boundaries are arcs: the face's angular projection is the
 /// union of its arcs'. What the extent does not see is a **hole** in the face, the conservative
 /// side. Every reader of a face's angle leans on this — the reaches ([`arc_extent`]), the box, the
-/// common cross-section, a line off the arc.
+/// common cross-section, a line off the arc, and the oblique trace's reading of a face its section
+/// crosses nowhere ([`Theta::misses_an_angle`]: a bare angle says the face holds none of it — an
+/// extent too narrow there is a silently missing section, not a refusal).
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a pierce corner is the
 /// meet line's point at its rank ([`nacre_exact::quad::QuadVal::as_rat`] —

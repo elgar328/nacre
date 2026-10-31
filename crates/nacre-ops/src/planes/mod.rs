@@ -167,19 +167,46 @@ impl Theta {
         }
         Some(Self::At(nacre_exact::off_axis_rat(&w, m)?))
     }
+
+    /// **Whether some angle about the axis lies outside this extent** — `false` for the whole
+    /// circle, which [`Theta::Whole`] also stands for where the extent could not be stated, and for
+    /// an arc whose two ends point one way ([`RimArc`]); `true` for a single direction and any other
+    /// arc. A face's extent is never narrower than the face ([`lateral_theta_extent`]), so `true`
+    /// says the face leaves some angle bare. `None` is `Rat` overflow.
+    pub(crate) fn misses_an_angle(&self, m: &[nacre_exact::Rat; 3]) -> Option<bool> {
+        let zero = nacre_exact::Rat::from_int(0);
+        Some(match self {
+            Self::Whole => false,
+            Self::At(_) => true,
+            Self::Arc(arc) => {
+                turn(&arc.from, &arc.to, m)? != zero
+                    || nacre_exact::dot3_rat(&arc.from, &arc.to)? <= zero
+            }
+        })
+    }
 }
 
 /// An arc of a cylinder's cross-section, by two **radial vectors** of the cylinder's radius — a
 /// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
 /// direction. A whole circle is [`Theta::Whole`] and one direction [`Theta::At`]; a `from` and a
-/// `to` pointing one way (two names of one corner) read as the whole circle ([`arc_contains`]),
-/// which is that arc. Rational, as every corner a prism's rim has is: a seam point when the reference
+/// `to` pointing one way (two names of one corner) read as the whole circle ([`arc_contains`],
+/// [`Theta::misses_an_angle`]), which is that arc. Rational, as every corner a prism's rim has is: a seam point when the reference
 /// direction's norm is (`inv_sqrt_rat`), a pierce corner when its root is
 /// ([`nacre_exact::quad::QuadVal::as_rat`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RimArc {
     pub(crate) from: [nacre_exact::Rat; 3],
     pub(crate) to: [nacre_exact::Rat; 3],
+}
+
+/// `(u × v)·m`: positive when `v` is counter-clockwise of `u` about `m` by less than a half turn,
+/// `0` when the two are parallel.
+fn turn(
+    u: &[nacre_exact::Rat; 3],
+    v: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+) -> Option<nacre_exact::Rat> {
+    nacre_exact::dot3_rat(&nacre_exact::cross3_rat(u, v)?, m)
 }
 
 /// Whether the radial direction `x` lies on the arc `from → to` (counter-clockwise about `m`,
@@ -193,16 +220,13 @@ fn arc_contains(
 ) -> Option<bool> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
-    let turn = |u: &[Rat; 3], v: &[Rat; 3]| -> Option<Rat> {
-        nacre_exact::dot3_rat(&nacre_exact::cross3_rat(u, v)?, m)
-    };
-    let ft = turn(&arc.from, &arc.to)?;
-    let fx = turn(&arc.from, x)?;
-    let xt = turn(x, &arc.to)?;
+    let ft = turn(&arc.from, &arc.to, m)?;
+    let fx = turn(&arc.from, x, m)?;
+    let xt = turn(x, &arc.to, m)?;
     Some(if ft > zero {
         fx >= zero && xt >= zero
     } else if ft < zero {
-        !(turn(&arc.to, x)? > zero && turn(x, &arc.from)? > zero)
+        !(turn(&arc.to, x, m)? > zero && turn(x, &arc.from, m)? > zero)
     } else if nacre_exact::dot3_rat(&arc.from, &arc.to)? > zero {
         true // `from` and `to` point the same way: the whole circle
     } else {

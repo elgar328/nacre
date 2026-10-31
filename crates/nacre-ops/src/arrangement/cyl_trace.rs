@@ -167,15 +167,21 @@ pub(super) fn circle_on_class(
 /// - **Any other cycle** — a fillet's quarter, a hole, a panel — is walked by [`cycle_on_class`]
 ///   with the class's normal, which counts and names the crossings of its arcs and rulings.
 ///
-/// **No crossing at all** leaves the section wholly in the face or wholly out of it. A face with
-/// two whole rims covers every angle between them — a hole that does not meet the section cannot
-/// hold it, since the section winds round the cylinder and a hole does not — so the rims' sides
-/// decide ([`crate::planes::section_in_span`]: `Within` is the whole ellipse, the gate's
-/// whole-section case); any other face is declined, because a chain of boundary can still wrap the
-/// cylinder at some heights and hold the whole section, which this does not read. So are a touch,
-/// a corner of the boundary on the section, and a meet that cannot be stated — once the face's
-/// shape is read ([`lateral_shape`], and a cycle that has a ring), every decline here is one name,
-/// [`DeclineKind::ObliqueSection`], which the boolean reports as the oblique coverage's end.
+/// **A corner of the boundary on the section** is read by the walk's flanks: the ring crosses the
+/// section there, a cut at the corner's own name, or touches it ([`cycle_on_class`]).
+///
+/// **No crossing at all** leaves the section wholly in the face or wholly out of it. The section
+/// meets every angle about the axis, so a face whose angles leave one bare
+/// ([`crate::planes::Theta::misses_an_angle`] of its extent, never narrower than the face) holds
+/// none of it. A face with two whole rims covers every angle between them — a hole that does not
+/// meet the section cannot hold it, since the section winds round the cylinder and a hole does not
+/// — so the rims' sides decide ([`crate::planes::section_in_span`]: `Within` is the whole ellipse,
+/// the gate's whole-section case); any other face is declined, because a chain of boundary can
+/// still wrap the cylinder at some heights and hold the whole section, which this does not read.
+/// So are a touch from inside the face, a corner that is not a ruling meeting an arc, and a meet
+/// that cannot be stated — once the face's shape is read ([`lateral_shape`], and a cycle that has
+/// a ring), every decline here is one name, [`DeclineKind::ObliqueSection`], which the boolean
+/// reports as the oblique coverage's end.
 #[allow(clippy::too_many_arguments)]
 fn section_on_class(
     jd: &Judge<'_, WorkingPlane>,
@@ -257,6 +263,12 @@ fn section_extents(
         )?;
     }
     if carved.is_empty() {
+        // **No crossing at all: the section lies wholly in the face or wholly out of it**, and it
+        // meets every angle about the axis — so a face that leaves one bare holds none of it. A
+        // fillet's quarter is such a face whether the section passes it or touches its corner.
+        if cf.footprint.theta.misses_an_angle(&def.dir()) == Some(true) {
+            return Ok(Vec::new());
+        }
         if rims.len() != 2 {
             return Err(DeclineKind::ObliqueSection);
         }
@@ -490,12 +502,49 @@ fn assemble_spans(
 ///   n_out × travel = (σ·r̂) × (τ·m̂) = σ·τ·(r̂ × m̂) = −σ·τ·θ̂
 /// ```
 ///
-/// so the answer is `−σ·τ`: the θ direction the face occupies. Two readers need it — the ⊥ road,
-/// where a ruling edge crossing the circle puts the **hole** in the opposite θ direction, and the
-/// ∥ road, where a ruling edge lying on the class puts the **face** to one side of the wall — and
+/// so the answer is `−σ·τ`: the θ direction the face occupies. Two readers need it — the roads
+/// across the axis, where a ruling edge crossing the class or meeting it at a corner puts the
+/// **hole** in the opposite θ direction ([`cycle_on_class`], [`corner_on_section`]), and the ∥
+/// road, where a ruling edge lying on the class puts the **face** to one side of the wall — and
 /// they must not spell it twice.
 pub(super) fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
     -(orient_sign * travel_up)
+}
+
+/// The θ side a cycle's arc lies on, seen from the node where it meets a ruling: an arc arriving
+/// counter-clockwise came from smaller θ (`−1`), one departing counter-clockwise goes to larger θ
+/// (`+1`) — the flank of an on-line run, read from the arc's own sense (`Wall::Arc`'s `ccw`)
+/// rather than from a coordinate, because a global "side" does not exist on a cylinder.
+pub(super) fn arc_flank(ccw: bool, arriving: bool) -> i8 {
+    if ccw == arriving { -1 } else { 1 }
+}
+
+/// **A corner of a lateral face's boundary — a ruling meeting an arc — lying on an oblique
+/// section**: `(hole, convex)`, the θ direction the face is absent in beside the ruling (`hole`,
+/// `±1`) and whether the face fills only the quarter between the two edges there (`convex`).
+///
+/// In the chart `(θ, z)` the ruling runs along `z` and the arc along `θ`, so they meet square: the
+/// face at the corner is the quarter the two edges span or its complement. The ruling's own travel
+/// (`Wall::Ruling`'s `up`, the producer's) puts the material on the θ side
+/// [`material_theta_sign`] names, and the arc leaves the corner on the θ side [`arc_flank`] names;
+/// the face is that quarter exactly when the two agree.
+///
+/// Where the section passes the corner transversally, one half of it runs into the quarter the
+/// edges span or into the opposite one when the ring crosses it there (the walk's flanks differ),
+/// and into the two side quarters when it touches. Crossing, exactly one half is in the face, and
+/// on both kinds of corner it is the half away from `hole`; touching, both halves are out of a
+/// convex face and in a concave one. Where the section is level at the corner (the plane holds the
+/// rim circle's tangent there), its two halves bend to one side of the arc, so the arc's far end
+/// lies on the other side of the plane; the flanks still say crossing or touch, and the same
+/// reading holds.
+pub(super) fn corner_on_section(
+    orient_sign: i8,
+    ruling_up: bool,
+    arc_ccw: bool,
+    arc_arriving: bool,
+) -> (i8, bool) {
+    let material = material_theta_sign(orient_sign, if ruling_up { 1 } else { -1 });
+    (-material, material == arc_flank(arc_ccw, arc_arriving))
 }
 
 /// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
@@ -545,9 +594,10 @@ pub(crate) fn plus_theta_is_above(
 /// is `σ·r̂` with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], and "left of travel" is
 /// `n_out × travel`.
 ///
-/// - **A ruling edge crossing the class** travels `τ·m̂`. Material lies along
-///   `(σ·r̂) × (τ·m̂) = −σ·τ·θ̂`, so the **hole** lies along `+σ·τ·θ̂`: the hole runs counter-clockwise
-///   from the crossing exactly when `σ·τ = +1`.
+/// - **A ruling edge crossing the class** travels `τ·m̂` — `τ` is the ring's own travel along the
+///   ruling, `Wall::Ruling`'s `up`. Material lies along `(σ·r̂) × (τ·m̂) = −σ·τ·θ̂`
+///   ([`material_theta_sign`]), so the **hole** lies along `+σ·τ·θ̂`: the hole runs
+///   counter-clockwise from the crossing exactly when `σ·τ = +1`.
 /// - **An arc edge lying on the class** (one of the hole's own rims) travels `ν·θ̂`. Material lies
 ///   along `(σ·r̂) × (ν·θ̂) = σ·ν·m̂`, so `ν = σ·μ` where `μ` is the axis direction the face occupies
 ///   — which is the opposite of the side the run's flanks sit on. That fixes the rim arc's CCW
@@ -555,13 +605,15 @@ pub(crate) fn plus_theta_is_above(
 /// - **An arc edge crossing an oblique section** travels `ν·θ̂` too, so material lies along
 ///   `σ·ν·m̂`; the section, going counter-clockwise from the crossing, climbs along `m̂` by the sign
 ///   of its tangent's axial part ([`section_climb`]) — into the material when the two agree, so the
-///   hole then runs clockwise. (A ruling crossing an oblique section reads as across the axis: travel
-///   along the ruling crosses the plane toward `+n` exactly when it runs the way `up` says.)
+///   hole then runs clockwise.
+/// - **A corner on an oblique section** — a node of the ring on the class, where a ruling meets an
+///   arc — is a crossing when the walk's flanks differ and a touch when they agree; the ruling's
+///   material side and the arc's side read which ([`corner_on_section`]). A crossing is a cut at the
+///   corner's own name, the hole on the ruling's empty side; a touch outside a convex corner takes
+///   nothing away.
 ///
-/// `up` is `plus_t_is_above`: whether the class's **stored** normal points along `+m̂`. It is the
-/// bridge between the two frames here, because [`combinatorics::side_of`] answers in the class
-/// root's **outward** frame and a label's "above" is the stored one — the correction is
-/// [`crate::planes::WorkingPlane::frame_sign`], and forgetting it is a silently mirrored answer.
+/// `up` is `plus_t_is_above`: whether the class's **stored** normal points along `+m̂` — the frame
+/// a graze's `body_above` is a label in.
 #[allow(clippy::too_many_arguments)]
 fn cycle_on_class(
     jd: &Judge<'_, WorkingPlane>,
@@ -596,8 +648,18 @@ fn cycle_on_class(
     // and it crosses the section where it holds a root of that line ([`combinatorics::arc_crossings`],
     // the count the planar trace reads too); with both ends on the class it leaves to the side its
     // tangent points ([`combinatorics::arc_departure_side`]). An end on the class is a corner on
-    // the section — a fourth plane through it, which this road does not name: declined below.
+    // the section, the root under the end's own name, which the arc does not cross again there.
+    //
+    // The walk's count and the `Crossing` arm's node are one question — asked twice, the second
+    // asking without the end would meet the end's root as one point under two names and refuse.
     let arc_ends = |i: usize| [ring[i], ring[(i + 1) % n]];
+    let arc_roots = |i: usize, on_end: Option<NodeId>| match nr.walls[i] {
+        Wall::Arc { cyl: c, ccw, plane } => {
+            let def = &cyls.get(c)?.def;
+            combinatorics::arc_crossings(jd, def, wc, plane, c, ccw, arc_ends(i), on_end)
+        }
+        Wall::Ruling { .. } | Wall::Plane(_) => None,
+    };
     let features = match combinatorics::ring_against_plane(
         jd,
         cyls,
@@ -612,12 +674,8 @@ fn cycle_on_class(
             (Some(_), Wall::Ruling { .. } | Wall::Plane(_)) => None,
         },
         |i, on_end| match (oblique, nr.walls[i]) {
-            (Some(_), Wall::Arc { cyl: c, ccw, plane }) if on_end.is_none() => {
-                let def = &cyls.get(c)?.def;
-                combinatorics::arc_crossings(jd, def, wc, plane, c, ccw, arc_ends(i), None)
-                    .and_then(|roots| u8::try_from(roots.len()).ok())
-            }
-            (Some(_), Wall::Arc { .. }) => None,
+            (Some(_), Wall::Arc { .. }) => arc_roots(i, on_end.map(|k| ring[k]))
+                .and_then(|roots| u8::try_from(roots.len()).ok()),
             _ => Some(0),
         },
     ) {
@@ -631,8 +689,15 @@ fn cycle_on_class(
         }
     };
     let sigma = i32::from(cf.orient_sign);
-    let fs = i32::from(jd.planes[wc].frame_sign);
-    let axis_of = |stored_side: i32| if up { stored_side } else { -stored_side };
+    // The nodes on the class: on an oblique section each is a run of its own (below), and an arc
+    // crossing the section with one of them as an end was counted with that end (`arc_roots`).
+    let on_class: Vec<usize> = features
+        .iter()
+        .filter_map(|f| match *f {
+            combinatorics::Feature::Run { first, .. } => Some(first),
+            combinatorics::Feature::Crossing { .. } => None,
+        })
+        .collect();
     // Crossings, each with the direction the hole runs in from it. Paired below, after the θ sort.
     let mut cuts: Vec<(NodeId, bool)> = Vec::new();
     for f in features {
@@ -642,12 +707,57 @@ fn cycle_on_class(
                 len,
                 flanks_differ,
                 ..
+            } if oblique.is_some() => {
+                // **A corner of the boundary on the section.** No edge of the ring lies on an
+                // oblique class — an arc departs between two on-class ends and a ruling with both
+                // ends on the plane would lie in it, which no plane oblique to the axis does — so a
+                // run is one node, and the walk's flanks say whether the ring crosses the section
+                // there or touches it. A ruling meeting an arc is read by [`corner_on_section`];
+                // any other corner has no fixture, and is declined rather than guessed at.
+                debug_assert_eq!(len, 1, "a run on an oblique section is one node");
+                if len != 1 {
+                    return Err(DeclineKind::CylHoleFeature);
+                }
+                let corner = match (nr.walls[(first + n - 1) % n], nr.walls[first]) {
+                    (
+                        Wall::Ruling {
+                            cyl: rc, up: r_up, ..
+                        },
+                        Wall::Arc { cyl: ac, ccw, .. },
+                    ) if rc == cyl && ac == cyl => {
+                        corner_on_section(cf.orient_sign, r_up, ccw, false)
+                    }
+                    (
+                        Wall::Arc { cyl: ac, ccw, .. },
+                        Wall::Ruling {
+                            cyl: rc, up: r_up, ..
+                        },
+                    ) if rc == cyl && ac == cyl => {
+                        corner_on_section(cf.orient_sign, r_up, ccw, true)
+                    }
+                    _ => return Err(DeclineKind::CylHoleFeature),
+                };
+                match (flanks_differ, corner) {
+                    (true, (hole, _)) => cuts.push((ring[first], hole > 0)),
+                    // A touch outside a convex corner takes nothing away, as on a class across the
+                    // axis.
+                    (false, (_, true)) => {}
+                    // The section touches the boundary from inside the face. With nothing crossed
+                    // elsewhere that is the whole ellipse through a corner — impossible on a face
+                    // that leaves an angle bare; with crossings elsewhere it is past this road.
+                    (false, (_, false)) => return Err(DeclineKind::CylHoleFeature),
+                }
+            }
+            combinatorics::Feature::Run {
+                first,
+                len,
+                flanks_differ,
+                ..
             } => {
                 // A run whose flanks differ is a rim the hole continues *through* — it is both an
                 // extent and a parity toggle, and no fixture makes one. Declined and counted
-                // rather than guessed at. On an oblique section no edge of the ring lies on the
-                // class, so a run is a corner on the section, which is declined (above).
-                if flanks_differ || oblique.is_some() {
+                // rather than guessed at.
+                if flanks_differ {
                     return Err(DeclineKind::CylHoleFeature);
                 }
                 // A single on-line vertex with equal flanks is the hole's corner touching the
@@ -697,7 +807,7 @@ fn cycle_on_class(
                     arc_probe::record(jd, cyl, def, inner, &out[start..]);
                 }
             }
-            combinatorics::Feature::Crossing { edge, from, nth } => {
+            combinatorics::Feature::Crossing { edge, nth, .. } => {
                 // The crossed edge's carrier, **carried** from the producer rather than re-derived
                 // from the two endpoint names.
                 //
@@ -708,22 +818,17 @@ fn cycle_on_class(
                 // counter-clockwise from the node, climbs along `m̂` by the sign of its tangent's
                 // axial part ([`section_climb`]) — into the material when the two agree, so the
                 // hole then runs clockwise.
-                if let (Some(nrm), Wall::Arc { cyl: c, ccw, plane }) = (oblique, nr.walls[edge]) {
+                if let (Some(nrm), Wall::Arc { cyl: c, ccw, .. }) = (oblique, nr.walls[edge]) {
                     if c != cyl {
                         return Err(DeclineKind::CylHoleFeature);
                     }
-                    let cut = combinatorics::arc_crossings(
-                        jd,
-                        def,
-                        wc,
-                        plane,
-                        cyl,
-                        ccw,
-                        arc_ends(edge),
-                        None,
-                    )
-                    .and_then(|roots| roots.get(usize::from(nth)).copied())
-                    .ok_or(DeclineKind::CylHoleFeature)?;
+                    let end = [edge, (edge + 1) % n]
+                        .into_iter()
+                        .find(|k| on_class.contains(k))
+                        .map(|k| ring[k]);
+                    let cut = arc_roots(edge, end)
+                        .and_then(|roots| roots.get(usize::from(nth)).copied())
+                        .ok_or(DeclineKind::CylHoleFeature)?;
                     let mu = sigma * if ccw { 1 } else { -1 };
                     let climb = section_climb(jd, cyl, def, nrm, cut)?;
                     cuts.push((cut, i32::from(climb) != mu));
@@ -735,8 +840,8 @@ fn cycle_on_class(
                 let crate::combinatorics::Wall::Ruling {
                     cyl: ncyl,
                     side,
+                    up: r_up,
                     plane: j,
-                    ..
                 } = nr.walls[edge]
                 else {
                     return Err(DeclineKind::CylHoleFeature);
@@ -752,13 +857,9 @@ fn cycle_on_class(
                 let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
                 let cut = combinatorics::crossing_on_ruling(jd, wdef, wc, j, ncyl, side)
                     .map_err(|_| DeclineKind::CylHoleFeature)?;
-                // Which way the hole runs from here: the travel's axis sense, then the winding.
-                // The side the edge leaves comes from the walk, for the same reason the run's
-                // flank does.
-                let s0 = i32::from(from);
-                let tau = axis_of(if s0 * fs < 0 { 1 } else { -1 });
-                // The face occupies `material_theta_sign`; the hole is the other way.
-                let hole_ccw = material_theta_sign(cf.orient_sign, tau as i8) < 0;
+                // Which way the hole runs from here: the face occupies `material_theta_sign` of the
+                // ruling's own travel (the producer's, as for an arc), and the hole is the other way.
+                let hole_ccw = material_theta_sign(cf.orient_sign, if r_up { 1 } else { -1 }) < 0;
                 cuts.push((cut, hole_ccw));
             }
         }

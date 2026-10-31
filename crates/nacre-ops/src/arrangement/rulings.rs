@@ -96,14 +96,6 @@ pub(super) fn rulings_on_class(
     Ok((out, grazes))
 }
 
-/// The θ side a cycle's arc lies on, seen from the node where it meets a ruling: an arc arriving
-/// counter-clockwise came from smaller θ (`−1`), one departing counter-clockwise goes to larger θ
-/// (`+1`) — the flank of an on-line run, read from the arc's own sense (`Wall::Arc`'s `ccw`)
-/// rather than from a coordinate, because a global "side" does not exist on a cylinder.
-fn arc_flank(ccw: bool, arriving: bool) -> i8 {
-    if ccw == arriving { -1 } else { 1 }
-}
-
 /// What one side's sweep states: the ruling's pieces (its own vocabulary) and, for a plane-pair
 /// line the face touches on this ruling, the face's side of that line (the plane vocabulary).
 type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);

@@ -509,14 +509,30 @@ fn a_gusset_whose_other_face_leans_along_the_section_high_above_its_centre() {
     );
 }
 
+/// The plate with the filleted square hole: `15160 − 40π` (`16000` less the hole, `100 − 4(4 − π)`,
+/// ten deep).
+fn filleted_hole_plate_volume() -> f64 {
+    15160.0 - 40.0 * pi()
+}
+
+/// What a gusset of area `area` wholly inside an operand `a` makes with it: Fuse is the operand,
+/// Cut takes the gusset out, Common is the gusset — and the gusset less the operand is nothing.
+fn buried(a: f64, area: f64) -> [[Want; 3]; 2] {
+    [
+        [Built(1, a), Built(1, a - area), Built(1, area)],
+        [Built(1, a), Built(0, 0.0), Built(1, area)],
+    ]
+}
+
 /// The plate with the filleted square hole and a gusset at `x ∈ [30, 31]` on `z = (y − 17)/4`, a
 /// plane through the corners `(15, 17, 0)` and `(25, 17, 0)` where two fillets meet the hole's
-/// walls `x = 15` and `x = 25` on the plate's bottom: the section of each of those fillets would
-/// end at a point four surfaces share, which the trace does not name. Refused as the oblique
-/// coverage's end, though the gusset — corners `(21, 1)`, `(33, 1)`, `(33, 4)` — stands far from
-/// the hole.
+/// walls `x = 15` and `x = 25` on the plate's bottom. The fillets' quarters lie at `y ≤ 17`, where
+/// the plane is below the plate: each section touches its quarter at the corner and passes outside
+/// it, so the quarter holds none of it — four surfaces meet at the corner, and the ring's corner
+/// is the point. The gusset — corners `(21, 1)`, `(33, 1)`, `(33, 4)`, area 18 — lies inside the
+/// plate, far from the hole.
 #[test]
-fn a_gusset_whose_plane_runs_through_a_fillets_corner_is_refused() {
+fn a_gusset_whose_plane_touches_a_fillet_at_its_corner() {
     let build = |m: &mut Model| {
         (
             filleted_hole_plate(m),
@@ -524,7 +540,120 @@ fn a_gusset_whose_plane_runs_through_a_fillets_corner_is_refused() {
         )
     };
     gate(build, Ok(4));
-    every_kind(build, REFUSED);
+    every_kind(build, buried(filleted_hole_plate_volume(), 18.0));
+}
+
+/// The same corners on the plane `z = (17 − y)/4`, which rises into the quarters at `y ≤ 17`: each
+/// section crosses its fillet's boundary at the corner, running from there into the face — the
+/// corner is a cut of the section, the hole opening on the side away from the face. The upper
+/// fillets' sections are below the plate (two recorded, not four). The gusset — corners `(1, 4)`,
+/// `(13, 1)`, `(13, 4)`, area 18 — lies inside the plate.
+#[test]
+fn a_gusset_whose_plane_runs_through_a_fillets_corner_into_it() {
+    let build = |m: &mut Model| {
+        (
+            filleted_hole_plate(m),
+            gusset(m, [(1.0, 4.0), (13.0, 1.0), (13.0, 4.0)], 30.0),
+        )
+    };
+    gate(build, Ok(2));
+    every_kind(build, buried(filleted_hole_plate_volume(), 18.0));
+}
+
+/// The fillet plate (one convex fillet of radius 5 about `(40, −20)`, its quarter at
+/// `y ∈ [−25, −20]`) and a gusset at `x ∈ [0, 1]` on `z = −3(y + 20)`, a plane through the corner
+/// `(45, −20, 0)` where the fillet meets the wall `x = 45` on the plate's bottom: the section runs
+/// from that corner into the quarter and leaves it across the top rim at `(43, −24, 12)`. The
+/// convex twin of the hole's corner — the face's outward is the cylinder's. Corners `(−23, 9)`,
+/// `(−21, 3)`, `(−21, 9)`, area 6, inside the plate.
+#[test]
+fn a_gusset_whose_plane_runs_through_a_convex_fillets_corner_into_it() {
+    let build = |m: &mut Model| {
+        (
+            rounded_plate(m, 1, 0),
+            gusset(m, [(-23.0, 9.0), (-21.0, 3.0), (-21.0, 9.0)], 0.0),
+        )
+    };
+    gate(build, Ok(1));
+    let plate = 54000.0 - 12.0 * (25.0 - 6.25 * pi());
+    every_kind(build, buried(plate, 6.0));
+}
+
+/// The same corner on `z = 3(y + 20)`, below the plate over the quarter: the section touches the
+/// convex fillet at the corner and passes outside it. Corners `(−19, 3)`, `(−17, 9)`, `(−19, 9)`,
+/// area 6, inside the plate.
+#[test]
+fn a_gusset_whose_plane_touches_a_convex_fillet_at_its_corner() {
+    let build = |m: &mut Model| {
+        (
+            rounded_plate(m, 1, 0),
+            gusset(m, [(-19.0, 3.0), (-17.0, 9.0), (-19.0, 9.0)], 0.0),
+        )
+    };
+    gate(build, Ok(1));
+    let plate = 54000.0 - 12.0 * (25.0 - 6.25 * pi());
+    every_kind(build, buried(plate, 6.0));
+}
+
+/// The bored plate and a gusset at `y ∈ [30, 31]` on `z = (x − 10)/4`, a plane through the bore's
+/// bottom rim at its seam vertex `(10, 8, 0)` and at `(10, 12, 0)`: a rim is read by its crossings
+/// ([`combinatorics::rim_crossings`]), so its one vertex on the plane is a root like any other.
+/// Corners `(z, x)` `(1, 14)`, `(4, 14)`, `(4, 26)`, area 18, inside the plate.
+#[test]
+fn a_gusset_whose_plane_runs_through_a_bores_seam_vertex() {
+    let build = |m: &mut Model| {
+        (
+            plate_with_bore(m),
+            gusset_zx(m, [(1.0, 14.0), (4.0, 14.0), (4.0, 26.0)], 30.0),
+        )
+    };
+    gate(build, Ok(1));
+    every_kind(build, buried(bored(), 18.0));
+}
+
+/// The plate `[0,40]²×[0,10]` with a bore of radius 5 about `(10, 10)` whose part beyond `x = 13`
+/// is filled by a block — a D-shaped hole, its lateral bounded by two rulings at `(13, 6)` and
+/// `(13, 14)` where the flat wall cuts it. Volume `16000 − 10(25π − 25·acos(3/5) + 12)`.
+fn d_hole_plate(m: &mut Model) -> Handle<Solid> {
+    let plate = crate::fixtures::cuboid(
+        m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    m.rebuild_adjacency();
+    let bore = cylinder(
+        m,
+        [10.0, 10.0, -1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
+        5.0,
+        12.0,
+    );
+    let bored = op(m, BoolKind::Cut, plate, bore);
+    let block = block_over(
+        m,
+        &[(13.0, 4.0), (16.0, 4.0), (16.0, 16.0), (13.0, 16.0)],
+        0.0,
+        10.0,
+    );
+    op(m, BoolKind::Fuse, bored, block)
+}
+
+/// The D-shaped hole and a gusset at `x ∈ [30, 31]` on `z = (y − 14)/4`, a plane through the
+/// corner `(13, 14, 0)` where the bottom rim's arc meets the ruling: the arc ends on the plane and
+/// crosses it again inside, at `(7, 14, 0)` — the section enters the face at the corner and leaves
+/// it across that arc. Corners `(18, 1)`, `(30, 4)`, `(18, 4)`, area 18, inside the plate.
+#[test]
+fn a_gusset_whose_plane_runs_through_a_corner_and_across_its_arc() {
+    let build = |m: &mut Model| {
+        (
+            d_hole_plate(m),
+            gusset(m, [(18.0, 1.0), (30.0, 4.0), (18.0, 4.0)], 30.0),
+        )
+    };
+    gate(build, Ok(1));
+    let plate = 16000.0 - 10.0 * (25.0 * pi() - 25.0 * (0.6f64).acos() + 12.0);
+    every_kind(build, buried(plate, 18.0));
 }
 
 /// The fillet plate (one fillet of radius 5 about `(40, −20)`, `z ∈ [0, 12]`, volume

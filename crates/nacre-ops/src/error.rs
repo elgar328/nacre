@@ -392,12 +392,13 @@ pub enum RejectReason {
     /// So does one whose faces all have straight edges and stand, by the box of their corners,
     /// beyond the box of every lateral face of the cylinder, however the plane, extended, cuts the
     /// cylinder: through a plate's bore between its faces, across the bore's rims, through a
-    /// fillet's quarter. Refused:
+    /// fillet's quarter, through a corner where a lateral face's straight edge meets its arc (a
+    /// fillet meeting its wall, a flat wall cutting a bore). Refused:
     /// - a face on the plane not shown apart from a lateral face that way — reaching it, near it,
     ///   or bounded by a curved edge (the cap of a slanted cylinder);
-    /// - the plane touching a rim of a lateral face at a single point, or running through a corner
-    ///   of a lateral face's boundary, or a section in a shape the trace does not read
-    ///   ([`DeclineKind::ObliqueSection`]);
+    /// - the plane touching a rim of a lateral face at a single point, or touching a corner of a
+    ///   lateral face's boundary from inside the face, or a section in a shape the trace does not
+    ///   read ([`DeclineKind::ObliqueSection`]);
     /// - a ruling another cylinder leaves on the plane not shown apart from the section;
     /// - the plane sectioning two cylinders whose axes are not parallel, or sectioning one while it
     ///   lies across the axis of another — however far that other cylinder stands.
@@ -1012,11 +1013,12 @@ pub enum DeclineKind {
     Ruling,
     /// A lateral face's mark on a class **oblique** to its axis — the cylinder's section the class
     /// draws on its own arrangement ([`crate::planes::CylRecord::Sections`]) — in a shape this
-    /// road does not read: the plane runs through a corner of the face's boundary (a fourth surface
-    /// at the point the section would end on), the section crosses no boundary of a face without
-    /// two whole rims, the boundary crossings do not alternate, or a point of the section cannot be
-    /// stated (`Rat` overflow among them). Raised as [`RejectReason::ObliqueCylinderCut`] rather
-    /// than as a `TraceDeclined`: it is the oblique coverage's end, the sentence that name says.
+    /// road does not read: the section touches a corner of the face's boundary from inside the
+    /// face, or meets a corner other than a ruling meeting an arc, the section crosses no boundary
+    /// of a face whose angles go round the cylinder without two whole rims, the boundary crossings
+    /// do not alternate, or a point of the section cannot be stated (`Rat` overflow among them).
+    /// Raised as [`RejectReason::ObliqueCylinderCut`] rather than as a `TraceDeclined`: it is the
+    /// oblique coverage's end, the sentence that name says.
     ObliqueSection,
 }
 

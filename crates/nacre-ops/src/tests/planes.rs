@@ -151,6 +151,39 @@ fn an_arcs_reach_is_its_own_and_not_its_complements() {
     );
 }
 
+/// **Which extents leave an angle bare** — what the oblique trace reads of a face its section
+/// crosses nowhere. Every arc short of the whole circle does, a half turn and more than a half turn
+/// too; an arc whose two ends point one way is the whole circle, as [`arc_contains`] reads it, and
+/// leaves none — read the other way, a face holding the whole section would answer that it holds
+/// none of it. The axis's sense does not change any answer.
+#[test]
+fn an_extent_leaves_an_angle_bare_unless_it_goes_round() {
+    let z = |v: i128| Rat::from_int(v);
+    let x = [z(1), z(0), z(0)];
+    let y = [z(0), z(1), z(0)];
+    for axis in [[z(0), z(0), z(1)], [z(0), z(0), z(-3)]] {
+        let arc = |from: [Rat; 3], to: [Rat; 3]| Theta::Arc(RimArc { from, to });
+        assert_eq!(arc(x, y).misses_an_angle(&axis), Some(true), "a quarter");
+        assert_eq!(
+            arc(y, x).misses_an_angle(&axis),
+            Some(true),
+            "three quarters"
+        );
+        assert_eq!(
+            arc(x, [z(-1), z(0), z(0)]).misses_an_angle(&axis),
+            Some(true),
+            "a half turn"
+        );
+        assert_eq!(
+            arc(x, [z(2), z(0), z(0)]).misses_an_angle(&axis),
+            Some(false),
+            "two ends one way: the whole circle"
+        );
+        assert_eq!(Theta::Whole.misses_an_angle(&axis), Some(false));
+        assert_eq!(Theta::At(y).misses_an_angle(&axis), Some(true));
+    }
+}
+
 /// **A loop with points that do not turn still states its own outward direction.**
 ///
 /// Two faces sharing an edge list the same vertices along it, so a pad that covers part of a
