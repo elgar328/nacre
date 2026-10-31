@@ -193,28 +193,34 @@ pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[Rin
 }
 
 /// **The box an arc on class `wc` lies in** — the box of its piece ([`crate::planes::lateral_box`]
-/// of the circle's axis parameter × the arc's angle): the arc's own reach on each axis, rounded
-/// outward to a rational, so never narrower than the arc. [`crate::planes::Theta::Whole`] is the
-/// whole circle, whose box is `r·|e_k⊥|` about its centre on axis `k` — no wider than `± r`. `None`
-/// for a class or circle with no exact description.
+/// of the axis band its section sweeps × the arc's angle): the arc's own reach on each axis, rounded
+/// outward to a rational, so never narrower than the arc. The band is
+/// [`crate::planes::trace_band`]'s — the circle's own station `[t, t]` across the axis, `t ± Δ` on
+/// an oblique section, whose points rise and fall along the axis as they go round.
+/// [`crate::planes::Theta::Whole`] is the whole section, whose box is `r·|e_k⊥|` about its centre on
+/// axis `k` widened by the band. `None` for a class or circle with no exact description.
 pub(crate) fn arc_box_rat(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     def: &nacre_topo::CylinderDef,
     theta: crate::planes::Theta,
 ) -> Option<[[nacre_exact::Rat; 3]; 2]> {
-    let t = crate::planes::axis_param_of_plane(&jd.world_rat(wc)?, def)?;
+    let band = crate::planes::trace_band(&jd.world_rat(wc)?, def)?;
     crate::planes::lateral_box(
         def,
         &crate::planes::Footprint {
-            span: Some([t, t]),
+            span: Some(band),
             theta,
         },
     )
 }
 
 /// **A contribution's angular extent as the two radial vectors [`crate::planes::RimArc`] speaks**
-/// — its ends realized and taken from the circle's centre.
+/// — its ends realized and taken from the axis: `p − centre` with its part along `axis` taken off,
+/// the radial a [`crate::planes::RimArc`] is made of. Across the axis the ends sit at the centre's
+/// height and nothing is taken off; on an oblique section they rise and fall about it, and the
+/// axial part would be counted again by the angular extent, which adds the band along the axis on
+/// its own.
 ///
 /// `ends` run counter-clockwise about the cylinder's axis — the convention `RimArc` carries, so
 /// no reordering: a contribution's own order (`arrangement::CircleTrace::arc` states it), or a
@@ -226,6 +232,7 @@ pub(crate) fn rim_arc_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     centre: &[nacre_exact::Rat; 3],
+    axis: &[nacre_exact::Rat; 3],
     ends: [NodeId; 2],
 ) -> crate::planes::Theta {
     if ends[0] == ends[1] {
@@ -237,7 +244,7 @@ pub(crate) fn rim_arc_of(
         for k in 0..3 {
             v[k] = v[k].checked_sub(centre[k])?;
         }
-        Some(v)
+        nacre_exact::off_axis_rat(&v, axis)
     };
     (|| {
         Some(crate::planes::Theta::Arc(crate::planes::RimArc {
@@ -276,7 +283,7 @@ pub(crate) fn ring_box_points_hp(
             };
             let theta = circle_centre_rat(jd, wc, &ac.def)
                 .map_or(crate::planes::Theta::Whole, |c| {
-                    rim_arc_of(jd, cyls, &c, ends)
+                    rim_arc_of(jd, cyls, &c, &ac.def.dir(), ends)
                 });
             // An arc whose own box cannot be formed takes its circle's, which holds it too.
             let [lo, hi] = arc_box_rat(jd, wc, &ac.def, theta)

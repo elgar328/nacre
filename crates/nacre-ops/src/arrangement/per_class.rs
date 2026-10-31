@@ -277,7 +277,7 @@ fn crossing_measured(
         })
     })();
     let oblique = !crate::planes::class_carries_circle(&n, &circle_def.dir());
-    let circle_band = trace_band(&coeffs, circle_def);
+    let circle_band = crate::planes::trace_band(&coeffs, circle_def);
     let apart = |theta: crate::planes::Theta| -> bool {
         match (&ruling_piece, circle_band) {
             (Some(rp), Some(band)) => crate::planes::pieces_clear(
@@ -339,7 +339,7 @@ fn crossing_measured(
     }
     for (_, _, extent) in &circle.merged {
         let theta = extent.map_or(crate::planes::Theta::Whole, |ends| {
-            combinatorics::rim_arc_of(jd, cyls, &centre, ends)
+            combinatorics::rim_arc_of(jd, cyls, &centre, &circle_def.dir(), ends)
         });
         if apart(theta) {
             continue;
@@ -352,35 +352,6 @@ fn crossing_measured(
         }
     }
     Some(false)
-}
-
-/// **The band of its own axis a cylinder's closed trace on the plane `coeffs` sweeps** —
-/// `[t − Δ, t + Δ]` in the axis parameter of the raw `def.dir()`, about the plane's axis meet `t`.
-/// A point of the cylinder is `o + s·m + r·û` (`û` a unit radial vector), and on the plane
-/// `s = t − r(n·û)/(n·m)`; `n·û` peaks at `|n⊥|`, the normal off the axis, so `Δ = r|n⊥|/|n·m|`,
-/// formed as `Δ²` and rounded outward ([`crate::planes::sqrt_at_least`]) — never narrower than the
-/// ellipse. Across the axis `Δ = 0`: the circle's own `[t, t]`, with no radius asked. `None` is a
-/// plane along the axis, `Rat` overflow, or a radius wider than `Rat` on an oblique plane.
-fn trace_band(
-    coeffs: &[nacre_exact::Rat; 4],
-    def: &nacre_topo::CylinderDef,
-) -> Option<[nacre_exact::Rat; 2]> {
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let m = def.dir();
-    let t = crate::planes::axis_param_of_plane(coeffs, def)?;
-    if crate::planes::class_carries_circle(&n, &m) {
-        return Some([t, t]);
-    }
-    let nperp = nacre_exact::off_axis_rat(&n, &m)?;
-    let nm = nacre_exact::dot3_rat(&n, &m)?;
-    let nm2 = nm.checked_mul(nm)?;
-    let delta2 = def
-        .r2()
-        .narrow()?
-        .checked_mul(nacre_exact::dot3_rat(&nperp, &nperp)?)?
-        .checked_mul(nacre_exact::Rat::new(nm2.denom(), nm2.numer())?)?;
-    let delta = crate::planes::sqrt_at_least(delta2)?;
-    Some([t.checked_sub(delta)?, t.checked_add(delta)?])
 }
 
 /// How many `(circle, ruling)` pairs the net above looked at, and how many it **could not

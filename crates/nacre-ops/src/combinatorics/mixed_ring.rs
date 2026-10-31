@@ -147,7 +147,7 @@ impl ChartCorner {
 /// half-open one, spelled once in [`nacre_geom::intersect::ray_step_crossing`] — the corner is
 /// counted by the step that leaves it upward. A line step reads that off its other end's sign;
 /// an arc whose root is its own end reads it off its tangent there (the CCW tangent's side of
-/// the ray's plane is minus [`ruling_side`], `arc_departure_side`'s
+/// the ray's plane, [`nacre_exact::quad::ccw_tangent_side`] — `arc_departure_side`'s
 /// convention). Abstaining at the corner in both arms is not harmless: eight `NoClearRay`
 /// cells of the crossing census were exactly that abstention exhausting every probe.
 ///
@@ -355,15 +355,23 @@ pub(crate) fn point_in_mixed_ring(
                     // clothing**, and it takes the rule the line steps and the planar roads take
                     // (`ray_step_crossing`): the corner is counted by the step that leaves it
                     // upward. The arc leaves an end along its tangent, whose side of the ray's
-                    // plane is minus `ruling_side` for the CCW tangent (`arc_departure_side`'s
-                    // convention): `lo` departs CCW at `−rs`, `hi` — walked backwards — at `+rs`.
+                    // plane is the section's counter-clockwise tangent against the ray plane's
+                    // normal (`arc_departure_side`'s convention, the class's own section whatever
+                    // its tilt): `lo` departs CCW at `ts`, `hi` — walked backwards — at `−ts`.
                     // With the end on the ray and right of the probe, that sign is the virtual
                     // tangent step's `side` too (`t × (q − E) = ty·(Ex − qx)`), so the call is
                     // `ray_step_crossing(Zero, ty, ty)` and no second cross product is spelled.
-                    // A horizontal tangent (`rs` zero) is the genuine second-order tie.
+                    // A tangent along the ray (`ts` zero) is the genuine second-order tie.
                     let departs_across = |end: &(MeetLine, QuadVal), ccw: bool| -> Option<bool> {
-                        let rs = ruling_side(&ray_plane, &arc.def, (&end.0, &end.1))?;
-                        let ty = if (if ccw { -rs } else { rs }) > 0 {
+                        let ts = nacre_exact::quad::ccw_tangent_side(
+                            &[wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]],
+                            e2,
+                            &o,
+                            &m,
+                            (&end.0, &end.1),
+                        )
+                        .filter(|&ts| ts != 0)?;
+                        let ty = if (if ccw { ts } else { -ts }) > 0 {
                             Orient::Positive
                         } else {
                             Orient::Negative

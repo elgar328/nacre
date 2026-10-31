@@ -467,17 +467,19 @@ fn incident_plane_classes(
     classes
 }
 
-/// **Which side of `q` an arc leaves to**: the arc starts at `node` — a pierce point of
-/// cylinder `cyl` on the line `q` cuts — and travels counter-clockwise about the axis when `ccw`.
-/// Its tangent there is `±m̂ × (a − c)`, and the side of `q` that points to is the side the whole
-/// excursion lies on (a circle meets a plane in two points).
+/// **Which side of `q` an arc leaves to**: the arc lies on class `p` — the cylinder's section by
+/// `p`'s plane, a circle across the axis or an ellipse oblique to it — starts at `node`, a pierce
+/// point of cylinder `cyl` on the line `q` cuts, and travels counter-clockwise about the axis when
+/// `ccw`. The side of `q` its tangent there points to is the side the whole excursion lies on (a
+/// plane section of the cylinder meets a second plane in at most two points).
 ///
-/// Coordinate-free: `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))` (the axial part of `a − o` drops
-/// against `m`), so the counter-clockwise tangent's side is **minus** [`ruling_side`]
-/// at `a` — the very predicate that names which ruling a lateral point lies on — and a clockwise
-/// arc's is plus. Then the same canonical → outward bridge as [`side_of`] ([`Judge::outward_fix`]), so
-/// the answer sits in the walk's frame. `None` when the arc is tangent to `q` at `a`
-/// (`ruling_side` reads zero) or a description is missing — the walk answers `Unnameable`.
+/// Coordinate-free: the counter-clockwise tangent's component along `n_q` is
+/// [`nacre_exact::quad::ccw_tangent_side`] — across the axis that is minus [`ruling_side`] at the
+/// node, `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))`, the very predicate that names which ruling a
+/// lateral point lies on — and a clockwise arc's is its negation. Then the same canonical → outward
+/// bridge as [`side_of`] ([`Judge::outward_fix`]), so the answer sits in the walk's frame. `None`
+/// when the arc is tangent to `q` at the node (the tangent's side reads zero) or a description is
+/// missing — the walk answers `Unnameable`.
 ///
 /// Not `direction::arc_side`, which is the *turn* of an arc against a segment in the face's own
 /// plane (the winding walk's question, in the stored frame); this is a half-space of `q`.
@@ -485,15 +487,31 @@ pub(crate) fn arc_departure_side(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     node: NodeId,
+    p: usize,
     q: usize,
     cyl: usize,
     ccw: bool,
 ) -> Option<i8> {
     let def = &cyls.get(cyl)?.def;
-    let w = jd.world_rat(q)?;
+    // A class with no world statement carries no oblique section — the gate records one only on
+    // a named class (`planes::CylRecord::Sections`) — so an arc on it is a circle and its normal is
+    // the axis: the answer the circle's own formula gives.
+    let np = jd
+        .world_rat(p)
+        .map_or_else(|| def.dir(), |w| [w[0], w[1], w[2]]);
+    let nq = jd.world_rat(q)?;
     let (line, sv) = pierce_meet(jd, cyl, def, node)?.into_exact()?;
-    let rs = ruling_side(&w, def, (&line, &sv))?;
-    Some(jd.outward_fix(q)? * if ccw { -rs } else { rs })
+    let ts = nacre_exact::quad::ccw_tangent_side(
+        &np,
+        &[nq[0], nq[1], nq[2]],
+        &def.origin(),
+        &def.dir(),
+        (&line, &sv),
+    )?;
+    if ts == 0 {
+        return None;
+    }
+    Some(jd.outward_fix(q)? * if ccw { ts } else { -ts })
 }
 
 // ---------------------------------------------------------------------------

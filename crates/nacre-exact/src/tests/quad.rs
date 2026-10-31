@@ -1473,3 +1473,74 @@ proptest::proptest! {
         }
     }
 }
+
+/// **A plane section's radial and counter-clockwise tangent, read at its points** — hand-derived.
+/// The cylinder stands on the `z` axis, radius 2. The plane `z = y/4 + 5/2` cuts it in an ellipse;
+/// its meet with `y = 0` is `(±2, 0, 5/2)`. At `(2, 0, 5/2)` the radial is `(2, 0, 0)` and the
+/// tangent along `n × g` is `(0, 2, 1/2)` — counter-clockwise about `+z` (`+y` at angle 0) and
+/// climbing, because the plane rises with `y`; at `(−2, 0, 5/2)` both are negated. So against
+/// `d = +z` the tangent reads `+1` at the first and `−1` at the second, against `d = +y` it reads
+/// `+1` at the first; the plane's other facing reads the same. Against a vector along the axis the
+/// radial reads `0` (nothing off the axis), and `(1, 0, 1)` reads as `+x`. A plane across the axis
+/// is the circle's case — at `(2, 0, 5)` its tangent is `+y`, with no climb. A plane along the
+/// axis has no section.
+#[test]
+fn a_sections_radial_and_tangent_are_read_off_the_axis() {
+    let (o, m) = ([ri(0); 3], [ri(0), ri(0), ri(1)]);
+    let radius = BigRat::from(ri(4));
+    let at = |p1: [Rat; 4], x_positive: bool| -> (MeetLine, QuadVal) {
+        let CylinderMeet::Pair { line, s } =
+            plane_plane_cylinder(&p1, &[ri(0), ri(1), ri(0), ri(0)], &o, &m, &radius)
+                .expect("fits")
+        else {
+            panic!("the plane y = 0 meets the section twice")
+        };
+        let pick = s
+            .into_iter()
+            .find(|v| (line.point_approx(v)[0] > 0.0) == x_positive)
+            .expect("one root on each side of x = 0");
+        (line, pick)
+    };
+    let slant = [ri(0), r(-1, 4), ri(1), r(-5, 2)];
+    let n = [ri(0), r(-1, 4), ri(1)];
+    let flipped = [ri(0), r(1, 4), ri(-1)];
+    let (z, y, x) = (
+        [ri(0), ri(0), ri(1)],
+        [ri(0), ri(1), ri(0)],
+        [ri(1), ri(0), ri(0)],
+    );
+    let (east, west) = (at(slant, true), at(slant, false));
+    let read = |n: &[Rat; 3], d: &[Rat; 3], p: &(MeetLine, QuadVal)| {
+        ccw_tangent_side(n, d, &o, &m, (&p.0, &p.1)).expect("no overflow")
+    };
+    assert_eq!(read(&n, &z, &east), 1, "climbing at angle 0");
+    assert_eq!(read(&n, &z, &west), -1, "falling at angle π");
+    assert_eq!(read(&n, &y, &east), 1, "counter-clockwise at angle 0 is +y");
+    assert_eq!(read(&n, &y, &west), -1);
+    assert_eq!(read(&flipped, &z, &east), 1, "either facing");
+    assert_eq!(read(&flipped, &y, &west), -1, "either facing");
+    let side = |v: &[Rat; 3], p: &(MeetLine, QuadVal)| {
+        axial_side(v, &o, &m, (&p.0, &p.1)).expect("no overflow")
+    };
+    assert_eq!(
+        side(&z, &east),
+        0,
+        "a vector along the axis has no radial part"
+    );
+    assert_eq!(side(&[ri(1), ri(0), ri(1)], &east), 1);
+    assert_eq!(side(&[ri(1), ri(0), ri(1)], &west), -1);
+    assert_eq!(side(&x, &east), 1);
+    let across = [ri(0), ri(0), ri(1), ri(-5)];
+    let circle = at(across, true);
+    assert_eq!(read(&[ri(0), ri(0), ri(1)], &y, &circle), 1);
+    assert_eq!(
+        read(&[ri(0), ri(0), ri(1)], &z, &circle),
+        0,
+        "a circle does not climb"
+    );
+    assert_eq!(
+        ccw_tangent_side(&x, &y, &o, &m, (&circle.0, &circle.1)),
+        None,
+        "a plane along the axis has no section"
+    );
+}

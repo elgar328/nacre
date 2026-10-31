@@ -111,10 +111,16 @@ pub fn axis_plane_meet(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Option<
 /// **The part of `v` perpendicular to the direction `m`** — `v − (v·m / m·m)·m`, exact: a point's
 /// radial vector about a cylinder's axis is this of the point less the axis origin, and a reach's
 /// radial term peaks along this of the direction asked. `None` for `m = 0` or where a value leaves
-/// `i128`.
+/// `i128`. A `v` already across `m` is returned as it is, with no arithmetic past the dot product —
+/// the common case of a plane across a cylinder's axis.
 pub fn off_axis_rat(v: &[Rat; 3], m: &[Rat; 3]) -> Option<[Rat; 3]> {
     let mm = dot3_rat(m, m)?;
-    let k = dot3_rat(v, m)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    let inv = Rat::new(mm.denom(), mm.numer())?;
+    let vm = dot3_rat(v, m)?;
+    if vm == Rat::from_int(0) {
+        return Some(*v);
+    }
+    let k = vm.checked_mul(inv)?;
     let mut out = *v;
     for i in 0..3 {
         out[i] = v[i].checked_sub(k.checked_mul(m[i])?)?;

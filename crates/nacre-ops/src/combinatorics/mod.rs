@@ -216,10 +216,12 @@ pub(crate) struct ArcDir {
     cyl: usize,
     /// The end this direction is taken at, exactly.
     at: (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-    /// The circle's centre on `P` — rational, because a circle bound's plane is ⊥ to the axis.
+    /// Where the axis meets `P` — the circle's centre across the axis, the ellipse's on an oblique
+    /// section; rational either way, and a point of the axis, which is what the readers use it as.
     centre: [nacre_exact::Rat; 3],
-    /// The cylinder's axis direction — what `ccw` is about, and what the travel tangent at `at`
-    /// runs along as `m × (N − c)` ([`tangent_travel_agrees`]).
+    /// The cylinder's axis direction — what `ccw` is about, and what the radial at `at` is taken
+    /// off ([`nacre_exact::quad::axial_side`]; the travel tangent is
+    /// [`nacre_exact::quad::ccw_tangent_side`]'s, [`tangent_travel_agrees`]).
     axis: [nacre_exact::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///

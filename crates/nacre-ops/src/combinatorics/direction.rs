@@ -371,17 +371,17 @@ pub(crate) fn turn(
             },
         ) => sa * sb * jd.plane_pair_dir_sign(p, *ca, *cb) * frame,
         // **A segment against an arc needs no new primitive, and the algebra says why.**
-        // A circle bound's plane is ⊥ to the axis, so `n_P ∥ m` — see
-        // [`crate::planes::class_carries_circle`] for what actually holds that (the gate, not
-        // this module). The arc's tangent is
-        // `T = ±(m × r)` with `r = x − c`, the segment's direction
-        // `d = n_P × n_carrier` is ⊥ to `m`, and BAC-CAB collapses the cross product:
+        // The arc is the cylinder's section by `P` — a circle across the axis, an ellipse on an
+        // oblique plane. Its counter-clockwise tangent at `x` is `T = sign(n_P·m)·(n_P × g)`, `g`
+        // the radial `(x − c)⊥` ([`nacre_exact::quad::ccw_tangent_side`]), the segment's
+        // direction `d = n_P × n_carrier` lies in `P` (`d · n_P = 0`), and BAC-CAB collapses the
+        // cross product:
         //
-        //   (d × T) · m = (d × (m × r)) · m = (m (d·r) − r (d·m)) · m = (d·r)(m·m)
+        //   (d × (n_P × g)) · n_P = (n_P (d·g) − g (d·n_P)) · n_P = (d·g)|n_P|²
         //
-        // so the whole turn is `sign(d · (x − c))` — **one** `a + b√c` question, and
-        // `quad::plane_side` is exactly it: the plane with normal `d` through the centre, measured
-        // at the pierce point.
+        // so the whole turn is `sign(d · g)` times `sign(n_P·m)` (the arc's `axis_up`) — **one**
+        // `a + b√c` question, and [`nacre_exact::quad::axial_side`] is exactly it: the plane
+        // through the axis with normal `d⊥`, measured at the pierce point.
         (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc)) => {
             sense * arc_side(jd, p, *carrier, arc)?
         }
@@ -502,9 +502,11 @@ fn ruling_line_turn(
 /// whole result leaves the whole crate green. A global flip really is absorbed.
 /// **At a node where a line and an arc are tangent, do their travel directions agree?** — the
 /// sign of `d · t`: `d` the line's travel direction (`sense` along [`stored_line_dir`] — the
-/// direction [`order_pinned`] orders by and [`arc_side`] reads), and
-/// `t = way · (m × (N − c))` the arc's travel tangent at its node `N` (`way` is `+1` for
-/// counter-clockwise travel about the axis `m`), formed in one radical from `N = base + s·dir`.
+/// direction [`order_pinned`] orders by and [`arc_side`] reads), and `t` the arc's travel tangent
+/// at its node `N` — `way` (`+1` for counter-clockwise travel about the axis `m`) times the
+/// section's counter-clockwise tangent in `P`
+/// ([`nacre_exact::quad::ccw_tangent_side`]; `m × (N − c)` when `P` is across the axis), formed in
+/// one radical from `N = base + s·dir`.
 ///
 /// Asked only where [`turn`] is `0` for the pair — the line is tangent to the circle at `N`, so
 /// the two directions are parallel and the dot decides. `Some(false)`: **opposite** — a smooth
@@ -524,22 +526,20 @@ pub(crate) fn tangent_travel_agrees(
     sense: i8,
     arc: &ArcDir,
 ) -> Option<bool> {
-    use nacre_exact::{Orient, quad::QuadVal};
     let d = stored_line_dir(jd, p, carrier)?;
+    let n = jd.stored_world_rat(p)?;
     let (line, s) = &arc.at;
-    let mut rel = line.base();
-    for (r, c) in rel.iter_mut().zip(arc.centre.iter()) {
-        *r = r.checked_sub(*c)?;
-    }
-    let u = nacre_exact::cross3_rat(&arc.axis, &rel)?;
-    let v = nacre_exact::cross3_rat(&arc.axis, &line.dir())?;
-    let dot = QuadVal::from_rat(nacre_exact::dot3_rat(&d, &u)?)
-        .checked_add(&s.checked_mul_rat(nacre_exact::dot3_rat(&d, &v)?)?)?;
     let way = if arc.ccw { 1i8 } else { -1 };
-    match dot.sign() {
-        Orient::Positive => Some(sense * way > 0),
-        Orient::Negative => Some(sense * way < 0),
-        Orient::Zero => None,
+    match nacre_exact::quad::ccw_tangent_side(
+        &[n[0], n[1], n[2]],
+        &d,
+        &arc.centre,
+        &arc.axis,
+        (line, s),
+    )? {
+        1 => Some(sense * way > 0),
+        -1 => Some(sense * way < 0),
+        _ => None,
     }
 }
 
@@ -698,11 +698,11 @@ fn arc_side(
     carrier: usize,
     arc: &ArcDir,
 ) -> Result<i8, BoolError> {
-    use nacre_exact::{Orient, Rat};
     let wide = || reject(RejectReason::WitnessNotRational);
     let ArcDir {
         at,
         centre,
+        axis,
         axis_up,
         ccw,
         ..
@@ -711,23 +711,15 @@ fn arc_side(
     // below, which speaks the stored frame; `Judge::world_rat` speaks the canonical one and points
     // the other way on half the classes. See [`Judge::stored_world_rat`].
     let d = stored_line_dir(jd, p, carrier).ok_or_else(wide)?;
-    let plane = (|| -> Option<[Rat; 4]> {
-        Some([
-            d[0],
-            d[1],
-            d[2],
-            Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&d, centre)?)?,
-        ])
-    })()
-    .ok_or_else(wide)?;
-    let side = match nacre_exact::quad::plane_side(&plane, &at.0, &at.1) {
-        Orient::Positive => 1i8,
-        Orient::Negative => -1,
-        // The segment is **tangent** to the circle at this node. The split cuts only at
-        // transversal crossings, so this is a shape the producer should not have made — but it is
-        // still a *shape* answer, and `0` is what the callers read as "collinear".
-        Orient::Zero => 0,
-    };
+    // The radial at the node against `d` — the plane through the axis with normal `d⊥`. Across the
+    // axis `d ⊥ m` and that is the plane through the circle's centre with normal `d`; on an oblique
+    // section the node sits off the centre's height, and only the radial part of `N − c` says
+    // which side of the line the arc bulges to.
+    //
+    // `0`: the segment is **tangent** to the arc at this node. The split cuts only at transversal
+    // crossings, so this is a shape the producer should not have made — but it is still a *shape*
+    // answer, and `0` is what the callers read as "collinear".
+    let side = nacre_exact::quad::axial_side(&d, centre, axis, (&at.0, &at.1)).ok_or_else(wide)?;
     let up = if *axis_up { 1i8 } else { -1 };
     let way = if *ccw { 1i8 } else { -1 };
     Ok(side * up * way * jd.planes[p].frame_sign)

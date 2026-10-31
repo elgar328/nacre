@@ -114,10 +114,16 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
             self.nodes,
             self.cut,
             |i| match (self.carrier)(i) {
-                LineCarrier::Arc { cyl, ccw } => {
-                    arc_departure_side(self.jd, self.cyls, self.nodes[i], self.cut, cyl, ccw)
-                        .map(EdgeMeet::Departs)
-                }
+                LineCarrier::Arc { cyl, ccw } => arc_departure_side(
+                    self.jd,
+                    self.cyls,
+                    self.nodes[i],
+                    self.face,
+                    self.cut,
+                    cyl,
+                    ccw,
+                )
+                .map(EdgeMeet::Departs),
                 LineCarrier::Plane(_) | LineCarrier::Ruling { .. } => Some(EdgeMeet::On),
             },
             |i, on_end| {

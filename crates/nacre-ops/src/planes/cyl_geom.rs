@@ -56,6 +56,35 @@ pub(crate) fn axis_param_of_plane(
     nacre_exact::axis_param_of_plane(coeffs, &def.origin(), &def.dir())
 }
 
+/// **The band of its own axis a cylinder's closed trace on the plane `coeffs` sweeps** —
+/// `[t − Δ, t + Δ]` in the axis parameter of the raw `def.dir()`, about the plane's axis meet `t`.
+/// A point of the cylinder is `o + s·m + r·û` (`û` a unit radial vector), and on the plane
+/// `s = t − r(n·û)/(n·m)`; `n·û` peaks at `|n⊥|`, the normal off the axis, so `Δ = r|n⊥|/|n·m|`,
+/// formed as `Δ²` and rounded outward ([`sqrt_at_least`]) — never narrower than the
+/// ellipse. Across the axis `Δ = 0`: the circle's own `[t, t]`, with no radius asked. `None` is a
+/// plane along the axis, `Rat` overflow, or a radius wider than `Rat` on an oblique plane.
+pub(crate) fn trace_band(
+    coeffs: &[nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 2]> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let m = def.dir();
+    let t = axis_param_of_plane(coeffs, def)?;
+    if class_carries_circle(&n, &m) {
+        return Some([t, t]);
+    }
+    let nperp = nacre_exact::off_axis_rat(&n, &m)?;
+    let nm = nacre_exact::dot3_rat(&n, &m)?;
+    let nm2 = nm.checked_mul(nm)?;
+    let delta2 = def
+        .r2()
+        .narrow()?
+        .checked_mul(nacre_exact::dot3_rat(&nperp, &nperp)?)?
+        .checked_mul(nacre_exact::Rat::new(nm2.denom(), nm2.numer())?)?;
+    let delta = sqrt_at_least(delta2)?;
+    Some([t.checked_sub(delta)?, t.checked_add(delta)?])
+}
+
 /// **Does this class carry that cylinder's *circle*?** — its normal is parallel to the axis, so
 /// the section is a circle and not an ellipse. Exact and **total** ([`nacre_exact::axis_relation`]
 /// clears denominators into `BigInt`), so a caller's `false` means the geometry, never the width.

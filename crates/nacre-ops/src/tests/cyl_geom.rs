@@ -1,4 +1,5 @@
-//! Unit tests of the lateral face's chart geometry — the half-open rim-arc test the cover reads.
+//! Unit tests of the lateral face's chart geometry — the half-open rim-arc test the cover reads,
+//! and the band a closed trace sweeps.
 
 use super::*;
 use nacre_exact::Rat;
@@ -147,4 +148,44 @@ fn an_arc_with_two_radicals_reads_like_its_angles() {
             );
         }
     }
+}
+
+/// **The band a closed trace sweeps along its own axis.** The cylinder stands on the `z` axis,
+/// radius 2. On `z = 5` the trace is the circle at station 5. On `z = y/4 + 5/2` it is an ellipse
+/// over `z ∈ [2, 3]`, `t ± Δ` with `Δ = 2·(1/4)/1`. With the raw axis `(0, 0, 2)` the stations
+/// halve and so does `Δ` — `|n·m|` doubles. With radius `√2` and `z = y + 5` the band is
+/// `5 ± √2`, rounded outward to rationals. A plane along the axis sweeps no band.
+#[test]
+fn a_traces_band_is_its_axis_meet_widened_by_the_ellipses_reach() {
+    let z = |v: i128| Rat::from_int(v);
+    let cylinder = |dir: [Rat; 3], r2: Rat| {
+        nacre_topo::CylinderDef::new(
+            [z(0); 3],
+            dir,
+            [z(1), z(0), z(0)],
+            nacre_exact::BigRat::from(r2),
+        )
+        .unwrap()
+    };
+    let up = cylinder([z(0), z(0), z(1)], z(4));
+    assert_eq!(
+        trace_band(&[z(0), z(0), z(1), z(-5)], &up),
+        Some([z(5), z(5)])
+    );
+    let slant = [z(0), q(-1, 4), z(1), q(-5, 2)];
+    assert_eq!(trace_band(&slant, &up), Some([z(2), z(3)]));
+    let long = cylinder([z(0), z(0), z(2)], z(4));
+    assert_eq!(trace_band(&slant, &long), Some([z(1), q(3, 2)]));
+    let thin = cylinder([z(0), z(0), z(1)], z(2));
+    let [lo, hi] = trace_band(&[z(0), z(-1), z(1), z(-5)], &thin).unwrap();
+    let (below, above) = (z(5).checked_sub(lo).unwrap(), hi.checked_sub(z(5)).unwrap());
+    for d in [below, above] {
+        assert!(d.checked_mul(d).unwrap() >= z(2), "never narrower than √2");
+        assert!(d < q(1415, 1000), "and near it");
+    }
+    assert_eq!(
+        trace_band(&[z(1), z(0), z(0), z(-1)], &up),
+        None,
+        "along the axis"
+    );
 }

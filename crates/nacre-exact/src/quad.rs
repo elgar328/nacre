@@ -750,16 +750,70 @@ pub fn ruling_side_signed(
 ) -> Option<i8> {
     let (o, m) = (def.origin(), def.dir());
     let n = [w[0], w[1], w[2]];
-    let c = crate::cross3_rat(&m, &n)?;
-    let mut d = Rat::from_int(0);
-    for k in 0..3 {
-        d = d.checked_sub(c[k].checked_mul(o[k])?)?;
-    }
-    Some(match plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
+    // `m × n_w` is across the axis already: its own off-axis part.
+    side_of_axis_plane(&crate::cross3_rat(&m, &n)?, &o, at)
+}
+
+/// **The side of the plane through the axis `o + s·m` with normal `v⊥`** — `v` with its part
+/// along `m` taken off — of a point `base + s·dir` of a meet line: the sign of `v⊥ · (x − o)`, `0`
+/// on that plane. Any point of the axis serves as `o`.
+///
+/// For a point `x` of the cylinder, `v⊥ · (x − o) = v · g` with `g = (x − o)⊥` the radial vector
+/// from the axis, so this is the sign of `v` against the radius at `x` — whatever plane `x` lies in,
+/// because the axial part of `x − o` drops against `v⊥`. That is what makes one predicate serve a
+/// circle (its plane across the axis) and an ellipse (a plane oblique to it) alike: a section's
+/// points differ by their height along the axis, and the height is the part this does not read.
+/// The radial reading of a section's point and its tangent ([`ccw_tangent_side`]) both come here,
+/// and so does [`ruling_side_signed`] (`v = m × n_w`, already off the axis).
+///
+/// `None` is checked-`Rat` overflow only.
+pub fn axial_side(
+    v: &[Rat; 3],
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    at: (&MeetLine, &QuadVal),
+) -> Option<i8> {
+    side_of_axis_plane(&crate::off_axis_rat(v, m)?, o, at)
+}
+
+/// [`axial_side`] for a normal `w` already across the axis: the plane through `o` with normal `w`.
+fn side_of_axis_plane(w: &[Rat; 3], o: &[Rat; 3], at: (&MeetLine, &QuadVal)) -> Option<i8> {
+    let d = Rat::from_int(0).checked_sub(crate::dot3_rat(w, o)?)?;
+    Some(match plane_side(&[w[0], w[1], w[2], d], at.0, at.1) {
         Orient::Positive => 1,
         Orient::Negative => -1,
         Orient::Zero => 0,
     })
+}
+
+/// **Which way a plane section of the cylinder runs at one of its points, against a direction
+/// `d`** — the sign of `T · d`, where `T` is the section's tangent at `x = base + s·dir` travelling
+/// counter-clockwise about the axis `m`, and the section is the cylinder's meet with a plane of
+/// normal `n` (`n · m ≠ 0`); `0` where `T ⊥ d`.
+///
+/// The section's tangent at `x` is perpendicular to the plane's normal and to the surface normal
+/// `g = (x − o)⊥`, so it is along `n × g`, and counter-clockwise about `m` it is
+/// `T = sign(n·m)·(n × g)` (`(n × g)·(m × g) = (n·m)|g|²` — it agrees with the circle's
+/// counter-clockwise tangent `m × g` exactly when `n·m > 0`). Then `T · d = sign(n·m)·(d × n) · g`,
+/// and the last factor is [`axial_side`] of `d × n`. Across the axis (`n ∥ m`) this is the sign of
+/// `d · (m × (x − c))`, a circle's own tangent. The sign of `n` cancels, so either facing serves.
+///
+/// `None` for a plane along the axis (`n · m = 0` — it meets the cylinder in rulings, not a
+/// section) or checked-`Rat` overflow.
+pub fn ccw_tangent_side(
+    n: &[Rat; 3],
+    d: &[Rat; 3],
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    at: (&MeetLine, &QuadVal),
+) -> Option<i8> {
+    let nm = crate::dot3_rat(n, m)?;
+    let tilt = match nm.cmp(&Rat::from_int(0)) {
+        std::cmp::Ordering::Greater => 1,
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => return None,
+    };
+    Some(tilt * axial_side(&crate::cross3_rat(d, n)?, o, m, at)?)
 }
 
 /// The exact meet of two planes and a cylinder's lateral surface.

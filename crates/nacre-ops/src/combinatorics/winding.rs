@@ -296,27 +296,62 @@ fn arc_extremum_winding(
             unreachable!("an arc carrier's direction is an arc")
         };
         let (o, m, r2) = (ac.def.origin(), ac.def.dir(), ac.def.r2());
-        // The first world axis the circle spans.
-        let a = usize::from(m[1] == zero && m[2] == zero);
-        let mut e_a = [zero; 3];
-        e_a[a] = Rat::from_int(1);
-        // `H`: through the axis, so through the centre — `n_h · c = n_h · o` because `c − o ∥ m`.
-        let n_h = nacre_exact::cross3_rat(&m, &e_a).ok_or_else(width)?;
+        let cap = jd.world_rat(p).ok_or_else(width)?;
+        let n_p = [cap[0], cap[1], cap[2]];
+        // **Coordinate `a` along the section is the circle's question with a tilted axis
+        // vector.** A point of `P` is its foot `y` across the axis plus a height along `m` that is
+        // linear in `y` (`n·(y + h·m) + d = 0`), so on the section `x_a = (g*/(n·m))·y + const`
+        // with `g* = (n·m)ê_a − m_a·n` — already across the axis (`g*·m = 0`). The circle's
+        // reading below holds with `ê_a` replaced by `e' = g*/(n·m)`: across the axis
+        // (`n ∥ m`) `e'` is `ê_a`'s part off the axis, the circle's own. The first world axis the
+        // section spans is the first with `g* ≠ 0` (`g* = 0` is a plane `x_a = const`, on which
+        // the coordinate does not move).
+        let nm = nacre_exact::dot3_rat(&n_p, &m).ok_or_else(width)?;
+        let g_star = |a: usize| -> Option<[Rat; 3]> {
+            let mut g = [zero; 3];
+            for k in 0..3 {
+                let e = if k == a { nm } else { zero };
+                g[k] = e.checked_sub(m[a].checked_mul(n_p[k])?)?;
+            }
+            Some(g)
+        };
+        let mut picked = None;
+        for a in 0..3 {
+            let g = g_star(a).ok_or_else(width)?;
+            if g != [zero; 3] {
+                picked = Some((a, g));
+                break;
+            }
+        }
+        // `P` crosses the axis (it carries an arc of the cylinder), so its section spans some axis.
+        let (a, g) = picked.ok_or_else(width)?;
+        // `H`: through the axis, so through the section's centre, with normal `m × e'`, `e' = g*/(n·m)`
+        // — across the axis that is `ê_a`'s part off the axis, so `m × e' = m × ê_a`, the circle's.
+        let inv = Rat::new(nm.denom(), nm.numer()).ok_or_else(width)?;
+        let n_h = (|| {
+            let e = [
+                g[0].checked_mul(inv)?,
+                g[1].checked_mul(inv)?,
+                g[2].checked_mul(inv)?,
+            ];
+            nacre_exact::cross3_rat(&m, &e)
+        })()
+        .ok_or_else(width)?;
         let h_plane = nacre_exact::dot3_rat(&n_h, &o)
             .and_then(|d| zero.checked_sub(d))
             .map(|d| [n_h[0], n_h[1], n_h[2], d])
             .ok_or_else(width)?;
-        let cap = jd.world_rat(p).ok_or_else(width)?;
         let ext = match plane_plane_cylinder(&cap, &h_plane, &o, &m, r2).ok_or_else(width)? {
-            // `s` ascends along `line.dir()`, whose `a` component is `−k(|m|² − m_a²) ≠ 0`, so the
-            // two roots differ in `a` and the smaller one is read off that one sign.
+            // `s` ascends along `line.dir()`, and the two roots are the section's extremes of
+            // coordinate `a` — they differ in `a`, so `dir[a] ≠ 0` and the smaller one is read off
+            // that one sign.
             CylinderMeet::Pair { line, s: [s0, s1] } => {
                 let s = if line.dir()[a] > zero { s0 } else { s1 };
                 NodePoint::Pierce(Box::new(PiercePoint::Exact(line, s)))
             }
             // `H` holds the axis, which the cap plane crosses at the centre — inside the cylinder,
-            // so the line through it meets the surface twice; and the cap plane is ⊥ `m` while `H`
-            // contains `m`, so the two are neither one plane nor parallel.
+            // so the line through it meets the surface twice; and the cap plane crosses `m` while
+            // `H` contains it, so the two are neither one plane nor parallel.
             CylinderMeet::CoincidentPlanes
             | CylinderMeet::ParallelPlanes
             | CylinderMeet::OnRuling(_)
@@ -340,9 +375,11 @@ fn arc_extremum_winding(
         // The walk below runs counter-clockwise **about the axis** — the arc's own sense, so the
         // ends are taken in that order whichever way the ring traverses it.
         let (ka, kb) = if ac.ccw { (ka, kb) } else { (kb, ka) };
-        // **The halves are the circle's own.** `H` splits the circle: at θ = 0 (`c + s·p`, the
-        // maximum of coordinate `a`) counter-clockwise travel runs along `m × p = m × ê_a = +n_h`,
-        // so the `+n_h` half is θ ∈ (0°, 180°) — where coordinate `a` falls — and the minimum
+        // **The halves are the circle's own.** `H` holds the axis, so a point's side of it is its
+        // foot's, and on the feet — the circle — coordinate `a` reads `e'`: at θ = 0 (the foot
+        // `c + s·e'/|e'|`, the maximum of coordinate `a`) counter-clockwise travel runs along
+        // `m × e' = +n_h`, so the `+n_h` half is θ ∈ (0°, 180°) — where
+        // coordinate `a` falls — and the minimum
         // θ = 180° is where the walk **arrives from** the `+n_h` half and **leaves into** the
         // `−n_h` one. Nothing here reads a world picture, so no «as seen in a plane» correction is
         // needed whichever way the axis points. An end *on* `H` is θ = 0° — θ = 180° is the
