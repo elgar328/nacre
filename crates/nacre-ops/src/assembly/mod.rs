@@ -2,8 +2,9 @@
 //! `NodeId` seam triples) into result solids, and the mandatory coplanar-face cleaning pass.
 //!
 //! The public [`boolean`](fn@crate::boolean) entry runs the arrangement engine
-//! ([`crate::arrangement`]), and the engine calls [`assemble_fuse_cut`] and
-//! [`unify_coplanar_faces`] here to build and clean the shells; nothing here calls the engine.
+//! ([`crate::arrangement`]), and the engine calls [`assemble_fuse_cut`], [`unify_coplanar_faces`]
+//! and [`dissolve_straight_angles`] here to build and clean the shells; nothing here calls the
+//! engine.
 
 use crate::combinatorics::{self, NodeId, Wall};
 use crate::draft::*;

@@ -347,9 +347,18 @@ fn overhang_boss_with_a_non_convex_footprint() {
     assert!((vol - 1.096).abs() < 1e-12, "volume {vol}");
 }
 
-// ---- `unify_coplanar_faces`: the general (interface-free) coplanar merge, on hand-built
+// ---- `unify_coplanar_faces`: the general (interface-free) coplanar merge, and the straight-angle
+// pass the result's cleaning runs after it (`arrangement::whole_result_faces`), on hand-built
 // `LocalFace` lists the coincident goldens above never reach — chains, opposite normals,
 // holes, seam edges, and the asymmetric T-junction the global dissolve exists to prevent. ----
+
+/// The plane half of the result's cleaning: merge, then one straight-angle pass over every face.
+fn unify_then_dissolve(faces: Vec<LocalFace>, p: &[WorkingPlane]) -> Vec<LocalFace> {
+    let mut out = unify_coplanar_faces(faces, &crate::planes::test_judge(p), &[]).unwrap();
+    let all: Vec<usize> = (0..out.len()).collect();
+    crate::assembly::dissolve_straight_angles(&mut out, &all, &Default::default());
+    out
+}
 
 /// An axis-aligned `FaceInfo` at `d` along its normal, with a **non-degenerate `tri`** whose
 /// right-hand normal is `n_out`. The merge reads more than `n_out` — `loop_winding` and
@@ -404,7 +413,7 @@ fn unify_merges_a_coplanar_chain() {
         face(0, vec![c10, c20, c21, c11], vec![]),
         face(0, vec![c20, c30, c31, c21], vec![]),
     ];
-    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p), &[]).unwrap();
+    let out = unify_then_dissolve(faces, &p);
     assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
     let l = &out[0].outer.expect_ring();
     assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
@@ -532,7 +541,7 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
         face(0, vec![v100, v200, v210, v110], vec![]),
         face(4, vec![v200, v100, v101, v201], vec![]), // perpendicular, not coplanar
     ];
-    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p), &[]).unwrap();
+    let out = unify_then_dissolve(faces, &p);
     assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
     let merged = out.iter().find(|lf| lf.surf.plane() == 0).unwrap();
     assert!(

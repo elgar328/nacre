@@ -18,11 +18,13 @@
 //! its own grid.
 //!
 //! **Vertices are where the neighbouring class has them.** A boundary run along a rim is cut
-//! at the rim's nodes as the cleaned cap faces hold them ([`crate::draft::HeldRims`] — not the
-//! split, whose nodes the cleaning pass may have dissolved) and a run along a ruling at the wall
-//! class's piece ends (`Curved.rulings`); a station the boundary passes straight through gets no
-//! vertex unless that class split its edge there. That is what keeps the lateral's edges welded
-//! to the faces beside them, and what the refused corner violated.
+//! at the rim's nodes as the split placed them (`Curved::split_rims`) and a run along a ruling at
+//! the wall class's piece ends (`Curved.rulings`) — the nodes the neighbouring faces were cut at
+//! too; a station the boundary passes straight through gets no vertex unless that class split its
+//! edge there. The result's one cleaning pass then drops a node no ring turns at from every ring
+//! at once (`arrangement::whole_result_faces`), the lateral's with its neighbour's. That is what
+//! keeps the lateral's edges welded to the faces beside them, and what the refused corner
+//! violated.
 
 use super::{Cell, CellRead, Chart, Lines};
 use crate::arrangement::Curved;
@@ -91,7 +93,6 @@ pub(crate) fn walk(
     cells: &[Cell],
     reads: &[CellRead<'_>],
     curved: &Curved,
-    rims: &crate::draft::HeldRims,
 ) -> Result<Walked, BoolError> {
     let aliases = &curved.aliases;
 
@@ -452,17 +453,18 @@ pub(crate) fn walk(
                         let c = class_on(line).ok_or_else(split_disagrees)?;
                         let full = ns == 0 || run.len() == ns;
                         // An uncut rim is the assembly's closed edge — whole or nothing.
-                        let Some(rim) = rims.get(&(k, c)) else {
+                        let Some(rim) = curved.split_rims.get(&(k, c)) else {
                             if !full {
                                 return Err(split_disagrees());
                             }
                             whole_rim = Some((c, ccw));
                             continue;
                         };
-                        // A cut rim's pieces are the arcs between its consecutive nodes
-                        // — the held table, as the cleaned caps hold them; neither the split nor
-                        // the arc labels is consulted for the edges. Each piece carries the rim's
-                        // plane `c`, which the assembly checks against the cap's.
+                        // A cut rim's pieces are the arcs between its consecutive nodes — the
+                        // split's, which the cap's ring holds too; the result's one cleaning pass
+                        // drops a node neither ring turns at from both. The arc labels are not
+                        // consulted for the edges. Each piece carries the rim's plane `c`, which
+                        // the assembly checks against the cap's.
                         let m = rim.nodes.len();
                         // No node at all is a rim the split never cut. A rim cut at **one** node — a
                         // vertex alone on its circle — is one piece, the arc from that node back to

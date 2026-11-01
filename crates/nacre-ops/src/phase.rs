@@ -54,6 +54,7 @@ counters! {
     C_EMIT     = "    emit_faces",
     REUSE      = "  reuse pass-through",
     UNIFY      = "unify_coplanar_faces",
+    DISSOLVE   = "dissolve_straight_angles (whole result)",
     SEAM       = "seam table + alias scan",
     ASSEMBLE   = "assemble_fuse_cut",
 }

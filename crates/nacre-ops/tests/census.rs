@@ -2588,9 +2588,9 @@ fn measure_census() {
             // wall's line past the tangent point. On the axis plane the slab's corner edge lies
             // on the fillet's own seam, which the rulings split does not arrange yet
             // (`RulingBoundNotYet`, frozen here by name). Off it the slab rests on the plate's
-            // top across the fillet's rim, and the cut leaves the plate as it was — the rim
-            // the cleaned cap holds, not the one the arrangement split (`draft::HeldRims`); the
-            // wall plane plays no part (the coverage lock moves the slab off it).
+            // top across the fillet's rim, and the cut leaves the plate as it was — the cleaning
+            // drops the split's nodes from the cap and the lateral together; the wall plane plays
+            // no part (the coverage lock moves the slab off it).
             (
                 "slab wall 1.5",
                 Box::new(|m| (plate1(m), slab(m, [1.5, -4.0, 1.0], [2.5, 0.0, 2.0]))),

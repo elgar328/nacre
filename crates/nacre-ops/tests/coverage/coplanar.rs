@@ -456,9 +456,10 @@ fn fillet_plate(m: &mut Model) -> Handle<Solid> {
 /// the same vertices to the bit, the same faces — `B − A` is `B`, the Fuse is one body of both
 /// volumes and Common is empty; every result valid, in both operand orders.
 ///
-/// What it holds, two rules. The lateral and the assembly meet on the rim as the cleaned faces hold
-/// it (`draft::HeldRims`), not as the arrangement split it — the split would cut the lateral's rim
-/// at nodes the merged cap has dissolved (an edge used once, `OpenResultShell`). And a whole rim a
+/// What it holds, two rules. The result is cleaned once, its laterals in the pass: the lateral cuts
+/// its rim at the split's nodes, and the pass drops those the merged cap no longer turns at from the
+/// cap and the lateral together — cleaned without the laterals, the cap would lose them and the
+/// lateral keep them (an edge used once, `OpenResultShell`). And a whole rim a
 /// tool crossed dissolves back into its circle: kept as arcs, a rim crossed twice would leave two
 /// arcs whose nodes have one neighbour each (they would stay, naming the box's planes —
 /// `VertexNamesAbsentSurface`), and one crossed four times would come out as an empty loop

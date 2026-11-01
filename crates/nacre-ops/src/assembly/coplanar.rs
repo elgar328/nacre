@@ -1,6 +1,8 @@
 use super::*;
-/// Merge every group of coplanar, same-facing result faces into one face per connected piece, then
-/// dissolve straight-angle vertices — the mandatory post-boolean defeature.
+/// Merge every group of coplanar, same-facing result faces into one face per connected piece — the
+/// first half of the mandatory post-boolean defeature; the second, dissolving straight-angle
+/// vertices ([`dissolve_straight_angles`]), runs once the lateral faces are in the list too
+/// (`arrangement::whole_result_faces`).
 ///
 /// **Erase the interior, do not stitch the exterior.** When two faces become one region the boundary
 /// between them stops being a boundary, so the merge is: take every directed ring edge in the group,
@@ -150,8 +152,6 @@ pub(crate) fn unify_coplanar_faces(
     }
     let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
     out.extend(merged);
-    let all: Vec<usize> = (0..out.len()).collect();
-    dissolve_straight_angles(&mut out, &all, &combinatorics::SharedLines::of(jd, cyls));
     Ok(out)
 }
 
@@ -621,9 +621,8 @@ fn merge_component(
 /// outright — equal walls, or one line in two spellings ([`combinatorics::SharedLines`]: a ruling
 /// piece along a lateral and a plane segment past its cap, where the gate recorded the plane pair's
 /// line on that cylinder). Measured over the `nacre-ops` suite and the census, counted per pass:
-/// the two spellings meet at a node 160 times and the node drops 40 times — every drop in one
-/// solid's own pass where that solid has no lateral at the point (the cap-circle scoreboard's
-/// outside corners); the census meets none.
+/// the two spellings meet at a node 205 times — 132 in the whole result's pass, 73 in the
+/// per-solid one — and the node drops every time; the census meets none.
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
@@ -637,21 +636,21 @@ fn merge_component(
 /// answers right there too; a crossing at such a vertex is kept by the other faces' rings
 /// (degree > 2), the function's own rule. The pair is a tool resting on a cap across its rim: the
 /// cap class splits the rim at the tool's planes, a Cut merges the cap back, and those nodes
-/// dissolve here — which is why the result's rims are read off these faces afterwards
-/// (`draft::held_rims`), not off the split.
+/// dissolve here, from the cap's ring and the lateral's at once — which is why the assembly reads
+/// the result's rims off these faces afterwards (`draft::held_rims`), not off the split.
 ///
-/// **Deciding on the plane faces alone is enough for the rim**, though the laterals are emitted
-/// after this pass: a lateral turns at a rim node only where a ruling ends there, and the node is
-/// then on its cap's ring too, whose arc gives it a neighbour off the ruling's line — three
-/// neighbours, so it stays whether or not the wall bends there (the ruling may run on above the
-/// cap as a plane segment, one line). Measured: no node the whole-result pass drops joins two
-/// spellings of one line, in the suite or the census.
+/// **The whole result is one call, its laterals in it** (`arrangement::whole_result_faces`),
+/// because the rule is about every ring through a node. Over the plane faces alone it would still
+/// hold at a rim — a lateral turns at a rim node only where a ruling ends there, and the cap's arc
+/// gives that node a neighbour off the ruling's line — but not along a ruling: a flat that ends on
+/// a lateral along a ruling another class's crossings split runs straight through the split's
+/// nodes, the lateral's ruling edge keeps them, and the edge between is used once.
 ///
 /// **Lateral faces participate, keyed by their own class** (the label's miss-first cell).
-/// The per-solid caller hands over every face of a group — laterals included — and the wall
-/// key is `(node, ClassIx)` rather than a plane index, so a curved face compares its walls
-/// in its own key space. The drop proposition is the same sentence there: two ruling edges
-/// on one wall are collinear exactly as two plane edges are, two same-direction arcs of one
+/// Both callers hand over laterals — the whole result's, and the per-solid caller every face of a
+/// group — and the wall key is `(node, ClassIx)` rather than a plane index, so a curved face
+/// compares its walls in its own key space. The drop proposition is the same sentence there: two
+/// ruling edges on one wall are collinear exactly as two plane edges are, two same-direction arcs of one
 /// circle are smooth continuation, and a cusp (the `ccw` flip) lands in `bent`. A rim circle
 /// divided only by another solid's T-nodes dissolves whole — a box standing across a cylinder's
 /// cap, cut away, leaves the cap a disk again — and closes as the whole circle it is (below). One
@@ -659,7 +658,7 @@ fn merge_component(
 /// and `mass_props` read — the crossing census's exact-volume assertions are the standing
 /// measurement of that contract. (The whole-circle arms merge no arc: a ring either keeps two
 /// nodes or more, or closes.)
-pub(super) fn dissolve_straight_angles(
+pub(crate) fn dissolve_straight_angles(
     out: &mut [LocalFace],
     which: &[usize],
     shared: &combinatorics::SharedLines,
@@ -728,7 +727,8 @@ pub(super) fn dissolve_straight_angles(
     // such spelling, so its drops are taken back — to a fixpoint, because a node taken back for one
     // ring is kept in every ring (one set), and taking back only ever shrinks the set — and **then**
     // the rings that lose every node close. Converting inside the loop could leave a disk on one face
-    // while another keeps a node on the same circle. No suite or census boolean takes a drop back.
+    // while another keeps a node on the same circle. Measured: the suite takes 8 drops back, all in
+    // the per-solid pass; the census none.
     //
     // **The closed circle is spelled by the face, not by the ring** — one edge, `(cylinder k,
     // plane c)`, bounds a cap as `Bound::Circle { cyl: k }` and a lateral as `Bound::Rim { plane:

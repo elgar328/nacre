@@ -176,14 +176,15 @@ pub(super) fn ruling_interior_is_even(
 }
 
 /// What the arrangement learned about the curved boundary, bundled: the lateral chart reads the
-/// labels against `split_rims`, and the result's rims are derived from the cleaned faces
-/// ([`crate::draft::held_rims`]). One struct so the trace's return does not grow element by
+/// labels against `split_rims` and cuts its rims there, and the assembly's rims are derived from
+/// the cleaned faces ([`crate::draft::held_rims`]). One struct so the trace's return does not grow element by
 /// element.
 pub(crate) struct Curved {
     pub(crate) disk_labels: DiskLabels,
     pub(crate) arc_labels: ArcLabels,
     /// How the arrangement split each circle it cut ([`CutRims`]) — what the arc labels are
-    /// indexed by. Not the result's rim: the cleaning pass can dissolve its nodes.
+    /// indexed by and the lateral's rims are cut at. Not the result's rim: the cleaning pass can
+    /// dissolve its nodes, from the cap and the lateral together.
     pub(crate) split_rims: CutRims,
     /// The alias table the class world settled on — every name in the labels, rims
     /// and rulings above is its representative, and the lateral chart, which mints station
@@ -289,6 +290,70 @@ pub(crate) fn seam_table(
         }
     }
     Ok(seam)
+}
+
+/// **The whole result's faces, cleaned once** — the plane arrangement's faces merged per coplanar
+/// group ([`crate::assembly::unify_coplanar_faces`]), every cylinder class's lateral faces
+/// appended ([`cyl_chart::emit_lateral`]), then one straight-angle pass over the whole list
+/// ([`crate::assembly::dissolve_straight_angles`]), and the result's rims read off what that pass
+/// left ([`crate::draft::held_rims`]).
+///
+/// **The pass runs after the laterals exist** because its rule — a node goes only where every ring
+/// through it runs straight on — is a sentence about every ring. Run over the plane faces alone it
+/// drops a node a lateral's edge still holds: where a flat ends on a lateral along a ruling, and
+/// another class's crossings split that ruling, the flat runs straight through the split's nodes
+/// and the lateral's ruling edge keeps them — an edge used once. So the lateral cuts its rims and
+/// rulings at the split's nodes, and the pass drops a node from the cap or the flat and the lateral
+/// together.
+///
+/// One function rather than a stretch of `boolean`, because tests that assemble a result by hand
+/// run this same sequence, and a copy of the order would silently keep the old one.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn whole_result_faces(
+    kind: BoolKind,
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: Vec<LocalFace>,
+    curved: &Curved,
+    faces_tab: &[FaceRow],
+    plane_ix: &[ClassIx],
+    n_a: usize,
+) -> Result<(Vec<LocalFace>, HeldRims), BoolError> {
+    // Merge coplanar, same-normal faces that share a full edge (e.g. the split side walls a fused
+    // coincident interface leaves) so the result is a minimal, chainable solid — a second boolean
+    // on it then sees no redundant coplanar planes.
+    let mut faces = timed!(
+        UNIFY,
+        crate::assembly::unify_coplanar_faces(faces, jd, cyls)
+    )?;
+    if !cyls.is_empty() {
+        let rows = crate::bands::cyl_rows(faces_tab, plane_ix, n_a)?;
+        // **The lateral faces come from the chart**: every cylinder class's cells, read off the
+        // plane arrangement's own labels and emitted as `LocalFace`s, the type the plane side
+        // emits.
+        let lateral = cyl_chart::emit_lateral(kind, jd, cyls, &faces, curved, &rows);
+        // The census sits *before* the cleaning pass on purpose: the cleaning dissolves nodes,
+        // which would blur the face-by-face question being asked. The census holds the chart
+        // against its own rules (and the emitter against the census's independent count), in
+        // test builds; the emitter's refusal is handed to it before `?` decides, so a refused
+        // class is still recorded.
+        #[cfg(test)]
+        cyl_chart::census(jd, cyls, kind, &faces, curved, &rows, &lateral);
+        // Merged, they would not be: each lateral face is a region of its chart already, so there
+        // is no phantom seam to erase (measured: a merging pass over them merges nothing over the
+        // suite).
+        faces.extend(lateral?);
+    }
+    timed!(DISSOLVE, {
+        let all: Vec<usize> = (0..faces.len()).collect();
+        crate::assembly::dissolve_straight_angles(
+            &mut faces,
+            &all,
+            &combinatorics::SharedLines::of(jd, cyls),
+        );
+    });
+    let rims = crate::draft::held_rims(&faces, &curved.split_rims);
+    Ok((faces, rims))
 }
 
 /// Every result face across all plane classes, before assembly (the driver's risky half, testable

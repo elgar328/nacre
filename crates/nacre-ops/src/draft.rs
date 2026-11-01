@@ -440,22 +440,25 @@ pub(crate) struct CutRim {
 }
 
 /// Per `(cylinder class, plane class)`, how the arrangement **split** each circle it cut — the
-/// table the lateral chart reads its arc labels against (`Curved::split_rims`). It is not the
-/// result's rim: the cleaning pass merges cap cells back and dissolves the nodes between them, so
-/// what the result's faces and edges meet on is [`HeldRims`].
+/// table the lateral chart reads its arc labels against and cuts its rims at
+/// (`Curved::split_rims`). It is not the result's rim: the cleaning pass merges cap cells back and
+/// dissolves the nodes no ring turns at, so what the assembly meets the result's edges on is
+/// [`HeldRims`].
 pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
 /// **The result's cut rims — the split's nodes that the cleaned faces still hold.** Presence here
-/// is the one source of "this rim is cut" for everything that builds the result (the lateral's rim
-/// pieces, and per solid the assembly's rim skip — [`HeldRims::cut_per_group`]). A type of its own,
-/// apart from [`CutRims`]: with two same-typed tables, the one read in the wrong place would let a
-/// Cut whose tool rests on a cap across its rim merge the cap back into one arc while the lateral,
-/// reading the split, would still cut its rim at the tool's planes — one arc on the cap, three on
-/// the lateral, an edge used once.
+/// is the one source of "this rim is cut" for the assembly (per solid, its rim skip —
+/// [`HeldRims::cut_per_group`]). A type of its own, apart from [`CutRims`]: with two same-typed
+/// tables, the one read in the wrong place would let a Cut whose tool rests on a cap across its
+/// rim merge the cap back into a whole circle while the assembly, reading the split, would still
+/// take the rim for cut at the tool's planes.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HeldRims(CutRims);
 
 impl HeldRims {
+    /// The held nodes of one rim — the tests' reading; the assembly asks per group
+    /// ([`Self::cut_per_group`]).
+    #[cfg(test)]
     pub(crate) fn get(&self, key: &(usize, usize)) -> Option<&CutRim> {
         self.0.get(key)
     }
@@ -498,7 +501,8 @@ impl HeldRims {
 /// [`HeldRims`] from the faces as they stand: for each split circle `(cyl, c)`, the nodes some
 /// face on plane class `c` still has in a ring, in the split's θ order. A circle none of whose
 /// nodes survive is **whole** again and
-/// leaves the table — the lateral emits its rim as the closed edge, the cap holds it as a circle.
+/// leaves the table — the cap holds it as a circle and the lateral, cleaned by the same pass, as
+/// its closed rim.
 ///
 /// Any node of a class-`c` ring, not only an arc's ends: the inward wedge with its apex on the seam
 /// has the cap turn at the apex between two lines, and an arc-ends rule would drop that node — the
@@ -506,7 +510,7 @@ impl HeldRims {
 ///
 /// A circle left **one** node — the split cut it at one point, or the cleaning dissolved all its
 /// others — is cut at that one node: the cap holds it as the arc from it back to itself
-/// (`dissolve_straight_angles`), and the lateral reads the rim the same way.
+/// (`dissolve_straight_angles`), and so does the lateral's ring, cleaned by the same pass.
 pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
     if split.is_empty() {
         return HeldRims::default();

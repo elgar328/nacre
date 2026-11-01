@@ -329,9 +329,8 @@ impl Chart {
 
 /// **The plane classes where this cylinder's rim is a boundary the arrangement already made**:
 /// (i) the circles a plane face emitted as a `Bound::Circle`, and (ii) the circles the arrangement
-/// split, which emit arcs instead — (i) sees one of them too once the cleaning pass has merged its
-/// cap back into a disk. The chart's line set, its boundary rule and its census all read this one
-/// list.
+/// split, which emit arcs instead. The chart's line set, its boundary rule and its census all read
+/// this one list.
 pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) -> Vec<usize> {
     let mut classes: Vec<usize> = Vec::new();
     let mut push = |c: usize| {

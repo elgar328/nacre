@@ -785,7 +785,6 @@ fn lateral_lattice(staircase: bool) {
         &plane_faces,
         &curved,
         &rows,
-        &crate::draft::held_rims(&plane_faces, &curved.split_rims),
     )
     .unwrap();
     assert_eq!(fuse.len(), 1);
@@ -1047,7 +1046,6 @@ fn a_cut_circle_bounds_the_bands() {
             &plane_faces,
             &curved,
             &rows,
-            &crate::draft::held_rims(&plane_faces, &curved.split_rims),
         )
         .unwrap()
     };
@@ -1125,7 +1123,6 @@ fn a_cut_circle_bounds_the_bands() {
             &plane_faces,
             &blind,
             &rows,
-            &crate::draft::held_rims(&plane_faces, &blind.split_rims)
         )
         .is_ok(),
         "the vertical lines answer what the blinded rims cannot"
@@ -1143,7 +1140,6 @@ fn a_cut_circle_bounds_the_bands() {
             &plane_faces,
             &blind,
             &rows,
-            &crate::draft::held_rims(&plane_faces, &blind.split_rims)
         ),
         Err(BoolError::Rejected {
             reason: RejectReason::CylinderStagesDisagree,
@@ -1174,7 +1170,6 @@ fn a_cut_circle_bounds_the_bands() {
             &plane_faces,
             &contrary,
             &rows,
-            &crate::draft::held_rims(&plane_faces, &contrary.split_rims)
         ),
         Err(BoolError::Rejected {
             reason: RejectReason::LabelConflict,
@@ -1223,21 +1218,17 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         split_rims: cut_rims,
         rulings,
     };
-    let faces = crate::assembly::unify_coplanar_faces(faces, &jd, &setup.cyls).unwrap();
-    let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
-    let mut faces = faces;
-    faces.extend(
-        crate::arrangement::cyl_chart::emit_lateral(
-            BoolKind::Fuse,
-            &jd,
-            &setup.cyls,
-            &faces,
-            &curved,
-            &rows,
-            &crate::draft::held_rims(&faces, &curved.split_rims),
-        )
-        .unwrap(),
-    );
+    let (faces, rims) = crate::arrangement::whole_result_faces(
+        BoolKind::Fuse,
+        &jd,
+        &setup.cyls,
+        faces,
+        &curved,
+        &setup.planes,
+        &setup.plane_ix,
+        setup.n_a,
+    )
+    .unwrap();
     let mut memo = crate::realize::PlaneMemo::default();
     let seam = seam_table(&m, &faces, &setup.cyls, &jd, &mut memo).unwrap();
     let out = crate::assembly::reconstruct(
@@ -1246,7 +1237,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         &seam,
         &faces,
         &setup.cyls,
-        &crate::draft::held_rims(&faces, &curved.split_rims),
+        &rims,
         None,
         crate::assembly::Tangencies::none(),
         &mut memo,

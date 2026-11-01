@@ -594,22 +594,17 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
         .expect("the arc population traces");
         // The stopper socket is empty for this population — nothing defers.
         assert!(deferred.is_none(), "{deferred:?}");
-        let faces =
-            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
-        let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
-        let mut faces = faces;
-        faces.extend(
-            crate::arrangement::cyl_chart::emit_lateral(
-                BoolKind::Fuse,
-                &jd,
-                cyls,
-                &faces,
-                &curved,
-                &rows,
-                &crate::draft::held_rims(&faces, &curved.split_rims),
-            )
-            .expect("the lateral faces emit"),
-        );
+        let (faces, _) = crate::arrangement::whole_result_faces(
+            BoolKind::Fuse,
+            &jd,
+            cyls,
+            plane_faces,
+            &curved,
+            faces_tab,
+            plane_ix,
+            *n_a,
+        )
+        .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
             &m,
             &faces,
@@ -712,22 +707,17 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             &trace_in,
         )
         .expect("the arc population traces");
-        let faces =
-            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
-        let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
-        let mut faces = faces;
-        faces.extend(
-            crate::arrangement::cyl_chart::emit_lateral(
-                BoolKind::Fuse,
-                &jd,
-                cyls,
-                &faces,
-                &curved,
-                &rows,
-                &crate::draft::held_rims(&faces, &curved.split_rims),
-            )
-            .expect("the lateral faces emit"),
-        );
+        let (faces, _) = crate::arrangement::whole_result_faces(
+            BoolKind::Fuse,
+            &jd,
+            cyls,
+            plane_faces,
+            &curved,
+            faces_tab,
+            plane_ix,
+            *n_a,
+        )
+        .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
             &m,
             &faces,
@@ -863,22 +853,17 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             &trace_in,
         )
         .expect("the arc population traces");
-        let faces =
-            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
-        let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
-        let mut faces = faces;
-        faces.extend(
-            crate::arrangement::cyl_chart::emit_lateral(
-                BoolKind::Fuse,
-                &jd,
-                cyls,
-                &faces,
-                &curved,
-                &rows,
-                &crate::draft::held_rims(&faces, &curved.split_rims),
-            )
-            .expect("the lateral faces emit"),
-        );
+        let (faces, _) = crate::arrangement::whole_result_faces(
+            BoolKind::Fuse,
+            &jd,
+            cyls,
+            plane_faces,
+            &curved,
+            faces_tab,
+            plane_ix,
+            *n_a,
+        )
+        .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
             &m,
             &faces,
@@ -1316,22 +1301,17 @@ fn the_grouping_joins_across_a_cut_rim() {
             &trace_in,
         )
         .expect("the arc population traces");
-        let faces =
-            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
-        let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
-        let mut faces = faces;
-        faces.extend(
-            crate::arrangement::cyl_chart::emit_lateral(
-                BoolKind::Fuse,
-                &jd,
-                cyls,
-                &faces,
-                &curved,
-                &rows,
-                &crate::draft::held_rims(&faces, &curved.split_rims),
-            )
-            .expect("the lateral faces emit"),
-        );
+        let (faces, _) = crate::arrangement::whole_result_faces(
+            BoolKind::Fuse,
+            &jd,
+            cyls,
+            plane_faces,
+            &curved,
+            faces_tab,
+            plane_ix,
+            *n_a,
+        )
+        .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
             &m,
             &faces,

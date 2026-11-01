@@ -961,8 +961,9 @@ fn an_outside_corner_as_tall_as_the_cylinder_builds() {
 /// `A ∪ B` is one solid whose lateral edge lies inside its own face on `x − y = 1`, and it is
 /// refused (`SelfTouchingResult` — the planar arm asks an edge whose ends a cylinder made like any
 /// straight edge). Where it does not (`apart`), the union is the two bodies. Everything else
-/// builds, the volumes in closed form, except `A − B` with `B` short of either cap: that stops at
-/// a backstop (`EdgeCurveUnderived`) where `A` less the overlap is the answer.
+/// builds, the volumes in closed form. `A − B` with `B` short of either cap keeps `A`'s flat and
+/// lateral ending on the line, `B`'s caps having split the ruling there: the result's one cleaning
+/// pass drops those nodes from both rings at once (`arrangement::whole_result_faces`).
 #[test]
 fn a_body_touching_itself_along_a_laterals_own_edge_is_refused() {
     let apart: &[[f64; 2]] = &[[-0.5, -1.5], [3.0, -1.5], [3.0, 2.0]];
@@ -995,13 +996,15 @@ fn a_body_touching_itself_along_a_laterals_own_edge_is_refused() {
         } else {
             Ok((2, a + b))
         };
-        let a_less_b = if p.height == Height::PastBoth {
-            Ok((1, a - common))
-        } else {
-            Err(RejectReason::EdgeCurveUnderived)
-        };
         let both = Ok((usize::from(joined), common));
-        let want = [fuse, fuse, a_less_b, Ok((1, b - common)), both, both];
+        let want = [
+            fuse,
+            fuse,
+            Ok((1, a - common)),
+            Ok((1, b - common)),
+            both,
+            both,
+        ];
         for (i, (got, want)) in six.iter().zip(want).enumerate() {
             match (got, want) {
                 (Ok((n, v)), Ok((wn, wv))) => {

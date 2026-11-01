@@ -576,46 +576,13 @@ pub(crate) fn boolean(
         // edges (`reconstruct`) alike (`realize::PlaneMemo`).
         let mut memo = crate::realize::PlaneMemo::default();
         let stretch = || -> Result<(Vec<LocalFace>, Vec<SeamVertex>, HeldRims), BoolError> {
-            // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
-            // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
-            // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-            let faces = timed!(
-                UNIFY,
-                crate::assembly::unify_coplanar_faces(faces, &jd, &cyls)
-            )?;
-            // **The result's rims, read off the cleaned faces** — the cleaning just dissolved
-            // the split's nodes a merged cap no longer turns at, and the lateral and the assembly
-            // must meet on the rims the faces hold, not on the split (`draft::HeldRims`).
-            let rims = crate::draft::held_rims(&faces, &curved.split_rims);
-
-            // **The lateral bands, appended after the differential above**: reuse can
+            // **The lateral bands join the face list after the differential above**: reuse can
             // only change what the *plane* arrangement emits, so the two routes are compared on that
             // list; the bands are a separate pass over the same operands and belong to neither route.
             // From here on there is one face list — the grouping, the closed-shell guard and the
             // assembly all read it.
-            let faces = if cyls.is_empty() {
-                faces
-            } else {
-                let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
-                // **The lateral faces come from the chart**: every cylinder
-                // class's cells, read off the plane arrangement's own labels and emitted as
-                // `LocalFace`s, the type the plane side emits.
-                let lateral =
-                    cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows, &rims);
-                // The census sits *before* the curved cleaning pass on purpose: the cleaning
-                // merges pieces, which would blur the face-by-face question being asked.
-                // The census holds the chart against its own rules (and the emitter against
-                // the census's independent count), in test builds; the emitter's refusal is
-                // handed to it before `?` decides, so a refused class is still recorded.
-                #[cfg(test)]
-                cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &rims, &lateral);
-                let mut faces = faces;
-                faces.extend(lateral?);
-                // No curved cleaning pass follows: the emitter's lateral faces are the
-                // regions of each chart already, so there is no phantom seam to erase (measured:
-                // a cleaning pass here merges nothing over the suite).
-                faces
-            };
+            let (faces, rims) =
+                whole_result_faces(kind, &jd, &cyls, faces, &curved, &faces_tab, &plane_ix, n_a)?;
 
             let seam = seam_table(model, &faces, &cyls, &jd, &mut memo)?;
             Ok((faces, seam, rims))

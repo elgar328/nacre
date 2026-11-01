@@ -5,7 +5,7 @@
 //! Carriers are a statement, not a derivation (four-plane concurrency — see `Ring.walls`' doc),
 //! so this lock is the falsifier that catches, per production path, the moment statement and
 //! observation part. For a boolean in particular it checks the result **after** the cleaning pass
-//! (`unify_coplanar_faces`) has rewired the faces' surfaces.
+//! (the coplanar merge and the straight-angle pass) has rewired the faces' surfaces.
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
