@@ -795,18 +795,20 @@ pub(super) fn split_rulings(
             cyl_list.push(r.cyl);
         }
     }
-    // The lines on this class that lie on a cylinder and that this class draws as a ruling — it
-    // states the line as a chart station, or sections the cylinder on its own arrangement —
-    // `(the other class, cylinder, which of this class's two rulings)`, the pair read off the
-    // gate's record, never decided here, and the side asked of the line once
+    // The lines on this class that lie on a cylinder — every one a ruling station of this class's
+    // own arrangement, which the gate asserts where it writes the record
+    // ([`crate::planes::WorkingCyl::holds_ruling`]: the class cuts the lateral, sections it, or
+    // touches it along that line) — `(the other class, cylinder, which of this class's rulings)`,
+    // the pair read off the gate's record, never decided here, and the side asked of the line once
     // ([`combinatorics::shared_line`], which the straight-angle cleaning reads too): it is the
     // identity a ruling piece carries (`MergedRuling::side`).
     let mut shared_here: Vec<(usize, usize, i8)> = Vec::new();
     for (ci, cy) in cyls.iter().enumerate() {
-        for sr in cy.shared.iter().filter(|sr| {
-            sr.stated_by.contains(&wc)
-                || ((sr.line.0 == wc || sr.line.1 == wc) && cy.draws_rulings(wc))
-        }) {
+        for sr in cy
+            .shared
+            .iter()
+            .filter(|sr| sr.line.0 == wc || sr.line.1 == wc)
+        {
             let l = combinatorics::shared_line(jd, cyls, ci, sr, wc).ok_or_else(undecided)?;
             shared_here.push((l.other, ci, l.side));
         }

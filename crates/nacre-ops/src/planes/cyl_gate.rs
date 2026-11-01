@@ -16,9 +16,9 @@ use super::*;
 /// candidates against the cylinder's other records, refuses an oblique section the class cannot
 /// draw and a class carrying the traces of axes that are not parallel
 /// ([`RejectReason::ObliqueCylinderCut`]), and hands the arrangement the records it reads — the
-/// cuts, oblique sections and silences ([`WorkingCyl::records`]), the [`Tangency`] rows and the lines two
-/// classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row its verdict cannot
-/// judge ([`RejectReason::TangentLineInAnotherPlane`]).
+/// cuts, oblique sections, touchings and silences ([`WorkingCyl::records`]), the [`Tangency`] rows
+/// and the lines two classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row
+/// its verdict cannot judge ([`RejectReason::TangentLineInAnotherPlane`]).
 ///
 /// Per cylinder pair **of different owners** (two classes of one valid solid keep their faces
 /// apart by construction and are not asked): axes clear of each other (`dist > r₁+r₂`, whatever
@@ -263,10 +263,8 @@ pub(crate) fn cylinder_gate(
                 ClassMeet::Silent(s) => Some((c, CylRecord::Silent(*s))),
                 ClassMeet::Cuts => Some((c, CylRecord::Cuts)),
                 ClassMeet::Sections => Some((c, CylRecord::Sections)),
-                ClassMeet::Across
-                | ClassMeet::Clear
-                | ClassMeet::Tangent { .. }
-                | ClassMeet::Undrawable => None,
+                ClassMeet::Tangent { .. } => Some((c, CylRecord::Touches)),
+                ClassMeet::Across | ClassMeet::Clear | ClassMeet::Undrawable => None,
             })
             .collect();
     }
@@ -383,6 +381,13 @@ pub(crate) fn cylinder_gate(
         .into_iter()
         .chain(hinged)
     {
+        // Both classes of a shared line hold it as a station of their own arrangements — the
+        // readers that fold a class's segments onto the ruling ask only whether the line is on
+        // the class (`split_rulings`), so the record is where that is true.
+        debug_assert!(
+            cyls[ci].holds_ruling(sr.line.0) && cyls[ci].holds_ruling(sr.line.1),
+            "a shared line pairs two classes that hold a ruling of the cylinder"
+        );
         cyls[ci].shared.push(sr);
     }
     for (ci, gl) in grazed {
@@ -698,10 +703,10 @@ fn class_meet(
                 // that record assert it in a `debug_assert` (`arrangement`' circular-
                 // hole arm, `chord_stations`, `rulings_on_class`), and all three stay true
                 // because this pair never reaches them — a tangency is a double root where
-                // those roads spell two distinct ones, so recording it would put the pair
-                // on the ruling road and assemble nothing. The arrangement then sees
-                // nothing here, which is right: the line divides no cell of this plane and
-                // stations no sector of the chart.
+                // those roads spell two distinct ones, so a cut's record would put the pair
+                // on the ruling road and assemble nothing. Its record is its own
+                // ([`CylRecord::Touches`]): the line divides no cell of this plane and no
+                // sector of the chart, and is the plane's one station on the cylinder.
                 //
                 // What the pair can still do is pinch the *result*, and that is a question
                 // about the operation — so the geometry is stated in a row and
@@ -794,9 +799,10 @@ pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.
     pub(crate) line: (usize, usize),
     /// Which of the two state the ruling as a station of the cylinder's chart — the ones that cut
-    /// the cylinder, so one (a tangent or a sectioned partner) or both. Every class of the two
-    /// that draws the cylinder's rulings folds its own segments on the line onto them
-    /// (`split_rulings`); only these put the station on the chart.
+    /// the cylinder, so one (a tangent or a sectioned partner) or both. Both classes of the pair fold
+    /// their own segments on the line onto it (`split_rulings`); only these put the station on the
+    /// chart (`cyl_chart::fold_shared_stations` folds a line two of them state into one station),
+    /// and the tangency verdict asks them whether the line is an edge (`Tangency::line_is_an_edge`).
     pub(crate) stated_by: Vec<usize>,
     /// A point of the line, exact: the line is the ruling through it, so a reader needs neither
     /// class's coefficients to say where it is — a sectioned partner has none.

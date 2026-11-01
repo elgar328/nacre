@@ -370,9 +370,9 @@ pub(crate) enum Wall {
 /// **A line two plane classes share on a cylinder, as one of the two reads it** — read off the
 /// gate's record ([`crate::planes::SharedRuling`]), never decided again: `other` is the second
 /// class, `cyl` the cylinder, `side` which of the reading class's two rulings the line is
-/// ([`ruling_side_signed`] against that class — `0` for a tangent class's one ruling). Whether the
-/// reading class states it as a station of the cylinder's chart is the record's own `stated_by`,
-/// which `split_rulings` asks before it reads the line.
+/// ([`ruling_side_signed`] against that class — `0` for a tangent class's one ruling). Every class
+/// of the pair reads it (`split_rulings`); whether the reading class also states it as a station of
+/// the cylinder's chart is the record's own `stated_by`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SharedLine {
     pub(crate) other: usize,

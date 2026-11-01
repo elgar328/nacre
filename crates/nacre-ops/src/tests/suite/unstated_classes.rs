@@ -451,8 +451,9 @@ fn nameless_classes_beside_world_cylinders() {
         // `x = 40` turned 37° about that ruling still holds it, runs along the axis within the
         // radius (the axis is `5·sin 37° ≈ 3.0` from it), and every face of the class stands far
         // from the plate — sectioned; the other three walls clear the fillet's box. The plate's own
-        // wall `y = −25` ends on that ruling, but a cylinder's own solid writes no record of its
-        // tangent walls, so the gate has no other record to meet. Downstream, on the plate's top
+        // wall `y = −25` ends on that ruling and touches the fillet there (`CylRecord::Touches`),
+        // but the sectioned class's settlement meets only another solid's tangent walls, so the gate
+        // has no other record to meet. Downstream, on the plate's top
         // and bottom, the split pass asks whether the class's line reaches the wall's segment
         // there: the crossing `{cap, class, y = −25}` against the segment's end, the fillet's
         // tangent point (a pierce name, root `Double`) — one point, two names, which the interval

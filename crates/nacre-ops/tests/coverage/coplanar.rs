@@ -463,8 +463,12 @@ fn fillet_plate(m: &mut Model) -> Handle<Solid> {
 /// tool crossed dissolves back into its circle: kept as arcs, a rim crossed twice would leave two
 /// arcs whose nodes have one neighbour each (they would stay, naming the box's planes —
 /// `VertexNamesAbsentSurface`), and one crossed four times would come out as an empty loop
-/// (measured). The fillet slab runs flush with the plate's bottom wall on one row and stops short
-/// of it on the other: the wall plane is not what the rim meets.
+/// (measured). The fillet slab runs flush with the plate's bottom wall on two rows and stops short
+/// of it on the third: the wall plane is not what the rim meets. On the fillet's axis plane
+/// `x = 1.5` the slab's bottom edge lies on the wall's line with that plane, which runs on past the
+/// fillet's tangent ruling — a station of the wall class, which touches the fillet there
+/// (`CylRecord::Touches`), and so one line with the plane's ruling — which is what lets the slab's
+/// segment on it, above the plate and touching the lateral at its end alone, stay a segment.
 #[test]
 fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
     type Build = fn(&mut Model) -> Handle<Solid>;
@@ -510,6 +514,12 @@ fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
             fillet_plate,
             [1.6, -4.0, 1.0],
             [2.6, 0.0, 2.0],
+        ),
+        (
+            "fillet plate, a slab flush with the wall plane on the fillet's axis plane",
+            fillet_plate,
+            [1.5, -4.0, 1.0],
+            [2.5, 0.0, 2.0],
         ),
         (
             "fillet plate, a slab short of the wall plane",

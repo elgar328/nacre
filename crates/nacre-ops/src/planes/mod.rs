@@ -548,6 +548,13 @@ pub(crate) enum CylRecord {
     /// named twin of [`Silence::Sectioned`]: the class has world coefficients, so the roads that
     /// answer a silent class from its record ask those instead.
     Sections,
+    /// A named class whose plane stands exactly `r` from the axis and has a face that does not
+    /// clear the lateral faces' strip (`cyl_gate::class_meet`'s tangent arm): it touches the
+    /// cylinder along one ruling, and that ruling is a station of its own arrangement — `side = 0`.
+    /// A solid's own fillet flat is one, as is another solid's wall tangent to the lateral. Not a
+    /// cut: a cut's readers lean on «within the radius», which a tangent plane is not. The nameless
+    /// twin is [`Silence::Grazes`].
+    Touches,
 }
 
 /// **What the gate proved of a nameless class it passed as silent about a cylinder.**
@@ -618,6 +625,21 @@ impl WorkingCyl {
             .any(|&(c, r)| c == wc && r == CylRecord::Silent(Silence::Grazes))
     }
 
+    /// Whether named class `wc` touches this cylinder along one ruling ([`CylRecord::Touches`]).
+    pub(crate) fn touches(&self, wc: usize) -> bool {
+        self.records
+            .iter()
+            .any(|&(c, r)| c == wc && r == CylRecord::Touches)
+    }
+
+    /// Whether class `wc`'s own arrangement holds a ruling station of this cylinder — it cuts the
+    /// lateral (two rulings) or sections it along the axis ([`Self::draws_rulings`]), or touches it
+    /// along one ([`Self::touches`]). Not a [`Silence::Grazes`] class: its faces stand apart from
+    /// the lateral, so its tangent line stations nothing.
+    pub(crate) fn holds_ruling(&self, wc: usize) -> bool {
+        self.draws_rulings(wc) || self.touches(wc)
+    }
+
     /// Whether class `wc`'s plane cuts this cylinder's lateral faces ([`CylRecord::Cuts`]).
     pub(crate) fn cuts(&self, wc: usize) -> bool {
         self.records
@@ -653,7 +675,8 @@ impl WorkingCyl {
             CylRecord::Silent(Silence::Beside(side)) => Some((c, side)),
             CylRecord::Silent(Silence::Apart | Silence::Sectioned | Silence::Grazes)
             | CylRecord::Cuts
-            | CylRecord::Sections => None,
+            | CylRecord::Sections
+            | CylRecord::Touches => None,
         })
     }
 

@@ -2586,11 +2586,11 @@ fn measure_census() {
             // A slab reaching the plate's bottom wall plane `y = −4`
             // — its face coplanar with the wall, not overlapping it, its bottom edge on the
             // wall's line past the tangent point. On the axis plane the slab's corner edge lies
-            // on the fillet's own seam, which the rulings split does not arrange yet
-            // (`RulingBoundNotYet`, frozen here by name). Off it the slab rests on the plate's
-            // top across the fillet's rim, and the cut leaves the plate as it was — the cleaning
-            // drops the split's nodes from the cap and the lateral together; the wall plane plays
-            // no part (the coverage lock moves the slab off it).
+            // on the fillet's own seam, a station of the wall class, which touches the fillet
+            // (`CylRecord::Touches`). Off it the slab rests on the plate's top across the
+            // fillet's rim. Either way the cut leaves the plate as it was — the cleaning drops
+            // the split's nodes from the cap and the lateral together; the wall plane plays no
+            // part (the coverage lock holds both rows).
             (
                 "slab wall 1.5",
                 Box::new(|m| (plate1(m), slab(m, [1.5, -4.0, 1.0], [2.5, 0.0, 2.0]))),
