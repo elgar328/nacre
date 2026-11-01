@@ -798,21 +798,11 @@ pub(super) fn split_rulings(
     // The lines on this class that lie on a cylinder — every one a ruling station of this class's
     // own arrangement, which the gate asserts where it writes the record
     // ([`crate::planes::WorkingCyl::holds_ruling`]: the class cuts the lateral, sections it, or
-    // touches it along that line) — `(the other class, cylinder, which of this class's rulings)`,
-    // the pair read off the gate's record, never decided here, and the side asked of the line once
-    // ([`combinatorics::shared_line`], which the straight-angle cleaning reads too): it is the
-    // identity a ruling piece carries (`MergedRuling::side`).
-    let mut shared_here: Vec<(usize, usize, i8)> = Vec::new();
-    for (ci, cy) in cyls.iter().enumerate() {
-        for sr in cy
-            .shared
-            .iter()
-            .filter(|sr| sr.line.0 == wc || sr.line.1 == wc)
-        {
-            let l = combinatorics::shared_line(jd, cyls, ci, sr, wc).ok_or_else(undecided)?;
-            shared_here.push((l.other, ci, l.side));
-        }
-    }
+    // touches it along that line) — each the other class, the cylinder and which of this class's
+    // rulings, the pair read off the gate's record, never decided here, and the side asked of the
+    // line once (`combinatorics::shared_lines_of`, the reading the straight-angle cleaning's table
+    // is made of too): it is the identity a ruling piece carries (`MergedRuling::side`).
+    let shared_here = combinatorics::shared_lines_of(jd, cyls, wc).ok_or_else(undecided)?;
     let mut on_ruling: Vec<Vec<NodeId>> = vec![Vec::new(); rulings.len()];
     let (mut on_seg, cuts) = collect(
         jd,
@@ -822,9 +812,9 @@ pub(super) fn split_rulings(
         aliases,
         &cyl_list,
         |_si, sg, cyl| {
-            let shared = shared_here
-                .iter()
-                .any(|&(t, c, _)| t == sg.wall && c == cyl);
+            let shared = combinatorics::line_along(&shared_here, sg.wall)
+                .map_err(reject)?
+                .is_some_and(|l| l.cyl == cyl);
             let pieces = || crate::planes::lateral_pieces(faces, cyls[cyl].surf);
             let Some(xs) = lateral_crossings(jd, wc, cyl, &cyls[cyl].def, sg, shared, pieces)?
             else {
@@ -894,9 +884,12 @@ pub(super) fn split_rulings(
     for (ri, n) in cuts {
         on_ruling[ri].push(n);
     }
-    let folds = segs
-        .iter()
-        .any(|sg| shared_here.iter().any(|&(t, _, _)| t == sg.wall));
+    let mut folds = false;
+    for sg in segs {
+        folds |= combinatorics::line_along(&shared_here, sg.wall)
+            .map_err(reject)?
+            .is_some();
+    }
     if on_ruling.iter().all(|v| v.is_empty()) && on_seg.iter().all(|v| v.is_empty()) && !folds {
         return Ok(None);
     }
@@ -980,7 +973,7 @@ fn fold_onto_rulings(
     cyls: &[crate::planes::WorkingCyl],
     segs: Vec<MergedSeg>,
     rulings: &mut [MergedRuling],
-    shared_here: &[(usize, usize, i8)],
+    shared_here: &[combinatorics::SharedLine],
     aliases: &Aliases,
 ) -> Result<Vec<MergedSeg>, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
@@ -991,7 +984,9 @@ fn fold_onto_rulings(
     };
     let mut kept = Vec::with_capacity(segs.len());
     for sg in segs {
-        let Some(&(_, cyl, side)) = shared_here.iter().find(|&&(t, _, _)| t == sg.wall) else {
+        let Some(&combinatorics::SharedLine { cyl, side, .. }) =
+            combinatorics::line_along(shared_here, sg.wall).map_err(reject)?
+        else {
             kept.push(sg);
             continue;
         };

@@ -427,6 +427,52 @@ pub(crate) fn shared_line(
     Some(SharedLine { other, cyl, side })
 }
 
+/// **Every record of the gate, with the two classes that read it** — `(own, cylinder, record)`, in
+/// cylinder then record order. The one walk both tables are made of, each reading what it keeps
+/// through [`shared_line`]: [`SharedLines::of`] keeps what reads, [`shared_lines_of`] refuses a
+/// class that has a record it cannot read.
+fn shared_line_records(
+    cyls: &[crate::planes::WorkingCyl],
+) -> impl Iterator<Item = (usize, usize, &crate::planes::SharedRuling)> {
+    cyls.iter().enumerate().flat_map(|(ci, cy)| {
+        cy.shared
+            .iter()
+            .flat_map(move |sr| [sr.line.0, sr.line.1].map(|own| (own, ci, sr)))
+    })
+}
+
+/// **The lines plane class `own` shares on the cylinders**, one per record it is a class of —
+/// `None` when one of them cannot be read. The arrangement's reading (`split_rulings`): a line it
+/// cannot place is a ruling it cannot fold, so the class refuses rather than reading a bend.
+pub(crate) fn shared_lines_of(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    own: usize,
+) -> Option<Vec<SharedLine>> {
+    shared_line_records(cyls)
+        .filter(|&(o, _, _)| o == own)
+        .map(|(o, ci, sr)| shared_line(jd, cyls, ci, sr, o))
+        .collect()
+}
+
+/// **The recorded line a segment on wall `wall` lies along, among one class's `lines`** — `None`
+/// when the pair is no recorded line. The one lookup every reader of a segment's line makes (the
+/// ruling split's crossings and its fold). A wall whose line with the class is a ruling of **two**
+/// cylinders puts two laterals on that line, which is two cylinders meeting:
+/// [`RejectReason::CylinderPairContact`], the gate's name for it (measured: no such pair reaches
+/// the arrangement in the suite, the census or the ignored sweep).
+pub(crate) fn line_along(
+    lines: &[SharedLine],
+    wall: usize,
+) -> Result<Option<&SharedLine>, RejectReason> {
+    let mut on = lines.iter().filter(|l| l.other == wall);
+    let first = on.next();
+    match on.next() {
+        Some(_) => Err(RejectReason::CylinderPairContact),
+        None => Ok(first),
+    }
+}
+
 /// **Every plane class's shared lines** — the table «do these two walls of one face run along
 /// one line?» reads ([`SharedLines::one_line`]).
 ///
@@ -448,13 +494,9 @@ impl SharedLines {
     /// Built from the gate's records, every class of every record reading it.
     pub(crate) fn of(jd: &Judge<'_, WorkingPlane>, cyls: &[crate::planes::WorkingCyl]) -> Self {
         let mut by_class: HashMap<usize, Vec<SharedLine>> = HashMap::new();
-        for (ci, cy) in cyls.iter().enumerate() {
-            for sr in &cy.shared {
-                for own in [sr.line.0, sr.line.1] {
-                    if let Some(l) = shared_line(jd, cyls, ci, sr, own) {
-                        by_class.entry(own).or_default().push(l);
-                    }
-                }
+        for (own, ci, sr) in shared_line_records(cyls) {
+            if let Some(l) = shared_line(jd, cyls, ci, sr, own) {
+                by_class.entry(own).or_default().push(l);
             }
         }
         Self { by_class }
