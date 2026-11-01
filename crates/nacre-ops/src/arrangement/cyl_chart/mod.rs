@@ -45,6 +45,10 @@
 //! seeded from the operands — `Curved::aliases` is what this chart's stations are canonicalized
 //! through), and the line is stated in the plane vocabulary by both faces that touch it — the
 //! tangent wall's run and the lateral's own graze — so the ruling vocabulary states nothing there.
+//! The same holds on the *other* solid's tangent wall where the face's own edge lies on its
+//! tangent ruling (a half cylinder's flat edge): the flat and the lateral each state their side of
+//! the plane-pair line on that wall's class (`rulings::lateral_half_of_plane_pair_lines`), and the
+//! chart takes nothing from it.
 //!
 //! ## What is here, and what is not
 //!

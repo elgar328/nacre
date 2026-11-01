@@ -3,9 +3,10 @@ use super::*;
 /// [`circle_on_class`], and like it, an answer **per extent** rather than one for the whole
 /// ruling.
 ///
-/// Asked only after the circle road answered "no circle"; **empty** (silently, today's state)
-/// unless the gate **recorded** the pair (the wall within the radius — through the axis or
-/// offset from it), and declining rather than contributing
+/// Asked only after the circle road answered "no circle"; **empty** (silently) unless the gate
+/// **recorded** the pair — the wall within the radius (through the axis or offset from it), or
+/// touching the cylinder along one ruling, where the face states only its half of a plane-pair
+/// line on it ([`lateral_half_of_plane_pair_lines`]) — and declining rather than contributing
 /// *partially* when it does but a piece cannot be stated — a half-contributed rectangle would
 /// leave the class's 1-skeleton dangling, which is a worse lie than an honest incomplete-trace
 /// mark.
@@ -26,13 +27,49 @@ pub(super) fn rulings_on_class(
     cyls: &[crate::planes::WorkingCyl],
     aliases: &Aliases,
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
-    // **The gate's answer, first** ([`WorkingCyl::draws_rulings`](crate::planes::WorkingCyl::draws_rulings)
-    // — a class that cuts the lateral, or one with no world statement that sections it on this its
-    // own arrangement only, [`Silence::Sectioned`]). A pair without that record was proven clear
-    // (or never in question), and contributing its rectangle anyway breaks the straddling family:
-    // the boss's own wall class is a d=0 pair, and its coplanar bottom cap's chord lands on a line
-    // the plate already traces. The gate records exactly the pairs that need the rectangle.
+    // **The gate's answer, first** — a class touching the cylinder
+    // ([`WorkingCyl::touches`](crate::planes::WorkingCyl::touches)) gets the lateral's half of a
+    // plane-pair line and no rectangle (below); otherwise
+    // [`WorkingCyl::draws_rulings`](crate::planes::WorkingCyl::draws_rulings) — a class that cuts
+    // the lateral, or one with no world statement that sections it on this its own arrangement
+    // only, [`Silence::Sectioned`]. A pair without either record was proven clear (or never in
+    // question), and contributing its rectangle anyway breaks the straddling family: the boss's own
+    // wall class is a d=0 pair, and its coplanar bottom cap's chord lands on a line the plate
+    // already traces. The rectangle goes exactly to the pairs whose record draws rulings.
     let sections = cyls.get(k).is_some_and(|cy| cy.sections_along(wc));
+    // **A class touching the cylinder along one ruling** draws no ruling piece — the tangent
+    // divides nothing — but where the face's own edge lies on that ruling with another plane
+    // across it, the lateral states its half of that plane-pair line, by the rule the secant
+    // rulings use, on the class's one ruling (`side = 0`).
+    if cyls.get(k).is_some_and(|cy| cy.touches(wc)) {
+        let Some(def) = cf.def.as_ref() else {
+            return Err(DeclineKind::Ruling);
+        };
+        let LateralShape { cycles, .. } = lateral_shape(jd, cf, fl, def)?;
+        let above = axis_above(jd, wc, def).ok_or(DeclineKind::Ruling)?;
+        let (mut grazes, mut quiet) = (Vec::new(), Vec::new());
+        for (_, ring) in &cycles {
+            // A loop on another lateral states no plane-pair line (two laterals meeting are the
+            // gate's to refuse, by name).
+            let Some(nr) = ring.poly() else {
+                continue;
+            };
+            lateral_half_of_plane_pair_lines(
+                jd,
+                def,
+                wc,
+                k,
+                0,
+                nr,
+                which,
+                aliases,
+                &|_, _| Ok(above),
+                &mut grazes,
+                &mut quiet,
+            )?;
+        }
+        return Ok((Vec::new(), grazes));
+    }
     if !cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc)) {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -136,21 +173,9 @@ fn ruling_sweep(
     aliases: &Aliases,
 ) -> Result<SweepOut, DeclineKind> {
     use crate::combinatorics::Wall;
-    // **The lateral's half of a plane-pair line.** An edge of this cycle can lie on
-    // this ruling with the face *across* it being another plane `t` — the fillet's tangent edge,
-    // when `wc` passes through the axis and so contains the tangent ruling. That line is a
-    // plane-pair line (`wc ∩ t`), and the lateral **ends** there, so the plane vocabulary states
-    // it — the half of the one rule for a line that is a ruling and a plane-pair line at once
-    // (the other half: where the lateral runs on across the line, the line is the other solid's
-    // edge and the ruling vocabulary states it — `split_rulings`' fold). The
-    // tangent wall's own run already does (`Feature::Run` → `Graze`), from *its* side. But the
-    // solid's material near that line lies on **both** sides of `wc` — the tangent wall's below,
-    // the fillet face's above — and an edge's mask is the sum of its faces' statements
-    // (`edge_mask`: two grazes of one solid, one per side, flip both bits). So the lateral states
-    // its side too — as a `Seg` on that line, in the plane vocabulary, so `merge_coincident`
-    // joins it with the wall's — and states nothing in the ruling vocabulary (`quiet_nodes`).
-    // The side is read exactly as a run's on this ruling is (`body_side`): the same cycle, the
-    // same ruling, the same traversal.
+    // **The lateral's half of a plane-pair line** on this ruling is stated in the plane
+    // vocabulary ([`lateral_half_of_plane_pair_lines`]); its side is read exactly as a run's on
+    // this ruling is (`body_side`): the same cycle, the same ruling, the same traversal.
     let mut grazes: Vec<Seg> = Vec::new();
     // **Identity is the table's** — a station made here (`wc`'s crossing with a cap)
     // and a corner the cycle carries can be one point under two names, and the plane roads have
@@ -201,62 +226,47 @@ fn ruling_sweep(
         //   line is the cylinder's alone, and this sweep states it as a run (`on`);
         // - a ruling held by another plane `t` whose two ends are this ruling's cap
         //   crossings (by name, through the table): the line is the plane pair `wc ∩ t`, and
-        //   `t`'s own trace states it as a graze run on this class — this sweep stays **silent**
-        //   there (`quiet`), and only remembers the ends so an arc ending on them is "an arc that
-        //   ends on this ruling", not a crossing.
+        //   `t`'s own trace states it as a graze run on this class — this sweep states nothing
+        //   there in the ruling vocabulary (`quiet`), only the lateral's half in the plane one
+        //   ([`lateral_half_of_plane_pair_lines`]), and remembers the ends so an arc ending on them
+        //   is "an arc that ends on this ruling", not a crossing.
         let mut on = vec![false; n];
         let mut quiet_nodes: Vec<NodeId> = Vec::new();
         for (i, slot) in on.iter_mut().enumerate() {
             let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
-            match nr.walls[i] {
-                // The two ends are asked again rather than the carried `side` read: that is one
-                // end's, and an edge whose ends answer differently is no ruling.
-                Wall::Ruling { plane: t, .. } if t == wc => {
-                    let (Some(sa), Some(sb)) = (
-                        node_ruling_side(jd, def, wc, a),
-                        node_ruling_side(jd, def, wc, b),
-                    ) else {
-                        return Err(DeclineKind::Ruling);
-                    };
-                    // An edge whose two ends answer differently is not a ruling at all — it
-                    // would have to cross the plane through the axis. Named rather than silently
-                    // mis-placed.
-                    if sa != sb {
-                        return Err(DeclineKind::CylHoleFeature);
-                    }
-                    *slot = sa == side;
+            // The two ends are asked again rather than the carried `side` read: that is one
+            // end's, and an edge whose ends answer differently is no ruling.
+            if let Wall::Ruling { plane: t, .. } = nr.walls[i]
+                && t == wc
+            {
+                let (Some(sa), Some(sb)) = (
+                    node_ruling_side(jd, def, wc, a),
+                    node_ruling_side(jd, def, wc, b),
+                ) else {
+                    return Err(DeclineKind::Ruling);
+                };
+                // An edge whose two ends answer differently is not a ruling at all — it
+                // would have to cross the plane through the axis. Named rather than silently
+                // mis-placed.
+                if sa != sb {
+                    return Err(DeclineKind::CylHoleFeature);
                 }
-                Wall::Ruling { plane: t, .. } => {
-                    // Both ends this ruling's crossings with the caps the ends name? Then the edge
-                    // lies on the ruling and `wc ∩ t` carries it.
-                    let on_ruling_end = |x: NodeId| -> bool {
-                        combinatorics::pierce_name(x).is_some_and(|(pl, _, _)| {
-                            pl.iter().any(|&c| {
-                                c != t
-                                    && combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
-                                        .is_ok_and(|id| same(id, x))
-                            })
-                        })
-                    };
-                    if on_ruling_end(a) && on_ruling_end(b) {
-                        quiet_nodes.push(a);
-                        quiet_nodes.push(b);
-                        let (_, _, _, body_above) = body_side(a, b)?;
-                        let pin = |x: NodeId| {
-                            combinatorics::pin_for(jd, wc, t, x).ok_or(DeclineKind::Ruling)
-                        };
-                        grazes.push(Seg {
-                            wall: t,
-                            end: [a, b],
-                            end_h: [pin(a)?, pin(b)?],
-                            solid: which,
-                            kind: SegKind::Graze { body_above },
-                        });
-                    }
-                }
-                _ => {}
+                *slot = sa == side;
             }
         }
+        lateral_half_of_plane_pair_lines(
+            jd,
+            def,
+            wc,
+            k,
+            side,
+            nr,
+            which,
+            aliases,
+            &|a, b| body_side(a, b).map(|(_, _, _, above)| above),
+            &mut grazes,
+            &mut quiet_nodes,
+        )?;
         if n > 0 && on.iter().all(|&x| x) {
             return Err(DeclineKind::Ruling); // a cycle lying wholly on one ruling is no face
         }
@@ -350,4 +360,91 @@ pub(crate) fn node_ruling_side(
 ) -> Option<i8> {
     let (_, cyl, _) = combinatorics::pierce_name(n)?;
     combinatorics::pierce_meet(jd, cyl, def, n)?.ruling_side(jd, wall, def)
+}
+
+/// **The lateral's half of a plane-pair line, on ruling `side` of class `wc`** — `±1` one of a
+/// secant class's two rulings, `0` a tangent class's one.
+///
+/// An edge of the cycle can lie on that ruling with the face *across* it being another plane `t` —
+/// the fillet's tangent edge, when `wc` passes through the axis and so contains the tangent
+/// ruling; a half cylinder's flat edge, when `wc` is a wall tangent to it there. That line is a
+/// plane-pair line (`wc ∩ t`), and the lateral **ends** there, so the plane vocabulary states it —
+/// the half of the one rule for a line that is a ruling and a plane-pair line at once (the other
+/// half: where the lateral runs on across the line, the line is the other solid's edge and the
+/// ruling vocabulary states it — `split_rulings`' fold). The face `t` states the line from its
+/// side (a graze run). But the solid's material near that line lies on **both** sides of `wc`, or
+/// on one side twice — and an edge's mask is the sum of its faces' statements (`edge_mask`: two
+/// grazes of one solid flip both bits when they lie on opposite sides, none when on one). So the
+/// lateral states its side too — as a `Seg` on that line, so `merge_coincident` joins it with
+/// `t`'s — and nothing in the ruling vocabulary: its ends go to `quiet`, so an arc ending on them
+/// ends on this ruling.
+///
+/// The edge is found by its two ends being this ruling's crossings with the caps the ends name
+/// (by name, through the table — [`combinatorics::crossing_on_ruling`], which names a tangent
+/// class's crossing by its double root). The side, `body_above`, is the caller's: on a secant
+/// ruling the face leaves the line along `±θ` and crosses `wc` there (first order — the sweep's
+/// `body_side`); on a tangent one it leaves along `wc` itself and bends to the axis on both sides
+/// of the line, so its side is the axis side ([`axis_above`] — second order, a boss's and a
+/// bore's alike).
+#[allow(clippy::too_many_arguments)]
+fn lateral_half_of_plane_pair_lines(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    k: usize,
+    side: i8,
+    nr: &combinatorics::NamedRing,
+    which: SolidSide,
+    aliases: &Aliases,
+    body_above: &dyn Fn(NodeId, NodeId) -> Result<bool, DeclineKind>,
+    grazes: &mut Vec<Seg>,
+    quiet: &mut Vec<NodeId>,
+) -> Result<(), DeclineKind> {
+    use crate::combinatorics::Wall;
+    let n = nr.triples.len();
+    for i in 0..n {
+        let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
+        let Wall::Ruling { plane: t, .. } = nr.walls[i] else {
+            continue;
+        };
+        if t == wc {
+            continue; // held by `wc` itself: the line is the cylinder's alone, a run of the sweep
+        }
+        let on_ruling_end = |x: NodeId| -> bool {
+            combinatorics::pierce_name(x).is_some_and(|(pl, _, _)| {
+                pl.iter().any(|&c| {
+                    c != t
+                        && combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
+                            .is_ok_and(|id| aliases.one_point(id, x))
+                })
+            })
+        };
+        if !(on_ruling_end(a) && on_ruling_end(b)) {
+            continue;
+        }
+        quiet.push(a);
+        quiet.push(b);
+        let above = body_above(a, b)?;
+        let pin = |x: NodeId| combinatorics::pin_for(jd, wc, t, x).ok_or(DeclineKind::Ruling);
+        grazes.push(Seg {
+            wall: t,
+            end: [a, b],
+            end_h: [pin(a)?, pin(b)?],
+            solid: which,
+            kind: SegKind::Graze { body_above: above },
+        });
+    }
+    Ok(())
+}
+
+/// Whether the axis of the cylinder `def` lies above class `wc` in the label frame (`wc`'s stored
+/// normal) — the one side a lateral tangent to `wc` lies on, the cylinder bending to its axis on
+/// both sides of the tangent line. `None` where the class has no world statement.
+pub(super) fn axis_above(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<bool> {
+    let w = jd.planes[wc].world.as_ref()?;
+    Some(w.sense.sign() * nacre_exact::plane_residual_sign(&w.name, def.origin()) > 0)
 }

@@ -18,6 +18,17 @@
 //! itself along the line, a refusal by name — see
 //! [`a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name`].
 //!
+//! And the shapes whose line is `A`'s own edge, where its lateral ends on a flat: a wall tangent
+//! to the cylinder there — ending on the edge it builds, on a half cylinder and on a half bore,
+//! from inside or outside; running across it it is refused by name — see
+//! [`a_tangent_wall_on_a_flats_edge_builds_or_is_refused`],
+//! [`a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused`] and
+//! [`a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused`]; ending there beside a secant of
+//! `B`'s own, three planes on one line, it is refused today
+//! ([`three_planes_on_a_laterals_own_edge_are_refused_today`]); and a wall through that edge
+//! from the side `A` does not fill — see
+//! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`].
+//!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
 //! of `B` along `A`'s axis ([`Height`]).
@@ -180,20 +191,6 @@ fn every_placement<'q>(
     ran
 }
 
-/// Today's answer: refused, as a coverage limit. The class is asserted, not the variant —
-/// reason names are engine vocabulary; a refusal that turns `Impossible` or `SuspectedDefect`, or
-/// a placement that starts to build, is news here and in the todo item this pins.
-fn refused_today(c: &Case<'_, '_>, _: &mut Model, got: Result<Vec<Handle<Solid>>, BoolError>) {
-    match got {
-        Err(BoolError::Rejected { reason, .. }) => assert_eq!(
-            reason.class(),
-            RejectClass::NotSupported,
-            "{c}: refused as {reason:?}"
-        ),
-        other => panic!("{c}: the wall moved — {other:?}"),
-    }
-}
-
 /// One placement's six booleans, in the order `A ∪ B`, `B ∪ A`, `A − B`, `B − A`, `A ∩ B`,
 /// `B ∩ A`: each built result as `(bodies, volume)` — validated here — or the refusal's reason.
 type Six = [Result<(usize, f64), RejectReason>; 6];
@@ -204,6 +201,16 @@ fn every_six<'q>(
     a: fn() -> Profile2d,
     quads: &[(&'q str, &'q [[f64; 2]])],
 ) -> Vec<(Placement<'q>, Six)> {
+    every_six_drawn(a, quads, drawn)
+}
+
+/// [`every_six`] with the mesh asked by `draw` rather than [`drawn`] — for a family whose built
+/// results the mesher does not all draw yet.
+fn every_six_drawn<'q>(
+    a: fn() -> Profile2d,
+    quads: &[(&'q str, &'q [[f64; 2]])],
+    mut draw: impl FnMut(&Case<'_, '_>, &Model, &[Handle<Solid>], f64),
+) -> Vec<(Placement<'q>, Six)> {
     let mut out: Vec<(Placement<'q>, Six)> = Vec::new();
     let mut cur: Vec<Result<(usize, f64), RejectReason>> = Vec::new();
     every_placement(a, quads, |c, m, got| {
@@ -213,7 +220,7 @@ fn every_six<'q>(
                 let vs = nacre_validate::validate(m);
                 assert!(vs.is_empty(), "{c}: {vs:?}");
                 let v = solids.iter().map(|&s| volume(m, s)).sum();
-                drawn(c, m, &solids, v);
+                draw(c, m, &solids, v);
                 Ok((solids.len(), v))
             }
             Err(BoolError::Rejected { reason, .. }) => Err(reason),
@@ -267,7 +274,12 @@ fn drawn(c: &Case<'_, '_>, m: &Model, solids: &[Handle<Solid>], volume: f64) {
 /// they need built: `Fuse + Common = |A| + |B|`, `(A − B) + Common = |A|`, `(B − A) + Common =
 /// |B|`, and each pair of swapped operands alike.
 fn identities(p: &Placement<'_>, six: &Six) {
-    let (a, b) = (2.0 * std::f64::consts::PI, p.b_volume());
+    identities_with(p, six, 2.0 * std::f64::consts::PI);
+}
+
+/// [`identities`] for an `A` of volume `a`.
+fn identities_with(p: &Placement<'_>, six: &Six, a: f64) {
+    let b = p.b_volume();
     let v = |i: usize| six[i].as_ref().ok().map(|&(_, v)| v);
     for (x, y) in [(0, 1), (4, 5)] {
         if let (Some(r), Some(q)) = (v(x), v(y)) {
@@ -357,61 +369,279 @@ fn a_keyhole_builds() {
 /// over [`upper_half_disk`], so its flat `y = 0` meets its lateral in the ruling `(1, 0)` — `A`'s
 /// own edge, where the lateral ends. `B`'s wall `x = 1` is tangent to `A`'s cylinder along that
 /// edge, either running across it or ending on it (then `B`'s face `y = 0` lies on `A`'s flat).
-/// Refused today, by name — and the name is the placement's, never the operation's or the vertex
-/// order's: every boolean stops before the operation decides anything.
 ///
+/// - **Ending**, either order and frame: the line is an edge of both solids' faces, so the gate
+///   passes it to the structure. On `B`'s wall class `A`'s flat and `A`'s lateral each state their
+///   side of the line — both below the wall, the lateral bending to its axis — and the pair flips
+///   nothing (`arrangement::lateral_half_of_plane_pair_lines` on the tangent ruling). Every
+///   boolean builds, valid, drawn, the volumes in closed form — `A ∩ B` is the half disk's strip
+///   `y ∈ [0, 1/2]` over the height the two share — but `B − A` in the world frame with `B` on
+///   the base cap or inside the span: there the grouping's rays all abstain (`NoClearRay`) where the
+///   tilted frame builds the same booleans.
 /// - **Across**: `TangentLineInAnotherPlane`, from the population gate, in either operand order,
-///   at every height and in both frames. `A`'s flat holds the tangent line and `B`'s wall runs
-///   across it, so the line is no edge both faces end on; around it six regions meet, which the
-///   tangency's verdict does not read, and the gate refuses the pair before anything is arranged.
-/// - **Ending**, either order and frame: the line *is* such an edge, so the gate passes it to the
-///   structure, and the arrangement does not build that structure yet — `StraightAngle` inside the
-///   span and past the top, `LabelConflict` on the base cap and past both caps.
-///
-/// The backstop cells ([`backstop`], `SuspectedDefect`, 48 booleans) and the across family's name
-/// are pinned by variant, so a refusal that moves is news; the rest by class.
+///   at every height and in both frames. `B`'s wall runs across the line, and `A`'s flat and
+///   lateral end on it: around it six regions meet, which the tangency's verdict does not read, and
+///   the gate refuses the pair before anything is arranged.
 #[test]
-fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
+fn a_tangent_wall_on_a_flats_edge_builds_or_is_refused() {
     let across: &[[f64; 2]] = &[[-3.0, -2.0], [1.0, -2.0], [1.0, 0.5], [-3.0, 0.5]];
     let ending: &[[f64; 2]] = &[[-3.0, 0.0], [1.0, 0.0], [1.0, 0.5], [-3.0, 0.5]];
-    let mut defects = 0;
     let ran = every_placement(
         upper_half_disk,
-        &[("across the edge", across), ("ending on the edge", ending)],
-        |c, m, got| {
-            let pinned = match (c.placement.family, backstop(c)) {
-                ("across the edge", _) => Some(RejectReason::TangentLineInAnotherPlane),
-                (_, Some(want)) => {
-                    defects += 1;
-                    Some(want)
-                }
-                _ => None,
-            };
-            match pinned {
-                Some(want) => match &got {
-                    Err(BoolError::Rejected { reason, .. }) => {
-                        assert_eq!(*reason, want, "{c}: the refusal moved");
-                    }
-                    other => panic!("{c}: the refusal moved — {other:?}"),
-                },
-                None => refused_today(c, m, got),
-            }
+        &[("across the edge", across)],
+        |c, _, got| match got {
+            Err(BoolError::Rejected { reason, .. }) => assert_eq!(
+                reason,
+                RejectReason::TangentLineInAnotherPlane,
+                "{c}: the refusal moved"
+            ),
+            other => panic!("{c}: the refusal moved — {other:?}"),
         },
     );
-    assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
-    assert_eq!(defects, 48, "the backstop refusals");
+    assert_eq!(ran, 2 * 2 * 4 * 6, "the family across");
+    let all = every_six(upper_half_disk, &[("ending on the edge", ending)]);
+    assert_eq!(all.len(), 2 * 2 * 4, "the family ending");
+    let (a, strip) = (
+        std::f64::consts::PI,
+        0.5 * 0.75f64.sqrt() + std::f64::consts::FRAC_PI_6,
+    );
+    let mut abstained = 0;
+    for (p, six) in &all {
+        identities_with(p, six, a);
+        let (b, common) = (p.b_volume(), strip * p.height.shared());
+        let want = [
+            a + b - common,
+            a + b - common,
+            a - common,
+            b - common,
+            common,
+            common,
+        ];
+        for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            match got {
+                Ok((_, v)) => assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}"),
+                Err(RejectReason::NoClearRay)
+                    if i == 3
+                        && !p.tilted
+                        && matches!(p.height, Height::OnBase | Height::Inside) =>
+                {
+                    abstained += 1;
+                }
+                Err(r) => panic!("{p}: [{i}] {r:?}"),
+            }
+        }
+    }
+    assert_eq!(
+        abstained,
+        2 * 2,
+        "the abstaining rays: two heights, two vertex orders"
+    );
 }
 
-/// The half-cylinder family's backstop cells — where [`a_tangent_wall_on_a_flats_edge_is_refused_today`]
-/// stops at `SuspectedDefect` today, and with which reason: the wall ending on the edge, on the
-/// base cap or past both caps. Neither the operation nor the vertex order enters.
-fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
-    use Height::*;
-    let p = c.placement;
-    match (p.family, p.height) {
-        ("ending on the edge", OnBase | PastBoth) => Some(RejectReason::LabelConflict),
-        _ => None,
+/// **A tangent wall ending on the flat edge from outside the half cylinder** — `B` touches `A`
+/// along the edge line alone: below the flat (`[1, 3] × [−1, 0]`, `B`'s top on `A`'s flat plane) or
+/// beside it (`[1, 3] × [0, 1/2]`, the two bottoms on one plane). On `B`'s wall class `A`'s flat and
+/// lateral state the line from one side and cancel, as when the wall ends on the edge from inside.
+/// Below, every boolean builds — `A ∪ B` the two bodies meeting on the line, `A ∩ B` empty. Beside,
+/// `A ∪ B` merges the coplanar bottoms into one face, so the one body touches itself along the
+/// line (`SelfTouchingResult` — a polyhedral `A` against the same `B` answers the same); the rest
+/// builds.
+#[test]
+fn a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused() {
+    let below: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 0.0], [1.0, 0.0]];
+    let beside: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 0.5], [1.0, 0.5]];
+    let all = every_six(upper_half_disk, &[("below", below), ("beside", beside)]);
+    assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
+    let a = std::f64::consts::PI;
+    for (p, six) in &all {
+        identities_with(p, six, a);
+        let b = p.b_volume();
+        let fuse = if p.family == "below" {
+            Ok((2, a + b))
+        } else {
+            Err(RejectReason::SelfTouchingResult)
+        };
+        let want = [
+            fuse,
+            fuse,
+            Ok((1, a)),
+            Ok((1, b)),
+            Ok((0, 0.0)),
+            Ok((0, 0.0)),
+        ];
+        for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            match (got, want) {
+                (Ok((n, v)), Ok((wn, wv))) => {
+                    assert_eq!(*n, wn, "{p}: [{i}] bodies");
+                    assert!((v - wv).abs() < 1e-9, "{p}: [{i}] volume {v}, want {wv}");
+                }
+                (Err(r), Err(w)) => assert_eq!(*r, w, "{p}: [{i}]"),
+                (got, want) => panic!("{p}: [{i}] {got:?}, want {want:?}"),
+            }
+        }
     }
+}
+
+/// **Three plane classes on one ruling — a tangent wall and a secant ending together on the flat
+/// edge.** `B` is the triangle `(1, 0), (1, 2), (−1, 2)`: its wall `x = 1` touches `A`'s cylinder
+/// along the edge line and its wall `x + y = 1` cuts it there, both ending on the line, which `A`'s
+/// flat `y = 0` holds too. Every boolean is refused today as `LabelConflict` — a backstop, so it
+/// is pinned by variant: a refusal that moves, or a placement that builds, is news here and in the
+/// todo item this pins.
+#[test]
+fn three_planes_on_a_laterals_own_edge_are_refused_today() {
+    let triangle: &[[f64; 2]] = &[[1.0, 0.0], [1.0, 2.0], [-1.0, 2.0]];
+    let ran = every_placement(
+        upper_half_disk,
+        &[("the triangle", triangle)],
+        |c, _, got| match got {
+            Err(BoolError::Rejected { reason, .. }) => {
+                assert_eq!(
+                    reason,
+                    RejectReason::LabelConflict,
+                    "{c}: the refusal moved"
+                )
+            }
+            other => panic!("{c}: the refusal moved — {other:?}"),
+        },
+    );
+    assert_eq!(ran, 2 * 2 * 4 * 6, "the family");
+}
+
+/// `[−2, 2] × [0, 2]` less the upper half of the unit disk — a half bore whose lateral ends on the
+/// box's face `y = 0` at `(±1, 0)`.
+fn half_bored_box() -> Profile2d {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let ring = nacre_ops::Ring2d::new(
+        vec![
+            [r(-2), r(0)],
+            [r(-1), r(0)],
+            [r(1), r(0)],
+            [r(2), r(0)],
+            [r(2), r(2)],
+            [r(-2), r(2)],
+        ],
+        vec![
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Arc {
+                center: [r(0), r(0)],
+                r2: r(1),
+                ccw: false,
+            },
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a half-bored box");
+    nacre_ops::from_paths(vec![ring])
+        .expect("a half-bored box")
+        .remove(0)
+}
+
+/// **A tangent wall on the edge of a half bore** — the flat-edge family turned inside out: `A` is
+/// the box [`half_bored_box`], whose bore's lateral ends on the box's face `y = 0` along the ruling
+/// `(1, 0)`, and `B`'s wall `x = 1` is tangent to the bore there. `B` stands below the face beside
+/// the bore, on it away from the bore, or on it over the bore. A bore's material is outside its
+/// cylinder, but its lateral still bends to the axis on both sides of the tangent line, so on
+/// `B`'s wall class the lateral's side of the line is the axis side, as on a boss — the one bit
+/// that holds for both (`arrangement::rulings::axis_above`). Every boolean builds, valid, the
+/// volumes in closed form, but those pinned below: `A ∩ B` over the bore in the world frame, in
+/// either order and at every height, where the grouping's rays all abstain (`NoClearRay`) and the
+/// tilted frame builds the same booleans, and results the mesher does not draw yet
+/// (`OverBudget`): `A ∪ B` beside the bore and `A − B` away from it, with `B` short of either of
+/// `A`'s caps — a vertex part way along the lateral's ruling edge, which a secant wall at
+/// `x = 0.5` leaves as well.
+#[test]
+fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
+    let below: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 0.0], [1.0, 0.0]];
+    let away: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 0.5], [1.0, 0.5]];
+    let over: &[[f64; 2]] = &[[-3.0, 0.0], [1.0, 0.0], [1.0, 0.5], [-3.0, 0.5]];
+    let strip = 0.5 * 0.75f64.sqrt() + std::f64::consts::FRAC_PI_6;
+    let mut unmeshed: std::collections::BTreeMap<String, usize> = Default::default();
+    let all = every_six_drawn(
+        half_bored_box,
+        &[
+            ("below, beside", below),
+            ("above, away from the bore", away),
+            ("above, over the bore", over),
+        ],
+        |c, m, solids, v| match nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()) {
+            Err(nacre_tess::TessError::OverBudget) => {
+                let p = c.placement;
+                *unmeshed
+                    .entry(format!(
+                        "{} {:?} {:?} swapped={}",
+                        p.family, p.height, c.kind, c.swapped
+                    ))
+                    .or_default() += 1;
+            }
+            _ => drawn(c, m, solids, v),
+        },
+    );
+    assert_eq!(all.len(), 3 * 2 * 2 * 4, "the family");
+    let a = 16.0 - std::f64::consts::PI;
+    let mut refused: std::collections::BTreeMap<String, usize> = Default::default();
+    for (p, six) in &all {
+        identities_with(p, six, a);
+        let area = match p.family {
+            "below, beside" => 0.0,
+            "above, away from the bore" => 0.5,
+            _ => 1.5 - strip,
+        };
+        let (b, common) = (p.b_volume(), area * p.height.shared());
+        let want = [
+            a + b - common,
+            a + b - common,
+            a - common,
+            b - common,
+            common,
+            common,
+        ];
+        for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            match got {
+                Ok((_, v)) => assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}"),
+                Err(r) => {
+                    *refused
+                        .entry(format!(
+                            "{} {:?} tilted={} [{i}] {r:?}",
+                            p.family, p.height, p.tilted
+                        ))
+                        .or_default() += 1;
+                }
+            }
+        }
+    }
+    let want_refused: std::collections::BTreeMap<String, usize> = Height::ALL
+        .iter()
+        .flat_map(|h| {
+            [4, 5].map(|i| {
+                (
+                    format!("above, over the bore {h:?} tilted=false [{i}] NoClearRay"),
+                    2,
+                )
+            })
+        })
+        .collect();
+    // Both frames and both vertex orders alike; `B` past both caps is drawn.
+    let want_unmeshed: std::collections::BTreeMap<String, usize> =
+        [Height::OnBase, Height::Inside, Height::PastTop]
+            .iter()
+            .flat_map(|h| {
+                [
+                    (format!("below, beside {h:?} Fuse swapped=false"), 4),
+                    (format!("below, beside {h:?} Fuse swapped=true"), 4),
+                    (
+                        format!("above, away from the bore {h:?} Cut swapped=false"),
+                        4,
+                    ),
+                ]
+            })
+            .collect();
+    assert_eq!(refused, want_refused, "the refusals");
+    assert_eq!(unmeshed, want_unmeshed, "the meshes not drawn");
 }
 
 /// **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off

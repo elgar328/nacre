@@ -621,8 +621,9 @@ fn merge_component(
 /// outright — equal walls, or one line in two spellings ([`combinatorics::SharedLines`]: a ruling
 /// piece along a lateral and a plane segment past its cap, where the gate recorded the plane pair's
 /// line on that cylinder). Measured over the `nacre-ops` suite and the census, counted per pass:
-/// the two spellings meet at a node 205 times — 132 in the whole result's pass, 73 in the
-/// per-solid one — and the node drops every time; the census meets none.
+/// the two spellings meet at a node 249 times — 176 in the whole result's pass, 73 in the
+/// per-solid one — and the node drops 241 times (the other 8 a third neighbour or another face's
+/// bend keeps); the census meets none.
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.

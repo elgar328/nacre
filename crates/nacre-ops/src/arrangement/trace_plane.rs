@@ -565,9 +565,10 @@ pub(super) fn trace_one(
                     }));
                 }
                 // No circle: a wall class **within the radius** leaves two rulings instead (the
-                // rulings road, through the axis or offset from it); any other class along or
-                // oblique to the axis still leaves nothing, silently — the population gate names
-                // those interactions.
+                // rulings road, through the axis or offset from it), and one touching the cylinder
+                // leaves only the lateral's half of a plane-pair line on its tangent ruling; any
+                // other class along or oblique to the axis still leaves nothing, silently — the
+                // population gate names those interactions.
                 Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, cyls, aliases) {
                     Ok((v, grazes)) => {
                         out.rulings.extend(v);
@@ -688,11 +689,7 @@ pub(super) fn trace_one(
                     let (a, b) = (ns[i], ns[(i + 1) % n]);
                     // The axis side, in the label frame (`W`'s stored normal): the one bit a
                     // tangent edge flips ([`SegKind::Tangent`]).
-                    let axis_above = (|| -> Option<bool> {
-                        let w = jd.planes[wc].world.as_ref()?;
-                        let o = cyls.get(cyl)?.def.origin();
-                        Some(w.sense.sign() * nacre_exact::plane_residual_sign(&w.name, o) > 0)
-                    })();
+                    let axis_above = cyls.get(cyl).and_then(|cy| axis_above(jd, wc, &cy.def));
                     let Some(axis_above) = axis_above else {
                         out.declined.push((fp, DeclineKind::Ruling));
                         continue;
