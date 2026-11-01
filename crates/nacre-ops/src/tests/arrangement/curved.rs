@@ -971,7 +971,6 @@ fn armed_curved(
         plane_faces.extend(staged.faces);
     }
     let curved = Curved {
-        aliases: Aliases::default(),
         disk_labels,
         arc_labels,
         split_rims: cut_rims,
@@ -1096,7 +1095,6 @@ fn a_cut_circle_bounds_the_bands() {
     // directly, not through the census — this hand-broken input violates the very premise
     // (`src0_present == 0`) the census asserts where the fact is made.
     let mut blind = Curved {
-        aliases: Aliases::default(),
         disk_labels: curved.disk_labels.clone(),
         arc_labels: HashMap::new(),
         split_rims: curved.split_rims.clone(),
@@ -1143,7 +1141,6 @@ fn a_cut_circle_bounds_the_bands() {
     // chamber reads — the walls read the opposite chamber on every cell they bound, and the reader
     // answers neither.
     let mut contrary = Curved {
-        aliases: Aliases::default(),
         disk_labels: curved.disk_labels.clone(),
         arc_labels: curved.arc_labels.clone(),
         split_rims: curved.split_rims.clone(),
@@ -1204,7 +1201,6 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         faces.extend(staged.faces);
     }
     let curved = Curved {
-        aliases: Aliases::default(),
         disk_labels,
         arc_labels,
         split_rims: cut_rims,

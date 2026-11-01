@@ -6,27 +6,16 @@ use super::*;
 /// filter). So a cell's chamber is not *decided* here; it is **read** off the line at either end,
 /// a disk or an arc ([`Chart::read_cell`] is the one reader).
 pub(crate) enum End<'a> {
-    /// The circle on this line is uncut (or cut, but every arc reads the same for this cell): one
-    /// label for the whole disk, whatever the sector.
+    /// The circle on this line is uncut: one label for the whole disk, whatever the slab.
     Disk(Label),
-    /// The circle is cut and the cell's sector is covered by **one or more** of its arcs. More than
-    /// one means the sector spans a rim node the chart has no vertical line for (see
-    /// [`Chart::arc_around`]), and then every arc must answer the same or this end says nothing —
-    /// the rule the [`End::Disk`] arm of a cut circle already follows.
-    Exact(Vec<&'a ArcLabel>),
-    /// The circle is cut and the sector still has no arcs to read: its two rulings are one and the
-    /// same chart line (the sector is the whole circle less a ruling), or its two ends snap to a
-    /// single rim node, or the rim's θ order cannot be formed, or a row of the run is missing from
-    /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. A sector that
-    /// merely spans several arcs is not here — it is an [`End::Exact`] run. Carries the refusal its
-    /// cause is, written where the cause is known ([`Chart::arc_around`]) and read only if the cell
-    /// turns out present and unread.
-    Other(RejectReason),
-    /// The circle is cut, the cell's sector runs between two **adjacent** rim nodes, and no arc
-    /// covers it: the piece of the circle no face of this class has as a rim (the three
-    /// quarters a fillet's quarter leaves, the half a slot's end leaves; the split drops such a
-    /// piece rather than keep a phantom edge). The lateral face is **not here**: this end decides
-    /// existence, not a chamber.
+    /// The circle is cut, and the cell's slab lies under one of its arcs — one, because every
+    /// node the rim is cut at is an event of the chart ([`Chart::events`]), so no slab runs past
+    /// one.
+    Arc(&'a ArcLabel),
+    /// The circle is cut, and no arc covers the cell's slab: the piece of the circle no face of
+    /// this class has as a rim (the three quarters a fillet's quarter leaves, the half a slot's end
+    /// leaves; the split drops such a piece rather than keep a phantom edge). The lateral face is
+    /// **not here**: this end decides existence, not a chamber.
     Uncovered,
     /// No circle of this cylinder on this line at all: the line is a ⊥ class outside every
     /// lateral face's span (`circle_on_class` leaves a circle on every class *within* a span).
@@ -60,65 +49,15 @@ fn agreement<T: PartialEq>(readings: impl IntoIterator<Item = T>) -> Agreement<T
 }
 
 impl End<'_> {
-    /// **What this end says about the cell's chamber**, or `None` when it says nothing — which
-    /// includes a run of arcs that do not agree ([`agreement`]'s `Split` inside one end). The read
+    /// **What this end says about the cell's chamber**, or `None` when it says nothing. The read
     /// is [`read_bits`], the one spelling.
-    ///
-    /// **Measured: the run case is read but decides nothing.** The suite reads runs of two or more
-    /// arcs, and making this answer `None` for every such run leaves the `nacre-ops` suite green —
-    /// the cells a run reaches are decided **absent** by the existence read below, and an absent
-    /// cell is never asked for its chamber. This stays the general rule rather than a written-out
-    /// refusal because it *is* the whole-circle arm's rule (see [`End::Disk`]'s site) with the
-    /// sector's own arcs in place of the circle's; narrowing it would be the second spelling.
     fn chamber(&self, side: SolidSide, above: bool) -> Option<(bool, bool)> {
-        let one = |l: &Label| read_bits(l, side, above);
         match self {
-            End::Disk(l) => Some(one(l)),
-            End::Exact(arcs) => match agreement(arcs.iter().map(|a| one(&a.label))) {
-                Agreement::One(b) => Some(b),
-                Agreement::Silent | Agreement::Split => None,
-            },
-            End::Other(_) | End::Uncovered | End::NoCircle => None,
+            End::Disk(l) => Some(read_bits(l, side, above)),
+            End::Arc(a) => Some(read_bits(&a.label, side, above)),
+            End::Uncovered | End::NoCircle => None,
         }
     }
-}
-
-/// **Why no side of a cell spoke** — read off its ends, the only sides silent for a reason (a wall
-/// that cannot be read checks a chamber, it does not decide one). The one reader for both refusals
-/// that need it: the emitter's present cell with no chamber and the cell reader's two silent ends.
-/// An end of a cut circle is silent because its arcs disagree (a θ the chart has no line for —
-/// `RulingBoundNotYet`'s case), or with the cause [`End::Other`] carries; a present cell with no
-/// circle at an end is the stages disagreeing («a face that is here has a circle at both its
-/// ends»).
-///
-/// Where the two ends are silent for different reasons, **a defect wins**: one end's stages
-/// disagreeing makes the cell's other reads untrustworthy too, and naming the cell «not yet» would
-/// hide it. Otherwise the lower end's.
-fn silence(ends: &[End<'_>], side: SolidSide, above: [bool; 2]) -> RejectReason {
-    let why = |e: usize| match &ends[e] {
-        End::Other(r) => Some(*r),
-        End::NoCircle => Some(RejectReason::CylinderStagesDisagree),
-        End::Exact(_) if ends[e].chamber(side, above[e]).is_none() => {
-            Some(RejectReason::RulingBoundNotYet)
-        }
-        End::Exact(_) | End::Disk(_) | End::Uncovered => None,
-    };
-    let reasons: Vec<RejectReason> = (0..ends.len()).filter_map(why).collect();
-    reasons
-        .iter()
-        .copied()
-        .find(|r| r.class() == crate::RejectClass::SuspectedDefect)
-        .or_else(|| reasons.first().copied())
-        .unwrap_or(RejectReason::CylinderStagesDisagree)
-}
-
-/// Why [`Chart::arc_around`] could not hand back a run.
-enum RunFail {
-    /// Every piece of the run is one no contribution covers: the face is not over this sector
-    /// — [`End::Uncovered`].
-    AllMissing,
-    /// The run cannot be named — [`End::Other`], carrying the refusal its cause is.
-    Other(RejectReason),
 }
 
 /// One cell, read.
@@ -132,8 +71,8 @@ pub(crate) struct CellRead<'a> {
     /// disagreed.
     pub(crate) chamber: Option<(bool, bool)>,
     /// Why `chamber` is empty, as the refusal a present cell gets: two sides contradicting each
-    /// other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking is
-    /// named by why the ends are silent ([`silence`]). `None` when there is a chamber.
+    /// other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking over
+    /// a present cell is the stages disagreeing. `None` when there is a chamber.
     pub(crate) unread: Option<RejectReason>,
     /// Is this lateral face here at all — the existence question, answered by the trace
     /// where an end is cut ([`face_spans`]) and by the row's span where none is.
@@ -236,154 +175,30 @@ impl Chart {
         Ok(false)
     }
 
-    /// The node of ruling `i` **on** the z-line `t`, from the carried `end ↔ z` pairing — or
-    /// `None` when the ruling merely passes `t` without a node there.
-    fn node_on(&self, i: usize, t: Rat) -> Option<combinatorics::NodeId> {
-        let s = &self.theta[i];
-        (0..2).find(|&e| s.z[e] == t).map(|e| s.end[e])
-    }
-
-    /// **The run of arcs of a cut rim that covers the sector `[x, y)`** when the sector's rulings
-    /// are not themselves an adjacent node pair of that rim — a wall whose *face* stops short of this
-    /// line leaves a ruling on the chart but no node on the circle (the corner boss: two chords
-    /// end at the plate's corner inside the footprint, so the rim has two nodes while the chart
-    /// has four rulings, and three sectors lie inside the long arc).
-    ///
-    /// The θ order is asked of `combinatorics::circular_order`, the one spelling the cells' own
-    /// order comes from — never of a coordinate. A ruling's station on this line is its **name**
-    /// ([`Chart::station_on`]): a ruling with a piece ending here is that piece's node, one
-    /// without is the same canonical name a piece would have carried — and either way the rim
-    /// is searched by name equality, so no point is handed to the order twice. The run is the
-    /// rim nodes from the nearest one at or before `x` to the nearest at or after `y`, walked
-    /// CCW — one arc when no rim node lies strictly inside the sector, and every arc it spans
-    /// when some do. A rim of **one** node has one arc, from that node back to itself (a
-    /// polygon vertex cut the circle there and nothing else did — `combinatorics::ring_floor`),
-    /// and it covers every sector, so it is the run whatever `x` and `y` are and neither station
-    /// is asked for. `Err` when the walk yields no arc to read, naming why where the cause is
-    /// known: a sector the chart has no line for (the whole circle less one ruling, or a sector
-    /// holding every rim node) is `RulingBoundNotYet`'s, a station or an
-    /// order that cannot be formed its own cause, and a run of covered and missing pieces or two
-    /// lines on one rim node the stages disagreeing. A run of nothing but missing pieces is the face not being over this sector
-    /// ([`RunFail::AllMissing`]) — at the adjacent-pair site the same missing row reads
-    /// [`End::Uncovered`].
-    #[allow(clippy::too_many_arguments)]
-    fn arc_around<'a>(
+    /// **The arc of class `c`'s cut rim over slab `u`** — the arc from the rim's last node at or
+    /// before the slab's first event to the next node round, counter-clockwise: every rim node is
+    /// an event, so that is the one arc the slab lies under. A rim cut at **one** node has one arc,
+    /// from that node back to itself (a polygon vertex cut the circle there and nothing else did —
+    /// `combinatorics::ring_floor`), and it covers every slab. `None` when the split kept no arc
+    /// there — no contribution covers the piece.
+    fn arc_over<'a>(
         &self,
-        jd: &Judge<'_, WorkingPlane>,
-        k: usize,
-        def: &nacre_topo::CylinderDef,
         c: usize,
-        t: Rat,
-        x: usize,
-        y: usize,
+        u: usize,
         rim: &crate::draft::CutRim,
         arcs: &'a [ArcLabel],
-        aliases: &crate::arrangement::Aliases,
-    ) -> Result<Vec<&'a ArcLabel>, RunFail> {
-        let other = |r: RejectReason| RunFail::Other(r);
+    ) -> Result<Option<&'a ArcLabel>, BoolError> {
+        let evs = self
+            .rim_events
+            .get(&c)
+            .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))?;
         let m = rim.nodes.len();
-        if let [n] = rim.nodes[..] {
-            return match arcs.iter().find(|arc| arc.ends == [n, n]) {
-                Some(arc) => Ok(vec![arc]),
-                None => Err(RunFail::AllMissing),
-            };
+        if m == 0 || evs.len() != m {
+            return Err(reject(RejectReason::CylinderStagesDisagree));
         }
-        if x == y && m >= 2 {
-            return Err(other(RejectReason::RulingBoundNotYet));
-        }
-        let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
-        let mut index_of = |i: usize| -> Result<usize, RejectReason> {
-            // A station the rim's own arc decomposition does not hold — the wall's face stops
-            // short of the rim — joins the order as itself, under its canonical name, and the
-            // search below asks which arc contains it. Not under a node of *another* line
-            // ([`Chart::station_on`]'s note): the order refuses that wherever the rim does hold
-            // the station.
-            let n = match self.node_on(i, t) {
-                Some(n) => n,
-                None => self.station_on(jd, k, def, c, i, aliases)?,
-            };
-            match rim.nodes.iter().position(|&r| r == n) {
-                Some(p) => Ok(p),
-                None => {
-                    list.push(n);
-                    Ok(list.len() - 1)
-                }
-            }
-        };
-        let ix = index_of(x).map_err(other)?;
-        let iy = if x == y {
-            ix
-        } else {
-            index_of(y).map_err(other)?
-        };
-        let order = crate::combinatorics::circular_order(jd, k, def, &list)
-            .map_err(|e| other(e.reason()))?;
-        let n = order.len();
-        // `order` is a permutation of `list`'s indices.
-        let pos = |li: usize| {
-            order
-                .iter()
-                .position(|&o| o == li)
-                .expect("an order ranks every node it was handed")
-        };
-        let (px, py) = (pos(ix), pos(iy));
-        let is_rim = |p: usize| order[p] < m;
-        // The run's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
-        let (mut a, mut b) = (px, py);
-        while !is_rim(a) {
-            a = (a + n - 1) % n;
-        }
-        while !is_rim(b) {
-            b = (b + 1) % n;
-        }
-        // **A sector may span several arcs, and then the answer is all of them.** A rim node
-        // strictly inside the sector is a θ the *rim* knows and the chart does not — the chart's
-        // vertical lines come from `ruling_sweep`, which states a piece only where the lateral face
-        // is, so a wall's ruling on the side the face does not reach is absent and the cell is
-        // built across it. That is a defect of the **cell**, not of this lookup, and this lookup
-        // refuses to pretend the sector has one arc. It hands back the whole run — the rim nodes
-        // from `a` to `b`, walked CCW — and the caller answers only when they **agree**, which is
-        // exactly what the whole-circle arm of [`Chart::read_cell`] already does with a cut
-        // circle's arcs.
-        let mut run: Vec<&'a ArcLabel> = Vec::new();
-        let mut missing = 0usize;
-        let mut cur = a;
-        while cur != b {
-            let nxt = {
-                let mut q = (cur + 1) % n;
-                while !is_rim(q) {
-                    q = (q + 1) % n;
-                }
-                q
-            };
-            let (na, nb) = (list[order[cur]], list[order[nxt]]);
-            match arcs.iter().find(|arc| arc.ends == [na, nb]) {
-                Some(arc) => run.push(arc),
-                // A piece no contribution covers has no arc (the split keeps no
-                // phantom). A run made of nothing but such pieces is a sector the face is not
-                // over; a run with some of each is the split and the labels disagreeing.
-                None => missing += 1,
-            }
-            cur = nxt;
-        }
-        if missing > 0 {
-            return if run.is_empty() {
-                Err(RunFail::AllMissing)
-            } else {
-                Err(other(RejectReason::CylinderStagesDisagree))
-            };
-        }
-        // `a == b`: no arc separates the run's ends. Two chart lines on one rim node are two
-        // stations under one name; otherwise every rim node lies inside the sector, a θ the chart
-        // has no line for.
-        if run.is_empty() {
-            return Err(other(if ix == iy && x != y {
-                RejectReason::CylinderStagesDisagree
-            } else {
-                RejectReason::RulingBoundNotYet
-            }));
-        }
-        Ok(run)
+        let p = evs.iter().rposition(|&e| e <= u).unwrap_or(m - 1);
+        let ends = [rim.nodes[p], rim.nodes[(p + 1) % m]];
+        Ok(arcs.iter().find(|a| a.ends == ends))
     }
 
     /// **Read one cell off the lines around it** — what the chart's emitter reads every cell
@@ -442,51 +257,9 @@ impl Chart {
                 };
                 saw_arc = true;
                 above[e] = band_is_above;
-                end = match cell.walls {
-                    None => {
-                        // The whole circle is one cell here; every arc must read the same for
-                        // *this* interval's side (the other half of a label is the neighbour's).
-                        match agreement(arcs.iter().map(|a| read_bits(&a.label, side, above[e]))) {
-                            Agreement::One(_) => End::Disk(arcs[0].label),
-                            // Arcs that disagree: the cell straddles a θ the chart has no line
-                            // for. No arcs at all: the split cut a circle it left no arc on.
-                            Agreement::Split => End::Other(RejectReason::RulingBoundNotYet),
-                            Agreement::Silent => End::Other(RejectReason::CylinderStagesDisagree),
-                        }
-                    }
-                    Some([x, y]) => {
-                        let nodes = (self.node_on(x, t[e]), self.node_on(y, t[e]));
-                        let m = rim.nodes.len();
-                        let adjacent = |nx, ny| {
-                            (0..m).any(|j| rim.nodes[j] == nx && rim.nodes[(j + 1) % m] == ny)
-                        };
-                        match nodes {
-                            (Some(nx), Some(ny)) if adjacent(nx, ny) => {
-                                // Adjacent rim nodes with no arc between them: the piece no face
-                                // covers — the face ends before this sector.
-                                match arcs.iter().find(|a| a.ends == [nx, ny]) {
-                                    Some(arc) => End::Exact(vec![arc]),
-                                    None => End::Uncovered,
-                                }
-                            }
-                            _ => match self.arc_around(
-                                jd,
-                                k,
-                                def,
-                                c,
-                                t[e],
-                                x,
-                                y,
-                                rim,
-                                arcs,
-                                &curved.aliases,
-                            ) {
-                                Ok(run) => End::Exact(run),
-                                Err(RunFail::AllMissing) => End::Uncovered,
-                                Err(RunFail::Other(r)) => End::Other(r),
-                            },
-                        }
-                    }
+                end = match self.arc_over(c, cell.slab, rim, arcs)? {
+                    Some(arc) => End::Arc(arc),
+                    None => End::Uncovered,
                 };
             }
             // A whole-disk label and arcs of one cylinder on one line is the split and the labels
@@ -544,19 +317,23 @@ impl Chart {
                 }
                 None => (seg.label?, self.ruling_name(jd, k, def, i).ok()?),
             };
-            // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
-            // are read from opposite sides of their own rulings.
+            // The slab leaves its first event counter-clockwise and arrives at its second, so the
+            // two walls are read from opposite sides of their own rulings.
             let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
             Some(read_bits(&l, side, above))
         };
         // A cell whose two walls are **one** ruling (a circle opened at a single point) lies
         // on both sides of that wall, so the vertical line says nothing about it — the two
-        // readings would contradict by construction. A wall that cannot be read (a tangent
-        // station, a side it cannot name) is silent: it checks the chamber, it does not decide it —
-        // a present cell always has a horizontal answer (the census asserts `src0_present == 0`).
+        // readings would contradict by construction. An event with no ruling over the interval
+        // has no wall to read, and a wall that cannot be read (a tangent station, a side it cannot
+        // name) is silent: it checks the chamber, it does not decide it — a present cell always
+        // has a horizontal answer (the census asserts `src0_present == 0`).
         let walls = match cell.walls {
-            Some([x, y]) if x != y => [vertical(x, true), vertical(y, false)],
-            _ => [None, None],
+            [Some(x), Some(y)] if x == y => [None, None],
+            [x, y] => [
+                x.and_then(|x| vertical(x, true)),
+                y.and_then(|y| vertical(y, false)),
+            ],
         };
         let (chamber, disagree) = match agreement(
             (0..2)
@@ -570,7 +347,9 @@ impl Chart {
         let unread = match (chamber, disagree) {
             (Some(_), _) => None,
             (None, true) => Some(RejectReason::LabelConflict),
-            (None, false) => Some(silence(&ends, side, above)),
+            // No side spoke over a present cell: both its lines carry no circle of this cylinder,
+            // against «a face that is here has a circle at both its ends».
+            (None, false) => Some(RejectReason::CylinderStagesDisagree),
         };
 
         // ── Existence: the trace where an end is cut, the span where none is. ──
@@ -580,50 +359,22 @@ impl Chart {
         });
         let mut by_marks: Option<bool> = None;
         for e in 0..2 {
-            let End::Exact(arcs) = &ends[e] else { continue };
-            // **Existence asks the same run membership does.** A sector spanning several arcs
-            // is present only if every one of them says so; arcs that disagree mean the cell
-            // straddles a boundary the chart has no line for, and that is the refusal below.
-            //
-            // This is the half that moves results, and what it answers is **absent**: every run
-            // the crossing corpus builds is over arcs whose `marks` are empty, which is the
-            // geometry (the quadrant the chart could not name lies on the side the panel does not
-            // reach). Forcing the run's answer to `true` here trips the record-site assertion
-            // below with such an arc as its witness; forcing it to `false` changes nothing, which
-            // is the same fact from the other side. An axial span knows no θ, and so would claim
-            // every sector present.
-            let mut span: Option<bool> = None;
-            for arc in arcs {
-                // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
-                // two cut ends disagreeing with each other is `CylinderFaceUndecided`: the rims of
-                // a hole are band boundaries, so a sector exists over its whole height or
-                // not at all, and picking an end to believe is the guess this kernel does not make.
-                let v = face_spans(arc, side, above[e])?;
-                if span.replace(v).is_some_and(|p| p != v) {
-                    return Err(reject(RejectReason::CylinderFaceUndecided));
-                }
-            }
-            let Some(v) = span else { continue };
+            let End::Arc(arc) = &ends[e] else { continue };
+            // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
+            // two cut ends disagreeing with each other is `CylinderFaceUndecided`: the rims of a
+            // hole are band boundaries, so a slab exists over its whole height or not at all, and
+            // picking an end to believe is the guess this kernel does not make.
+            let v = face_spans(arc, side, above[e])?;
             if by_marks.replace(v).is_some_and(|p| p != v) {
                 return Err(reject(RejectReason::CylinderFaceUndecided));
             }
-        }
-        // **Two silent ends and a span that says «present» is not read as present**.
-        // The span knows no θ, so over a cell whose both cut ends could not be paired with
-        // their rims it would claim the face is there — the guess that puts a face over a hole
-        // in the corner boss × mid slab. With stations placed by name (`station_on`) no cell in
-        // the suite reaches
-        // here (`src0_present` 0, the census's record-site assertion made structural), so
-        // this is a guard on the reader's premise, named by why the ends are silent.
-        if by_marks.is_none() && by_span && ends.iter().all(|e| matches!(e, End::Other(_))) {
-            return Err(reject(silence(&ends, side, above)));
         }
         // The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
         // what says the face is *not* there (the `exist_marks_false` population). So the
         // disagreement that would be a defect is only the other direction: the trace claiming a
         // face where no row spans.
         // An uncovered rim piece decides existence outright: the face's own rim does
-        // not run along this sector at that line, so the face is not over this cell — whatever
+        // not run along this slab at that line, so the face is not over this cell — whatever
         // the row's axial span says.
         let uncovered = ends.iter().any(|e| matches!(e, End::Uncovered));
         let (present, exist_disagree) = match by_marks {
@@ -749,7 +500,3 @@ pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: 
         SolidSide::B => crate::draft::keep(kind, in_other, in_own),
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/read_cell.rs"]
-mod tests;

@@ -19,12 +19,12 @@ use nacre_topo::Model;
 ///   otherwise), so the hand-written road always has at least one row for it.
 /// * `z_lines >= 2` — a band needs two boundaries; a lateral face's own two rims are ⊥ classes
 ///   and both are in the set.
-/// * `refused` is never set — a chart's θ orders can always be formed; asserted rather than
-///   merely counted, so the day a population appears it says so.
-/// * `cells >= 1` — `z_lines >= 2` is one interval, and an interval with no ruling is still one
-///   cell (the whole circle).
+/// * `cells >= 1` — `z_lines >= 2` is one interval, and an interval is at least one cell (the
+///   whole circle, when the chart has no event).
 /// * `whole_circle + odd_k < z_lines` — the intervals with no ruling and those with an odd
 ///   number are disjoint subsets of the chart's `z_lines − 1` intervals.
+/// * `events == 0` only where no interval has a ruling — the events are formed from the rulings'
+///   stations and the rims' cuts, the census's interval walk from the rulings over each interval.
 #[test]
 fn the_chart_census_is_running() {
     let mut m = Model::new();
@@ -55,8 +55,8 @@ fn the_chart_census_is_running() {
             z_lines,
             theta,
             rows: n,
-            refused,
             cells,
+            events,
             ..
         } = *r;
         assert!(n >= 1, "a class with no row: {r:?}");
@@ -64,13 +64,16 @@ fn the_chart_census_is_running() {
         // `theta % 2 == 0` ("a wall cuts two rulings") is not asserted: a
         // band's lateral reaches both rulings of a wall, a panel's or a chain's may reach one.
         let _ = theta;
-        assert!(!refused, "a chart's theta order could not be formed: {r:?}");
         assert!(cells >= 1, "two z-lines are one interval: {r:?}");
         // A chart has `z_lines - 1` intervals, and an interval carries either no ruling or
         // some number of them — so these two counts are disjoint subsets of that many.
         assert!(
             r.whole_circle + r.odd_k < z_lines,
             "more intervals than the chart has: {r:?}"
+        );
+        assert!(
+            events > 0 || r.whole_circle + 1 == z_lines,
+            "a chart with no event has a ruling: {r:?}"
         );
     }
 }
@@ -166,8 +169,6 @@ fn the_charts_vertical_answers_close() {
 ///
 /// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
 ///   existence story wherever both speak.
-/// * `arcs_read == end_exact + exact_run_arcs` — an end that spans a run of the rim's arcs reads
-///   every one of them.
 ///
 /// And the counters are not vacuous, counted on **this test's own rows** (`ledger::owned`), so
 /// each number is a fact about the fixtures below and not about whatever else the binary ran:
@@ -270,14 +271,6 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             r.read_refused, 0,
             "the reader refused a cell by name: {r:?}"
         );
-        // **A run is why this is not `arcs_read == end_exact`.** A sector may span several
-        // of the rim's arcs, and the proposition that holds over every row in the binary — the
-        // runs among them — carries the run's extra arcs by name.
-        assert_eq!(
-            r.arcs_read,
-            r.end_exact + r.exact_run_arcs,
-            "every exact end is a cut end read, and only those: {r:?}"
-        );
         assert!(r.emit <= r.cells, "more emitted cells than cells: {r:?}");
         assert!(
             r.exist_marks_false <= r.cells,
@@ -287,34 +280,21 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
     // Non-vacuity — a zero above must mean "the population is empty", never "nothing was
     // looked at" — and on **this test's own rows**, so no neighbour's fixture can stand in for
     // one of these.
-    assert_eq!(mine.len(), 20, "the fixtures' charts");
-    assert_eq!(sum(&mine, |r| r.end_disk), 84, "disk ends read");
-    assert_eq!(sum(&mine, |r| r.end_exact), 132, "exact arc ends read");
-    assert_eq!(sum(&mine, |r| r.end_nocircle), 10, "lines with no circle");
-    assert_eq!(sum(&mine, |r| r.emit), 80, "cells the reader emitted");
-    assert_eq!(sum(&mine, |r| r.arcs_read), 132, "cut ends read");
-    // A sector spanning the **phantom** pieces of a half rim (a wall boss) reads `Uncovered`:
-    // those pieces are no edges.
-    assert_eq!(sum(&mine, |r| r.end_uncovered), 2, "uncovered rim pieces");
+    // One tuple, so a change shows every count at once rather than the first that moved.
     assert_eq!(
-        sum(&mine, |r| r.emitted_faces),
-        20,
-        "faces the emitter emitted"
-    );
-    // The chained pairs drop sectors for existence; this is how many.
-    assert_eq!(
-        sum(&mine, |r| r.exist_marks_false),
-        5,
-        "sectors dropped for existence"
-    );
-    // **The run population is not this test's.** `exact_run_arcs` is 0 over every row here,
-    // including the through-axis wall's — the sector that spans a rim node is built by the
-    // crossing census's walls, and that is what keeps the equality above from being
-    // `arcs_read == end_exact` over the binary.
-    assert_eq!(
-        sum(&mine, |r| r.exact_run_arcs),
-        0,
-        "no end reads a run here"
+        (
+            mine.len(),
+            sum(&mine, |r| r.end_disk),
+            sum(&mine, |r| r.end_arc),
+            sum(&mine, |r| r.end_nocircle),
+            sum(&mine, |r| r.emit),
+            sum(&mine, |r| r.end_uncovered),
+            sum(&mine, |r| r.emitted_faces),
+            sum(&mine, |r| r.exist_marks_false),
+        ),
+        (20, 84, 136, 14, 80, 4, 20, 5),
+        "(charts, disk ends, arc ends, lines with no circle, emitted cells, uncovered rim pieces, \
+         faces, cells dropped for existence)"
     );
 }
 

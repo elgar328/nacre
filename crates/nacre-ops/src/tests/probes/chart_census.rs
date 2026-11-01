@@ -104,16 +104,7 @@ pub(crate) fn census(
         }
 
         let def = &cyls[k].def;
-        let Ok(cells) = chart.cells(jd, k, def) else {
-            probe::push(probe::Row {
-                z_lines: chart.z_lines.len(),
-                theta: chart.theta.len(),
-                rows: mine.len(),
-                refused: true,
-                ..probe::Row::empty()
-            });
-            continue;
-        };
+        let cells = chart.cells();
 
         // ── The cells, read off the horizontal lines. ──
         //
@@ -144,8 +135,7 @@ pub(crate) fn census(
             ..probe::cell_ends::Row::default()
         };
         // What the record-site assertions below count; no test reads them as columns.
-        let (mut src0_present, mut other_present, mut nocircle_present, mut emit_unknown) =
-            (0usize, 0usize, 0usize, 0usize);
+        let (mut src0_present, mut nocircle_present, mut emit_unknown) = (0usize, 0usize, 0usize);
         // ── The emitter's regions, held against the reads they came from. ──
         // The walk is the emitter's own code, so its faces are not compared with the emission
         // (that would be a tautology); what is asserted is what the *result* must satisfy given
@@ -197,11 +187,7 @@ pub(crate) fn census(
             for e in &r.ends {
                 match e {
                     End::Disk(_) => ends.end_disk += 1,
-                    End::Exact(a) => {
-                        ends.end_exact += 1;
-                        ends.exact_run_arcs += a.len() - 1;
-                    }
-                    End::Other(_) => {}
+                    End::Arc(_) => ends.end_arc += 1,
                     // An uncovered piece is an absence, not a read of a chamber.
                     End::Uncovered => ends.end_uncovered += 1,
                     End::NoCircle => ends.end_nocircle += 1,
@@ -210,13 +196,10 @@ pub(crate) fn census(
             let sources = r
                 .ends
                 .iter()
-                .filter(|e| matches!(e, End::Disk(_) | End::Exact(_)))
+                .filter(|e| matches!(e, End::Disk(_) | End::Arc(_)))
                 .count();
             if sources == 0 && r.present {
                 src0_present += 1;
-            }
-            if r.present && r.ends.iter().any(|e| matches!(e, End::Other(_))) {
-                other_present += 1;
             }
             // A present cell with a line that carries no circle of this cylinder: the
             // `circle_on_class` premise at one end instead of both (`src0_present`).
@@ -229,37 +212,31 @@ pub(crate) fn census(
             // planar face's word — `face_spans` skips it for the same reason). Counted here, not
             // in `read_cell`, so the emitter's read and the census's read are not counted twice.
             for e in &r.ends {
-                let End::Exact(arcs) = e else { continue };
-                // Each arc of a run is read on its own — the contract is per arc, and a run
-                // that spans several is exactly where a violation would first show.
-                for arc in arcs {
-                    let lateral = arc
-                        .marks
-                        .iter()
-                        .filter(|(s, kd)| {
-                            *s == side && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
-                        })
-                        .count();
-                    ends.arcs_read += 1;
-                    // **Not «exactly one»:** a ⊥ cap through
-                    // a wall boss's notch cuts the circle *inside the lateral's hole*, and the arc
-                    // there carries **no** mark — the face is absent along it, and the cell reads
-                    // absent. So the contract is «at most one, and none exactly where the cell is
-                    // not there».
-                    assert!(
-                        lateral <= 1,
-                        "a cut end read carries {lateral} lateral marks of its own solid: {arc:?}"
-                    );
-                    assert!(
-                        lateral == 1 || !r.present,
-                        "a cut end read with no lateral mark of its own solid reads present: {arc:?}"
-                    );
-                }
+                let End::Arc(arc) = e else { continue };
+                let lateral = arc
+                    .marks
+                    .iter()
+                    .filter(|(s, kd)| {
+                        *s == side && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
+                    })
+                    .count();
+                // **Not «exactly one»:** a ⊥ cap through a wall boss's notch cuts the circle
+                // *inside the lateral's hole*, and the arc there carries **no** mark — the face is
+                // absent along it, and the cell reads absent. So the contract is «at most one, and
+                // none exactly where the cell is not there».
+                assert!(
+                    lateral <= 1,
+                    "a cut end read carries {lateral} lateral marks of its own solid: {arc:?}"
+                );
+                assert!(
+                    lateral == 1 || !r.present,
+                    "a cut end read with no lateral mark of its own solid reads present: {arc:?}"
+                );
             }
             ends.exist_disagree += usize::from(r.exist_disagree);
             // Both ends cut is exactly the panel road's population, where today `face_spans`
             // drops a sector for existence — the one count with a twin on the other side.
-            if r.ends.iter().all(|e| matches!(e, End::Exact(_))) && !r.present {
+            if r.ends.iter().all(|e| matches!(e, End::Arc(_))) && !r.present {
                 ends.exist_marks_false += 1;
             }
             match r.emit {
@@ -272,21 +249,11 @@ pub(crate) fn census(
         // the fact is made: `circle_on_class` leaves a circle on every ⊥ class within a lateral
         // face's span (Crosses inside, Grazes at the rims), and `emit_faces` labels every circle
         // cell and arc outside the keep filter — which is why no "which side of the wall" sign is
-        // needed to read a cell. **Not a bare zero:** a cut end the reader could not pair with
-        // its rim (`End::Other`) would leave *no* end speaking, and `present` would fall back to
-        // the row's span — which cannot see a hole. The true proposition is the emitter's: over
-        // such a cell it builds nothing, it refuses the class by name.
+        // needed to read a cell. The true proposition is the emitter's: over a present cell with
+        // no end speaking it builds nothing, it refuses the class by name.
         assert!(
             src0_present == 0 || emission.is_err(),
             "a cell with a face has no label at either end and the emitter read it: cyl {k}"
-        );
-        // **A cell with a face never has an end that says nothing.** What `Other` means is a whole-circle interval *beyond* a face's span whose cut rim's
-        // arcs disagree about the far side (the other solid stands on one side of its own wall
-        // there), and such a cell is absent. A present cell reading `Other` would be a chart with
-        // a θ boundary it has no line for — named here, at the fact, not read from the other end.
-        assert_eq!(
-            other_present, 0,
-            "a cell with a face has an end that says nothing: cyl {k}"
         );
         // Record-site assertions rather than counts (the suite measures them 0): a
         // reporting test sees only the rows recorded before
@@ -431,7 +398,7 @@ pub(crate) fn census(
             z_lines: chart.z_lines.len(),
             theta: chart.theta.len(),
             rows: mine.len(),
-            refused: false,
+            events: chart.events.len(),
             cells: cells.len(),
             whole_circle,
             odd_k,

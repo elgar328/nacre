@@ -186,16 +186,11 @@ pub(crate) struct Curved {
     /// indexed by and the lateral's rims are cut at. Not the result's rim: the cleaning pass can
     /// dissolve its nodes, from the cap and the lateral together.
     pub(crate) split_rims: CutRims,
-    /// The alias table the class world settled on — every name in the labels, rims
-    /// and rulings above is its representative, and the lateral chart, which mints station
-    /// names of its own, asks it (`canon_point`) so a station on a corner *is* the corner.
-    pub(crate) aliases: Aliases,
     /// Per cylinder class, the ruling pieces on it — the **vertical** lines of that cylinder's
     /// chart, where `disk_labels`/`arc_labels` carry the horizontal ones' answers.
     ///
     /// **Its consumer is `cyl_chart`** — production: `emit_lateral` names
-    /// every ruling from these (`Chart::node_on`, `Chart::ruling_name`), and the census reads their
-    /// `label`/`marks`.
+    /// every ruling from these (`Chart::ruling_name`), and the census reads their `label`/`marks`.
     pub(crate) rulings: HashMap<usize, Vec<RulingExtent>>,
 }
 
@@ -620,7 +615,6 @@ pub(super) fn trace_result_faces(
         arc_labels: HashMap::new(),
         split_rims: HashMap::new(),
         rulings: HashMap::new(),
-        aliases,
     };
     // The first arc class's deferred reject, in `work` order — the map above may run its classes
     // in parallel, but this fold reads the vec in order, so the choice is deterministic.

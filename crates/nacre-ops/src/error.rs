@@ -706,7 +706,7 @@ pub enum RejectReason {
     ///   ignored sweep.
     ///
     /// A rim cut at **one** node — a vertex alone on its circle — is not among them: the chart and
-    /// the walk read it as the arc from that node back to itself (`Chart::arc_around`,
+    /// the walk read it as the arc from that node back to itself (`Chart::arc_over`,
     /// `cyl_chart::regions`).
     ///
     /// Where the walk and the assembly find an earlier stage's record broken — a cut circle
@@ -792,11 +792,11 @@ pub enum RejectReason {
     /// secant classes, of a secant and a tangent one of the other solid, or of a secant and a
     /// sectioned class whose hinge it is, that lie on a lateral face), or on planes that degenerate against the cylinder there; a recorded line's segment
     /// that shares a stretch with a ruling piece without matching one end for end. And a lateral
-    /// cell that straddles a θ the chart has no vertical line for — the arcs of one rim end
-    /// disagreeing, a sector opened at one ruling of a cut rim, a sector holding every rim node
-    /// (`cyl_chart::read_cell`): the chart's vertical lines come from the ruling sweep, which
-    /// states a piece only where the lateral face is. Where the walk or the reader finds an
-    /// earlier record broken, the name is [`Self::CylinderStagesDisagree`].
+    /// region whose boundary needs a vertical line at a θ the chart has none for over that
+    /// interval — an event where a rim is cut but no ruling stands (`cyl_chart::regions`): the
+    /// chart's vertical lines come from the ruling sweep, which states a piece only where the
+    /// lateral face is. Where the walk or the reader finds an earlier record broken, the name is
+    /// [`Self::CylinderStagesDisagree`].
     /// [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
     /// **«A class carrying both circles and rulings» is not one of those guards**:

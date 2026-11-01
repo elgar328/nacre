@@ -245,9 +245,10 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   `record_graze_line` 은 축을 가로지르는 클래스만 접는다)은 인구가 0 이라 짓지 않았다.
 - **호 변의 면도 떨어진다** — `faces_apart` 가 곡선 간선을 거절해, 비스듬한 클래스의 면이 원판이면(비스듬한 원통의 캡)
   단면 갈래에 못 든다(`wall_faces.rs` 의 `an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes`, z = 2.4).
-- **차트를 θ 의 그래프로** — 평면 단면(원은 기울기 0 인 특수형)은 모두 θ 의 함수 `z(θ)` 다. θ 조각 × 조각 안 단면들의 z
-  순서로 칸을 나누면 원만 있을 때 지금과 같은 칸이고, 두 단면을 한 θ 에서 비교하는 것은 사건 점의 평면 부호다(근호 하나).
-  지금 차트는 z 를 유리수 값으로 정렬·해시한다(`ZLine.t`, `Lines.by_t`, `node_on`).
+- **차트를 θ 의 그래프로** — 평면 단면(원은 기울기 0 인 특수형)은 모두 θ 의 함수 `z(θ)` 다. 칸은 이웃한 두 사건 사이
+  (slab) × 구간이고(`Chart::events`), 두 단면을 한 θ 에서 비교하는 것은 `quad::section_height_order` 다. 남은 것은 차트가
+  z 를 유리수 값으로 정렬·해시하는 자리(`ZLine.t`, `Lines.by_t`, `ThetaSeg.z`, `stations_of_lines`, 걷기의 tiled 검사)를
+  선의 순위로 바꾸고, 축을 따르지 않는 모든 클래스를 선으로 들이는 것이다.
 - **차트 위 비스듬한 절단** — 면이 옆면에 닿는 비스듬한 클래스의 기록, 타원 호로 둘린 옆면 칸.
 - **기하·위상** — `nacre_geom::Curve` 에 타원이 없고 `derive_edge_curve` 가 `EdgeDecline::Oblique` 를 낸다; `realize.rs` 의
   `seam_point_stated` 는 비스듬한 평면에서 평면 밖의 점이고, `pierce_point` 는 캡 × 비스듬한 평면을 실현하지 못한다.

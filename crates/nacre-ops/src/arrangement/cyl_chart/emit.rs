@@ -4,8 +4,8 @@ use super::*;
 /// neighbouring classes ([`Chart::read_cell`]), then the walk. What is refused here by name:
 /// a class with no row or rows of both solids (`CylinderStagesDisagree`), a θ order that cannot
 /// be formed, and a **present cell whose chamber could not be read** — two speaking sides
-/// disagreed (`LabelConflict`) or no side spoke, named by why its ends are silent
-/// (`read_cell::silence`); the walk names its own.
+/// disagreed (`LabelConflict`) or no side spoke (`CylinderStagesDisagree`); the walk names its
+/// own.
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
 /// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
@@ -36,7 +36,7 @@ pub(crate) fn emit_lateral(
         let lines = Lines::of(jd, k, def, curved)?;
         // An order of the rulings' nodes that cannot be formed names its own cause
         // (`CircleOrderFail::reason`): past `Rat`, or one point under two names.
-        let cells = chart.cells(jd, k, def).map_err(reject)?;
+        let cells = chart.cells();
         let reads: Vec<CellRead<'_>> = cells
             .iter()
             .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))

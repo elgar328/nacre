@@ -894,7 +894,7 @@ fn a_body_touching_itself_along_a_ruling_is_refused() {
 /// itself. The planar arrangement takes that ring
 /// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge), the
 /// lateral's chart reads a rim of one node through that arc for every sector
-/// (`Chart::arc_around`), and the region walk spells it as that one arc (`cyl_chart::regions`).
+/// (`Chart::arc_over`), and the region walk spells it as that one arc (`cyl_chart::regions`).
 /// The wedge's union past `A`'s top leaves the cap **pinched** — the groove's tip on the rim —
 /// and the closed edge sits in a loop of several: its half-edge runs the way its wall says, not
 /// the way its one vertex could (`assembly::reconstruct`), and every reader takes it as the whole

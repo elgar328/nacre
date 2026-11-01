@@ -35,17 +35,17 @@ use crate::planes::{ClassIx, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};
 
-/// A corner of the chart's grid: `(z-line index, global station index)`.
+/// A corner of the chart's grid: `(z-line index, event index)`.
 type Corner = (usize, usize);
 
 /// One directed boundary edge of the grid, with the region on its left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Edge {
-    /// Along z-line `line`, over unit sector `unit` (from station `unit` to `unit + 1`);
-    /// `ccw` when the region lies above the line.
+    /// Along z-line `line`, over slab `unit` (from event `unit` to `unit + 1`); `ccw` when the
+    /// region lies above the line.
     Arc { line: usize, unit: usize, ccw: bool },
     /// Along station `station`, over interval `interval`; `up` when the region lies on the
-    /// station's −θ side (the cell whose sector *ends* at the station).
+    /// station's −θ side (the cell whose slab *ends* at the station).
     Ruling {
         interval: usize,
         station: usize,
@@ -95,59 +95,15 @@ pub(crate) fn walk(
     reads: &[CellRead<'_>],
     curved: &Curved,
 ) -> Result<Walked, BoolError> {
-    let aliases = &curved.aliases;
-
-    // ── 1. Stations: one per (wall, side), in one global θ order. ──
-    let mut names: Vec<(usize, i8)> = Vec::new();
-    let mut reps: Vec<NodeId> = Vec::new();
-    let mut name_of_theta: Vec<usize> = Vec::with_capacity(chart.theta.len());
-    for j in 0..chart.theta.len() {
-        let n = chart.ruling_name(jd, k, def, j).map_err(reject)?;
-        let ni = match names.iter().position(|x| *x == n) {
-            Some(p) => p,
-            None => {
-                names.push(n);
-                reps.push(chart.theta[j].end[0]);
-                names.len() - 1
-            }
-        };
-        name_of_theta.push(ni);
-    }
-    let ns = names.len();
-    let mut station_of_name = vec![0usize; ns];
-    if ns > 0 {
-        let order = crate::combinatorics::circular_order(jd, k, def, &reps)
-            .map_err(|e| reject(e.reason()))?;
-        for (p, &ni) in order.iter().enumerate() {
-            station_of_name[ni] = p;
-        }
-    }
-    let name_at_station = |s: usize| -> (usize, i8) {
-        let ni = station_of_name
-            .iter()
-            .position(|&p| p == s)
-            .expect("a station index comes from this table");
-        names[ni]
-    };
-    let station_of_theta = |j: usize| station_of_name[name_of_theta[j]];
-    // A cell's sector in global stations: `None` is the whole circle.
-    let sector: Vec<Option<(usize, usize)>> = cells
-        .iter()
-        .map(|c| {
-            c.walls
-                .map(|[x, y]| (station_of_theta(x), station_of_theta(y)))
-        })
-        .collect();
-    // Does the cell cover unit sector `u` (from station u to u + 1)?
-    let covers = |ci: usize, u: usize| -> bool {
-        match sector[ci] {
-            None => true,
-            Some((a, b)) if a == b => true, // one cut: the circle less a point
-            Some((a, b)) => (u + ns - a) % ns < (b + ns - a) % ns,
-        }
+    // ── 1. Events: the chart's, in θ order; a cell is an interval crossed with a slab. ──
+    let ns = chart.events.len();
+    // The ruling name standing at event `s` — one per event (`chart_of`).
+    let name_at_station = |s: usize| -> Option<(usize, i8)> {
+        let &j = chart.events[s].rulings.first()?;
+        chart.ruling_name(jd, k, def, j).ok()
     };
     let n_int = chart.z_lines.len().saturating_sub(1);
-    // Cells by interval, in sector order (as `cells()` pushed them).
+    // Cells by interval, in slab order (as `cells()` pushed them).
     let mut by_int: Vec<Vec<usize>> = vec![Vec::new(); n_int];
     for (ci, c) in cells.iter().enumerate() {
         by_int[c.interval].push(ci);
@@ -185,7 +141,7 @@ pub(crate) fn walk(
         for row in &by_int {
             let kept_beside = |e: usize| {
                 row.iter()
-                    .any(|&ci| emitted[ci] && cells[ci].walls.is_some_and(|w| w[e] == j))
+                    .any(|&ci| emitted[ci] && cells[ci].walls[e] == Some(j))
             };
             if kept_beside(0) && kept_beside(1) {
                 return Err(split_disagrees());
@@ -198,24 +154,18 @@ pub(crate) fn walk(
             let mut out = Vec::new();
             let row = &by_int[c.interval];
             if row.len() > 1 {
-                let s = c.sector;
-                let [x, y] = c.walls.unwrap_or([usize::MAX; 2]);
-                if !slit(y) {
+                let s = c.slab;
+                let [x, y] = c.walls;
+                if !y.is_some_and(slit) {
                     out.push(row[(s + 1) % row.len()]);
                 }
-                if !slit(x) {
+                if !x.is_some_and(slit) {
                     out.push(row[(s + row.len() - 1) % row.len()]);
                 }
             }
             for i2 in [c.interval.wrapping_sub(1), c.interval + 1] {
-                if i2 >= n_int {
-                    continue;
-                }
-                for &cj in &by_int[i2] {
-                    let overlap = ns == 0 || (0..ns).any(|u| covers(ci, u) && covers(cj, u));
-                    if overlap {
-                        out.push(cj);
-                    }
+                if i2 < n_int {
+                    out.push(by_int[i2][c.slab]);
                 }
             }
             out
@@ -308,14 +258,10 @@ pub(crate) fn walk(
                     .find(|&c| curved.disk_labels.contains_key(&(k, c)))
             })
     };
-    // A station's canonical name on a line — [`Chart::station_on`]'s spelling, by name.
-    // A rim station the run ends at is one the split placed, so a crossing that is not there is
-    // the stages disagreeing ([`crate::combinatorics::RulingNameFail::reason`]).
-    let station_name = |c: usize, s: usize| -> Result<NodeId, BoolError> {
-        let (wall, sd) = name_at_station(s);
-        crate::combinatorics::crossing_on_ruling(jd, def, c, wall, k, sd)
-            .map(|n| aliases.canon_point(n))
-            .map_err(|e| reject(e.reason()))
+    // A run along rim `c` ends at one of the rim's own nodes: every node it is cut at is an event
+    // (`Chart::events`), and the run turns only where something cuts the rim.
+    let rim_node_at = |c: usize, s: usize| -> Option<usize> {
+        chart.rim_events.get(&c)?.iter().position(|&e| e == s)
     };
 
     // ── 3–7. Per component: boundary edges → cycles → runs → pieces → rings → bound. ──
@@ -323,62 +269,53 @@ pub(crate) fn walk(
     let mut cells_of: Vec<Vec<usize>> = Vec::new();
     for (id, members) in components.iter().enumerate() {
         let in_c = |ci: usize| comp[ci] == Some(id);
-        let cell_at = |i: usize, u: usize| -> Option<usize> {
-            by_int[i].iter().copied().find(|&cj| covers(cj, u))
-        };
         let mut edges: Vec<Edge> = Vec::new();
         for &ci in members {
             let c = &cells[ci];
-            for u in 0..units {
-                if ns > 0 && !covers(ci, u) {
-                    continue;
-                }
-                let below = if c.interval == 0 {
-                    None
-                } else {
-                    cell_at(c.interval - 1, u)
-                };
-                if !below.is_some_and(in_c) {
-                    edges.push(Edge::Arc {
-                        line: c.interval,
-                        unit: u,
-                        ccw: true,
-                    });
-                }
-                let above = if c.interval + 1 >= n_int {
-                    None
-                } else {
-                    cell_at(c.interval + 1, u)
-                };
-                if !above.is_some_and(in_c) {
-                    edges.push(Edge::Arc {
-                        line: c.interval + 1,
-                        unit: u,
-                        ccw: false,
-                    });
-                }
+            let u = c.slab;
+            let below = c.interval.checked_sub(1).map(|i| by_int[i][u]);
+            if !below.is_some_and(in_c) {
+                edges.push(Edge::Arc {
+                    line: c.interval,
+                    unit: u,
+                    ccw: true,
+                });
             }
-            if let Some((a, b)) = sector[ci] {
-                if a != b {
-                    let row = &by_int[c.interval];
-                    let s = c.sector;
-                    let right = row[(s + 1) % row.len()];
-                    let left = row[(s + row.len() - 1) % row.len()];
-                    let [x, y] = c.walls.unwrap_or([usize::MAX; 2]);
-                    if !in_c(right) || slit(y) {
-                        edges.push(Edge::Ruling {
-                            interval: c.interval,
-                            station: b,
-                            up: true,
-                        });
-                    }
-                    if !in_c(left) || slit(x) {
-                        edges.push(Edge::Ruling {
-                            interval: c.interval,
-                            station: a,
-                            up: false,
-                        });
-                    }
+            let above = (c.interval + 1 < n_int).then(|| by_int[c.interval + 1][u]);
+            if !above.is_some_and(in_c) {
+                edges.push(Edge::Arc {
+                    line: c.interval + 1,
+                    unit: u,
+                    ccw: false,
+                });
+            }
+            // With one event the slab runs round to where it started: the cell is its own
+            // neighbour on both sides, and no ruling bounds it.
+            if ns > 1 {
+                let row = &by_int[c.interval];
+                let right = row[(u + 1) % ns];
+                let left = row[(u + ns - 1) % ns];
+                let [x, y] = c.walls;
+                // **The region ends at an event only on a ruling.** An event with no ruling over
+                // this interval (a rim cut there, a ruling of another interval) carries no line
+                // the boundary could run along — the chart has no vertical line for it.
+                let ruling =
+                    |w: Option<usize>| w.ok_or_else(|| reject(RejectReason::RulingBoundNotYet));
+                if !in_c(right) || y.is_some_and(slit) {
+                    ruling(y)?;
+                    edges.push(Edge::Ruling {
+                        interval: c.interval,
+                        station: (u + 1) % ns,
+                        up: true,
+                    });
+                }
+                if !in_c(left) || x.is_some_and(slit) {
+                    ruling(x)?;
+                    edges.push(Edge::Ruling {
+                        interval: c.interval,
+                        station: u,
+                        up: false,
+                    });
                 }
             }
         }
@@ -431,8 +368,8 @@ pub(crate) fn walk(
         }
 
         // ── runs → pieces → rings ──
-        // **Each cycle's winding about the axis, by its arc units.** An arc edge covers one unit
-        // sector, `+1` walked counter-clockwise (`ccw` — the face above it) and `−1` against, and
+        // **Each cycle's winding about the axis, by its arc units.** An arc edge covers one
+        // slab, `+1` walked counter-clockwise (`ccw` — the face above it) and `−1` against, and
         // a ruling covers none; a closed cycle returns to its station, so the sum is a whole
         // number of turns — `+1` for the lower boundary of a face that wraps the axis, `−1` for
         // its upper one, `0` for a cycle that does not wrap. No seam is read: the count is the
@@ -501,19 +438,10 @@ pub(crate) fn walk(
                         let (pa, pb) = if full {
                             (0, 0)
                         } else {
-                            let na = station_name(c, ca.1)?;
-                            let nb = station_name(c, cb.1)?;
-                            let pa = rim
-                                .nodes
-                                .iter()
-                                .position(|&n| n == na)
-                                .ok_or_else(split_disagrees)?;
-                            let pb = rim
-                                .nodes
-                                .iter()
-                                .position(|&n| n == nb)
-                                .ok_or_else(split_disagrees)?;
-                            (pa, pb)
+                            (
+                                rim_node_at(c, ca.1).ok_or_else(split_disagrees)?,
+                                rim_node_at(c, cb.1).ok_or_else(split_disagrees)?,
+                            )
                         };
                         let mut p = pa;
                         loop {
@@ -540,17 +468,13 @@ pub(crate) fn walk(
                     Edge::Ruling { station, up, .. } => {
                         let (i0, i1) = if up { (ca.0, cb.0) } else { (cb.0, ca.0) };
                         let (t_lo, t_hi) = (chart.z_lines[i0].t, chart.z_lines[i1].t);
-                        let (wall, sd) = name_at_station(station);
-                        let ni = names
+                        let (wall, sd) = name_at_station(station).ok_or_else(split_disagrees)?;
+                        // The station's rulings are the event's — one name among them.
+                        let mut segs: Vec<usize> = chart.events[station]
+                            .rulings
                             .iter()
-                            .position(|&n| n == (wall, sd))
-                            .expect("a station has a name");
-                        let mut segs: Vec<usize> = (0..chart.theta.len())
-                            .filter(|&j| {
-                                name_of_theta[j] == ni
-                                    && chart.theta[j].z[0] >= t_lo
-                                    && chart.theta[j].z[1] <= t_hi
-                            })
+                            .copied()
+                            .filter(|&j| chart.theta[j].z[0] >= t_lo && chart.theta[j].z[1] <= t_hi)
                             .collect();
                         segs.sort_by_key(|&j| chart.theta[j].z[0]);
                         let tiled = !segs.is_empty()

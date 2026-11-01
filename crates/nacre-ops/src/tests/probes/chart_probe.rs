@@ -12,22 +12,14 @@ pub(crate) struct Row {
     pub(crate) theta: usize,
     /// How many **rows** (lateral faces) the class carries.
     pub(crate) rows: usize,
-    /// The θ order could not be formed, so this chart has **no** cells — recorded rather than
-    /// silently dropped, because a partial chart compared as a whole one is how a counting
-    /// claim goes blind.
-    pub(crate) refused: bool,
+    /// The chart's events — the θs a ruling stands at or a rim is cut at.
+    pub(crate) events: usize,
     pub(crate) cells: usize,
-    /// Intervals with no ruling over them: the cell is the whole circle.
+    /// Intervals no ruling spans: the lateral runs round them uncut.
     pub(crate) whole_circle: usize,
-    /// Intervals crossed by an **odd** number of rulings — the only way to reach the
-    /// one-cut-one-cell branch. A zero here means that branch is *unexercised*, not verified.
+    /// Intervals crossed by an **odd** number of rulings — a wall whose other ruling no face
+    /// reaches. A zero here means that shape is *unexercised*, not verified.
     pub(crate) odd_k: usize,
-}
-
-impl Row {
-    pub(crate) fn empty() -> Self {
-        Self::default()
-    }
 }
 
 pub(crate) static ROWS: Ledger<Row> = Ledger::new();
@@ -84,10 +76,9 @@ pub(crate) mod cell_ends {
     #[derive(Clone, Debug, Default)]
     pub(crate) struct Row {
         pub(crate) cells: usize,
-        /// Every cell's two ends, by what they said (an `Other` end is not counted — the census
-        /// asserts no present cell has one).
+        /// Every cell's two ends, by what they said.
         pub(crate) end_disk: usize,
-        pub(crate) end_exact: usize,
+        pub(crate) end_arc: usize,
         pub(crate) end_nocircle: usize,
         /// Ends between adjacent rim nodes no arc covers — the face is absent there.
         pub(crate) end_uncovered: usize,
@@ -101,11 +92,6 @@ pub(crate) mod cell_ends {
         pub(crate) exist_marks_false: usize,
         /// Cells the reader would emit.
         pub(crate) emit: usize,
-        /// Cut ends read — one per arc of an `End::Exact` run.
-        pub(crate) arcs_read: usize,
-        /// Σ(len − 1) over `End::Exact` runs: the arcs an end reads **beyond its first**.
-        /// A sector that spans a rim node the chart has no line for reads the whole run.
-        pub(crate) exact_run_arcs: usize,
         /// The emitter's lateral faces of this class (0 when it refused).
         pub(crate) emitted_faces: usize,
     }

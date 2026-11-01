@@ -367,9 +367,8 @@ pub(crate) fn crossing_on_ruling(
     }
 }
 
-/// Why [`crossing_on_ruling`] names no point — two causes, because two readers turn them into
-/// different words (the tracer into its decline, the chart into a refusal), the same split
-/// [`CircleOrderFail`] makes for an order around a circle.
+/// Why [`crossing_on_ruling`] names no point — three causes, which its readers turn into their own
+/// words (the tracer into its decline).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RulingNameFail {
     /// A description past `Rat`: the meet of the two planes and the cylinder, or a root's side
@@ -381,16 +380,4 @@ pub(crate) enum RulingNameFail {
     /// A wall with no world statement (one that sections the cylinder): the roots' boxes could not
     /// say which ruling each is on.
     Undecided,
-}
-
-impl RulingNameFail {
-    /// The refusal where the caller knows the crossing exists — a station the split or the
-    /// chart already placed: past `Rat` is width, no crossing is the stages disagreeing.
-    pub(crate) fn reason(self) -> crate::RejectReason {
-        match self {
-            Self::Width => crate::RejectReason::WitnessNotRational,
-            Self::NoCrossing => crate::RejectReason::CylinderStagesDisagree,
-            Self::Undecided => crate::RejectReason::CylinderGateUndecided,
-        }
-    }
 }

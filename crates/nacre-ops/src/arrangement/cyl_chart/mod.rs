@@ -42,8 +42,8 @@
 //! ends here» and the vertical-answer assertion exempts. And a third reading: when the
 //! *other* solid's plane runs through the axis, one of its two verticals **is** that tangent
 //! ruling — a line two planes and the cylinder share. Its ends have one name (the alias table's,
-//! seeded from the operands — `Curved::aliases` is what this chart's stations are canonicalized
-//! through), and the line is stated in the plane vocabulary by both faces that touch it — the
+//! seeded from the operands, which every name the chart reads already wears), and the line is
+//! stated in the plane vocabulary by both faces that touch it — the
 //! tangent wall's run and the lateral's own graze — so the ruling vocabulary states nothing there.
 //! The same holds on the *other* solid's tangent wall where the face's own edge lies on its
 //! tangent ruling (a half cylinder's flat edge): the flat and the lateral each state their side of
@@ -184,11 +184,27 @@ pub(crate) enum ChordSays {
 pub(crate) struct Chart {
     pub(crate) z_lines: Vec<ZLine>,
     pub(crate) theta: Vec<ThetaSeg>,
+    /// **Every θ something happens at, in θ order** ([`combinatorics::theta_groups`], the seam
+    /// first): a ruling's station, a node a rim is cut at. Between two consecutive events (a
+    /// *slab*) no line of the chart is cut and no ruling stands, so a slab of an interval is one
+    /// cell, and a rim's arc covering it is one arc.
+    pub(crate) events: Vec<Event>,
+    /// For each class whose rim the split cut on this cylinder, the event of each of its
+    /// [`crate::draft::CutRim`] nodes, in the rim's own order.
+    pub(crate) rim_events: std::collections::HashMap<usize, Vec<usize>>,
     /// How many rulings arrived with `z` descending, so that [`chart_of`] had to swap `end`
     /// alongside `z` to keep `end[e] ↔ z[e]` true. Always 0 — a ruling `Piece`'s `end` is stated in
     /// ascending axis order — and the census asserts it, which is the count's one reader.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) end_swapped: usize,
+}
+
+/// **One event of the chart** — a generator of the cylinder where a ruling stands or a rim is cut.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Event {
+    /// The rulings standing on it — indices into [`Chart::theta`], one name among them
+    /// ([`Chart::ruling_name`]), at several axis intervals.
+    pub(crate) rulings: Vec<usize>,
 }
 
 /// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
@@ -230,87 +246,68 @@ fn ruling_side_of(
     crate::arrangement::node_ruling_side(jd, def, wall, n).ok_or(RejectReason::WitnessNotRational)
 }
 
-/// **One cell of the chart** — an axis interval crossed with a θ-sector.
+/// **One cell of the chart** — an axis interval crossed with a slab, the θ between two
+/// consecutive [`Chart::events`].
 ///
-/// Addressed by `(interval, sector)` rather than kept as a flat list, because the region walk
+/// Addressed by `(interval, slab)` rather than kept as a flat list, because the region walk
 /// ([`regions`]) asks for **neighbours**: crossing a horizontal line moves to the interval above or
-/// below, crossing a ruling to the sector beside. That adjacency is *derivable* from this address,
+/// below, crossing an event to the slab beside. That adjacency is *derivable* from this address,
 /// and deriving it is the reader's job — building it here would be a field with no consumer.
-///
-/// The adjacency is not 1:1 and the address already says so: an interval carrying one cell sits
-/// against every sector of a neighbour that carries six.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Cell {
     /// The interval between `z_lines[interval]` and `z_lines[interval + 1]`.
     pub(crate) interval: usize,
-    /// Which sector of that interval, in the interval's own θ order.
-    pub(crate) sector: usize,
-    /// The sector's two bounding rulings **as indices into [`Chart::theta`]**, `None` when the
-    /// interval carries none and the cell is the whole circle. For a single cut the circle opens
-    /// at one point and both are that ruling.
+    /// The slab from event `slab` to the next one counter-clockwise; with no event at all, `0`
+    /// and the whole circle. With one event the slab runs from it round to it again.
+    pub(crate) slab: usize,
+    /// The rulings standing at the slab's two events over this interval **as indices into
+    /// [`Chart::theta`]** — `None` at an event where no ruling spans the interval (a rim cut there,
+    /// or a ruling of another interval). With one event both sides are the same ruling.
     ///
     /// **Indices, not names.** Kept as `(wall, side)` names, the ruling's *label* could not be
     /// reached from a cell without searching for it. The name is one call away
     /// ([`Chart::ruling_name`]).
-    pub(crate) walls: Option<[usize; 2]>,
+    pub(crate) walls: [Option<usize>; 2],
 }
 
 impl Chart {
-    /// **The cells the two axes cut** — `Err` names why a θ order could not be formed.
+    /// **The cells the two axes cut**: every interval crossed with every slab.
     ///
     /// **Every ruling's axis endpoints are themselves z-lines** — measured across the suite
     /// (263 charts, 0 exceptions) and structural besides: a ruling's node is named
     /// `[wall, other plane]`, and a plane that meets the lateral while the wall holds the axis can
-    /// only be ⊥ to it, which is exactly what `chart_of` collects. So the arrangement **splits at
-    /// every axis interval**, and inside one interval a cell is just a θ-sector: no face walk, no
-    /// angular order at a vertex.
-    ///
-    /// **A refusal loses the whole chart, not one interval.** Skipping the interval that
-    /// refused would leave a *partial* chart that the census then compares as if it were whole —
-    /// the exact shape in which a counting claim goes blind. Measured 0 refusals; the shape is
-    /// not left to that.
-    pub(crate) fn cells(
-        &self,
-        jd: &Judge<'_, WorkingPlane>,
-        k: usize,
-        def: &nacre_topo::CylinderDef,
-    ) -> Result<Vec<Cell>, RejectReason> {
+    /// only be ⊥ to it, which is exactly what `chart_of` collects. So a ruling standing at an event
+    /// spans an interval whole or not at all.
+    pub(crate) fn cells(&self) -> Vec<Cell> {
+        let n = self.events.len();
         let mut out = Vec::new();
         for i in 0..self.z_lines.len().saturating_sub(1) {
             let (lo, hi) = (self.z_lines[i].t, self.z_lines[i + 1].t);
-            // Alive over the *whole* interval: a ruling that stopped inside one would mean an
-            // endpoint that is not an axis line, which is the premise above.
-            let alive: Vec<usize> = (0..self.theta.len())
-                .filter(|&j| self.theta[j].z[0] <= lo && hi <= self.theta[j].z[1])
-                .collect();
-            if alive.is_empty() {
+            // The ruling standing at event `e` over this whole interval.
+            let wall = |e: usize| {
+                self.events[e]
+                    .rulings
+                    .iter()
+                    .copied()
+                    .find(|&j| self.theta[j].z[0] <= lo && hi <= self.theta[j].z[1])
+            };
+            if n == 0 {
                 out.push(Cell {
                     interval: i,
-                    sector: 0,
-                    walls: None,
+                    slab: 0,
+                    walls: [None, None],
                 });
                 continue;
             }
-            // **One node per ruling.** A ruling is vertical, so its two ends share a θ —
-            // handing both to `circular_order` asks it to rank one point twice, and it honestly
-            // refuses that as the two-names-for-one-point it checks for. The order is a property
-            // of the *segment*, and one endpoint states it.
-            let nodes: Vec<combinatorics::NodeId> =
-                alive.iter().map(|&j| self.theta[j].end[0]).collect();
-            let order = crate::combinatorics::circular_order(jd, k, def, &nodes)
-                .map_err(crate::combinatorics::CircleOrderFail::reason)?;
-            let n = order.len();
-            for s in 0..n {
-                // `k` cuts make `k` sectors, and one cut makes one: the circle opens at that point
-                // and closes at it again.
+            for u in 0..n {
                 out.push(Cell {
                     interval: i,
-                    sector: s,
-                    walls: Some([alive[order[s]], alive[order[(s + 1) % n]]]),
+                    slab: u,
+                    walls: [wall(u), wall((u + 1) % n)],
                 });
             }
         }
-        Ok(out)
+        out
     }
 
     /// A ruling's **name** — `(wall class, side)`, the key the panel join on the other side of
@@ -325,35 +322,6 @@ impl Chart {
     ) -> Result<RulingName, RejectReason> {
         let t = &self.theta[i];
         Ok((t.wall, ruling_side_of(jd, k, def, t.wall, t.end[0])?))
-    }
-
-    /// **A station's canonical name on a z-line** — `crossing_on_ruling(c, wall, k, side)`: the
-    /// very name `ruling_sweep` gives a piece ending on that line and `split_circles` gives a rim
-    /// node there (`NodeId::pierce` folds the pair and the root), so «does this rim carry this
-    /// station» is **name equality**, and a station the rim does not carry joins the θ order under
-    /// the name a piece ending there would have worn.
-    ///
-    /// **Not a node of another line**. Placing such a station by
-    /// its piece's `end[0]` — a node on a *different* z-line at the same θ — would, where the rim
-    /// does carry the station (a tool wall crossing the circle there), hand `circular_order` one
-    /// point under two names, which it refuses as the coincidence it checks for. Every one of
-    /// those ends would read `End::Other` (one point, two names; 321 ends over the suite).
-    fn station_on(
-        &self,
-        jd: &Judge<'_, WorkingPlane>,
-        k: usize,
-        def: &nacre_topo::CylinderDef,
-        c: usize,
-        i: usize,
-        aliases: &crate::arrangement::Aliases,
-    ) -> Result<combinatorics::NodeId, RejectReason> {
-        let (wall, side) = self.ruling_name(jd, k, def, i)?;
-        // As the table knows it: a station on a corner is the corner. The wall's ruling reaches
-        // this line (the cell's wall spans the interval), so no crossing is the stages
-        // disagreeing ([`crate::combinatorics::RulingNameFail::reason`]).
-        crate::combinatorics::crossing_on_ruling(jd, def, c, wall, k, side)
-            .map(|n| aliases.canon_point(n))
-            .map_err(crate::combinatorics::RulingNameFail::reason)
     }
 }
 
@@ -501,11 +469,84 @@ pub(crate) fn chart_of(
         })
         .unwrap_or_default();
     let theta = stations_of_lines(jd, cyls, k, theta)?;
+    let (events, rim_events) = events_of(jd, k, def, &theta, curved)?;
     Ok(Chart {
         z_lines,
         theta,
+        events,
+        rim_events,
         end_swapped,
     })
+}
+
+/// **The chart's events** — every ruling's station and every node a rim is cut at, grouped by θ
+/// ([`combinatorics::theta_groups`]). A generator carries one ruling name: two would be two
+/// stations on one line, refused as the one point under two names it is (`CoincidentNodes`). A
+/// rim's nodes stand at distinct events in the rim's own order — two at one event are that point
+/// again.
+#[allow(clippy::type_complexity)]
+fn events_of(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    theta: &[ThetaSeg],
+    curved: &Curved,
+) -> Result<(Vec<Event>, std::collections::HashMap<usize, Vec<usize>>), BoolError> {
+    // The points asked, each once: a ruling's lower end (a ruling is vertical, so one end states
+    // its θ), and every cut rim's nodes.
+    let mut nodes: Vec<combinatorics::NodeId> = Vec::new();
+    let mut index = |n: combinatorics::NodeId| match nodes.iter().position(|&x| x == n) {
+        Some(p) => p,
+        None => {
+            nodes.push(n);
+            nodes.len() - 1
+        }
+    };
+    let ruling_at: Vec<usize> = theta.iter().map(|t| index(t.end[0])).collect();
+    let mut rims: Vec<(usize, Vec<usize>)> = curved
+        .split_rims
+        .iter()
+        .filter(|((kk, _), _)| *kk == k)
+        .map(|(&(_, c), rim)| (c, rim.nodes.iter().map(|&n| index(n)).collect()))
+        .collect();
+    rims.sort_unstable_by_key(|r| r.0); // a HashMap's order decides nothing; stated once
+    let groups = combinatorics::theta_groups(jd, k, def, &nodes).map_err(|e| reject(e.reason()))?;
+    let mut event_of = vec![0usize; nodes.len()];
+    for (e, g) in groups.iter().enumerate() {
+        for &i in g {
+            event_of[i] = e;
+        }
+    }
+    let mut events = vec![Event::default(); groups.len()];
+    for (j, &n) in ruling_at.iter().enumerate() {
+        events[event_of[n]].rulings.push(j);
+    }
+    for ev in &events {
+        let mut name: Option<RulingName> = None;
+        for &j in &ev.rulings {
+            let t = &theta[j];
+            let n = (
+                t.wall,
+                ruling_side_of(jd, k, def, t.wall, t.end[0]).map_err(reject)?,
+            );
+            if name.replace(n).is_some_and(|p| p != n) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
+    }
+    let mut rim_events = std::collections::HashMap::new();
+    for (c, idx) in rims {
+        let evs: Vec<usize> = idx.iter().map(|&i| event_of[i]).collect();
+        // The split ordered the rim's nodes by the same θ order, the seam first.
+        if evs.windows(2).any(|w| w[0] == w[1]) {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
+        if evs.windows(2).any(|w| w[0] > w[1]) {
+            return Err(reject(RejectReason::CylinderStagesDisagree));
+        }
+        rim_events.insert(c, evs);
+    }
+    Ok((events, rim_events))
 }
 
 /// **One line, one station** — read off the gate's records ([`crate::planes::SharedRuling`] with
