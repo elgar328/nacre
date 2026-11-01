@@ -21,28 +21,22 @@ impl CircleOrderFail {
     }
 }
 
-/// **Order nodes around one circle by θ, the seam first** — the nodes' reading of the cyclic order
-/// [`nacre_exact::quad::SeamOrder::seam_first`] states once (the arcs' spans read it too).
+/// **Order points of the cylinder by θ, the seam first, points at one θ together** — the nodes'
+/// reading of the cyclic order [`nacre_exact::quad::SeamOrder::seam_first`] states once (the arcs'
+/// spans read it too). Returns the groups of indices into `nodes` in θ order; a group holds the
+/// nodes on one generator — on one circle that is one point, on the lateral's chart one station
+/// several lines pass.
 ///
 /// **A crossing on the seam is ordered, not refused — it is the cut point.** (Measured: the
 /// very first fixture puts a crossing there — a boss on a plate's edge cuts its own rim exactly on
-/// the seam generator, so this is the common case, not an exotic one.)
-///
-/// At most one node can be seam-incident: two would be the same point, which the adjacency check
-/// below refuses as the two-names-for-one-point it is.
-///
-/// **Two names for one point.** Two walls crossing the circle at one point are two *different*
-/// pierce names — a `dedup` cannot see it, and the θ sort puts them adjacent — so an arc of zero
-/// length would follow. The segment side asks this question already; asking it here too is what
-/// keeps the two sides from disagreeing about what "one point" means.
-///
-/// Returns the permutation of `nodes` in θ order. `nodes` must already be deduped by name.
-pub(crate) fn circular_order(
+/// the seam generator, so this is the common case, not an exotic one.) Points on the seam are one
+/// θ and share the first group.
+pub(crate) fn theta_groups(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     nodes: &[NodeId],
-) -> Result<Vec<usize>, CircleOrderFail> {
+) -> Result<Vec<Vec<usize>>, CircleOrderFail> {
     use nacre_exact::quad::{SeamOrder, circular_order_about_seam};
     let meets = nodes
         .iter()
@@ -60,37 +54,48 @@ pub(crate) fn circular_order(
             (&meets[i].0, &meets[i].1),
             (&meets[j].0, &meets[j].1),
         )
+        .map(SeamOrder::seam_first)
+        .ok_or(CircleOrderFail::Undecided)
     };
-    // Counted before the sort, so two seam nodes are `Coincident` ahead of any order the sort
-    // could not form (`Undecided`).
-    let mut seam_nodes = 0usize;
+    // Every point's own class first, so a point the order cannot place is `Undecided` ahead of any
+    // pair the sort could not form.
     for i in 0..meets.len() {
-        match cmp(i, i) {
-            Some(SeamOrder::SeamIncident { first: true, .. }) => seam_nodes += 1,
-            Some(_) => {}
-            None => return Err(CircleOrderFail::Undecided),
-        }
-    }
-    if seam_nodes > 1 {
-        return Err(CircleOrderFail::Coincident);
+        cmp(i, i)?;
     }
     let mut order: Vec<usize> = (0..meets.len()).collect();
-    try_sort_by(&mut order, |&i, &j| {
-        cmp(i, j)
-            .map(SeamOrder::seam_first)
-            .ok_or(CircleOrderFail::Undecided)
-    })?;
-    for w in order.windows(2) {
-        match cmp(w[0], w[1]) {
-            Some(SeamOrder::Ordered(core::cmp::Ordering::Equal)) => {
-                return Err(CircleOrderFail::Coincident);
-            }
-            Some(_) => {}
+    try_sort_by(&mut order, |&i, &j| cmp(i, j))?;
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for &i in &order {
+        match groups.last_mut() {
             // The sort may have asked this pair the other way round; a failure is no answer.
-            None => return Err(CircleOrderFail::Undecided),
+            Some(g) if cmp(g[0], i)? == core::cmp::Ordering::Equal => g.push(i),
+            _ => groups.push(vec![i]),
         }
     }
-    Ok(order)
+    Ok(groups)
+}
+
+/// **Order nodes around one circle by θ, the seam first** — [`theta_groups`] on points of one
+/// circle, where one θ is one point.
+///
+/// **Two names for one point.** Two walls crossing the circle at one point are two *different*
+/// pierce names — a `dedup` cannot see it, and the θ sort puts them together — so an arc of zero
+/// length would follow. A group of two or more is that point, refused as `Coincident`, and so are
+/// two nodes on the seam. The segment side asks this question already; asking it here too is what
+/// keeps the two sides from disagreeing about what "one point" means.
+///
+/// Returns the permutation of `nodes` in θ order. `nodes` must already be deduped by name.
+pub(crate) fn circular_order(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    nodes: &[NodeId],
+) -> Result<Vec<usize>, CircleOrderFail> {
+    let groups = theta_groups(jd, cyl, def, nodes)?;
+    if groups.iter().any(|g| g.len() > 1) {
+        return Err(CircleOrderFail::Coincident);
+    }
+    Ok(groups.into_iter().flatten().collect())
 }
 
 /// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — cyclic order about

@@ -1544,3 +1544,192 @@ fn a_sections_radial_and_tangent_are_read_off_the_axis() {
         "a plane along the axis has no section"
     );
 }
+
+/// The `z`-axis cylinder of radius 2 the section-order fixtures stand on.
+fn z_cylinder_r2() -> crate::CylinderDef {
+    crate::CylinderDef::new(
+        [ri(0); 3],
+        [ri(0), ri(0), ri(1)],
+        [ri(1), ri(0), ri(0)],
+        BigRat::from(ri(4)),
+    )
+    .expect("a cylinder")
+}
+
+/// **Every arm of the section-height ladder, hand-derived** on the `z`-axis cylinder of radius 2,
+/// angle 0 along `+x`. `P: z = y/4 + 5/2` climbs with `y` over `z ∈ [2, 3]`.
+/// - `Q: z = 5` lies above it everywhere: asked at no generator, `P` is lower, and `Q` higher.
+/// - `C: z = 5/2` crosses it where `y = 0`: at `(2, 0)` (angle 0) `P` rises past `C` — lower just
+///   before, higher just after; at `(−2, 0)` (angle π) the other way round. Asked at no generator,
+///   the two cross: no one answer.
+/// - `T: z = −y/4 + 7/2` touches `P` at `(0, 2)` (angle π/2), where both are 3, and lies above it
+///   on both sides; asked at no generator they do not cross.
+/// - `P' : z = y/4 + 7/2` is `P` slid up — parallel normals, lower everywhere; `P` against itself,
+///   or against its other facing, is one plane.
+#[test]
+fn a_section_height_order_is_read_arm_by_arm() {
+    use core::cmp::Ordering::{Equal, Greater, Less};
+    let def = z_cylinder_r2();
+    let p = [ri(0), r(-1, 4), ri(1), r(-5, 2)];
+    let q = [ri(0), ri(0), ri(1), ri(-5)];
+    let c = [ri(0), ri(0), ri(1), r(-5, 2)];
+    let t = [ri(0), r(1, 4), ri(1), r(-7, 2)];
+    let p_up = [ri(0), r(-1, 4), ri(1), r(-7, 2)];
+    let p_flipped = [ri(0), r(1, 4), ri(-1), r(5, 2)];
+    let ord = |a: &[Rat; 4], b: &[Rat; 4], at: Option<&(MeetLine, QuadVal)>, toward| {
+        section_height_order(a, b, &def, at.map(|x| (&x.0, &x.1)), toward).expect("no overflow")
+    };
+    let of = SectionOrder::Ordered;
+    assert_eq!(ord(&p, &q, None, Toward::After), of(Less));
+    assert_eq!(ord(&q, &p, None, Toward::After), of(Greater));
+    assert_eq!(ord(&p, &c, None, Toward::After), SectionOrder::Crosses);
+    assert_eq!(
+        ord(&p, &t, None, Toward::After),
+        of(Less),
+        "a touch is no crossing"
+    );
+    assert_eq!(ord(&p, &p_up, None, Toward::After), of(Less));
+    assert_eq!(ord(&p, &p, None, Toward::After), of(Equal));
+    assert_eq!(ord(&p, &p_flipped, None, Toward::Before), of(Equal));
+    assert_eq!(
+        ord(&p_flipped, &q, None, Toward::After),
+        of(Less),
+        "either facing"
+    );
+
+    let (o, m) = (def.origin(), def.dir());
+    let CylinderMeet::Pair { line, s } =
+        plane_plane_cylinder(&p, &c, &o, &m, def.r2()).expect("fits")
+    else {
+        panic!("P and C cross the cylinder twice")
+    };
+    let east = s
+        .iter()
+        .find(|v| line.point_approx(v)[0] > 0.0)
+        .cloned()
+        .expect("one crossing at angle 0");
+    let west = s
+        .iter()
+        .find(|v| line.point_approx(v)[0] < 0.0)
+        .cloned()
+        .expect("one crossing at angle π");
+    let (east, west) = ((line.clone(), east), (line, west));
+    assert_eq!(ord(&p, &c, Some(&east), Toward::After), of(Greater));
+    assert_eq!(ord(&p, &c, Some(&east), Toward::Before), of(Less));
+    assert_eq!(ord(&p, &c, Some(&west), Toward::After), of(Less));
+    assert_eq!(ord(&p, &c, Some(&west), Toward::Before), of(Greater));
+    assert_eq!(
+        ord(&c, &p, Some(&east), Toward::After),
+        of(Less),
+        "antisymmetric"
+    );
+    // Apart at the generator, the answer is the same on both sides of it.
+    assert_eq!(ord(&p, &q, Some(&east), Toward::Before), of(Less));
+
+    let CylinderMeet::Tangent { line, s } =
+        plane_plane_cylinder(&p, &t, &o, &m, def.r2()).expect("fits")
+    else {
+        panic!("P and T touch on the cylinder")
+    };
+    let touch = (line, QuadVal::from_rat(s));
+    assert_eq!(ord(&p, &t, Some(&touch), Toward::After), of(Less));
+    assert_eq!(ord(&p, &t, Some(&touch), Toward::Before), of(Less));
+    assert_eq!(ord(&t, &p, Some(&touch), Toward::Before), of(Greater));
+
+    let along = [ri(1), ri(0), ri(0), ri(0)];
+    assert_eq!(
+        section_height_order(&p, &along, &def, None, Toward::After),
+        None,
+        "a plane along the axis has no section"
+    );
+    // Where they meet: `Q` nowhere, `C` twice, `T` once, `P` against its other facing is itself.
+    let meet = |a: &[Rat; 4], b: &[Rat; 4]| section_meet(a, b, &def);
+    assert_eq!(meet(&p, &q), Some(SectionMeet::Apart));
+    assert_eq!(meet(&p, &p_up), Some(SectionMeet::Apart));
+    assert_eq!(meet(&p, &c), Some(SectionMeet::Cross));
+    assert_eq!(meet(&p, &t), Some(SectionMeet::Touch));
+    assert_eq!(meet(&p, &p_flipped), Some(SectionMeet::Same));
+    assert_eq!(meet(&p, &along), None);
+}
+
+/// The `f64` picture of a section's height above the generator at angle `θ` on the `z`-axis
+/// cylinder of radius 2 — the oracle the property tests read the exact ladder against.
+fn section_height_f64(l: &[Rat; 4], theta: f64) -> f64 {
+    let (x, y) = (2.0 * theta.cos(), 2.0 * theta.sin());
+    -(l[0].to_f64() * x + l[1].to_f64() * y + l[3].to_f64()) / l[2].to_f64()
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+    ))]
+    /// **At a generator two sections cross on, the ladder agrees with the heights a little way
+    /// to either side** — the tie the value arm alone cannot answer, built on purpose (a random
+    /// generator meets a crossing with probability zero). The generator is a crossing of `P` and
+    /// `Q` themselves; where their line only touches the cylinder the touch is the generator.
+    /// Asked at no generator, the answer is `Crosses` exactly when the planes' line crosses the
+    /// cylinder twice, and otherwise the one sign the heights keep all the way round.
+    #[test]
+    fn a_section_order_agrees_with_the_heights_beside_its_generator(
+        p in proptest::array::uniform4(-6i128..7),
+        q in proptest::array::uniform4(-6i128..7),
+    ) {
+        use core::cmp::Ordering::{Greater, Less};
+        proptest::prop_assume!(p[2] != 0 && q[2] != 0);
+        let def = z_cylinder_r2();
+        let (p, q) = (p.map(ri), q.map(ri));
+        let (o, m) = (def.origin(), def.dir());
+        let diff = |th: f64| section_height_f64(&p, th) - section_height_f64(&q, th);
+        let theta_of = |line: &MeetLine, s: &QuadVal| {
+            let x = line.point_approx(s);
+            x[1].atan2(x[0])
+        };
+        // A little way to either side, but nearer than the other crossing.
+        let check = |line: &MeetLine, s: &QuadVal, near: f64| -> Result<(), proptest::test_runner::TestCaseError> {
+            let th = theta_of(line, s);
+            for (toward, d) in [(Toward::After, near), (Toward::Before, -near)] {
+                let got = section_height_order(&p, &q, &def, Some((line, s)), toward).expect("fits");
+                let h = diff(th + d);
+                if h.abs() > 1e-12 {
+                    let want = SectionOrder::Ordered(if h > 0.0 { Greater } else { Less });
+                    proptest::prop_assert_eq!(got, want, "θ = {}, {:?}", th, toward);
+                }
+            }
+            Ok(())
+        };
+        let got = section_height_order(&p, &q, &def, None, Toward::After).expect("fits");
+        // Where they meet is where the line of their planes pierces the cylinder.
+        let meet = section_meet(&p, &q, &def).expect("neither plane runs along the axis");
+        let want = match plane_plane_cylinder(&p, &q, &o, &m, def.r2()).expect("fits") {
+            CylinderMeet::Pair { .. } => SectionMeet::Cross,
+            CylinderMeet::Tangent { .. } => SectionMeet::Touch,
+            CylinderMeet::CoincidentPlanes => SectionMeet::Same,
+            _ => SectionMeet::Apart,
+        };
+        proptest::prop_assert_eq!(meet, want);
+        match plane_plane_cylinder(&p, &q, &o, &m, def.r2()).expect("fits") {
+            CylinderMeet::Pair { line, s } => {
+                let gap = (theta_of(&line, &s[0]) - theta_of(&line, &s[1])).abs();
+                let gap = gap.min(core::f64::consts::TAU - gap);
+                let near = (gap / 4.0).min(1e-4);
+                for v in &s {
+                    check(&line, v, near)?;
+                }
+                proptest::prop_assert_eq!(got, SectionOrder::Crosses);
+            }
+            meet => {
+                if let CylinderMeet::Tangent { line, s } = meet {
+                    check(&line, &QuadVal::from_rat(s), 1e-4)?;
+                }
+                // No crossing: the heights keep one order all the way round.
+                let h = (0..720)
+                    .map(|i| diff(f64::from(i) * core::f64::consts::TAU / 720.0))
+                    .fold(0.0f64, |a, h| if h.abs() > a.abs() { h } else { a });
+                if h.abs() > 1e-9 {
+                    let want = SectionOrder::Ordered(if h > 0.0 { Greater } else { Less });
+                    proptest::prop_assert_eq!(got, want);
+                }
+            }
+        }
+    }
+}

@@ -816,6 +816,234 @@ pub fn ccw_tangent_side(
     Some(tilt * axial_side(&crate::cross3_rat(d, n)?, o, m, at)?)
 }
 
+/// Which side of a generator [`section_height_order`] looks at: just after it, counter-clockwise
+/// about the axis — the way [`circular_order_about_seam`] counts θ — or just before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Toward {
+    After,
+    Before,
+}
+
+/// What [`section_height_order`] says of two plane sections.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionOrder {
+    /// The first section's height against the second's along the axis `m`; `Equal` exactly when
+    /// the two planes are one plane.
+    Ordered(core::cmp::Ordering),
+    /// Asked at no generator, though the two sections cross on the cylinder: the order changes
+    /// around it, so there is no one answer — the caller left out a crossing it should have asked
+    /// at.
+    Crosses,
+}
+
+/// **Which of two plane sections of a cylinder is higher along its axis, beside one generator.**
+///
+/// On the cylinder every plane `L` not along the axis is a graph over θ: the generator through a
+/// point `x` meets it at height `s_L = −L(x)/(n_L·m)` above `x`. The difference of two heights is
+/// `R(x)/((n_P·m)(n_Q·m))` with `R = (n_P·m)·Q − (n_Q·m)·P`, whose normal is perpendicular to `m`:
+/// `R` is the plane along the axis
+/// through `P ∩ Q`, constant along every generator, zero exactly on the generators where the two
+/// sections cross. So `sign(s_P − s_Q) = sign(R(x))·sign(n_P·m)·sign(n_Q·m)` at **any** point `x` of
+/// the generator, and the sense of either plane cancels.
+///
+/// The answer just after or before the generator `at` (CGAL's `Compare_y_at_x_right`):
+/// - `R(at) ≠ 0` — the sections are apart there and stay so nearby.
+/// - `R(at) = 0`, they meet on it: the sign of `dR/dθ = n_R·(m × g) = g·(n_R × m)` decides — the
+///   side of the plane through the axis with normal `n_R × m`, the reading [`axial_side`] makes —
+///   negated before the generator.
+/// - `dR/dθ = 0` too — `R` touches the cylinder along this generator: `R(θ) = R(o) + n_R·g(θ)`, and
+///   at the touch `R''` is `R(o)`, the sign on both sides alike (an even zero, so not negated).
+///
+/// With no generator (`at = None`) the sections must not cross anywhere: then `R` misses the
+/// cylinder or touches it, the whole cylinder lies on the axis point `o`'s side of it, and `R(o)`'s
+/// sign answers. Where `R` does cut it — `R(o)² < r²·|n_R|²` — the answer is [`SectionOrder::Crosses`].
+/// Two planes with parallel normals give `n_R = 0`: `R` is the constant `R(o)`, zero only for one
+/// plane, and two planes across the axis compare as their axis parameters do.
+///
+/// Exact — it does not overflow. `None` is a plane along the axis only: its section is rulings,
+/// not a graph.
+pub fn section_height_order(
+    p: &[Rat; 4],
+    q: &[Rat; 4],
+    def: &crate::CylinderDef,
+    at: Option<(&MeetLine, &QuadVal)>,
+    toward: Toward,
+) -> Option<SectionOrder> {
+    let SectionPair {
+        r,
+        nr,
+        r_o,
+        o,
+        o_den,
+        mi,
+        tilt,
+    } = SectionPair::of(p, q, def)?;
+    let zero = BigInt::from(0);
+    let sign = |x: &BigInt| -> i8 {
+        match x.cmp(&zero) {
+            core::cmp::Ordering::Greater => 1,
+            core::cmp::Ordering::Less => -1,
+            core::cmp::Ordering::Equal => 0,
+        }
+    };
+    let of = |s: i8| SectionOrder::Ordered((s * tilt).cmp(&0));
+    let Some(at) = at else {
+        return Some(match meet_of(&nr, &r_o, &o_den, def) {
+            SectionMeet::Cross => SectionOrder::Crosses,
+            _ => of(sign(&r_o)),
+        });
+    };
+    if nr.iter().all(|c| *c == zero) {
+        return Some(of(sign(&r_o)));
+    }
+    let one = BigInt::from(1);
+    let rq: [BigQ; 4] = core::array::from_fn(|k| (r[k].clone(), one.clone()));
+    match plane_side_big(&rq, at.0, at.1) {
+        Orient::Positive => return Some(of(1)),
+        Orient::Negative => return Some(of(-1)),
+        Orient::Zero => {}
+    }
+    // `dR/dθ = n_R·(m × g) = g·(n_R × m)`: the side of the plane through the axis with normal
+    // `w = n_R × m` (already across the axis), which [`axial_side`] reads for a narrow `w`.
+    let dot = |a: &[BigInt], b: &[BigInt]| -> BigInt { (0..3).map(|k| &a[k] * &b[k]).sum() };
+    let w = [
+        &nr[1] * &mi[2] - &nr[2] * &mi[1],
+        &nr[2] * &mi[0] - &nr[0] * &mi[2],
+        &nr[0] * &mi[1] - &nr[1] * &mi[0],
+    ];
+    let through_axis: [BigQ; 4] = [
+        (w[0].clone(), one.clone()),
+        (w[1].clone(), one.clone()),
+        (w[2].clone(), one.clone()),
+        (-dot(&w, &o), o_den.clone()),
+    ];
+    let slope = match plane_side_big(&through_axis, at.0, at.1) {
+        Orient::Positive => 1,
+        Orient::Negative => -1,
+        Orient::Zero => 0,
+    };
+    if slope != 0 {
+        return Some(of(if toward == Toward::After {
+            slope
+        } else {
+            -slope
+        }));
+    }
+    // `R` touches the cylinder along this generator, so the axis lies off it: `R(o) ≠ 0`.
+    debug_assert!(
+        r_o != zero,
+        "a plane along the axis touching the cylinder passes off the axis"
+    );
+    Some(of(sign(&r_o)))
+}
+
+/// **How two plane sections of a cylinder meet**: nowhere, touching at one generator, crossing at
+/// two — or not at all apart, being one plane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionMeet {
+    Same,
+    Apart,
+    Touch,
+    Cross,
+}
+
+/// **Where two plane sections of a cylinder meet** — the generators the line of their planes
+/// pierces the cylinder along: none, one (a touch) or two. Exact; `None` only for a plane along
+/// the axis, whose section is no graph over θ.
+pub fn section_meet(p: &[Rat; 4], q: &[Rat; 4], def: &crate::CylinderDef) -> Option<SectionMeet> {
+    let sp = SectionPair::of(p, q, def)?;
+    Some(meet_of(&sp.nr, &sp.r_o, &sp.o_den, def))
+}
+
+/// Two plane sections, both not along the axis, held as the one plane [`section_height_order`]
+/// reads them through: `R = (n_P·m)·Q − (n_Q·m)·P`, along the axis through `P ∩ Q`. Every factor is
+/// cleared of its denominators by a positive multiple, which scales `R`, its normal and `R(o)` by
+/// positive factors and leaves every sign read off them; the arithmetic runs in `BigInt`, since
+/// `R`'s coefficients are products of the two planes' and checked `Rat` would put a width limit
+/// inside a shape question (a bored cube scaled to `1e23` overflows it).
+struct SectionPair {
+    r: [BigInt; 4],
+    nr: [BigInt; 3],
+    /// `o_den·R(o)`, `o` the axis point.
+    r_o: BigInt,
+    o: [BigInt; 3],
+    o_den: BigInt,
+    mi: [BigInt; 3],
+    /// `sign(n_P·m)·sign(n_Q·m)`.
+    tilt: i8,
+}
+
+impl SectionPair {
+    fn of(p: &[Rat; 4], q: &[Rat; 4], def: &crate::CylinderDef) -> Option<Self> {
+        let zero = BigInt::from(0);
+        let (pi, qi, mi) = (int_scaled(p), int_scaled(q), int_scaled(&def.dir()));
+        let (o, o_den) = int_scaled_with(&def.origin());
+        let dot = |a: &[BigInt], b: &[BigInt]| -> BigInt { (0..3).map(|k| &a[k] * &b[k]).sum() };
+        let (pm, qm) = (dot(&pi, &mi), dot(&qi, &mi));
+        if pm == zero || qm == zero {
+            return None;
+        }
+        let r: [BigInt; 4] = core::array::from_fn(|k| &pm * &qi[k] - &qm * &pi[k]);
+        let nr = [r[0].clone(), r[1].clone(), r[2].clone()];
+        let r_o = dot(&nr, &o) + &r[3] * &o_den;
+        let positive = |x: &BigInt| *x > zero;
+        let tilt = if positive(&pm) == positive(&qm) {
+            1
+        } else {
+            -1
+        };
+        Some(Self {
+            r,
+            nr,
+            r_o,
+            o,
+            o_den,
+            mi,
+            tilt,
+        })
+    }
+}
+
+/// [`section_meet`] off `R`: with parallel normals `R` is the constant `R(o)` — one plane where
+/// that is zero, apart otherwise; else `R` meets the cylinder as the axis lies nearer to it than
+/// `r`, `R(o)² < r²·|n_R|²` (scaled by `o_den²` and `r²`'s denominator), touches it at equality.
+fn meet_of(
+    nr: &[BigInt; 3],
+    r_o: &BigInt,
+    o_den: &BigInt,
+    def: &crate::CylinderDef,
+) -> SectionMeet {
+    let zero = BigInt::from(0);
+    if nr.iter().all(|c| *c == zero) {
+        return if *r_o == zero {
+            SectionMeet::Same
+        } else {
+            SectionMeet::Apart
+        };
+    }
+    let (r2n, r2d) = (def.r2().numer(), def.r2().denom());
+    let reach: BigInt = nr.iter().map(|c| c * c).sum();
+    match (r_o * r_o * r2d).cmp(&(r2n * reach * o_den * o_den)) {
+        core::cmp::Ordering::Less => SectionMeet::Cross,
+        core::cmp::Ordering::Equal => SectionMeet::Touch,
+        core::cmp::Ordering::Greater => SectionMeet::Apart,
+    }
+}
+
+/// `v` times the product of its denominators — a positive multiple, all integers.
+fn int_scaled<const N: usize>(v: &[Rat; N]) -> [BigInt; N] {
+    int_scaled_with(v).0
+}
+
+/// [`int_scaled`] and the positive factor it multiplied by.
+fn int_scaled_with<const N: usize>(v: &[Rat; N]) -> ([BigInt; N], BigInt) {
+    let den: BigInt = v.iter().map(|r| BigInt::from(r.denom())).product();
+    (
+        core::array::from_fn(|k| BigInt::from(v[k].numer()) * &den / BigInt::from(v[k].denom())),
+        den,
+    )
+}
+
 /// The exact meet of two planes and a cylinder's lateral surface.
 ///
 /// `dir`/`r2` are the cylinder's **raw** rational axis direction and **squared** radius
@@ -1411,25 +1639,35 @@ fn skew_axes_clear(o_a: &V3, m_a: &V3, r2_a: &BigRat, o_b: &V3, m_b: &V3, r2_b: 
 /// `(P.num·Q.den·c.den, Q.num·P.den, c.num·c.den)` — the same `√(p/q) = √(pq)/q` fold
 /// [`integerize`] uses.
 pub fn plane_side(plane: &[Rat; 4], line: &MeetLine, s: &QuadVal) -> Orient {
-    // Exact rationals as (numerator, denominator) with the denominator positive — `Ratio` keeps
-    // it so, and every step below preserves it.
-    type Q = (BigInt, BigInt);
-    let q = |r: Rat| -> Q { (BigInt::from(r.numer()), BigInt::from(r.denom())) };
-    let mul = |a: &Q, b: &Q| -> Q { (&a.0 * &b.0, &a.1 * &b.1) };
-    let add = |a: &Q, b: &Q| -> Q { (&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1) };
-    let dot = |v: &V3| -> Q {
+    plane_side_big(&plane.map(big_q), line, s)
+}
+
+/// An exact rational as `(numerator, denominator)`, the denominator positive — `Ratio` keeps it
+/// so, and every step of [`plane_side_big`] preserves it.
+type BigQ = (BigInt, BigInt);
+
+fn big_q(r: Rat) -> BigQ {
+    (BigInt::from(r.numer()), BigInt::from(r.denom()))
+}
+
+/// [`plane_side`] for a plane whose coefficients are already wide — the same tower, so a plane
+/// built from other planes' products answers without first fitting `Rat`.
+fn plane_side_big(plane: &[BigQ; 4], line: &MeetLine, s: &QuadVal) -> Orient {
+    let mul = |a: &BigQ, b: &BigQ| -> BigQ { (&a.0 * &b.0, &a.1 * &b.1) };
+    let add = |a: &BigQ, b: &BigQ| -> BigQ { (&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1) };
+    let dot = |v: &V3| -> BigQ {
         (0..3).fold((BigInt::from(0), BigInt::from(1)), |acc, i| {
-            add(&acc, &mul(&q(plane[i]), &q(v[i])))
+            add(&acc, &mul(&plane[i], &big_q(v[i])))
         })
     };
     // P = (n·base + d) + s.a·(n·dir),  Q = s.b·(n·dir),  radicand s.c
     let dir_term = dot(&line.dir);
     let p = add(
-        &add(&dot(&line.base), &q(plane[3])),
-        &mul(&q(s.a()), &dir_term),
+        &add(&dot(&line.base), &plane[3]),
+        &mul(&big_q(s.a()), &dir_term),
     );
-    let r = mul(&q(s.b()), &dir_term);
-    let (cn, cd) = q(s.c());
+    let r = mul(&big_q(s.b()), &dir_term);
+    let (cn, cd) = big_q(s.c());
     sign1_int(&(&p.0 * &r.1 * &cd), &(&r.0 * &p.1), &(&cn * &cd))
 }
 
