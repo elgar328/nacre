@@ -391,6 +391,24 @@ fn a_gusset_whose_plane_crosses_a_bores_rims() {
     };
     gate(build, Ok(1));
     every_kind(build, sunk_by(bored(), 6.0 - 1.0 / 6.0, 1.0 / 6.0));
+    // **The section is a line of the bore's chart**, crossing three others: the plate's faces
+    // `z = 0`, `z = 10` and the gusset's foot `z = 5` (which the plane meets on the bore at
+    // `y = 10`). Four lines, six crossings — six events, six slabs, three gaps each.
+    let mut m = Model::new();
+    let (a, b) = build(&mut m);
+    let rows = &crate::arrangement::cyl_chart::probe::ROWS;
+    let before = rows.len();
+    crate::ledger::owned(|| crate::boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds"));
+    let charts: Vec<_> = rows
+        .mine_since(before)
+        .iter()
+        .map(|r| (r.lines, r.events, r.cells))
+        .collect();
+    assert_eq!(
+        charts,
+        [(4, 6, 18)],
+        "(lines, events, cells) of the bore's chart"
+    );
 }
 
 /// A plane `z = y/4 − 2` meets the bore's cylinder at `z ∈ [0, 1]`: it touches the plate's bottom

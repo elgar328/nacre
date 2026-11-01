@@ -29,17 +29,19 @@
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
 //! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | — |
 //! | `n ⊥ m` | `d > r` | nothing | 1494 |
-//! | oblique | — | **nothing**: the class's faces stand apart from every lateral face and its section — a whole ellipse or arcs of one — is drawn on its own arrangement (`CylRecord::Sections`); otherwise refused, `ObliqueCylinderCut` | 2 |
+//! | oblique | — | a **section** — a line of the chart, crossing others: the class's faces stand apart from every lateral face, so it splits only cells the walk joins again, and the class draws it on its own arrangement (`CylRecord::Sections`); otherwise refused, `ObliqueCylinderCut` | 2 |
 //!
-//! So the chart's lines today are the classes across the axis. Not a grid, though: a ruling exists
-//! between two lines and a cut circle is arcs, so the cells are what the rulings and the rims' cuts
-//! leave between the lines — a slab crossed with a gap.
+//! So the chart's lines are the sections the arrangement traced on this cylinder — every class with
+//! a label or a cut rim of it — and its events the rulings' stations,
+//! the rims' cuts and the points two lines cross or touch at. Not a grid, though: a ruling exists
+//! between two lines and a cut circle is arcs, so the cells are what those leave between the
+//! lines — a slab crossed with a gap.
 //!
 //! The gate is the reason, so when the gate changes this does too; the counts above were
 //! measured without the offset and tangent walls. The **offset** wall (`0 < d < r`) adds
 //! vertical lines at *irrational* θ; the chart never reads a θ **value**, only an order, so
 //! nothing breaks. The **tangent** wall (`d = r`)
-//! adds nothing at all: a grazing line stations no sector, so the gate records no
+//! adds nothing at all: a grazing line stands at no event, so the gate records no
 //! crossing and this table's third row is «nothing», not «one vertical». The row's
 //! other half: a fillet's or a slot's wall is tangent to its **own** cylinder, and that ruling is
 //! not a crossing but the face's edge — a station of `side = 0` carrying no label (the seated
@@ -102,7 +104,7 @@ pub(crate) struct ThetaSeg {
     /// on, with no chamber to read behind it, so no `label`.
     pub(crate) side: i8,
     /// The piece's own two pierce nodes: the θ **order** is asked of these
-    /// (`circular_order_about_seam` via `combinatorics::circular_order`), never of a coordinate.
+    /// (`circular_order_about_seam` via `combinatorics::theta_groups`), never of a coordinate.
     pub(crate) end: [combinatorics::NodeId; 2],
     /// The chart lines its two ends lie on — indices into [`Chart::lines`], the lower first. Read
     /// off the ends' names: a ruling ends where a plane of its end's name meets it, and that plane
@@ -176,7 +178,7 @@ pub(crate) enum ChordSays {
     NoPiece,
 }
 
-/// One cylinder class's chart: the two axes, and the cells they cut.
+/// One cylinder class's chart: its lines, its rulings and events, and the slabs' orders.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Chart {
     /// **The lines**: the plane classes the chart carries, each a graph `z(θ)` on the lateral — a
@@ -188,9 +190,9 @@ pub(crate) struct Chart {
     pub(crate) axis_t: Vec<Option<Rat>>,
     pub(crate) theta: Vec<ThetaSeg>,
     /// **Every θ something happens at, in θ order** ([`combinatorics::theta_groups`], the seam
-    /// first): a ruling's station, a node a rim is cut at. Between two consecutive events (a
-    /// *slab*) no line of the chart is cut and no ruling stands, so a slab of an interval is one
-    /// cell, and a rim's arc covering it is one arc.
+    /// first): a ruling's station, a node a rim is cut at, a point two lines cross or touch at.
+    /// Between two consecutive events (a *slab*) no line is cut, no two lines meet and no ruling
+    /// stands, so a slab of a gap is one cell, and a rim's arc covering it is one arc.
     pub(crate) events: Vec<Event>,
     /// For each class whose rim the split cut on this cylinder, the event of each of its
     /// [`crate::draft::CutRim`] nodes, in the rim's own order.
@@ -199,18 +201,13 @@ pub(crate) struct Chart {
     /// ([`combinatorics::line_order`], the one comparator), which holds until the next event; one
     /// slab, asked at no generator, when there is no event.
     pub(crate) slabs: Vec<Vec<usize>>,
-    /// How many rulings arrived with their ends descending, so that [`chart_of`] had to swap `end`
-    /// alongside `on`. Always 0 — a ruling `Piece`'s `end` is stated in ascending axis order —
-    /// and the census asserts it, which is the count's one reader.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) end_swapped: usize,
 }
 
 /// **One event of the chart** — a generator of the cylinder where a ruling stands or a rim is cut.
 #[derive(Clone, Debug)]
 pub(crate) struct Event {
-    /// A node on the generator — the point the lines are compared at.
-    pub(crate) at: combinatorics::NodeId,
+    /// A point on the generator — where the lines are compared.
+    pub(crate) at: combinatorics::ExactPoint,
     /// The rulings standing on it — indices into [`Chart::theta`], one name among them
     /// ([`Chart::ruling_name`]), between several pairs of lines.
     pub(crate) rulings: Vec<usize>,
@@ -260,9 +257,9 @@ fn ruling_side_of(
 /// **One cell of the chart** — an axis interval crossed with a slab, the θ between two
 /// consecutive [`Chart::events`].
 ///
-/// Addressed by `(interval, slab)` rather than kept as a flat list, because the region walk
-/// ([`regions`]) asks for **neighbours**: crossing a horizontal line moves to the interval above or
-/// below, crossing an event to the slab beside. That adjacency is *derivable* from this address,
+/// Addressed by `(slab, gap)` rather than kept as a flat list, because the region walk
+/// ([`regions`]) asks for **neighbours**: crossing a line moves to the gap above or below,
+/// crossing an event to the slab beside. That adjacency is *derivable* from this address,
 /// and deriving it is the reader's job — building it here would be a field with no consumer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Cell {
@@ -349,68 +346,8 @@ impl Chart {
     }
 }
 
-#[cfg(test)]
-/// **The plane classes where this cylinder's rim is a boundary the arrangement already made**:
-/// (i) the circles a plane face emitted as a `Bound::Circle`, and (ii) the circles the arrangement
-/// split, which emit arcs instead. The chart's line set, its boundary rule and its census all read
-/// this one list.
-pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) -> Vec<usize> {
-    let mut classes: Vec<usize> = Vec::new();
-    let mut push = |c: usize| {
-        if !classes.contains(&c) {
-            classes.push(c);
-        }
-    };
-    for lf in plane_faces {
-        let crate::planes::ClassIx::Plane(c) = lf.surf else {
-            continue;
-        };
-        if std::iter::once(&lf.outer)
-            .chain(lf.inner.iter())
-            .any(|b| matches!(b, crate::draft::Bound::Circle { cyl } if *cyl == k))
-        {
-            push(c);
-        }
-    }
-    let mut cut: Vec<usize> = curved
-        .split_rims
-        .keys()
-        .filter(|&&(kk, _)| kk == k)
-        .map(|&(_, c)| c)
-        .collect();
-    cut.sort_unstable(); // a HashMap's order decides nothing downstream, but the list is stated once
-    for c in cut {
-        push(c);
-    }
-    classes
-}
-
-/// **The lines a lateral face's band may not run across** — the rim classes (both kinds,
-/// [`rim_classes`]) and every row's own span ends, as axis parameters. A band-shaped emission may
-/// continue across any other line, so [`emit_lateral`] merges there and nowhere else, and the
-/// census asserts the chart's z-lines ⊇ this list where it is made.
-#[cfg(test)]
-pub(crate) fn boundary_lines(
-    jd: &Judge<'_, WorkingPlane>,
-    k: usize,
-    def: &nacre_topo::CylinderDef,
-    plane_faces: &[LocalFace],
-    curved: &Curved,
-    rows: &[crate::bands::CylRow],
-) -> Result<Vec<Rat>, BoolError> {
-    let mut out: Vec<Rat> = rim_classes(k, plane_faces, curved)
-        .into_iter()
-        .map(|c| crate::bands::axis_param(jd, c, def))
-        .collect::<Result<_, _>>()?;
-    for r in rows.iter().filter(|r| r.class == k) {
-        out.extend(r.span);
-    }
-    out.sort();
-    out.dedup();
-    Ok(out)
-}
-
-/// **Every ⊥ class that cuts this cylinder, and every ruling on it** — per cylinder *class*.
+/// **Every section the arrangement traced on this cylinder, and every ruling on it** — per cylinder
+/// *class*.
 ///
 /// **No clip to a face.** Clipping the lines to a face's span would answer about a face; a class
 /// has no such span — one lateral surface can carry several faces with gaps between them, which is
@@ -432,69 +369,74 @@ pub(crate) fn chart_of(
     curved: &Curved,
 ) -> Result<Chart, BoolError> {
     let def = &cyls[k].def;
-    // (iii) every class across the axis, full stop — not only those landing on a face's rim, which
-    // would answer about a face; a chart covers the whole axis.
-    let lines: Vec<usize> = (0..jd.planes.len())
-        .filter(|&c| {
-            jd.world_rat(c)
-                .is_some_and(|w| class_carries_circle(&[w[0], w[1], w[2]], &def.dir()))
-        })
-        .collect();
-    let axis_t: Vec<Option<Rat>> = lines
-        .iter()
-        .map(|&c| crate::bands::axis_param(jd, c, def).map(Some))
-        .collect::<Result<_, BoolError>>()?;
-    let line_of = |c: usize| lines.iter().position(|&x| x == c);
-    // Every class a label or a cut rim of this cylinder is filed under is a line: the tables are
-    // read through the line, so one filed off the lines would be read nowhere. A class with no
-    // world statement is width; one not across the axis is an oblique section filed as a circle,
-    // which the per-class stage keeps out by the gate's record — the two readings parting is a
-    // refusal by name, never a label read at a false height.
-    let keys = curved
+    // **The lines are the curves the arrangement traced on this cylinder** — every class with a
+    // label or a cut rim of it. Not every class not along the axis: the chart reads a cell off the
+    // traces at its ends («a face that is here has a circle at both its ends»), and a section no
+    // class drew carries none. A class across the axis traces its circle within every face's span
+    // (`circle_on_class`), so those are all there, a rim no face lands on included; an oblique class
+    // traces its section where the gate recorded it (`CylRecord::Sections`). Measured: taking
+    // every oblique class instead, a section the gate passed as clear of the lateral ran through a
+    // fillet's span outside its quarter, and a cell between two such lines read present with no
+    // side to say what it held.
+    let mut lines: Vec<usize> = curved
         .disk_labels
         .keys()
         .chain(curved.arc_labels.keys())
-        .chain(curved.split_rims.keys());
-    for &(kk, c) in keys {
-        if kk == k && line_of(c).is_none() {
-            if jd.world_rat(c).is_none() {
-                return Err(reject(RejectReason::WitnessNotRational));
-            }
+        .chain(curved.split_rims.keys())
+        .filter(|&&(kk, _)| kk == k)
+        .map(|&(_, c)| c)
+        .collect();
+    lines.sort_unstable();
+    lines.dedup();
+    // A traced class with no world statement is width; one along the axis leaves rulings, never a
+    // closed trace, so a label filed under it is the stages disagreeing.
+    for &c in &lines {
+        let Some(w) = jd.world_rat(c) else {
+            return Err(reject(RejectReason::WitnessNotRational));
+        };
+        if nacre_exact::axis_relation(&[w[0], w[1], w[2]], &def.dir())
+            == nacre_exact::AxisRelation::Along
+        {
             debug_assert!(
                 false,
-                "a label of cylinder {k} filed under class {c}, which is not across its axis"
+                "a label of cylinder {k} filed under class {c}, which runs along its axis"
             );
-            return Err(reject(RejectReason::ObliqueCircleClass));
+            return Err(reject(RejectReason::CylinderStagesDisagree));
         }
     }
-    let height = |a: usize, b: usize, at: combinatorics::NodeId| {
-        combinatorics::line_order(jd, k, def, lines[a], lines[b], Some(at), Toward::At)
-            .map_err(reject)
+    let axis_t: Vec<Option<Rat>> = lines
+        .iter()
+        .map(|&c| {
+            let w = jd.world_rat(c).expect("a line has a world statement");
+            if class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
+                crate::bands::axis_param(jd, c, def).map(Some)
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<_, BoolError>>()?;
+    let line_of = |c: usize| lines.iter().position(|&x| x == c);
+    let height = |a: usize, b: usize, at: &combinatorics::ExactPoint| {
+        combinatorics::line_order(jd, def, lines[a], lines[b], Some(at), Toward::At).map_err(reject)
     };
 
     // **A ruling's ends are on lines, read off their names**: the plane of an end's name that is a
-    // line is where the ruling stops. **`end` travels with `on`**, swapped together where the
-    // lower end came second.
-    let mut end_swapped = 0usize;
+    // line is where the ruling stops. A ruling piece states its ends in ascending axis order, so
+    // ends that are not — or are level — are the stages disagreeing.
     let mut theta: Vec<ThetaSeg> = Vec::new();
     for r in curved.rulings.get(&k).map_or(&[][..], Vec::as_slice) {
         let on = [
             line_at(jd, &line_of, r.end[0])?,
             line_at(jd, &line_of, r.end[1])?,
         ];
-        let (end, on) = match height(on[0], on[1], r.end[0])? {
-            Ordering::Less => (r.end, on),
-            Ordering::Greater => {
-                end_swapped += 1;
-                ([r.end[1], r.end[0]], [on[1], on[0]])
-            }
-            // Both ends on one height is a ruling of no length.
-            Ordering::Equal => return Err(reject(RejectReason::CylinderStagesDisagree)),
-        };
+        let at = combinatorics::exact_point(jd, k, def, r.end[0]).map_err(reject)?;
+        if height(on[0], on[1], &at)? != Ordering::Less {
+            return Err(reject(RejectReason::CylinderStagesDisagree));
+        }
         theta.push(ThetaSeg {
             wall: r.wall,
             side: r.side,
-            end,
+            end: r.end,
             on,
             label: r.label,
             outer: r.outer,
@@ -506,10 +448,10 @@ pub(crate) fn chart_of(
     let theta = stations_of_lines(jd, cyls, k, theta, &height)?;
     let (events, rim_events) = events_of(jd, k, def, &theta, curved, &lines, &height)?;
     // Each slab's order, asked just after its event — or, with no event, of the whole circle.
-    let order = |at: Option<combinatorics::NodeId>| -> Result<Vec<usize>, BoolError> {
+    let order = |at: Option<&combinatorics::ExactPoint>| -> Result<Vec<usize>, BoolError> {
         let mut v: Vec<usize> = (0..lines.len()).collect();
         combinatorics::try_sort_by(&mut v, |&a, &b| {
-            match combinatorics::line_order(jd, k, def, lines[a], lines[b], at, Toward::After)? {
+            match combinatorics::line_order(jd, def, lines[a], lines[b], at, Toward::After)? {
                 // Two lines level all along a slab are one plane, which the classes are not.
                 Ordering::Equal if a != b => Err(RejectReason::CylinderStagesDisagree),
                 o => Ok(o),
@@ -523,7 +465,7 @@ pub(crate) fn chart_of(
     } else {
         events
             .iter()
-            .map(|e| order(Some(e.at)))
+            .map(|e| order(Some(&e.at)))
             .collect::<Result<_, _>>()?
     };
     Ok(Chart {
@@ -533,7 +475,6 @@ pub(crate) fn chart_of(
         events,
         rim_events,
         slabs,
-        end_swapped,
     })
 }
 
@@ -561,8 +502,9 @@ fn line_at(
     ))
 }
 
-/// **The chart's events** — every ruling's station and every node a rim is cut at, grouped by θ
-/// ([`combinatorics::theta_groups`]), each with the lines' heights on it. A generator carries one
+/// **The chart's events** — every ruling's station, every node a rim is cut at and every point two
+/// lines cross or touch at, grouped by θ ([`combinatorics::theta_groups`]), each with the lines'
+/// heights on it. A generator carries one
 /// ruling name: two would be two stations on one line, refused as the one point under two names it
 /// is (`CoincidentNodes`). A rim's nodes stand at distinct events in the rim's own order — two at
 /// one event are that point again.
@@ -574,7 +516,7 @@ fn events_of(
     theta: &[ThetaSeg],
     curved: &Curved,
     lines: &[usize],
-    height: &impl Fn(usize, usize, combinatorics::NodeId) -> Result<Ordering, BoolError>,
+    height: &impl Fn(usize, usize, &combinatorics::ExactPoint) -> Result<Ordering, BoolError>,
 ) -> Result<(Vec<Event>, std::collections::HashMap<usize, Vec<usize>>), BoolError> {
     // The points asked, each once: a ruling's lower end (a ruling is vertical, so one end states
     // its θ), and every cut rim's nodes.
@@ -594,6 +536,29 @@ fn events_of(
         .map(|(&(_, c), rim)| (c, rim.nodes.iter().map(|&n| index(n)).collect()))
         .collect();
     rims.sort_unstable_by_key(|r| r.0); // a HashMap's order decides nothing; stated once
+    // **Where two lines cross or touch** — the line of their two planes pierces the cylinder there,
+    // twice or once ([`nacre_exact::quad::section_meet`], the comparator's own reading).
+    for a in 0..lines.len() {
+        for b in a + 1..lines.len() {
+            use nacre_exact::quad::{QuadRoot, SectionMeet};
+            let w = |c: usize| jd.world_rat(c).expect("a line has a world statement");
+            let at = |root| combinatorics::NodeId::pierce(lines[a], lines[b], k, root);
+            match nacre_exact::quad::section_meet(&w(lines[a]), &w(lines[b]), def) {
+                Some(SectionMeet::Cross) => {
+                    index(at(QuadRoot::Lo));
+                    index(at(QuadRoot::Hi));
+                }
+                Some(SectionMeet::Touch) => {
+                    index(at(QuadRoot::Double));
+                }
+                Some(SectionMeet::Apart) => {}
+                // Two classes are two planes, and a line runs not along the axis.
+                Some(SectionMeet::Same) | None => {
+                    return Err(reject(RejectReason::CylinderStagesDisagree));
+                }
+            }
+        }
+    }
     let groups = combinatorics::theta_groups(jd, k, def, &nodes).map_err(|e| reject(e.reason()))?;
     let mut event_of = vec![0usize; nodes.len()];
     for (e, g) in groups.iter().enumerate() {
@@ -603,36 +568,50 @@ fn events_of(
     }
     let mut events: Vec<Event> = groups
         .iter()
-        .map(|g| Event {
-            at: nodes[g[0]],
-            rulings: Vec::new(),
-            height: Vec::new(),
+        .map(|g| {
+            Ok(Event {
+                at: combinatorics::exact_point(jd, k, def, nodes[g[0]]).map_err(reject)?,
+                rulings: Vec::new(),
+                height: Vec::new(),
+            })
         })
-        .collect();
+        .collect::<Result<_, BoolError>>()?;
     for (j, &n) in ruling_at.iter().enumerate() {
         events[event_of[n]].rulings.push(j);
     }
     for ev in &mut events {
-        let mut name: Option<RulingName> = None;
-        for &j in &ev.rulings {
-            let t = &theta[j];
-            let n = (
-                t.wall,
-                ruling_side_of(jd, k, def, t.wall, t.end[0]).map_err(reject)?,
-            );
-            if name.replace(n).is_some_and(|p| p != n) {
-                return Err(reject(RejectReason::CoincidentNodes));
-            }
-        }
         // The heights on this generator: the lines sorted by the comparator asked at it, lines
         // that meet here sharing a rank.
         let mut by_height: Vec<usize> = (0..lines.len()).collect();
-        let at = ev.at;
+        let at = &ev.at;
         combinatorics::try_sort_by(&mut by_height, |&a, &b| height(a, b, at))?;
         ev.height = vec![0; lines.len()];
         for w in 1..by_height.len() {
             let (a, b) = (by_height[w - 1], by_height[w]);
             ev.height[b] = ev.height[a] + usize::from(height(a, b, at)? == Ordering::Less);
+        }
+        // **One stretch of a generator, one name.** Rulings of several walls may stand on one
+        // generator between different lines; two over one stretch are one line under two names
+        // (`CoincidentNodes`) — or, one wall's, a piece the split cut twice.
+        for (x, &i) in ev.rulings.iter().enumerate() {
+            for &j in &ev.rulings[x + 1..] {
+                let ([a0, a1], [b0, b1]) = (theta[i].on, theta[j].on);
+                let h = &ev.height;
+                if h[a0] < h[b1] && h[b0] < h[a1] {
+                    let name = |j: usize| -> Result<RulingName, BoolError> {
+                        let t = &theta[j];
+                        Ok((
+                            t.wall,
+                            ruling_side_of(jd, k, def, t.wall, t.end[0]).map_err(reject)?,
+                        ))
+                    };
+                    return Err(reject(if name(i)? == name(j)? {
+                        RejectReason::CylinderStagesDisagree
+                    } else {
+                        RejectReason::CoincidentNodes
+                    }));
+                }
+            }
         }
     }
     let mut rim_events = std::collections::HashMap::new();
@@ -655,8 +634,8 @@ fn events_of(
 /// rulings gathers every partner wall on its line, on the same side of its own class
 /// ([`combinatorics::shared_line`]). A partner piece over the same axis interval, end for end,
 /// folds into it ([`ChordSays::Piece`]) — the alias seed has given those points one name each, so
-/// the pair is found by **name**, and left as two, the cell builder would hand `circular_order` one
-/// point under two stations. A partner with no piece overlapping the interval states the line in
+/// the pair is found by **name**, and left as two, the events would hold one stretch of a generator
+/// under two names, which they refuse (`events_of`). A partner with no piece overlapping the interval states the line in
 /// the plane vocabulary there ([`ChordSays::NoPiece`]); one overlapping it without matching cuts
 /// the line elsewhere than this class does, which is the stages disagreeing. The walls are then put
 /// in chord order ([`Station::chords`]).
@@ -668,7 +647,7 @@ fn stations_of_lines(
     cyls: &[WorkingCyl],
     k: usize,
     theta: Vec<ThetaSeg>,
-    height: &impl Fn(usize, usize, combinatorics::NodeId) -> Result<Ordering, BoolError>,
+    height: &impl Fn(usize, usize, &combinatorics::ExactPoint) -> Result<Ordering, BoolError>,
 ) -> Result<Vec<ThetaSeg>, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
     let cyl = &cyls[k];
@@ -741,22 +720,22 @@ fn stations_of_lines(
             let on_line =
                 |j: usize| !gone[j] && j != i && theta[j].wall == q && theta[j].side == qs;
             // Two pieces on one line overlap where each starts below the other's top, on that
-            // generator.
-            let overlaps = |j: usize| -> Result<bool, BoolError> {
-                let at = theta[i].end[0];
-                let below =
-                    |a: usize, b: usize| Ok::<_, BoolError>(height(a, b, at)? == Ordering::Less);
-                Ok(
-                    below(theta[j].on[0], theta[i].on[1])?
-                        && below(theta[i].on[0], theta[j].on[1])?,
-                )
-            };
-            let mut overlapping = false;
-            for j in 0..theta.len() {
-                if on_line(j) && theta[j].end != theta[i].end && overlaps(j)? {
-                    overlapping = true;
+            // generator — asked only where no piece matches end for end.
+            let overlapping = || -> Result<bool, BoolError> {
+                let at =
+                    combinatorics::exact_point(jd, k, &cyl.def, theta[i].end[0]).map_err(reject)?;
+                let below = |a: usize, b: usize| -> Result<bool, BoolError> {
+                    Ok(height(a, b, &at)? == Ordering::Less)
+                };
+                for j in (0..theta.len()).filter(|&j| on_line(j)) {
+                    if below(theta[j].on[0], theta[i].on[1])?
+                        && below(theta[i].on[0], theta[j].on[1])?
+                    {
+                        return Ok(true);
+                    }
                 }
-            }
+                Ok(false)
+            };
             let says = match (0..theta.len()).find(|&j| on_line(j) && theta[j].end == theta[i].end)
             {
                 Some(j) => {
@@ -774,7 +753,7 @@ fn stations_of_lines(
                     ));
                     continue;
                 }
-                None if overlapping => {
+                None if overlapping()? => {
                     return Err(reject(RejectReason::CylinderStagesDisagree));
                 }
                 None => ChordSays::NoPiece,

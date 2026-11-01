@@ -23,8 +23,6 @@ use nacre_topo::Model;
 ///   whole circle, when the chart has no event).
 /// * `whole_circle + odd_k < lines` — the intervals with no ruling and those with an odd
 ///   number are disjoint subsets of the chart's `lines − 1` intervals.
-/// * `events == 0` only where no interval has a ruling — the events are formed from the rulings'
-///   stations and the rims' cuts, the census's interval walk from the rulings over each interval.
 #[test]
 fn the_chart_census_is_running() {
     let mut m = Model::new();
@@ -56,7 +54,6 @@ fn the_chart_census_is_running() {
             theta,
             rows: n,
             cells,
-            events,
             ..
         } = *r;
         assert!(n >= 1, "a class with no row: {r:?}");
@@ -64,16 +61,12 @@ fn the_chart_census_is_running() {
         // `theta % 2 == 0` ("a wall cuts two rulings") is not asserted: a
         // band's lateral reaches both rulings of a wall, a panel's or a chain's may reach one.
         let _ = theta;
-        assert!(cells >= 1, "two z-lines are one interval: {r:?}");
+        assert!(cells >= 1, "two lines are one gap: {r:?}");
         // A chart has `lines - 1` intervals, and an interval carries either no ruling or
         // some number of them — so these two counts are disjoint subsets of that many.
         assert!(
             r.whole_circle + r.odd_k < lines,
             "more intervals than the chart has: {r:?}"
-        );
-        assert!(
-            events > 0 || r.whole_circle + 1 == lines,
-            "a chart with no event has a ruling: {r:?}"
         );
     }
 }
@@ -182,9 +175,9 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
                f: fn(&super::probe::cell_ends::Row) -> usize| {
         rows.iter().map(f).sum::<usize>()
     };
-    // A wall boss (exact arcs, θ- and z-merges), a corner boss and a boss on top (a line with
-    // no circle of this cylinder, cells outside the face), and the chained pairs (sectors
-    // dropped for existence).
+    // A wall boss (exact arcs, θ- and z-merges), a corner boss and a boss on top (cells outside
+    // the face), and the chained pairs (sectors dropped for existence). No end reads a line with
+    // no circle of its cylinder: the chart's lines are the curves the arrangement traced on it.
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let seam = Vector3::from_array([0.0, -1.0, 0.0]);
     crate::ledger::owned(|| {
@@ -212,10 +205,9 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
         }
         // A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
-        // lateral along two rulings — and the chart has a θ line for only the one the face
-        // reaches. The **Cut** is the kind this test builds through it. It reads **no run of
-        // arcs**: measured over this test's own rows, `exact_run_arcs` is 0 here, and the run
-        // population belongs to the crossing census's through-axis walls instead.
+        // lateral along two rulings — and the chart has a ruling for only the one the face
+        // reaches; the other stands only as the rims' cut there, an event with no ruling. The
+        // **Cut** is the kind this test builds through it.
         {
             let mut m = Model::new();
             let plate = crate::fixtures::cuboid(
@@ -292,7 +284,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             sum(&mine, |r| r.emitted_faces),
             sum(&mine, |r| r.exist_marks_false),
         ),
-        (20, 84, 136, 14, 80, 4, 20, 5),
+        (20, 80, 132, 0, 80, 2, 20, 5),
         "(charts, disk ends, arc ends, lines with no circle, emitted cells, uncovered rim pieces, \
          faces, cells dropped for existence)"
     );

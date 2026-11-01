@@ -720,12 +720,11 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // `PierceVertexUnnamed`: the names road builds carriers from its walls, so nothing dies at
     // ring construction.
     assert_eq!(count(|c| *c == Rejected(PierceVertexUnnamed)), 0);
-    // `RulingBoundNotYet`: a rim station the region walk cannot name — a region crossing that
-    // line transversally in one sector while ending on it in another, which the region emitter
-    // walks.
+    // `RulingBoundNotYet`: a region whose boundary needs a vertical line at an event with no
+    // ruling over its gap.
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 0);
-    // `CylinderGateUndecided` is the gate's; the chart names a sector it cannot read by cause
-    // (`read_cell::silence`), and a sector spanning several arcs is read as their run.
+    // `CylinderGateUndecided` is the gate's; the chart refuses a present cell no side speaks for
+    // as the stages disagreeing.
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
         0

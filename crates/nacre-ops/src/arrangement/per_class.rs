@@ -1,5 +1,4 @@
 use super::*;
-use crate::planes::class_carries_circle;
 /// **The per-class stages, in one place** — the walk and the nesting.
 ///
 /// **It exists because the sequence would otherwise be written twice.** `trace_result_faces`'
@@ -36,15 +35,16 @@ pub(super) fn per_class(
         C_LABEL,
         label_cells(&cells, &face_of, edges, &nesting, [false; 4])
     )?;
-    let (faces, mut disk_labels, mut arc_labels) = timed!(
+    let (faces, disk_labels, arc_labels) = timed!(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
     // **A sectioned class's section closes its own arrangement and nothing else.** The gate proved
     // every face on the class apart from the lateral boxes — its rulings along the axis
     // (`Silence::Sectioned`), its ellipse across it (`CylRecord::Sections`) — so no face this class
-    // emits borders one of those curves, and the lateral chart is not told of them below: a face
-    // that did would have no lateral partner, and an edge on an ellipse no curve to carry it.
+    // emits borders one of those curves: a face that did would have no lateral partner, and an
+    // edge on an ellipse no curve to carry it. The section's labels still go to the lateral's
+    // chart, whose line it is.
     // Checked here, where the stage can refuse; every bound is read, a whole circle included,
     // which the polygon rings leave out.
     let along = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections_along(wc));
@@ -65,26 +65,6 @@ pub(super) fn per_class(
     {
         return Err(reject(RejectReason::CylinderStagesDisagree));
     }
-    // An oblique section's labels are not the chart's: the class is no line of the lateral's
-    // chart, whose lines are the classes across the axis (`cyl_chart::chart_of`). Dropped by the
-    // gate's record; the geometry ([`class_carries_circle`]) says the same of every trace that
-    // carries a label, asserted here and asked again by the chart's backstop, which refuses a key
-    // off its lines rather than filing it — so a label neither across the axis nor a recorded
-    // section is refused, not dropped.
-    let horizontal = |cyl: usize| {
-        let section = oblique(cyl);
-        debug_assert_eq!(
-            section,
-            cyls.get(cyl).is_some_and(|cy| {
-                jd.world_rat(wc)
-                    .is_some_and(|w| !class_carries_circle(&[w[0], w[1], w[2]], &cy.def.dir()))
-            }),
-            "a closed trace off the chart's lines is a recorded oblique section"
-        );
-        !section
-    };
-    disk_labels.retain(|&(cyl, _)| horizontal(cyl));
-    arc_labels.retain(|&(cyl, _)| horizontal(cyl));
     // The cylinder chart's **vertical** lines, read off the pieces this class already made. Where
     // a ruling ends on the chart is the chart's to read, off the ends' names (`cyl_chart::chart_of`).
     let ruling_extents: Vec<(usize, RulingExtent)> = edges

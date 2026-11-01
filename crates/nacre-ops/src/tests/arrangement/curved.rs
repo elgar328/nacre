@@ -982,7 +982,7 @@ fn armed_curved(
 /// **A cut circle is a band boundary**. On the armed through-boss, the per-class products of the
 /// four ⊥ classes are collected the production way (`per_class` on each), and the chart must break
 /// the lateral at the two **cut** circles (z = 0, z = 20) as well as the rims: three intervals, not
-/// one full-height band (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle
+/// one full-height band (`boundary_lines` and the chart's lines agree on the four). The middle
 /// interval is both-cut and is emitted as panel rings. Three controls on the reader: blinding only
 /// the arcs still answers, because the vertical lines speak in their place; blinding **both** of
 /// the chart's axes (the arc labels and the rulings') leaves the reader no answer there; and

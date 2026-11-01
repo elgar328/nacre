@@ -12,7 +12,7 @@ pub(crate) struct Row {
     pub(crate) theta: usize,
     /// How many **rows** (lateral faces) the class carries.
     pub(crate) rows: usize,
-    /// The chart's events — the θs a ruling stands at or a rim is cut at.
+    /// The chart's events — the θs a ruling stands at, a rim is cut at, or two lines meet at.
     pub(crate) events: usize,
     pub(crate) cells: usize,
     /// Intervals no ruling spans: the lateral runs round them uncut.

@@ -420,8 +420,7 @@ pub enum RejectReason {
     /// Nothing raises it today, and that is the point: the alternative at each of its sites in the
     /// arrangement is not a refusal but a **silently wrong answer** — a wall meeting the class along
     /// a line parallel to the axis read as «no crossing», two sections of cylinders whose axes are
-    /// not parallel nested as if the cylinders were, a label of a class that is not one of the
-    /// lateral chart's horizontals filed at its axis meet.
+    /// not parallel nested as if the cylinders were.
     ///
     /// The result assembly raises it too, for the same broken promise read at an edge: a rim, an
     /// arc or a ruling whose plane and cylinder the truth calls oblique

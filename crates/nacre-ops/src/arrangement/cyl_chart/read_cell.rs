@@ -1,8 +1,8 @@
 use super::*;
-/// **What one z-line says to one cell** — the horizontal line's answer, as the cell reads it.
+/// **What one line says to one cell** — the line's answer, as the cell reads it.
 ///
-/// The plane arrangement wrote a label on every circle a cylinder leaves on a ⊥ class, whether or
-/// not a face was kept there (`emit_faces`' `disk_labels`/`arc_labels`, collected outside the keep
+/// The plane arrangement wrote a label on every section a cylinder leaves on a class it traced,
+/// whether or not a face was kept there (`emit_faces`' `disk_labels`/`arc_labels`, collected outside the keep
 /// filter). So a cell's chamber is not *decided* here; it is **read** off the line at either end,
 /// a disk or an arc ([`Chart::read_cell`] is the one reader).
 pub(crate) enum End<'a> {
@@ -17,15 +17,14 @@ pub(crate) enum End<'a> {
     /// leaves; the split drops such a piece rather than keep a phantom edge). The lateral face is
     /// **not here**: this end decides existence, not a chamber.
     Uncovered,
-    /// No circle of this cylinder on this line at all: the line is a ⊥ class outside every
-    /// lateral face's span (`circle_on_class` leaves a circle on every class *within* a span).
+    /// No label of this cylinder on this line: a cut rim with no arc kept. The chart's lines are
+    /// the classes that traced this cylinder ([`chart_of`]), so a present cell reading this is
+    /// the stages disagreeing.
     NoCircle,
 }
 
 /// **What several readings of one chamber say together** — the one spelling of «unanimous or
-/// nothing». Where it is asked decides what a [`Agreement::Split`] means: inside one end (a run of
-/// arcs, a whole circle's arcs) it is a cell straddling a boundary the chart has no line for, and
-/// the end says nothing; between a cell's sides it is two statements of one chamber that
+/// nothing». Between a cell's sides a [`Agreement::Split`] is two statements of one chamber that
 /// contradict each other.
 enum Agreement<T> {
     /// No reading at all.
@@ -223,44 +222,30 @@ impl Chart {
         let mut ends: Vec<End<'a>> = Vec::with_capacity(2);
         let mut above: [bool; 2] = [false; 2];
         for (e, &line) in cell.lines.iter().enumerate() {
-            let mut end = End::NoCircle;
-            let mut saw_disk = false;
-            let mut saw_arc = false;
-            // The one class on this end's line; a label the split filed elsewhere is refused
-            // where the chart is made (`chart_of`).
-            for c in [self.lines[line]] {
-                // The band leaves the low line toward `+t` and arrives at the high line from
-                // `−t`.
-                let world = jd.planes[c]
-                    .world
-                    .as_ref()
-                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
-                let up = crate::planes::plus_t_is_above(world, def);
-                let band_is_above = if e == 0 { up } else { !up };
-                if let Some(l) = curved.disk_labels.get(&(k, c)) {
-                    saw_disk = true;
-                    above[e] = band_is_above;
-                    end = End::Disk(*l);
-                    continue;
-                }
-                let (Some(arcs), Some(rim)) = (
-                    curved.arc_labels.get(&(k, c)),
-                    curved.split_rims.get(&(k, c)),
-                ) else {
-                    continue;
-                };
-                saw_arc = true;
-                above[e] = band_is_above;
-                end = match self.arc_over(c, cell.slab, rim, arcs)? {
-                    Some(arc) => End::Arc(arc),
-                    None => End::Uncovered,
-                };
-            }
-            // A whole-disk label and arcs of one cylinder on one line is the split and the labels
-            // disagreeing about whether that circle was cut, not a chart shape.
-            if saw_disk && saw_arc {
-                return Err(reject(RejectReason::CylinderStagesDisagree));
-            }
+            let c = self.lines[line];
+            // The band leaves the low line toward `+t` and arrives at the high line from `−t`.
+            let world = jd.planes[c]
+                .world
+                .as_ref()
+                .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+            let up = crate::planes::plus_t_is_above(world, def);
+            above[e] = if e == 0 { up } else { !up };
+            let disk = curved.disk_labels.get(&(k, c));
+            let cut = curved.split_rims.get(&(k, c));
+            let end = match (disk, cut) {
+                // A whole-disk label and a cut of one circle is the split and the labels disagreeing
+                // about whether that circle was cut, not a chart shape.
+                (Some(_), Some(_)) => return Err(reject(RejectReason::CylinderStagesDisagree)),
+                (Some(l), None) => End::Disk(*l),
+                (None, Some(rim)) => match curved.arc_labels.get(&(k, c)) {
+                    Some(arcs) => match self.arc_over(c, cell.slab, rim, arcs)? {
+                        Some(arc) => End::Arc(arc),
+                        None => End::Uncovered,
+                    },
+                    None => End::NoCircle,
+                },
+                (None, None) => End::NoCircle,
+            };
             ends.push(end);
         }
         let ends: [End<'a>; 2] = match <[End<'a>; 2]>::try_from(ends) {
@@ -318,7 +303,7 @@ impl Chart {
         };
         // A cell whose two walls are **one** ruling (a circle opened at a single point) lies
         // on both sides of that wall, so the vertical line says nothing about it — the two
-        // readings would contradict by construction. An event with no ruling over the interval
+        // readings would contradict by construction. An event with no ruling across the gap
         // has no wall to read, and a wall that cannot be read (a tangent station, a side it cannot
         // name) is silent: it checks the chamber, it does not decide it — a present cell always
         // has a horizontal answer (the census asserts `src0_present == 0`).
@@ -447,7 +432,7 @@ impl Chart {
 ///
 /// **How often each row actually fires** (the lib suite, marks read): `Transversal` **23,744** ·
 /// `Graze` **9,878**, of which **9,267** reach and **611** do not · nothing at all **3**. The chart
-/// reads it once per cut end (`cyl_chart::census`'s `arcs_read`).
+/// reads it once per cut end.
 pub(crate) fn face_spans(
     r: &ArcLabel,
     side: SolidSide,

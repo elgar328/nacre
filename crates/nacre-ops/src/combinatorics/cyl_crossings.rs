@@ -21,41 +21,41 @@ impl CircleOrderFail {
     }
 }
 
-/// **Which of two lines of a cylinder's chart is higher** — the sections of plane classes `p` and
-/// `q`, compared on the generator through node `at` ([`Toward::At`](nacre_exact::quad::Toward)),
-/// just after or just before it, or with no generator where the two do not cross anywhere
-/// ([`nacre_exact::quad::section_height_order`], the one spelling). Refused as
-/// `WitnessNotRational` where a plane has no narrow world statement or the node no exact point,
-/// and as `CylinderStagesDisagree` where the question has no answer the chart should have asked:
-/// a plane along the axis is no line, and two lines that cross were asked at no generator.
-pub(crate) fn line_order(
+/// A pierce node's exact point on cylinder `k` — `WitnessNotRational` where it has none.
+pub(crate) fn exact_point(
     jd: &Judge<'_, WorkingPlane>,
     k: usize,
     def: &nacre_topo::CylinderDef,
+    n: NodeId,
+) -> Result<ExactPoint, RejectReason> {
+    pierce_meet(jd, k, def, n)
+        .and_then(PiercePoint::into_exact)
+        .ok_or(RejectReason::WitnessNotRational)
+}
+
+/// A point of a meet line: the line and the parameter along it.
+pub(crate) type ExactPoint = (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal);
+
+/// **Which of two lines of a cylinder's chart is higher** — the sections of plane classes `p` and
+/// `q`, compared on the generator through point `at` ([`Toward::At`](nacre_exact::quad::Toward)),
+/// just after or just before it, or with no generator where the two do not cross anywhere
+/// ([`nacre_exact::quad::section_height_order`], the one spelling). Refused as
+/// `WitnessNotRational` where a plane has no narrow world statement, and as
+/// `CylinderStagesDisagree` where the question has no answer the chart should have asked: a plane
+/// along the axis is no line, and two lines that cross were asked at no generator.
+pub(crate) fn line_order(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
     p: usize,
     q: usize,
-    at: Option<NodeId>,
+    at: Option<&ExactPoint>,
     toward: nacre_exact::quad::Toward,
 ) -> Result<core::cmp::Ordering, RejectReason> {
     use nacre_exact::quad::SectionOrder;
     let (Some(wp), Some(wq)) = (jd.world_rat(p), jd.world_rat(q)) else {
         return Err(RejectReason::WitnessNotRational);
     };
-    let x = match at {
-        Some(n) => Some(
-            pierce_meet(jd, k, def, n)
-                .and_then(PiercePoint::into_exact)
-                .ok_or(RejectReason::WitnessNotRational)?,
-        ),
-        None => None,
-    };
-    match nacre_exact::quad::section_height_order(
-        &wp,
-        &wq,
-        def,
-        x.as_ref().map(|(l, s)| (l, s)),
-        toward,
-    ) {
+    match nacre_exact::quad::section_height_order(&wp, &wq, def, at.map(|(l, s)| (l, s)), toward) {
         Some(SectionOrder::Ordered(o)) => Ok(o),
         Some(SectionOrder::Crosses) | None => Err(RejectReason::CylinderStagesDisagree),
     }
@@ -97,8 +97,7 @@ pub(crate) fn theta_groups(
         .map(SeamOrder::seam_first)
         .ok_or(CircleOrderFail::Undecided)
     };
-    // Every point's own class first, so a point the order cannot place is `Undecided` ahead of any
-    // pair the sort could not form.
+    // Every point's own θ is asked, a point alone included.
     for i in 0..meets.len() {
         cmp(i, i)?;
     }

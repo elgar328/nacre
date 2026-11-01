@@ -249,17 +249,14 @@ pub(super) fn split_circles(
                 merged,
             });
         }
-        // A cut rim tells the lateral's chart where a horizontal of it is cut; an oblique section
-        // is no horizontal of the chart ([`crate::planes::CylRecord::Sections`] — the chart takes
-        // nothing from the class), so its cuts stay on this class's arcs.
-        if !cyls[circ.cyl].sections_oblique(wc) {
-            cut_rims.push((
-                circ.cyl,
-                CutRim {
-                    nodes: order.iter().map(|&k| nodes[k]).collect(),
-                },
-            ));
-        }
+        // A cut rim tells the lateral's chart where a line of it is cut — a section of any plane
+        // not along the axis.
+        cut_rims.push((
+            circ.cyl,
+            CutRim {
+                nodes: order.iter().map(|&k| nodes[k]).collect(),
+            },
+        ));
     }
     // ---- segments → sub-segments, in line order ----
     let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg, aliases)?;

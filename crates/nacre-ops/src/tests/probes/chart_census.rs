@@ -22,7 +22,7 @@ pub(crate) fn census(
     emission: &Result<Vec<LocalFace>, BoolError>,
 ) {
     for (k, _) in cyls.iter().enumerate() {
-        // A class whose axis parameter cannot be stated is skipped, not recorded: `emit_lateral`
+        // A chart that cannot be formed is skipped, not recorded: `emit_lateral`
         // refuses on the very same `chart_of`, so this is a refusal the emitter already named, not
         // an outcome the census introduces. Measured **0** across the suite either way.
         let Ok(chart) = chart_of(jd, cyls, k, curved) else {
@@ -45,6 +45,20 @@ pub(crate) fn census(
             assert!(
                 chart.axis_t.contains(&Some(*t)),
                 "a chart lost a line its own boundary rule names: cyl {k}, t {t:?}"
+            );
+        }
+        // And every circle of this cylinder a plane face is bounded by is on a line: the faces are
+        // the other reading of the traces the lines come from.
+        for lf in plane_faces {
+            let crate::planes::ClassIx::Plane(c) = lf.surf else {
+                continue;
+            };
+            let bounded = std::iter::once(&lf.outer)
+                .chain(&lf.inner)
+                .any(|b| matches!(b, crate::draft::Bound::Circle { cyl } if *cyl == k));
+            assert!(
+                !bounded || chart.lines.contains(&c),
+                "a face bounded by a circle of this cylinder is on no line: cyl {k}, class {c}"
             );
         }
         let side = mine.first().map(|r| r.side);
@@ -98,6 +112,32 @@ pub(crate) fn census(
         }
 
         let def = &cyls[k].def;
+        // **A slab's order holds to its next event.** The order asked just after an event is the
+        // order just before the next: lines that changed places in between crossed where the chart
+        // has no event. (A pair missing both its crossings in one slab, or a touch, changes no
+        // order and is not seen here.)
+        let n = chart.events.len();
+        for u in 0..n {
+            let at = &chart.events[(u + 1) % n].at;
+            let mut before = chart.slabs[u].clone();
+            crate::combinatorics::try_sort_by(&mut before, |&a, &b| {
+                crate::combinatorics::line_order(
+                    jd,
+                    def,
+                    chart.lines[a],
+                    chart.lines[b],
+                    Some(at),
+                    nacre_exact::quad::Toward::Before,
+                )
+            })
+            .expect("the chart ordered these lines, so their order can be formed");
+            assert_eq!(
+                before, chart.slabs[u],
+                "a slab's lines change places between two events: cyl {k}, slab {u}"
+            );
+        }
+        // A line that is no circle: an oblique section.
+        let oblique = |l: usize| chart.axis_t[l].is_none();
         let cells = chart.cells();
 
         // ── The cells, read off the horizontal lines. ──
@@ -166,6 +206,33 @@ pub(crate) fn census(
                         }
                     }
                     ends.emitted_faces = w.faces.len();
+                    // **No face is bounded along an oblique section** — the gate admits one only
+                    // where its class's faces stand apart from the lateral, so the lateral never
+                    // ends there. Such a boundary would leave an edge whose curve does not derive
+                    // (`EdgeDecline::Oblique`), a road no input has reached.
+                    let on_oblique = |c: usize| {
+                        chart
+                            .lines
+                            .iter()
+                            .position(|&x| x == c)
+                            .is_some_and(oblique)
+                    };
+                    for f in &w.faces {
+                        for b in std::iter::once(&f.outer).chain(&f.inner) {
+                            let along = match b {
+                                crate::draft::Bound::Rim { plane, .. } => on_oblique(*plane),
+                                _ => b.ring().is_some_and(|r| {
+                                    r.walls.iter().any(|w| {
+                                        matches!(*w, crate::combinatorics::Wall::Arc { plane, .. } if on_oblique(plane))
+                                    })
+                                }),
+                            };
+                            assert!(
+                                !along,
+                                "a lateral face is bounded along an oblique section: cyl {k}"
+                            );
+                        }
+                    }
                 }
                 Err(_) => {
                     assert!(
@@ -175,7 +242,26 @@ pub(crate) fn census(
                 }
             }
         }
-        for r in &reads {
+        for (ci, r) in reads.iter().enumerate() {
+            // **An oblique section is transparent where a face is** — its label reads the same on
+            // both its sides there, so the lines it adds split cells the walk joins again.
+            if r.present {
+                for (e, end) in r.ends.iter().enumerate() {
+                    if !oblique(cells[ci].lines[e]) {
+                        continue;
+                    }
+                    let label = match end {
+                        End::Disk(l) => l,
+                        End::Arc(a) => &a.label,
+                        End::Uncovered | End::NoCircle => continue,
+                    };
+                    assert_eq!(
+                        read_bits(label, side, true),
+                        read_bits(label, side, false),
+                        "an oblique section parts a present cell: cyl {k}"
+                    );
+                }
+            }
             for e in &r.ends {
                 match e {
                     End::Disk(_) => ends.end_disk += 1,
@@ -246,13 +332,6 @@ pub(crate) fn census(
         assert!(
             src0_present == 0 || emission.is_err(),
             "a cell with a face has no label at either end and the emitter read it: cyl {k}"
-        );
-        // Record-site assertions rather than counts (the suite measures them 0): a
-        // reporting test sees only the rows recorded before
-        // it, an assertion here sees every chart and names the offending test.
-        assert_eq!(
-            chart.end_swapped, 0,
-            "a ruling arrived with z descending: cyl {k}"
         );
         // **Over a present cell whose chamber could not be read, the emitter emits
         // nothing** — the true proposition. A present cell's chamber is empty when its speaking
@@ -413,4 +492,68 @@ pub(crate) fn census(
         // face, adjacent emitted cells in one face, no unkept cell in any).
         probe::cell_ends::push(ends);
     }
+}
+
+/// **The plane classes where this cylinder's rim is a boundary the arrangement already made**:
+/// (i) the circles a plane face emitted as a `Bound::Circle`, and (ii) the circles the arrangement
+/// split, which emit arcs instead — the census's list of where a lateral face may end.
+pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) -> Vec<usize> {
+    let mut classes: Vec<usize> = Vec::new();
+    let mut push = |c: usize| {
+        if !classes.contains(&c) {
+            classes.push(c);
+        }
+    };
+    for lf in plane_faces {
+        let crate::planes::ClassIx::Plane(c) = lf.surf else {
+            continue;
+        };
+        if std::iter::once(&lf.outer)
+            .chain(lf.inner.iter())
+            .any(|b| matches!(b, crate::draft::Bound::Circle { cyl } if *cyl == k))
+        {
+            push(c);
+        }
+    }
+    let mut cut: Vec<usize> = curved
+        .split_rims
+        .keys()
+        .filter(|&&(kk, _)| kk == k)
+        .map(|&(_, c)| c)
+        .collect();
+    cut.sort_unstable(); // a HashMap's order decides nothing downstream, but the list is stated once
+    for c in cut {
+        push(c);
+    }
+    classes
+}
+
+/// **The lines a lateral face's band may not run across** — the rim classes (both kinds,
+/// [`rim_classes`]) and every row's own span ends, as axis parameters. A band-shaped emission may
+/// continue across any other line, so [`emit_lateral`] merges there and nowhere else, and the
+/// census asserts the chart's lines' heights ⊇ this list where it is made.
+pub(crate) fn boundary_lines(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    plane_faces: &[LocalFace],
+    curved: &Curved,
+    rows: &[crate::bands::CylRow],
+) -> Result<Vec<Rat>, BoolError> {
+    // A rim's height is a parameter only where the rim is a circle; an oblique section's is no
+    // one height.
+    let mut out: Vec<Rat> = rim_classes(k, plane_faces, curved)
+        .into_iter()
+        .filter(|&c| {
+            jd.world_rat(c)
+                .is_none_or(|w| class_carries_circle(&[w[0], w[1], w[2]], &def.dir()))
+        })
+        .map(|c| crate::bands::axis_param(jd, c, def))
+        .collect::<Result<_, _>>()?;
+    for r in rows.iter().filter(|r| r.class == k) {
+        out.extend(r.span);
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
 }

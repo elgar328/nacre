@@ -28,14 +28,16 @@ pub(crate) fn world_plane_coeffs(
 /// half the classes; a rule spelled against it reads "above" backwards exactly there. Spelled that
 /// way, it turned 36 tests red at once (measured).
 ///
-/// This is only asked of a class ⊥ to the axis, so the product never vanishes.
+/// One sign for the whole section, also oblique: along every generator the height grows toward
+/// the side `n·m` points to, so the sign is the normal's against the axis. This is only asked of
+/// a class not along the axis, so the product never vanishes.
 pub(crate) fn plus_t_is_above(world: &WorldName, def: &nacre_topo::CylinderDef) -> bool {
     let [a, b, c, _] = world.name.coeff_ints();
     let along = nacre_exact::normal_sense(&[a, b, c], def.dir());
     debug_assert_ne!(
         along,
         nacre_exact::Orient::Zero,
-        "asked of a class that does not cross the axis"
+        "asked of a class along the axis"
     );
     (along == nacre_exact::Orient::Positive) == (world.sense == nacre_topo::Orientation::Forward)
 }

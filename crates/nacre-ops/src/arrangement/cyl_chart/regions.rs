@@ -6,16 +6,15 @@
 //! wall's ruling pieces) → cycles → a `Bound`. A band, a panel, a chain rim, a hole and a
 //! notched panel are one thing here: a component and its boundary cycles. There is no band /
 //! panel dispatch, no both-rims-cut rule and no run ladder — a per-interval vocabulary
-//! cannot spell a region that crosses a z-line
-//! transversally in one sector and ends on it in another: the
-//! corner it asks for is a node no class has.
+//! cannot spell a region that crosses a line transversally in one slab and ends on it in another:
+//! the corner it asks for is a node no class has.
 //!
 //! **«Same engine» is the same stages, not the same code.** The planar DCEL's `walk_cells`
 //! orders half-edges by angle at a vertex, `nest_cells` asks `point_in_ring` on the plane and
 //! `label_cells` propagates from an unbounded root; the chart is an annulus (no unbounded
-//! region, wrapping cycles) and rectilinear (four ways at a corner, cells known by
-//! construction), and its labels are read rather than propagated — so it runs the stages on
-//! its own grid.
+//! region, wrapping cycles) whose cells are known by construction and whose ways out of a corner
+//! are ordered by the slabs' height orders it already holds (`departure_key`), and its labels are
+//! read rather than propagated — so it runs the stages on its own cells.
 //!
 //! **Vertices are where the neighbouring class has them.** A boundary run along a rim is cut
 //! at the rim's nodes as the split placed them (`Curved::split_rims`) and a run along a ruling at
@@ -73,6 +72,56 @@ pub(crate) struct Walked {
     pub(crate) neighbours: Vec<Vec<usize>>,
 }
 
+/// **Which way out of a corner the cycle takes first** — the way out nearest clockwise from the way
+/// back along the edge it arrived by, which keeps the region on the left and each cycle simple
+/// where the region touches itself at a corner. The ways out of a corner, counter-clockwise from
+/// `−z`: down the ruling, the lines leaving `+θ` from the lowest to the highest in the slab they
+/// enter, up the ruling, the lines leaving `−θ` from the highest to the lowest in theirs — the
+/// slabs' height orders, which the chart already holds, are the angles. Going back along the edge
+/// arrived by comes last. With one line each way this is left, straight, right, back.
+fn departure_key(chart: &Chart, arrived: Edge, out: Edge) -> usize {
+    let n = chart.lines.len();
+    let total = 2 * n + 2;
+    // A way out's place counter-clockwise from `−z`: `0` down, `1..=n` east, `n + 1` up,
+    // `n + 2..` west.
+    let east = |unit: usize, line: usize| 1 + chart.rank(unit, line);
+    let west = |unit: usize, line: usize| n + 2 + (n - 1 - chart.rank(unit, line));
+    let place = |e: Edge| match e {
+        Edge::Arc {
+            line,
+            unit,
+            ccw: true,
+        } => east(unit, line),
+        Edge::Arc {
+            line,
+            unit,
+            ccw: false,
+        } => west(unit, line),
+        Edge::Ruling { up: true, .. } => n + 1,
+        Edge::Ruling { up: false, .. } => 0,
+    };
+    // The way back along the edge arrived by: `+θ` along a line over slab `unit` came in from
+    // that slab, so back is `−θ` into it; and the other way round.
+    let back = match arrived {
+        Edge::Arc {
+            line,
+            unit,
+            ccw: true,
+        } => west(unit, line),
+        Edge::Arc {
+            line,
+            unit,
+            ccw: false,
+        } => east(unit, line),
+        Edge::Ruling { up: true, .. } => 0,
+        Edge::Ruling { up: false, .. } => n + 1,
+    };
+    match (back + total - place(out)) % total {
+        0 => total,
+        k => k,
+    }
+}
+
 /// The walk's refusal where the split's own record is broken — the trace and the split disagree
 /// about where a boundary runs: a run along a rim whose end is not one of the rim's nodes, a run
 /// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
@@ -98,11 +147,6 @@ pub(crate) fn walk(
 ) -> Result<Walked, BoolError> {
     // ── 1. Events: the chart's, in θ order; a cell is a slab crossed with a gap. ──
     let ns = chart.events.len();
-    // The ruling name standing at event `s` — one per event (`chart_of`).
-    let name_at_station = |s: usize| -> Option<(usize, i8)> {
-        let &j = chart.events[s].rulings.first()?;
-        chart.ruling_name(jd, k, def, j).ok()
-    };
     let n_gap = chart.lines.len().saturating_sub(1);
     // Cells by gap, in slab order (as `cells()` pushed them).
     let mut by_gap: Vec<Vec<usize>> = vec![Vec::new(); n_gap];
@@ -208,8 +252,7 @@ pub(crate) fn walk(
         components.push(members);
     }
 
-    // Endpoints (corners) of a directed edge, and its direction of travel
-    // (0 = +θ, 1 = +z, 2 = −θ, 3 = −z).
+    // Endpoints (corners) of a directed edge.
     let ends = |e: Edge| -> (Corner, Corner) {
         match e {
             Edge::Arc { line, unit, ccw } => {
@@ -229,14 +272,6 @@ pub(crate) fn walk(
                 );
                 if up { (a, b) } else { (b, a) }
             }
-        }
-    };
-    let dir = |e: Edge| -> usize {
-        match e {
-            Edge::Arc { ccw: true, .. } => 0,
-            Edge::Arc { ccw: false, .. } => 2,
-            Edge::Ruling { up: true, .. } => 1,
-            Edge::Ruling { up: false, .. } => 3,
         }
     };
     let same_run = |a: Edge, b: Edge| -> bool {
@@ -357,20 +392,11 @@ pub(crate) fn walk(
             let mut cyc = vec![edges[start]];
             used[start] = true;
             let (first, mut at) = ends(edges[start]);
-            let mut prev = dir(edges[start]);
+            let mut last = edges[start];
             while at != first {
                 let mut cands: Vec<(usize, usize)> = (0..edges.len())
                     .filter(|&j| !used[j] && ends(edges[j]).0 == at)
-                    .map(|j| {
-                        let rel = (dir(edges[j]) + 4 - prev) % 4;
-                        let rank = match rel {
-                            1 => 0, // left
-                            0 => 1, // straight
-                            3 => 2, // right
-                            _ => 3, // back
-                        };
-                        (rank, j)
-                    })
+                    .map(|j| (departure_key(chart, last, edges[j]), j))
                     .collect();
                 cands.sort_unstable();
                 let Some(&(_, j)) = cands.first() else {
@@ -378,7 +404,7 @@ pub(crate) fn walk(
                 };
                 used[j] = true;
                 cyc.push(edges[j]);
-                prev = dir(edges[j]);
+                last = edges[j];
                 at = ends(edges[j]).1;
             }
             cycles.push(cyc);
@@ -490,8 +516,7 @@ pub(crate) fn walk(
                     Edge::Ruling { station, up, .. } => {
                         // The run's two heights on the station's generator, lower first.
                         let (h_lo, h_hi) = if up { (ca.1, cb.1) } else { (cb.1, ca.1) };
-                        let (wall, sd) = name_at_station(station).ok_or_else(split_disagrees)?;
-                        // The station's rulings are the event's — one name among them.
+                        // The station's rulings are the event's; each piece states its own wall.
                         let h = |l: usize| height(station, l);
                         let mut segs: Vec<usize> = chart.events[station]
                             .rulings
@@ -520,6 +545,7 @@ pub(crate) fn walk(
                         };
                         for j in ordered {
                             let [e0, e1] = chart.theta[j].end;
+                            let (wall, sd) = chart.ruling_name(jd, k, def, j).map_err(reject)?;
                             pieces.push(Piece {
                                 wall: Wall::Ruling {
                                     cyl: k,
@@ -608,3 +634,7 @@ pub(crate) fn walk(
         neighbours,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/regions.rs"]
+mod tests;
