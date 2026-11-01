@@ -82,12 +82,9 @@ pub(crate) struct ArcLabel {
 /// repository names first. So the value leaves by the road [`CutRims`] already takes: made per
 /// class, folded once, keyed in the global class space.
 ///
-/// `end` is the piece's own two pierce nodes and `z` their axis parameters
-/// ([`combinatorics::pierce_axis_param`]). Both are carried because the chart needs the
-/// **order** (from the node's `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the **position** (`z`), and
-/// deriving one from the other twice is how a name loses a sign.
-/// Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
-/// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.
+/// `end` is the piece's own two pierce nodes: the chart reads both its θ (the node's
+/// `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the lines it stops on (the
+/// planes of the names) off them.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
@@ -95,7 +92,6 @@ pub(crate) struct RulingExtent {
     /// one station that carries no label: nothing changes across it, the face ends there.
     pub(crate) side: i8,
     pub(crate) end: [NodeId; 2],
-    pub(crate) z: [nacre_exact::Rat; 2],
     /// **The chart's vertical answer**: the label of the cell this
     /// ruling borders **inside** the cylinder, on the wall class this ruling lies on.
     ///
@@ -326,7 +322,7 @@ pub(crate) fn whole_result_faces(
         // **The lateral faces come from the chart**: every cylinder class's cells, read off the
         // plane arrangement's own labels and emitted as `LocalFace`s, the type the plane side
         // emits.
-        let lateral = cyl_chart::emit_lateral(kind, jd, cyls, &faces, curved, &rows);
+        let lateral = cyl_chart::emit_lateral(kind, jd, cyls, curved, &rows);
         // The census sits *before* the cleaning pass on purpose: the cleaning dissolves nodes,
         // which would blur the face-by-face question being asked. The census holds the chart
         // against its own rules (and the emitter against the census's independent count), in

@@ -816,19 +816,22 @@ pub fn ccw_tangent_side(
     Some(tilt * axial_side(&crate::cross3_rat(d, n)?, o, m, at)?)
 }
 
-/// Which side of a generator [`section_height_order`] looks at: just after it, counter-clockwise
-/// about the axis — the way [`circular_order_about_seam`] counts θ — or just before.
+/// Where about a generator [`section_height_order`] looks: on it, or just after it
+/// counter-clockwise about the axis — the way [`circular_order_about_seam`] counts θ — or just
+/// before.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toward {
-    After,
     Before,
+    At,
+    After,
 }
 
 /// What [`section_height_order`] says of two plane sections.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SectionOrder {
     /// The first section's height against the second's along the axis `m`; `Equal` exactly when
-    /// the two planes are one plane.
+    /// the two planes are one plane, or, asked [`Toward::At`] a generator, when the sections meet
+    /// on it.
     Ordered(core::cmp::Ordering),
     /// Asked at no generator, though the two sections cross on the cylinder: the order changes
     /// around it, so there is no one answer — the caller left out a crossing it should have asked
@@ -853,6 +856,9 @@ pub enum SectionOrder {
 ///   negated before the generator.
 /// - `dR/dθ = 0` too — `R` touches the cylinder along this generator: `R(θ) = R(o) + n_R·g(θ)`, and
 ///   at the touch `R''` is `R(o)`, the sign on both sides alike (an even zero, so not negated).
+///
+/// [`Toward::At`] reads the first arm alone: on the generator itself two sections that meet there
+/// are level.
 ///
 /// With no generator (`at = None`) the sections must not cross anywhere: then `R` misses the
 /// cylinder or touches it, the whole cylinder lies on the axis point `o`'s side of it, and `R(o)`'s
@@ -901,6 +907,7 @@ pub fn section_height_order(
     match plane_side_big(&rq, at.0, at.1) {
         Orient::Positive => return Some(of(1)),
         Orient::Negative => return Some(of(-1)),
+        Orient::Zero if toward == Toward::At => return Some(of(0)),
         Orient::Zero => {}
     }
     // `dR/dθ = n_R·(m × g) = g·(n_R × m)`: the side of the plane through the axis with normal

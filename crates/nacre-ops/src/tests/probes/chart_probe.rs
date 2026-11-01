@@ -8,7 +8,7 @@ use crate::ledger::Ledger;
 /// One chart's shape.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Row {
-    pub(crate) z_lines: usize,
+    pub(crate) lines: usize,
     pub(crate) theta: usize,
     /// How many **rows** (lateral faces) the class carries.
     pub(crate) rows: usize,

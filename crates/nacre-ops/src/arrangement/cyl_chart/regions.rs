@@ -26,7 +26,7 @@
 //! keeps the lateral's edges welded to the faces beside them, and what the refused corner
 //! violated.
 
-use super::{Cell, CellRead, Chart, Lines};
+use super::{Cell, CellRead, Chart};
 use crate::arrangement::Curved;
 use crate::combinatorics::NodeId;
 use crate::combinatorics::Wall;
@@ -35,20 +35,22 @@ use crate::planes::{ClassIx, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};
 
-/// A corner of the chart's grid: `(z-line index, event index)`.
+/// A corner of the chart: `(event, height)` — a line's height on the event's generator
+/// ([`super::Event::height`]), so lines that meet there share it.
 type Corner = (usize, usize);
 
-/// One directed boundary edge of the grid, with the region on its left.
+/// One directed boundary edge of the chart, with the region on its left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Edge {
-    /// Along z-line `line`, over slab `unit` (from event `unit` to `unit + 1`); `ccw` when the
+    /// Along line `line`, over slab `unit` (from event `unit` to `unit + 1`); `ccw` when the
     /// region lies above the line.
     Arc { line: usize, unit: usize, ccw: bool },
-    /// Along station `station`, over interval `interval`; `up` when the region lies on the
-    /// station's −θ side (the cell whose slab *ends* at the station).
+    /// Along the ruling at event `station`, between lines `lo` and `hi`; `up` when the region
+    /// lies on the station's −θ side (the cell whose slab *ends* at the station).
     Ruling {
-        interval: usize,
         station: usize,
+        lo: usize,
+        hi: usize,
         up: bool,
     },
 }
@@ -90,25 +92,34 @@ pub(crate) fn walk(
     kind: crate::BoolKind,
     side: crate::planes::SolidSide,
     chart: &Chart,
-    lines: &Lines,
     cells: &[Cell],
     reads: &[CellRead<'_>],
     curved: &Curved,
 ) -> Result<Walked, BoolError> {
-    // ── 1. Events: the chart's, in θ order; a cell is an interval crossed with a slab. ──
+    // ── 1. Events: the chart's, in θ order; a cell is a slab crossed with a gap. ──
     let ns = chart.events.len();
     // The ruling name standing at event `s` — one per event (`chart_of`).
     let name_at_station = |s: usize| -> Option<(usize, i8)> {
         let &j = chart.events[s].rulings.first()?;
         chart.ruling_name(jd, k, def, j).ok()
     };
-    let n_int = chart.z_lines.len().saturating_sub(1);
-    // Cells by interval, in slab order (as `cells()` pushed them).
-    let mut by_int: Vec<Vec<usize>> = vec![Vec::new(); n_int];
+    let n_gap = chart.lines.len().saturating_sub(1);
+    // Cells by gap, in slab order (as `cells()` pushed them).
+    let mut by_gap: Vec<Vec<usize>> = vec![Vec::new(); n_gap];
     for (ci, c) in cells.iter().enumerate() {
-        by_int[c.interval].push(ci);
+        by_gap[c.gap].push(ci);
     }
     let units = ns.max(1);
+    // A line's height on event `e`'s generator; with no event, its place in the one slab.
+    let height = |e: usize, l: usize| -> usize {
+        if ns == 0 {
+            chart.rank(0, l)
+        } else {
+            chart.events[e].height[l]
+        }
+    };
+    // Does the gap between `lines` pinch to a point at event `e` — its two lines meeting there?
+    let pinched = |e: usize, [lo, hi]: [usize; 2]| ns > 0 && height(e, lo) == height(e, hi);
 
     // **Where the lateral ends although both sides keep it** — a station secant walls run
     // through ([`Chart::slit_at`]): on the lateral's material side, the result has nothing
@@ -126,7 +137,7 @@ pub(crate) fn walk(
     let emitted: Vec<bool> = reads.iter().map(|r| r.emit == Some(true)).collect();
     // A station with a wall that draws no piece is the lateral's own edge (`ChordSays::NoPiece`),
     // and `slit_at` reads it as one the lateral does not cross. Cells kept on both its sides in one
-    // interval would be the lateral crossing it after all — the premise broken, refused rather
+    // gap would be the lateral crossing it after all — the premise broken, refused rather
     // than walked through. A cell whose two walls are this one station (the circle opened there
     // alone) lies on both its sides.
     for (j, seg) in chart.theta.iter().enumerate() {
@@ -138,7 +149,7 @@ pub(crate) fn walk(
         if !no_piece {
             continue;
         }
-        for row in &by_int {
+        for row in &by_gap {
             let kept_beside = |e: usize| {
                 row.iter()
                     .any(|&ci| emitted[ci] && cells[ci].walls[e] == Some(j))
@@ -152,20 +163,23 @@ pub(crate) fn walk(
         .map(|ci| {
             let c = &cells[ci];
             let mut out = Vec::new();
-            let row = &by_int[c.interval];
+            let row = &by_gap[c.gap];
             if row.len() > 1 {
                 let s = c.slab;
                 let [x, y] = c.walls;
-                if !y.is_some_and(slit) {
+                // Across an event a gap goes on in the same place of the next slab's order — two
+                // lines crossing there trade places, the gaps beside them do not — unless its two
+                // lines meet there, where the cells touch at a point.
+                if !y.is_some_and(slit) && !pinched((s + 1) % ns, c.lines) {
                     out.push(row[(s + 1) % row.len()]);
                 }
-                if !x.is_some_and(slit) {
+                if !x.is_some_and(slit) && !pinched(s, c.lines) {
                     out.push(row[(s + row.len() - 1) % row.len()]);
                 }
             }
-            for i2 in [c.interval.wrapping_sub(1), c.interval + 1] {
-                if i2 < n_int {
-                    out.push(by_int[i2][c.slab]);
+            for g2 in [c.gap.wrapping_sub(1), c.gap + 1] {
+                if g2 < n_gap {
+                    out.push(by_gap[g2][c.slab]);
                 }
             }
             out
@@ -199,15 +213,20 @@ pub(crate) fn walk(
     let ends = |e: Edge| -> (Corner, Corner) {
         match e {
             Edge::Arc { line, unit, ccw } => {
-                let (a, b) = ((line, unit), (line, (unit + 1) % units));
+                let next = (unit + 1) % units;
+                let (a, b) = ((unit, height(unit, line)), (next, height(next, line)));
                 if ccw { (a, b) } else { (b, a) }
             }
             Edge::Ruling {
-                interval,
                 station,
+                lo,
+                hi,
                 up,
             } => {
-                let (a, b) = ((interval, station), (interval + 1, station));
+                let (a, b) = (
+                    (station, height(station, lo)),
+                    (station, height(station, hi)),
+                );
                 if up { (a, b) } else { (b, a) }
             }
         }
@@ -245,18 +264,11 @@ pub(crate) fn walk(
             _ => false,
         }
     };
-    // The class of a z-line whose circle this cylinder marks — a cut rim first.
+    // The class of a line, where this cylinder marks a circle on it — cut or whole.
     let class_on = |line: usize| -> Option<usize> {
-        let t = chart.z_lines[line].t;
-        let cs = lines.classes(t);
-        cs.iter()
-            .copied()
-            .find(|&c| curved.split_rims.contains_key(&(k, c)))
-            .or_else(|| {
-                cs.iter()
-                    .copied()
-                    .find(|&c| curved.disk_labels.contains_key(&(k, c)))
-            })
+        let c = chart.lines[line];
+        (curved.split_rims.contains_key(&(k, c)) || curved.disk_labels.contains_key(&(k, c)))
+            .then_some(c)
     };
     // A run along rim `c` ends at one of the rim's own nodes: every node it is cut at is an event
     // (`Chart::events`), and the run turns only where something cuts the rim.
@@ -273,18 +285,18 @@ pub(crate) fn walk(
         for &ci in members {
             let c = &cells[ci];
             let u = c.slab;
-            let below = c.interval.checked_sub(1).map(|i| by_int[i][u]);
+            let below = c.gap.checked_sub(1).map(|g| by_gap[g][u]);
             if !below.is_some_and(in_c) {
                 edges.push(Edge::Arc {
-                    line: c.interval,
+                    line: c.lines[0],
                     unit: u,
                     ccw: true,
                 });
             }
-            let above = (c.interval + 1 < n_int).then(|| by_int[c.interval + 1][u]);
+            let above = (c.gap + 1 < n_gap).then(|| by_gap[c.gap + 1][u]);
             if !above.is_some_and(in_c) {
                 edges.push(Edge::Arc {
-                    line: c.interval + 1,
+                    line: c.lines[1],
                     unit: u,
                     ccw: false,
                 });
@@ -292,40 +304,45 @@ pub(crate) fn walk(
             // With one event the slab runs round to where it started: the cell is its own
             // neighbour on both sides, and no ruling bounds it.
             if ns > 1 {
-                let row = &by_int[c.interval];
+                let row = &by_gap[c.gap];
                 let right = row[(u + 1) % ns];
                 let left = row[(u + ns - 1) % ns];
                 let [x, y] = c.walls;
-                // **The region ends at an event only on a ruling.** An event with no ruling over
-                // this interval (a rim cut there, a ruling of another interval) carries no line
-                // the boundary could run along — the chart has no vertical line for it.
+                let [lo, hi] = c.lines;
+                // **The region ends at an event only on a ruling** — or at the point its gap
+                // pinches to, which needs no edge. An event with no ruling across the gap (a rim
+                // cut there, a ruling between other lines) carries no line the boundary could run
+                // along — the chart has no vertical line for it.
                 let ruling =
                     |w: Option<usize>| w.ok_or_else(|| reject(RejectReason::RulingBoundNotYet));
-                if !in_c(right) || y.is_some_and(slit) {
+                let east = (u + 1) % ns;
+                if !pinched(east, c.lines) && (!in_c(right) || y.is_some_and(slit)) {
                     ruling(y)?;
                     edges.push(Edge::Ruling {
-                        interval: c.interval,
-                        station: (u + 1) % ns,
+                        station: east,
+                        lo,
+                        hi,
                         up: true,
                     });
                 }
-                if !in_c(left) || x.is_some_and(slit) {
+                if !pinched(u, c.lines) && (!in_c(left) || x.is_some_and(slit)) {
                     ruling(x)?;
                     edges.push(Edge::Ruling {
-                        interval: c.interval,
                         station: u,
+                        lo,
+                        hi,
                         up: false,
                     });
                 }
             }
         }
+        // Sorted by where each edge lies — a line's place in its slab, a ruling's lower height —
+        // so the cycles start where they always have.
         edges.sort_by_key(|e| match *e {
-            Edge::Arc { line, unit, ccw } => (0, line, unit, usize::from(ccw)),
+            Edge::Arc { line, unit, ccw } => (0, chart.rank(unit, line), unit, usize::from(ccw)),
             Edge::Ruling {
-                interval,
-                station,
-                up,
-            } => (1, interval, station, usize::from(up)),
+                station, lo, up, ..
+            } => (1, height(station, lo), station, usize::from(up)),
         });
         edges.dedup();
 
@@ -391,7 +408,12 @@ pub(crate) fn walk(
         };
         let mut bounds: Vec<(Bound, i64)> = Vec::new();
         let mut lowest_bottom: Option<usize> = None;
-        let lowest = cells[members[0]].interval;
+        // The bottom of the component's first cell — the lowest of its slab — is a boundary.
+        let bottom = Edge::Arc {
+            line: cells[members[0]].lines[0],
+            unit: cells[members[0]].slab,
+            ccw: true,
+        };
         for cyc in &cycles {
             let mut runs: Vec<Vec<Edge>> = Vec::new();
             for &e in cyc {
@@ -439,8 +461,8 @@ pub(crate) fn walk(
                             (0, 0)
                         } else {
                             (
-                                rim_node_at(c, ca.1).ok_or_else(split_disagrees)?,
-                                rim_node_at(c, cb.1).ok_or_else(split_disagrees)?,
+                                rim_node_at(c, ca.0).ok_or_else(split_disagrees)?,
+                                rim_node_at(c, cb.0).ok_or_else(split_disagrees)?,
                             )
                         };
                         let mut p = pa;
@@ -466,22 +488,26 @@ pub(crate) fn walk(
                         }
                     }
                     Edge::Ruling { station, up, .. } => {
-                        let (i0, i1) = if up { (ca.0, cb.0) } else { (cb.0, ca.0) };
-                        let (t_lo, t_hi) = (chart.z_lines[i0].t, chart.z_lines[i1].t);
+                        // The run's two heights on the station's generator, lower first.
+                        let (h_lo, h_hi) = if up { (ca.1, cb.1) } else { (cb.1, ca.1) };
                         let (wall, sd) = name_at_station(station).ok_or_else(split_disagrees)?;
                         // The station's rulings are the event's — one name among them.
+                        let h = |l: usize| height(station, l);
                         let mut segs: Vec<usize> = chart.events[station]
                             .rulings
                             .iter()
                             .copied()
-                            .filter(|&j| chart.theta[j].z[0] >= t_lo && chart.theta[j].z[1] <= t_hi)
+                            .filter(|&j| {
+                                let [a, b] = chart.theta[j].on;
+                                h(a) >= h_lo && h(b) <= h_hi
+                            })
                             .collect();
-                        segs.sort_by_key(|&j| chart.theta[j].z[0]);
+                        segs.sort_by_key(|&j| h(chart.theta[j].on[0]));
                         let tiled = !segs.is_empty()
-                            && chart.theta[segs[0]].z[0] == t_lo
-                            && chart.theta[*segs.last().expect("non-empty")].z[1] == t_hi
+                            && h(chart.theta[segs[0]].on[0]) == h_lo
+                            && h(chart.theta[*segs.last().expect("non-empty")].on[1]) == h_hi
                             && segs.windows(2).all(|w| {
-                                chart.theta[w[0]].z[1] == chart.theta[w[1]].z[0]
+                                h(chart.theta[w[0]].on[1]) == h(chart.theta[w[1]].on[0])
                                     && chart.theta[w[0]].end[1] == chart.theta[w[1]].end[0]
                             });
                         if !tiled {
@@ -539,10 +565,9 @@ pub(crate) fn walk(
                 walls.push(piece.wall);
             }
             // The outer cycle of a component that does not wrap the axis is the one holding the
-            // lowest interval's bottom side — always a boundary, never a hole's.
-            let holds_lowest_bottom = cyc
-                .iter()
-                .any(|e| matches!(e, Edge::Arc { line, ccw: true, .. } if *line == lowest));
+            // bottom of its lowest cell in a slab — below it the slab runs on without the
+            // component, so it is never a hole's side.
+            let holds_lowest_bottom = cyc.contains(&bottom);
             if holds_lowest_bottom && lowest_bottom.is_none() {
                 lowest_bottom = Some(bounds.len());
             }

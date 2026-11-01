@@ -21,6 +21,46 @@ impl CircleOrderFail {
     }
 }
 
+/// **Which of two lines of a cylinder's chart is higher** — the sections of plane classes `p` and
+/// `q`, compared on the generator through node `at` ([`Toward::At`](nacre_exact::quad::Toward)),
+/// just after or just before it, or with no generator where the two do not cross anywhere
+/// ([`nacre_exact::quad::section_height_order`], the one spelling). Refused as
+/// `WitnessNotRational` where a plane has no narrow world statement or the node no exact point,
+/// and as `CylinderStagesDisagree` where the question has no answer the chart should have asked:
+/// a plane along the axis is no line, and two lines that cross were asked at no generator.
+pub(crate) fn line_order(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    p: usize,
+    q: usize,
+    at: Option<NodeId>,
+    toward: nacre_exact::quad::Toward,
+) -> Result<core::cmp::Ordering, RejectReason> {
+    use nacre_exact::quad::SectionOrder;
+    let (Some(wp), Some(wq)) = (jd.world_rat(p), jd.world_rat(q)) else {
+        return Err(RejectReason::WitnessNotRational);
+    };
+    let x = match at {
+        Some(n) => Some(
+            pierce_meet(jd, k, def, n)
+                .and_then(PiercePoint::into_exact)
+                .ok_or(RejectReason::WitnessNotRational)?,
+        ),
+        None => None,
+    };
+    match nacre_exact::quad::section_height_order(
+        &wp,
+        &wq,
+        def,
+        x.as_ref().map(|(l, s)| (l, s)),
+        toward,
+    ) {
+        Some(SectionOrder::Ordered(o)) => Ok(o),
+        Some(SectionOrder::Crosses) | None => Err(RejectReason::CylinderStagesDisagree),
+    }
+}
+
 /// **Order points of the cylinder by θ, the seam first, points at one θ together** — the nodes'
 /// reading of the cyclic order [`nacre_exact::quad::SeamOrder::seam_first`] states once (the arcs'
 /// spans read it too). Returns the groups of indices into `nodes` in θ order; a group holds the

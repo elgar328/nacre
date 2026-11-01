@@ -16,7 +16,6 @@ pub(crate) fn emit_lateral(
     kind: crate::BoolKind,
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
-    plane_faces: &[LocalFace],
     curved: &Curved,
     rows: &[crate::bands::CylRow],
 ) -> Result<Vec<LocalFace>, BoolError> {
@@ -32,14 +31,13 @@ pub(crate) fn emit_lateral(
         if sides.any(|s| s != side) {
             return Err(reject(RejectReason::CylinderStagesDisagree));
         }
-        let chart = chart_of(jd, cyls, k, plane_faces, curved)?;
-        let lines = Lines::of(jd, k, def, curved)?;
-        // An order of the rulings' nodes that cannot be formed names its own cause
-        // (`CircleOrderFail::reason`): past `Rat`, or one point under two names.
+        // An order of the events or the lines that cannot be formed names its own cause
+        // (`CircleOrderFail::reason`, `combinatorics::line_order`).
+        let chart = chart_of(jd, cyls, k, curved)?;
         let cells = chart.cells();
         let reads: Vec<CellRead<'_>> = cells
             .iter()
-            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
+            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, rows))
             .collect::<Result<_, _>>()?;
         // A present cell whose chamber could not be read, named by why (`CellRead::unread`).
         if let Some(r) = reads.iter().find(|r| r.present && r.emit.is_none()) {
@@ -48,9 +46,7 @@ pub(crate) fn emit_lateral(
                     .expect("a cell with no chamber says why it has none"),
             ));
         }
-        let walked = regions::walk(
-            jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved,
-        )?;
+        let walked = regions::walk(jd, k, def, kind, side, &chart, &cells, &reads, curved)?;
         out.extend(walked.faces);
     }
     Ok(out)

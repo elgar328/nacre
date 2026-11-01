@@ -25,32 +25,25 @@ pub(crate) fn census(
         // A class whose axis parameter cannot be stated is skipped, not recorded: `emit_lateral`
         // refuses on the very same `chart_of`, so this is a refusal the emitter already named, not
         // an outcome the census introduces. Measured **0** across the suite either way.
-        let Ok(chart) = chart_of(jd, cyls, k, plane_faces, curved) else {
+        let Ok(chart) = chart_of(jd, cyls, k, curved) else {
             continue;
         };
         // How today's road sees the same cylinder: one row per lateral *face*, each with its own
         // clipped span. The chart has one line set for the whole class.
         let mine: Vec<&crate::bands::CylRow> = rows.iter().filter(|r| r.class == k).collect();
-        // The cell reader's inputs: the lines by parameter, and whose solid this class
-        // is. One class is one solid's surface — `planes` interns cylinders by handle and
-        // two solids share none — asserted where it is relied on rather than assumed.
-        let Ok(lines) = Lines::of(jd, k, &cyls[k].def, curved) else {
-            continue;
-        };
         // The boundary lines, for the merge counters; a refusal is a skip, as for the chart.
         let Ok(boundary) = boundary_lines(jd, k, &cyls[k].def, plane_faces, curved, rows) else {
             continue;
         };
         // **The chart's lines cover its own boundary rule, asserted where the fact is made.**
-        // The rim half is shared with `chart_of` by construction; the load-bearing half is the
-        // rows' span ends — a *different spelling* of the axis parameter (the tracer's `footprint.span`)
-        // than the classes' `axis_param` — so this says every lateral face's rim lands, with exact
-        // `Rat` equality, on a ⊥ class the chart collected. Not a tautology: a rim on a class
-        // `chart_of` skipped (no rational coefficients) or a span end the two spellings disagree on
-        // would both fail here.
+        // The load-bearing half is the rows' span ends — a *different spelling* of the axis
+        // parameter (the tracer's `footprint.span`) than the classes' `axis_param` — so this says
+        // every lateral face's rim lands, with exact `Rat` equality, on a line the chart collected.
+        // Not a tautology: a rim on a class `chart_of` skipped (no rational coefficients) or a span
+        // end the two spellings disagree on would both fail here.
         for t in &boundary {
             assert!(
-                chart.z_lines.iter().any(|l| l.t == *t),
+                chart.axis_t.contains(&Some(*t)),
                 "a chart lost a line its own boundary rule names: cyl {k}, t {t:?}"
             );
         }
@@ -84,20 +77,21 @@ pub(crate) fn census(
             );
         }
 
-        // **The premise `cells()` is built on, checked where the fact is made.** That
-        // function keeps a ruling only where it spans an axis interval *whole* — so a ruling
-        // ending strictly inside one would be **silently dropped**, and the cells would come out
-        // wrong with nothing red. The premise is that a ruling's ends are always z-lines, which is
-        // structural (a ruling node is `[wall, other plane]` and that other plane can only be ⊥ to
-        // the axis, which `chart_of` collects in full) — but it joins two *different* spellings of
-        // the axis parameter (`pierce_axis_param` for the ends, `bands::axis_param` for the lines),
-        // and the day those disagree the drop is what would happen. Measured 0 across the suite.
+        // **The premise `cells()` is built on, checked where the fact is made.** A ruling's ends
+        // are read as lines off their names; the point itself must lie on that line's plane — the
+        // name's reading and the geometry's, two spellings that would part silently otherwise.
         for t in &chart.theta {
-            for e in t.z {
+            for e in 0..2 {
+                let on_plane = jd.world_rat(chart.lines[t.on[e]]).is_some_and(|w| {
+                    crate::combinatorics::pierce_meet(jd, k, &cyls[k].def, t.end[e])
+                        .and_then(crate::combinatorics::PiercePoint::into_exact)
+                        .is_some_and(|(l, s)| {
+                            nacre_exact::quad::plane_side(&w, &l, &s) == nacre_exact::Orient::Zero
+                        })
+                });
                 assert!(
-                    chart.z_lines.iter().any(|l| l.t == e),
-                    "a ruling ends off the chart's own z-lines, so a cell would lose it: \
-                     cyl {k}, wall {}",
+                    on_plane,
+                    "a ruling ends off the line its name puts it on: cyl {k}, wall {}",
                     t.wall
                 );
             }
@@ -117,7 +111,7 @@ pub(crate) fn census(
         // chart is still recorded, with the comparison empty and the refusal counted.
         let reads: Vec<CellRead<'_>> = match cells
             .iter()
-            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
+            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, rows))
             .collect::<Result<Vec<_>, BoolError>>()
         {
             Ok(v) => v,
@@ -143,9 +137,7 @@ pub(crate) fn census(
         // and two adjacent emitted cells lie in one face. A refusal here is the emitter's, made
         // on the same input.
         {
-            match regions::walk(
-                jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved,
-            ) {
+            match regions::walk(jd, k, def, kind, side, &chart, &cells, &reads, curved) {
                 Ok(w) => {
                     let mut owner: Vec<Option<usize>> = vec![None; cells.len()];
                     for (f, cs) in w.cells_of.iter().enumerate() {
@@ -296,12 +288,17 @@ pub(crate) fn census(
         let mut closes = 0usize;
         let mut grazing_rulings = 0usize;
         let mut unpaired = 0usize;
-        for i in 0..chart.z_lines.len().saturating_sub(1) {
-            let (lo, hi) = (chart.z_lines[i].t, chart.z_lines[i + 1].t);
-            let alive: Vec<&ThetaSeg> = chart
-                .theta
-                .iter()
-                .filter(|t| t.z[0] <= lo && hi <= t.z[1])
+        for i in 0..chart.lines.len().saturating_sub(1) {
+            // An interval: a gap bounded by the same two lines all the way round, the band the
+            // walk below goes round. A gap two crossing lines bound differently slab to slab is no
+            // band.
+            let pair = [chart.slabs[0][i], chart.slabs[0][i + 1]];
+            if chart.slabs.iter().any(|o| [o[i], o[i + 1]] != pair) {
+                continue;
+            }
+            let alive: Vec<&ThetaSeg> = (0..chart.events.len())
+                .filter_map(|e| chart.wall_at(e, pair))
+                .map(|j| &chart.theta[j])
                 .collect();
             let n = alive.len();
             if n == 0 {
@@ -395,7 +392,7 @@ pub(crate) fn census(
         }
 
         probe::push(probe::Row {
-            z_lines: chart.z_lines.len(),
+            lines: chart.lines.len(),
             theta: chart.theta.len(),
             rows: mine.len(),
             events: chart.events.len(),

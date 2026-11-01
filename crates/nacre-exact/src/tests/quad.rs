@@ -1614,6 +1614,12 @@ fn a_section_height_order_is_read_arm_by_arm() {
         .cloned()
         .expect("one crossing at angle π");
     let (east, west) = ((line.clone(), east), (line, west));
+    assert_eq!(
+        ord(&p, &c, Some(&east), Toward::At),
+        of(Equal),
+        "they meet there"
+    );
+    assert_eq!(ord(&p, &q, Some(&east), Toward::At), of(Less));
     assert_eq!(ord(&p, &c, Some(&east), Toward::After), of(Greater));
     assert_eq!(ord(&p, &c, Some(&east), Toward::Before), of(Less));
     assert_eq!(ord(&p, &c, Some(&west), Toward::After), of(Less));

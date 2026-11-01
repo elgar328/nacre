@@ -17,12 +17,12 @@ use nacre_topo::Model;
 ///
 /// * `rows >= 1` — a cylinder class exists because a face made it (`cyl_rows` refuses
 ///   otherwise), so the hand-written road always has at least one row for it.
-/// * `z_lines >= 2` — a band needs two boundaries; a lateral face's own two rims are ⊥ classes
+/// * `lines >= 2` — a band needs two boundaries; a lateral face's own two rims are ⊥ classes
 ///   and both are in the set.
-/// * `cells >= 1` — `z_lines >= 2` is one interval, and an interval is at least one cell (the
+/// * `cells >= 1` — `lines >= 2` is one gap, and an interval is at least one cell (the
 ///   whole circle, when the chart has no event).
-/// * `whole_circle + odd_k < z_lines` — the intervals with no ruling and those with an odd
-///   number are disjoint subsets of the chart's `z_lines − 1` intervals.
+/// * `whole_circle + odd_k < lines` — the intervals with no ruling and those with an odd
+///   number are disjoint subsets of the chart's `lines − 1` intervals.
 /// * `events == 0` only where no interval has a ruling — the events are formed from the rulings'
 ///   stations and the rims' cuts, the census's interval walk from the rulings over each interval.
 #[test]
@@ -52,7 +52,7 @@ fn the_chart_census_is_running() {
     assert_eq!(ROWS.mine().len(), 1, "a through bore records one chart");
     for r in &rows {
         let Row {
-            z_lines,
+            lines,
             theta,
             rows: n,
             cells,
@@ -60,19 +60,19 @@ fn the_chart_census_is_running() {
             ..
         } = *r;
         assert!(n >= 1, "a class with no row: {r:?}");
-        assert!(z_lines >= 2, "a band needs two boundaries: {r:?}");
+        assert!(lines >= 2, "a band needs two boundaries: {r:?}");
         // `theta % 2 == 0` ("a wall cuts two rulings") is not asserted: a
         // band's lateral reaches both rulings of a wall, a panel's or a chain's may reach one.
         let _ = theta;
         assert!(cells >= 1, "two z-lines are one interval: {r:?}");
-        // A chart has `z_lines - 1` intervals, and an interval carries either no ruling or
+        // A chart has `lines - 1` intervals, and an interval carries either no ruling or
         // some number of them — so these two counts are disjoint subsets of that many.
         assert!(
-            r.whole_circle + r.odd_k < z_lines,
+            r.whole_circle + r.odd_k < lines,
             "more intervals than the chart has: {r:?}"
         );
         assert!(
-            events > 0 || r.whole_circle + 1 == z_lines,
+            events > 0 || r.whole_circle + 1 == lines,
             "a chart with no event has a ruling: {r:?}"
         );
     }
@@ -433,7 +433,7 @@ fn the_chart_stands_on_a_tilted_axis() {
         // boolean removed the right material, on this model.
         assert_eq!(mine.len(), 1, "{name}: one tilted class, one chart");
         assert_eq!(
-            (mine[0].z_lines, mine[0].theta),
+            (mine[0].lines, mine[0].theta),
             (4, want),
             "{name}: expected a chart with {want} rulings"
         );

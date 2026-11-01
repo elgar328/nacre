@@ -218,25 +218,19 @@ impl Chart {
         side: SolidSide,
         cell: &Cell,
         curved: &'a Curved,
-        lines: &Lines,
         rows: &[crate::bands::CylRow],
     ) -> Result<CellRead<'a>, BoolError> {
-        let t = [
-            self.z_lines[cell.interval].t,
-            self.z_lines[cell.interval + 1].t,
-        ];
         let mut ends: Vec<End<'a>> = Vec::with_capacity(2);
         let mut above: [bool; 2] = [false; 2];
-        for e in 0..2 {
+        for (e, &line) in cell.lines.iter().enumerate() {
             let mut end = End::NoCircle;
             let mut saw_disk = false;
             let mut saw_arc = false;
-            for &c in lines.classes(t[e]) {
+            // The one class on this end's line; a label the split filed elsewhere is refused
+            // where the chart is made (`chart_of`).
+            for c in [self.lines[line]] {
                 // The band leaves the low line toward `+t` and arrives at the high line from
                 // `−t`.
-                // Bound to the class whose label is read, not to whichever class the loop
-                // visited last: one `t` is one plane and so one class today, but the sign and
-                // the label must come from the same row the day that stops being true.
                 let world = jd.planes[c]
                     .world
                     .as_ref()
@@ -353,10 +347,25 @@ impl Chart {
         };
 
         // ── Existence: the trace where an end is cut, the span where none is. ──
-        let (lo, hi) = (t[0].min(t[1]), t[0].max(t[1]));
-        let by_span = rows.iter().any(|r| {
-            r.class == k && r.span[0].min(r.span[1]) <= lo && hi <= r.span[0].max(r.span[1])
-        });
+        // A row's span is its two rims, planes across the axis stated by their axis parameter: the
+        // cell lies within it where its gap lies between those two lines in its slab.
+        let mut by_span = false;
+        for r in rows.iter().filter(|r| r.class == k) {
+            let line_at_t = |t: Rat| {
+                self.axis_t
+                    .iter()
+                    .position(|&x| x == Some(t))
+                    .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))
+            };
+            let (a, b) = (
+                line_at_t(r.span[0].min(r.span[1]))?,
+                line_at_t(r.span[0].max(r.span[1]))?,
+            );
+            let u = cell.slab;
+            if self.rank(u, a) <= cell.gap && cell.gap < self.rank(u, b) {
+                by_span = true;
+            }
+        }
         let mut by_marks: Option<bool> = None;
         for e in 0..2 {
             let End::Arc(arc) = &ends[e] else { continue };

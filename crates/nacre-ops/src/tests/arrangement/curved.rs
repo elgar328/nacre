@@ -769,12 +769,11 @@ fn lateral_lattice(staircase: bool) {
     };
     let (m, plate, boss, setup, wc) = armed_through_boss_z(caps[0], caps[1] - caps[0]);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
-    let (curved, plane_faces, rows, _) = armed_curved(&m, plate, boss, &setup, &jd, wc, caps);
+    let (curved, _, rows, _) = armed_curved(&m, plate, boss, &setup, &jd, wc, caps);
     let fuse = crate::arrangement::cyl_chart::emit_lateral(
         BoolKind::Fuse,
         &jd,
         &setup.cyls,
-        &plane_faces,
         &curved,
         &rows,
     )
@@ -1015,10 +1014,12 @@ fn a_cut_circle_bounds_the_bands() {
         expect,
         "three intervals, cut circles included"
     );
-    let chart = crate::arrangement::cyl_chart::chart_of(&jd, &setup.cyls, 0, &plane_faces, &curved)
-        .unwrap();
+    let chart = crate::arrangement::cyl_chart::chart_of(&jd, &setup.cyls, 0, &curved).unwrap();
     assert_eq!(
-        chart.z_lines.iter().map(|l| l.t).collect::<Vec<_>>(),
+        chart.slabs[0]
+            .iter()
+            .map(|&l| chart.axis_t[l].expect("a line across the axis"))
+            .collect::<Vec<_>>(),
         expect,
         "the chart's lines are the boundaries and nothing else here"
     );
@@ -1030,15 +1031,7 @@ fn a_cut_circle_bounds_the_bands() {
     // `Ring` face. Which sector is the outer one is the assembly's and the volume oracle's to
     // measure (the gate-opening cell), not this harness's to re-derive.
     let faces_for = |kind: BoolKind| -> Vec<LocalFace> {
-        crate::arrangement::cyl_chart::emit_lateral(
-            kind,
-            &jd,
-            &setup.cyls,
-            &plane_faces,
-            &curved,
-            &rows,
-        )
-        .unwrap()
+        crate::arrangement::cyl_chart::emit_lateral(kind, &jd, &setup.cyls, &curved, &rows).unwrap()
     };
     let (fuse, cut) = (faces_for(BoolKind::Fuse), faces_for(BoolKind::Cut));
     assert_eq!(fuse.len(), 1, "fuse: one lateral face, a band with a hole");
@@ -1110,7 +1103,6 @@ fn a_cut_circle_bounds_the_bands() {
             BoolKind::Fuse,
             &jd,
             &setup.cyls,
-            &plane_faces,
             &blind,
             &rows,
         )
@@ -1127,7 +1119,6 @@ fn a_cut_circle_bounds_the_bands() {
             BoolKind::Fuse,
             &jd,
             &setup.cyls,
-            &plane_faces,
             &blind,
             &rows,
         ),
@@ -1156,7 +1147,6 @@ fn a_cut_circle_bounds_the_bands() {
             BoolKind::Fuse,
             &jd,
             &setup.cyls,
-            &plane_faces,
             &contrary,
             &rows,
         ),

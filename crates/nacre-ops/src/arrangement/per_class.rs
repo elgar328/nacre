@@ -1,4 +1,5 @@
 use super::*;
+use crate::planes::class_carries_circle;
 /// **The per-class stages, in one place** — the walk and the nesting.
 ///
 /// **It exists because the sequence would otherwise be written twice.** `trace_result_faces`'
@@ -65,28 +66,27 @@ pub(super) fn per_class(
         return Err(reject(RejectReason::CylinderStagesDisagree));
     }
     // An oblique section's labels are not the chart's: the class is no line of the lateral's
-    // chart, whose horizontals are addressed by their station on the axis (`cyl_chart::Lines`), and
-    // an oblique plane's axis meet read as one would label a class it is not. Dropped by the gate's
-    // record; the geometry ([`cyl_chart::is_horizontal`]) says the same of every trace that carries
-    // a label, asserted here and asked again by the chart's backstop, which refuses a key off its
-    // horizontals rather than filing it — so a label neither horizontal nor a recorded section is
-    // refused, not dropped.
+    // chart, whose lines are the classes across the axis (`cyl_chart::chart_of`). Dropped by the
+    // gate's record; the geometry ([`class_carries_circle`]) says the same of every trace that
+    // carries a label, asserted here and asked again by the chart's backstop, which refuses a key
+    // off its lines rather than filing it — so a label neither across the axis nor a recorded
+    // section is refused, not dropped.
     let horizontal = |cyl: usize| {
         let section = oblique(cyl);
         debug_assert_eq!(
             section,
-            cyls.get(cyl)
-                .is_some_and(|cy| !cyl_chart::is_horizontal(jd, wc, &cy.def)),
-            "a closed trace off the chart's horizontals is a recorded oblique section"
+            cyls.get(cyl).is_some_and(|cy| {
+                jd.world_rat(wc)
+                    .is_some_and(|w| !class_carries_circle(&[w[0], w[1], w[2]], &cy.def.dir()))
+            }),
+            "a closed trace off the chart's lines is a recorded oblique section"
         );
         !section
     };
     disk_labels.retain(|&(cyl, _)| horizontal(cyl));
     arc_labels.retain(|&(cyl, _)| horizontal(cyl));
-    // The cylinder chart's **vertical** lines, read off the pieces this class already made. Both
-    // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
-    // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
-    // so it is dropped here and **counted** by the chart's own census rather than guessed at.
+    // The cylinder chart's **vertical** lines, read off the pieces this class already made. Where
+    // a ruling ends on the chart is the chart's to read, off the ends' names (`cyl_chart::chart_of`).
     let ruling_extents: Vec<(usize, RulingExtent)> = edges
         .pieces
         .iter()
@@ -95,16 +95,11 @@ pub(super) fn per_class(
             let OnCurve::Ruling { cyl, side, .. } = p.on else {
                 return None;
             };
-            let def = &cyls[cyl].def;
             // A sectioned class's ruling is not a line of the lateral's chart: no face of the class
             // reaches the lateral, so it splits no cell there (see the check above).
             if along(cyl) {
                 return None;
             }
-            let z = [
-                combinatorics::pierce_axis_param(jd, def, p.end[0])?,
-                combinatorics::pierce_axis_param(jd, def, p.end[1])?,
-            ];
             // The chart's vertical answer — see [`RulingExtent::label`] and
             // [`RulingExtent::outer`], the two cells beside the ruling. Each is an `Option` rather
             // than a `?` deliberately: dropping the piece here would make the recorded population
@@ -181,7 +176,6 @@ pub(super) fn per_class(
                     wall: wc,
                     side,
                     end: p.end,
-                    z,
                     label,
                     outer,
                     #[cfg(test)]
