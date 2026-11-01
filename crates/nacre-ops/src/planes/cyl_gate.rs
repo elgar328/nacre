@@ -770,9 +770,10 @@ fn class_meet(
 /// of one solid that is also the line of the other's edge (or of the same solid's flat through
 /// its own axis). Recorded once, here, and read by every road that must say so: the alias seed
 /// (one point, several names), the rulings split (one line, two vocabularies), the chart (one
-/// station), the tangency verdict, the result's edge subdivision (the pierce points on the
-/// line), the straight-angle cleaning (a ruling piece and a plane segment, one line) and the
-/// self-touch verdict (an edge along the line inside the solid's own lateral).
+/// station, its secant walls in chord order), the tangency verdict, the result's edge
+/// subdivision (the pierce points on the line), the straight-angle cleaning (a ruling piece and a
+/// plane segment, one line) and the self-touch verdict (an edge along the line inside the solid's
+/// own lateral).
 ///
 /// The population is the pairs [`class_meet`] already answered against the cylinder: a class that
 /// cuts it ([`ClassMeet::Cuts`] — two rulings) with another that cuts it, or with a **tangent**
@@ -801,7 +802,7 @@ pub(crate) struct SharedRuling {
     /// Which of the two state the ruling as a station of the cylinder's chart — the ones that cut
     /// the cylinder, so one (a tangent or a sectioned partner) or both. Both classes of the pair fold
     /// their own segments on the line onto it (`split_rulings`); only these put the station on the
-    /// chart (`cyl_chart::fold_shared_stations` folds a line two of them state into one station),
+    /// chart (`cyl_chart::stations_of_lines` gathers every pair through one line into one station),
     /// and the tangency verdict asks them whether the line is an edge (`Tangency::line_is_an_edge`).
     pub(crate) stated_by: Vec<usize>,
     /// A point of the line, exact: the line is the ruling through it, so a reader needs neither

@@ -65,7 +65,9 @@ pub(crate) fn census(
         // the census below would then be comparing a partial chart. Measured 862/862 across the
         // suite; the world sense declines none of them. Except a **tangent** station:
         // the wall touches the cylinder along it and nothing changes across it — the face
-        // ends there. Its answer is that it has none, and `read_cell` skips it. The cell beside the
+        // ends there. Its answer is that it has none, and `read_cell` skips it. (A station's side
+        // closed by a wall that draws no piece there is silent too, `ChordSays::NoPiece` — the
+        // piece itself carries its answer, and this loop reads pieces.) The cell beside the
         // line outside the cylinder (`outer`) is formed with it — every half-edge of the class's
         // walk bounds a cell — and `slit_at` reads it where the lateral keeps the outside.
         for t in &chart.theta {

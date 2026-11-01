@@ -16,7 +16,9 @@
 //! [`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`]. And a V-notch whose apex lies on
 //! the lateral — a box round `A`, the two walls opening away from the axis: its `B − A` touches
 //! itself along the line, a refusal by name — see
-//! [`a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name`].
+//! [`a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name`]. And an inward wedge whose
+//! apex line a third plane of `B` runs through, met first from the lateral — see
+//! [`an_inward_wedge_with_a_third_plane_through_its_apex_line`].
 //!
 //! And the shapes whose line is `A`'s own edge, where its lateral ends on a flat: a wall tangent
 //! to the cylinder there — ending on the edge it builds, on a half cylinder and on a half bore,
@@ -24,9 +26,9 @@
 //! [`a_tangent_wall_on_a_flats_edge_builds_or_is_refused`],
 //! [`a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused`] and
 //! [`a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused`]; ending there beside a secant of
-//! `B`'s own, three planes on one line, it is refused today
-//! ([`three_planes_on_a_laterals_own_edge_are_refused_today`]); and a wall through that edge
-//! from the side `A` does not fill — see
+//! `B`'s own, three planes on one line, it builds past both caps and is refused today within the
+//! span ([`three_planes_on_a_laterals_own_edge_build_past_both_caps`]); and a wall through that
+//! edge from the side `A` does not fill — see
 //! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`].
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
@@ -478,27 +480,49 @@ fn a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused() {
 /// **Three plane classes on one ruling — a tangent wall and a secant ending together on the flat
 /// edge.** `B` is the triangle `(1, 0), (1, 2), (−1, 2)`: its wall `x = 1` touches `A`'s cylinder
 /// along the edge line and its wall `x + y = 1` cuts it there, both ending on the line, which `A`'s
-/// flat `y = 0` holds too. Every boolean is refused today as `LabelConflict` — a backstop, so it
-/// is pinned by variant: a refusal that moves, or a placement that builds, is news here and in the
-/// todo item this pins.
+/// flat `y = 0` holds too. The chamber beside the lateral at the line is closed by `x + y = 1`'s
+/// chord, not by the flat's, though only the flat draws the station there. With `B` past both of
+/// `A`'s caps every boolean builds one body, valid, drawn, the volumes in closed form: `A ∩ B` is
+/// the circular segment beyond the chord (area `π/4 − 1/2`) over `A`'s height. Ending within
+/// `A`'s span, `B`'s edge on the line ends where the flat's ruling runs on, and the lateral's walk
+/// finds no piece ending there — `CylinderStagesDisagree`, pinned by variant.
 #[test]
-fn three_planes_on_a_laterals_own_edge_are_refused_today() {
+fn three_planes_on_a_laterals_own_edge_build_past_both_caps() {
     let triangle: &[[f64; 2]] = &[[1.0, 0.0], [1.0, 2.0], [-1.0, 2.0]];
-    let ran = every_placement(
-        upper_half_disk,
-        &[("the triangle", triangle)],
-        |c, _, got| match got {
-            Err(BoolError::Rejected { reason, .. }) => {
+    let all = every_six(upper_half_disk, &[("the triangle", triangle)]);
+    assert_eq!(all.len(), 2 * 2 * 4, "the family");
+    let (a, segment) = (std::f64::consts::PI, std::f64::consts::FRAC_PI_4 - 0.5);
+    for (p, six) in &all {
+        if p.height != Height::PastBoth {
+            for (i, got) in six.iter().enumerate() {
                 assert_eq!(
-                    reason,
-                    RejectReason::LabelConflict,
-                    "{c}: the refusal moved"
-                )
+                    got,
+                    &Err(RejectReason::CylinderStagesDisagree),
+                    "{p}: [{i}] the refusal moved"
+                );
             }
-            other => panic!("{c}: the refusal moved — {other:?}"),
-        },
-    );
-    assert_eq!(ran, 2 * 2 * 4 * 6, "the family");
+            continue;
+        }
+        identities_with(p, six, a);
+        let (b, common) = (p.b_volume(), segment * p.height.shared());
+        let want = [
+            a + b - common,
+            a + b - common,
+            a - common,
+            b - common,
+            common,
+            common,
+        ];
+        for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            match got {
+                Ok((n, v)) => {
+                    assert_eq!(*n, 1, "{p}: [{i}] bodies");
+                    assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}");
+                }
+                Err(r) => panic!("{p}: [{i}] {r:?}"),
+            }
+        }
+    }
 }
 
 /// `[−2, 2] × [0, 2]` less the upper half of the unit disk — a half bore whose lateral ends on the
@@ -607,6 +631,50 @@ fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
     assert_eq!(refused, want_refused, "the refusals");
 }
 
+/// **An inward wedge with a third plane through its apex line** — the wedge of
+/// [`an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name`] on the seam, its far side bent so
+/// that one of its faces, `(−2, 6)–(−3, 8)`, lies on `2x + y = 2`: a plane through the apex line
+/// whose face is far off. Three secant walls run through the station, and that plane's chord is
+/// met first turning in from the lateral's `+θ` tangent, so the chamber between the wedge's walls —
+/// the one whose absence from `A − B` cuts the lateral there — is the second between two chords,
+/// not the first. With `B` past both caps every boolean builds as the wedge's do, `A − B` two
+/// bodies; ending in `A`'s span the third plane's ruling runs on past `B`'s ends while the wedge's
+/// walls stop there — `CylinderStagesDisagree`, pinned by variant.
+#[test]
+fn an_inward_wedge_with_a_third_plane_through_its_apex_line() {
+    let bent: &[[f64; 2]] = &[
+        [1.0, 0.0],
+        [-3.0, 3.0],
+        [-2.0, 6.0],
+        [-3.0, 8.0],
+        [-10.0, 8.0],
+        [-10.0, -3.0],
+        [-3.0, -3.0],
+    ];
+    let all = every_six(unit_disk, &[("the bent wedge", bent)]);
+    assert_eq!(all.len(), 2 * 2 * 4, "the family");
+    for (p, six) in &all {
+        if p.height != Height::PastBoth {
+            for (i, got) in six.iter().enumerate() {
+                assert_eq!(
+                    got,
+                    &Err(RejectReason::CylinderStagesDisagree),
+                    "{p}: [{i}] the refusal moved"
+                );
+            }
+            continue;
+        }
+        for (i, r) in six.iter().enumerate() {
+            match (i, r) {
+                (2, Ok((n, _))) => assert_eq!(*n, 2, "{p}: A − B is two bodies"),
+                (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
+                (_, Err(reason)) => panic!("{p}: [{i}] {reason:?}"),
+            }
+        }
+        identities(p, six);
+    }
+}
+
 /// **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off
 /// it. Near the line, `A − B` is two lobes meeting on it alone: where they join elsewhere (`B`
 /// inside `A`'s span or reaching past one cap) that is one solid touching itself and is refused
@@ -633,11 +701,14 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
                     assert_eq!(p.height, Height::PastBoth, "{p}: A − B built");
                 }
                 (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
-                (2, Err(reason)) => assert_eq!(
-                    *reason,
-                    RejectReason::NonManifoldResultEdge,
-                    "{p}: A − B refused as {reason:?}"
-                ),
+                (2, Err(reason)) => {
+                    assert_ne!(p.height, Height::PastBoth, "{p}: A − B refused");
+                    assert_eq!(
+                        *reason,
+                        RejectReason::NonManifoldResultEdge,
+                        "{p}: A − B refused as {reason:?}"
+                    );
+                }
                 (_, Err(reason)) => panic!("{p}: [{i}] {reason:?}"),
             }
         }

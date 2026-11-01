@@ -124,33 +124,59 @@ pub(crate) struct ThetaSeg {
     /// this lateral face is even here is this one's.
     #[cfg(test)]
     pub(crate) marks: Vec<(SolidSide, SegKind)>,
-    /// **The other wall stating this very ruling** — a line of two secant classes lying on the
-    /// cylinder ([`crate::planes::SharedRuling`]) is one station, stated by both. The two labels
-    /// are not one fact: each reads the chamber on its own plane, and the chamber beside the
-    /// lateral on each side of the line is bounded by a different one of the two planes — see
-    /// [`StationTwin::bounds_plus`].
-    pub(crate) twin: Option<StationTwin>,
+    /// **Every secant wall through this very ruling, in chord order** — the line two or more
+    /// secant classes share on the cylinder ([`crate::planes::SharedRuling`]) is one station, and
+    /// the chamber beside the lateral on each side of it is closed by a different one of their
+    /// planes ([`Station::chords`]). `None` for a station one wall alone runs through.
+    pub(crate) station: Option<Station>,
 }
 
-/// The second wall of a station two secant classes state — see [`ThetaSeg::twin`].
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct StationTwin {
-    pub(crate) wall: usize,
-    pub(crate) label: Option<Label>,
-    pub(crate) outer: Option<Label>,
-    /// **Whether this wall, not the station's own, bounds the sector counter-clockwise of the
-    /// line.** Inside the cylinder the two planes run from the line as two chords; turning from
-    /// the lateral's `+θ` tangent `τ = m × r` inward (counter-clockwise about `m`, towards `−r`),
-    /// the first chord met closes the chamber beside the `+θ` sector, and the other closes the
-    /// `−θ` one. Chord `d₁` comes first iff `(d₁ × d₂)·m > 0`, with each `dᵢ = m × nᵢ` turned to
-    /// point inward — exact, from the two planes and the axis.
+/// **The secant walls of one station** — see [`ThetaSeg::station`].
+#[derive(Clone, Debug)]
+pub(crate) struct Station {
+    /// **The walls in chord order.** Inside the cylinder every secant plane through the line runs
+    /// from it as a chord, and all those chords enter the disk: turning from the lateral's `+θ`
+    /// tangent `τ = m × r` inward (counter-clockwise about `m`, towards `−r`), they come one after
+    /// another within a half turn, so the order is total ([`chord_before`]). The first chord closes
+    /// the chamber beside the `+θ` sector, the last the one beside `−θ`, and each two neighbours
+    /// the chamber between them — OCCT's `GetFaceOff` picks the next face about an edge by the same
+    /// angle, asked here as an exact sign. The station's own wall is one of them.
     ///
-    /// The same wall's **outer** half bounds the chamber between the two walls outside the
-    /// cylinder: the line cuts the cross-section into six chambers — beside `+θ` inside, between
-    /// the chords, beside `−θ` inside, then beside `−θ` outside, between the walls' outer halves,
-    /// beside `+θ` outside — and the two «between» chambers are vertically opposite angles, so
-    /// both lie on this wall's far side from the `+θ` sector inside and on its near side outside.
-    pub(crate) bounds_plus: bool,
+    /// Outside, the line cuts the cross-section into as many chambers again: the one between two
+    /// neighbouring walls' outer halves is the vertically opposite angle of the one between their
+    /// chords. Every chamber between chords `k` and `k + 1` lies on chord `k`'s far side from `τ`
+    /// and on chord `k + 1`'s near side; its outer opposite the other way round.
+    pub(crate) chords: Vec<Chord>,
+}
+
+/// One secant wall of a [`Station`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Chord {
+    pub(crate) wall: usize,
+    /// Which of the wall's two rulings the line is.
+    pub(crate) side: i8,
+    pub(crate) says: ChordSays,
+}
+
+/// **What a secant wall states on the station's line over the station's axis interval.**
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ChordSays {
+    /// A ruling piece over the same interval, end for end: its labels inside and outside the
+    /// cylinder — [`ThetaSeg::label`] and [`ThetaSeg::outer`] of that piece.
+    Piece {
+        label: Option<Label>,
+        outer: Option<Label>,
+    },
+    /// **No piece over this interval.** The wall's class traces a lateral's ruling only where the
+    /// lateral's boundary does not run along a plane pair it holds with another class; where it
+    /// does, the line is the lateral's own edge at that height and the class states it in the
+    /// plane vocabulary alone (`ruling_sweep`'s `quiet_nodes`). A record is written only for a line
+    /// on a lateral *face* (`ruling_on_a_face`), and a tangent class is no secant chord, so this is
+    /// the one way a secant wall of a recorded line draws nothing there (measured: every one in the
+    /// suite, the census and the ignored sweep). The chord still closes its chamber — the two
+    /// planes and the axis say so — but no label of it can be read: the side it bounds is silent,
+    /// and the lateral ends at the line there.
+    NoPiece,
 }
 
 /// One cylinder class's chart: the two axes, and the cells they cut.
@@ -468,13 +494,13 @@ pub(crate) fn chart_of(
                         outer: r.outer,
                         #[cfg(test)]
                         marks: r.marks.clone(),
-                        twin: None,
+                        station: None,
                     }
                 })
                 .collect()
         })
         .unwrap_or_default();
-    let theta = fold_shared_stations(jd, &cyls[k], theta)?;
+    let theta = stations_of_lines(jd, cyls, k, theta)?;
     Ok(Chart {
         z_lines,
         theta,
@@ -482,64 +508,188 @@ pub(crate) fn chart_of(
     })
 }
 
-/// **One ruling two secant classes state is one station** — read off the gate's record
-/// ([`crate::planes::SharedRuling`]): the two classes' pieces over one axis interval end on the
-/// same two points, and the alias seed has given those points one name each, so the pair is
-/// found by **name** — the chart does not decide «same θ» on its own. Left as two, the cell
-/// builder hands `circular_order` one point under two stations and it refuses the coincidence.
-fn fold_shared_stations(
+/// **One line, one station** — read off the gate's records ([`crate::planes::SharedRuling`] with
+/// two stating classes, one per pair of secant walls through the line): a piece of the chart's
+/// rulings gathers every partner wall on its line, on the same side of its own class
+/// ([`combinatorics::shared_line`]). A partner piece over the same axis interval, end for end,
+/// folds into it ([`ChordSays::Piece`]) — the alias seed has given those points one name each, so
+/// the pair is found by **name**, and left as two, the cell builder would hand `circular_order` one
+/// point under two stations. A partner with no piece overlapping the interval states the line in
+/// the plane vocabulary there ([`ChordSays::NoPiece`]); one overlapping it without matching cuts
+/// the line elsewhere than this class does, which is the stages disagreeing. The walls are then put
+/// in chord order ([`Station::chords`]).
+///
+/// The piece kept for the station is the one of the **smallest** class among those folded, so the
+/// station's name ([`Chart::ruling_name`]) does not depend on the order the pieces arrive in.
+fn stations_of_lines(
     jd: &Judge<'_, WorkingPlane>,
-    cyl: &WorkingCyl,
-    mut theta: Vec<ThetaSeg>,
+    cyls: &[WorkingCyl],
+    k: usize,
+    theta: Vec<ThetaSeg>,
 ) -> Result<Vec<ThetaSeg>, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    for sr in cyl.shared.iter().filter(|sr| sr.stated_by.len() == 2) {
-        let (t1, t2) = sr.line;
-        let plus_is_t2 = second_chord_first(jd, &cyl.def, sr).ok_or_else(undecided)?;
-        let mut i = 0;
-        while i < theta.len() {
-            if theta[i].wall != t1 {
-                i += 1;
-                continue;
+    let cyl = &cyls[k];
+    let records: Vec<&crate::planes::SharedRuling> = cyl
+        .shared
+        .iter()
+        .filter(|sr| sr.stated_by.len() == 2)
+        .collect();
+    // Each record's two sides, read the first time a piece asks — only records a piece of the chart
+    // reaches are read, as the ruling split reads only its own class's.
+    let mut sides: Vec<Option<(i8, i8)>> = vec![None; records.len()];
+    let mut side_of = |r: usize, t: usize| -> Result<i8, BoolError> {
+        let sr = records[r];
+        let (a, b) = match sides[r] {
+            Some(s) => s,
+            None => {
+                let read = |t: usize| {
+                    combinatorics::shared_line(jd, cyls, k, sr, t)
+                        .map(|l| l.side)
+                        .ok_or_else(|| {
+                            reject(combinatorics::undecided_reason(
+                                cyls,
+                                &[sr.line.0, sr.line.1],
+                            ))
+                        })
+                };
+                let s = (read(sr.line.0)?, read(sr.line.1)?);
+                sides[r] = Some(s);
+                s
             }
-            let Some(j) = (0..theta.len()).find(|&j| {
-                theta[j].wall == t2 && theta[j].end == theta[i].end && theta[j].z == theta[i].z
-            }) else {
-                i += 1;
-                continue;
-            };
-            let other = theta.remove(j);
-            let i = if j < i { i - 1 } else { i };
-            theta[i].twin = Some(StationTwin {
-                wall: other.wall,
-                label: other.label,
-                outer: other.outer,
-                bounds_plus: plus_is_t2,
-            });
+        };
+        Ok(if t == sr.line.0 { a } else { b })
+    };
+    let mut gone = vec![false; theta.len()];
+    let mut stations: Vec<Option<Station>> = vec![None; theta.len()];
+    for i in 0..theta.len() {
+        if gone[i] || stations[i].is_some() {
+            continue;
         }
+        let (wall, side) = (theta[i].wall, theta[i].side);
+        // Every partner of this piece's line, with its own side of it and a record to read the
+        // line's direction off.
+        let mut partners: Vec<(usize, i8, &crate::planes::SharedRuling)> = Vec::new();
+        for (r, &sr) in records.iter().enumerate() {
+            let other = match sr.line {
+                (a, b) if a == wall => b,
+                (a, b) if b == wall => a,
+                _ => continue,
+            };
+            if side_of(r, wall)? == side && !partners.iter().any(|p| p.0 == other) {
+                partners.push((other, side_of(r, other)?, sr));
+            }
+        }
+        let Some(&(_, _, line)) = partners.first() else {
+            continue;
+        };
+        let mut members = vec![i];
+        let mut chords = vec![(
+            i,
+            Chord {
+                wall,
+                side,
+                says: ChordSays::Piece {
+                    label: theta[i].label,
+                    outer: theta[i].outer,
+                },
+            },
+        )];
+        for &(q, qs, _) in &partners {
+            let on_line =
+                |j: usize| !gone[j] && j != i && theta[j].wall == q && theta[j].side == qs;
+            let says = match (0..theta.len())
+                .find(|&j| on_line(j) && theta[j].end == theta[i].end && theta[j].z == theta[i].z)
+            {
+                Some(j) => {
+                    members.push(j);
+                    chords.push((
+                        j,
+                        Chord {
+                            wall: q,
+                            side: qs,
+                            says: ChordSays::Piece {
+                                label: theta[j].label,
+                                outer: theta[j].outer,
+                            },
+                        },
+                    ));
+                    continue;
+                }
+                None if (0..theta.len()).any(|j| {
+                    on_line(j)
+                        && theta[j].z[0].max(theta[i].z[0]) < theta[j].z[1].min(theta[i].z[1])
+                }) =>
+                {
+                    return Err(reject(RejectReason::CylinderStagesDisagree));
+                }
+                None => ChordSays::NoPiece,
+            };
+            chords.push((
+                usize::MAX,
+                Chord {
+                    wall: q,
+                    side: qs,
+                    says,
+                },
+            ));
+        }
+        // Chord order, by insertion: the comparison can fail, and a failing comparison handed to a
+        // library sort is not a total order.
+        let r = line.radial(&cyl.def).ok_or_else(undecided)?;
+        let mut ordered: Vec<(usize, Chord)> = Vec::with_capacity(chords.len());
+        for c in chords {
+            let mut at = ordered.len();
+            for (p, o) in ordered.iter().enumerate() {
+                if chord_before(jd, &cyl.def, &r, c.1.wall, o.1.wall).map_err(reject)? {
+                    at = p;
+                    break;
+                }
+            }
+            ordered.insert(at, c);
+        }
+        let keep = *members
+            .iter()
+            .min_by_key(|&&j| theta[j].wall)
+            .expect("the piece itself is a member");
+        for &j in &members {
+            gone[j] = j != keep;
+        }
+        stations[keep] = Some(Station {
+            chords: ordered.into_iter().map(|(_, c)| c).collect(),
+        });
     }
-    Ok(theta)
+    Ok(theta
+        .into_iter()
+        .zip(stations)
+        .zip(gone)
+        .filter(|(_, g)| !g)
+        .map(|((mut seg, st), _)| {
+            seg.station = st;
+            seg
+        })
+        .collect())
 }
 
-/// Whether plane class `t2`'s chord, not `t1`'s, is met first turning from the `+θ` tangent at
-/// their shared ruling `sr` inward — [`StationTwin::bounds_plus`]'s rule. The line is the record's
-/// own ([`crate::planes::SharedRuling::radial`]); each chord's direction is its class's normal, so
-/// both classes' world statements are read — a record two classes state as a station is a secant
-/// pair, both stated. `None` is arithmetic that could not answer.
-fn second_chord_first(
+/// **Whether plane class `a`'s chord is met before `b`'s** turning from the `+θ` tangent inward at
+/// the line whose direction across the cylinder is `r` ([`crate::planes::SharedRuling::radial`]) —
+/// [`Station::chords`]'s order. Each chord's direction is its class's normal turned about the axis,
+/// pointed into the cylinder (against `r`); `a` comes first iff `(d_a × d_b)·m > 0`. Refused as
+/// `WitnessNotRational` where the arithmetic cannot answer, and as `CylinderStagesDisagree` for two
+/// chords along one direction — two secant classes through one line are two planes, so that is a
+/// broken premise rather than a tie.
+fn chord_before(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
-    sr: &crate::planes::SharedRuling,
-) -> Option<bool> {
-    use nacre_exact::{Rat, cross3_rat, dot3_rat};
-    let (t1, t2) = sr.line;
-    let (w1, w2) = (jd.world_rat(t1)?, jd.world_rat(t2)?);
+    r: &[Rat; 3],
+    a: usize,
+    b: usize,
+) -> Result<bool, RejectReason> {
+    use nacre_exact::{cross3_rat, dot3_rat};
     let m = def.dir();
-    let r = sr.radial(def)?;
-    // Each chord's direction, turned to point into the cylinder (against `r`).
-    let inward = |wt: &[Rat; 4]| -> Option<[Rat; 3]> {
-        let d = cross3_rat(&m, &[wt[0], wt[1], wt[2]])?;
-        if dot3_rat(&d, &r)? > Rat::from_int(0) {
+    let inward = |c: usize| -> Option<[Rat; 3]> {
+        let w = jd.world_rat(c)?;
+        let d = cross3_rat(&m, &[w[0], w[1], w[2]])?;
+        if dot3_rat(&d, r)? > Rat::from_int(0) {
             Some([
                 Rat::from_int(0).checked_sub(d[0])?,
                 Rat::from_int(0).checked_sub(d[1])?,
@@ -549,8 +699,13 @@ fn second_chord_first(
             Some(d)
         }
     };
-    let (d1, d2) = (inward(&w1)?, inward(&w2)?);
-    Some(dot3_rat(&cross3_rat(&d1, &d2)?, &m)? < Rat::from_int(0))
+    let turn = (|| dot3_rat(&cross3_rat(&inward(a)?, &inward(b)?)?, &m))()
+        .ok_or(RejectReason::WitnessNotRational)?;
+    match turn.cmp(&Rat::from_int(0)) {
+        core::cmp::Ordering::Greater => Ok(true),
+        core::cmp::Ordering::Less => Ok(false),
+        core::cmp::Ordering::Equal => Err(RejectReason::CylinderStagesDisagree),
+    }
 }
 
 /// **Is class `c` a horizontal of cylinder `def`'s chart** — a class across the axis, whose trace on

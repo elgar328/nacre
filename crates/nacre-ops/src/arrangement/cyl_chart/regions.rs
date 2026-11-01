@@ -75,7 +75,8 @@ pub(crate) struct Walked {
 /// about where a boundary runs: a run along a rim whose end is not one of the rim's nodes, a run
 /// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
 /// with no outer cycle, a run along an uncut rim — or a rim cut at one node — that is not the whole
-/// circle, a cycle whose arc units are not a whole number of turns. What the walk cannot spell is
+/// circle, a cycle whose arc units are not a whole number of turns, the lateral kept on both sides
+/// of a station it ends at (`ChordSays::NoPiece`). What the walk cannot spell is
 /// named where it fires: wrapping cycles other than one lower and one upper (`ArcBoundNotYet`).
 fn split_disagrees() -> BoolError {
     reject(RejectReason::CylinderStagesDisagree)
@@ -153,20 +154,44 @@ pub(crate) fn walk(
     }
     let units = ns.max(1);
 
-    // **Where the lateral ends although both sides keep it** — a station two walls state
-    // ([`Chart::slit_at`]): on the lateral's material side, the result has nothing between the two
-    // walls, so what is kept on the two sides meets on the line alone. The lateral is cut there — no adjacency
-    // across, and a boundary on both sides even within one component — so the line becomes an
-    // edge the other solid's two faces use too, and the assembly sees the touch: four uses of
-    // one edge in one solid, or two solids apart. Run through as one face, the lateral hides it
-    // under a shell every count calls closed.
+    // **Where the lateral ends although both sides keep it** — a station secant walls run
+    // through ([`Chart::slit_at`]): on the lateral's material side, the result has nothing
+    // between two of the walls, so what is kept on the two sides meets on the line alone. The
+    // lateral is cut there — no adjacency across, and a boundary on both sides even within one
+    // component — so the line becomes an edge the other solid's two faces use too, and the
+    // assembly sees the touch: four uses of one edge in one solid, or two solids apart. Run
+    // through as one face, the lateral hides it under a shell every count calls closed.
     let slits: Vec<bool> = (0..chart.theta.len())
-        .map(|j| chart.slit_at(jd, k, def, j, side, kind).map_err(reject))
+        .map(|j| chart.slit_at(jd, j, side, kind).map_err(reject))
         .collect::<Result<_, BoolError>>()?;
     let slit = |j: usize| slits.get(j).copied().unwrap_or(false);
 
     // ── 2. Emitted cells and their components (4-adjacency, θ-periodic). ──
     let emitted: Vec<bool> = reads.iter().map(|r| r.emit == Some(true)).collect();
+    // A station with a wall that draws no piece is the lateral's own edge (`ChordSays::NoPiece`),
+    // and `slit_at` reads it as one the lateral does not cross. Cells kept on both its sides in one
+    // interval would be the lateral crossing it after all — the premise broken, refused rather
+    // than walked through. A cell whose two walls are this one station (the circle opened there
+    // alone) lies on both its sides.
+    for (j, seg) in chart.theta.iter().enumerate() {
+        let no_piece = seg.station.as_ref().is_some_and(|st| {
+            st.chords
+                .iter()
+                .any(|c| matches!(c.says, super::ChordSays::NoPiece))
+        });
+        if !no_piece {
+            continue;
+        }
+        for row in &by_int {
+            let kept_beside = |e: usize| {
+                row.iter()
+                    .any(|&ci| emitted[ci] && cells[ci].walls.is_some_and(|w| w[e] == j))
+            };
+            if kept_beside(0) && kept_beside(1) {
+                return Err(split_disagrees());
+            }
+        }
+    }
     let neighbours: Vec<Vec<usize>> = (0..cells.len())
         .map(|ci| {
             let c = &cells[ci];

@@ -147,25 +147,28 @@ pub(crate) struct CellRead<'a> {
 }
 
 impl Chart {
-    /// **Whether the lateral ends at station `i` on both sides** — a station two secant walls
-    /// state, where the material the lateral bounds does not run round the line: the chamber
-    /// between the two walls, **on the lateral's material side**, is not in the result. Kept, the
-    /// material runs across the line and so does the lateral; not kept, what lies on the two sides
-    /// meets on the line alone. `false` for every station one wall states — there is no chamber
-    /// between.
+    /// **Whether the lateral ends at station `i` on both sides** — a station two or more secant
+    /// walls run through, where the material the lateral bounds does not run round the line: a
+    /// chamber between two neighbouring walls ([`Station::chords`]), **on the lateral's material
+    /// side**, is not in the result. All kept, the material runs across the line and so does the
+    /// lateral; one not kept, what lies on the two sides meets on the line alone. `false` for a
+    /// station one wall runs through — there is no chamber between — and for one with a wall that
+    /// draws no piece there ([`ChordSays::NoPiece`]): the line is then the lateral's own edge, and
+    /// the lateral ends at it already (the walk refuses a station where it does not —
+    /// `regions::walk`).
     ///
-    /// **Both sides are read off one wall**, the one that bounds the `+θ` sector inside
-    /// ([`StationTwin::bounds_plus`]): its inside cell holds the chamber beside `+θ` on the near
-    /// side and the chamber between the chords on the far side, and its outside cell holds the
-    /// chamber between the walls' outer halves on the near side — the two «between» chambers are
-    /// vertically opposite angles. The material side is the one the `+θ` chamber inside answers:
-    /// kept, the lateral bounds material inside; not, outside. That reading only has to be true
-    /// where the answer is used — the walk cuts a lateral at a slit only between two cells it
-    /// emits, and an emitted `+θ` cell keeps one side of the lateral and not the other. One
-    /// boolean keeps a lateral's material on one side all round a line: `keep` is monotone in each
-    /// operand, and an operand, being a manifold, has its own material on one side of the
-    /// cylinder on both sides of the line (measured: no station with its two cells emitted keeps
-    /// different sides, in the suite or the census).
+    /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
+    /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
+    /// between their outer halves, off their outside cells the other way round. Two witnesses that
+    /// disagree are labels the arrangement wrote disagreeing (`LabelConflict`). The material side
+    /// is the one the first chord's inside cell answers beside `+θ`: kept, the lateral bounds
+    /// material inside; not, outside. That reading only has to be true where the answer is used —
+    /// the walk cuts a lateral at a slit only between two cells it emits, and an emitted `+θ` cell
+    /// keeps one side of the lateral and not the other. One boolean keeps a lateral's material on
+    /// one side all round a line: `keep` is monotone in each operand, and an operand, being a
+    /// manifold, has its own material on one side of the cylinder on both sides of the line
+    /// (measured: no station with its two cells emitted keeps different sides, in the suite or the
+    /// census).
     ///
     /// Both halves carry an answer (`edge_on_a_ruling`): the inside chamber read where the
     /// material is outside cuts the lateral of a box less the wedge fused on a rim, across the
@@ -182,41 +185,55 @@ impl Chart {
     /// the result's self-touch verdict asks it once the solids are known — the walls' edge inside
     /// the solid's own lateral (`assembly::self_touch`).
     ///
-    /// `Err` when a label or the side could not be read: the labels are formed for every secant
-    /// ruling, so their absence is the stages disagreeing; the side carries its own cause
-    /// ([`ruling_side_of`]).
+    /// `Err` when a label or a side could not be read: the labels are formed for every secant
+    /// ruling piece, so their absence is the stages disagreeing.
     pub(crate) fn slit_at(
         &self,
         jd: &Judge<'_, WorkingPlane>,
-        k: usize,
-        def: &nacre_topo::CylinderDef,
         i: usize,
         side: SolidSide,
         kind: BoolKind,
     ) -> Result<bool, RejectReason> {
         let stages = RejectReason::CylinderStagesDisagree;
-        let seg = &self.theta[i];
-        let Some(tw) = seg.twin else {
+        let Some(st) = &self.theta[i].station else {
             return Ok(false);
         };
-        let (label, outer, wall) = if tw.bounds_plus {
-            (tw.label, tw.outer, tw.wall)
-        } else {
-            (seg.label, seg.outer, seg.wall)
-        };
-        let label = label.ok_or(stages)?;
-        let sd = ruling_side_of(jd, k, def, wall, seg.end[0])?;
-        let plus_above = crate::arrangement::plus_theta_is_above(jd, wall, sd).ok_or(stages)?;
-        let keeps = |l: &Label, above: bool| {
-            let (own, other) = read_bits(l, side, above);
-            keep_for(kind, side, own, other)
-        };
-        let between = if keeps(&label, plus_above) {
-            keeps(&label, !plus_above)
-        } else {
-            keeps(&outer.ok_or(stages)?, plus_above)
-        };
-        Ok(!between)
+        if st
+            .chords
+            .iter()
+            .any(|c| matches!(c.says, ChordSays::NoPiece))
+        {
+            return Ok(false);
+        }
+        // Each wall's inside and outside labels and which side of it `τ` is on.
+        let mut walls: Vec<(Label, Option<Label>, bool)> = Vec::with_capacity(st.chords.len());
+        for c in &st.chords {
+            let ChordSays::Piece { label, outer } = c.says else {
+                unreachable!("a station with a wall that draws no piece returned above");
+            };
+            let near = crate::arrangement::plus_theta_is_above(jd, c.wall, c.side).ok_or(stages)?;
+            walls.push((label.ok_or(stages)?, outer, near));
+        }
+        let keeps = |b: (bool, bool)| keep_for(kind, side, b.0, b.1);
+        let inside = keeps(read_bits(&walls[0].0, side, walls[0].2));
+        for pair in walls.windows(2) {
+            let ((l0, o0, n0), (l1, o1, n1)) = (pair[0], pair[1]);
+            let (a, b) = if inside {
+                (read_bits(&l0, side, !n0), read_bits(&l1, side, n1))
+            } else {
+                (
+                    read_bits(&o0.ok_or(stages)?, side, n0),
+                    read_bits(&o1.ok_or(stages)?, side, !n1),
+                )
+            };
+            if a != b {
+                return Err(RejectReason::LabelConflict);
+            }
+            if !keeps(a) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// The node of ruling `i` **on** the z-line `t`, from the carried `end ↔ z` pairing — or
@@ -505,21 +522,27 @@ impl Chart {
             if seg.side == 0 {
                 return None;
             }
-            // A station two walls state answers each side from the wall that bounds the
-            // chamber there (`StationTwin::bounds_plus`); `starts_here` is the `+θ` side.
-            // Held here as well as in `slit_at`, which reads the same `bounds_plus` (and that
-            // wall's outside cell too): swapping the two walls turns the corner and inward-wedge
-            // families of `edge_on_a_ruling` red, where the rims speak too and the swapped wall
-            // contradicts them.
-            let (l, (wall, sd)) = match seg.twin {
-                Some(tw) if tw.bounds_plus == starts_here => (
-                    tw.label?,
-                    (
-                        tw.wall,
-                        ruling_side_of(jd, k, def, tw.wall, seg.end[0]).ok()?,
-                    ),
-                ),
-                _ => (seg.label?, self.ruling_name(jd, k, def, i).ok()?),
+            // A station secant walls run through answers each side from the wall that closes the
+            // chamber there — the first chord beside `+θ`, the last beside `−θ`
+            // (`Station::chords`); `starts_here` is the `+θ` side. Held here as well as in
+            // `slit_at`, which reads the same order (and the walls' outside cells too): swapping
+            // the ends turns the corner and inward-wedge families of `edge_on_a_ruling` red, where
+            // the rims speak too and the swapped wall contradicts them. A closing wall with no
+            // piece there has no label to read, and the station's own wall would answer for a
+            // chamber between chords — so that side is silent.
+            let (l, (wall, sd)) = match &seg.station {
+                Some(st) => {
+                    let c = if starts_here {
+                        st.chords.first()?
+                    } else {
+                        st.chords.last()?
+                    };
+                    match c.says {
+                        ChordSays::Piece { label, .. } => (label?, (c.wall, c.side)),
+                        ChordSays::NoPiece => return None,
+                    }
+                }
+                None => (seg.label?, self.ruling_name(jd, k, def, i).ok()?),
             };
             // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
             // are read from opposite sides of their own rulings.
