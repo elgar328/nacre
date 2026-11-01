@@ -456,9 +456,10 @@ pub(crate) fn shared_lines_of(
 }
 
 /// **The recorded line a segment on wall `wall` lies along, among one class's `lines`** — `None`
-/// when the pair is no recorded line. The one lookup every reader of a segment's line makes (the
-/// ruling split's crossings and its fold). A wall whose line with the class is a ruling of **two**
-/// cylinders puts two laterals on that line, which is two cylinders meeting:
+/// when the pair is no recorded line. The one lookup every reader of a segment's line makes (pass
+/// A's cut at the ends of the segments along a ruling, and the ruling split's crossings, its fold
+/// and the test of whether it folds at all). A wall whose line with the class is a ruling of
+/// **two** cylinders puts two laterals on that line, which is two cylinders meeting:
 /// [`RejectReason::CylinderPairContact`], the gate's name for it (measured: no such pair reaches
 /// the arrangement in the suite, the census or the ignored sweep).
 pub(crate) fn line_along(

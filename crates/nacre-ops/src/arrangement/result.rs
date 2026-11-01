@@ -356,6 +356,40 @@ pub(crate) fn whole_result_faces(
     Ok((faces, rims))
 }
 
+/// One class's segments, circles and ruling pieces, as pass B reads them.
+pub(super) type Skeleton = (Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedRuling>);
+
+/// **One class's traced edges, merged and split** — pass A's skeleton step: the segments merged
+/// where coincident ([`merge_coincident`]) and cut at their crossings ([`split_at_crossings`],
+/// which learns aliases into `local`), which of them carry news asked ([`carries_news`] — its
+/// conflicts first, nearest their cause), the circles and rulings merged, the ruling pieces cut at
+/// the ends of **every** segment along them ([`cut_rulings_along_segments`] — a newsless knife
+/// edge's ends are vertices of the line it lies on), and then the newsless segments dropped. One
+/// function because the audit and tests that run a class by hand take the same step; a copy of
+/// the order could drift from it.
+pub(super) fn class_skeleton(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    tr: &Trace,
+    local: &mut Aliases,
+) -> Result<Skeleton, BoolError> {
+    // A disk cap's chord is one of these segments (both ends pierce-pinned,
+    // from the same parity sweep as every polygon's section).
+    let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, local));
+    let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, local))?;
+    let news = carries_news(&split)?;
+    let circles = merge_circles(&tr.circles, local)?;
+    let rulings = merge_rulings(&tr.rulings, local);
+    let rulings = cut_rulings_along_segments(jd, cyls, wc, &split, rulings, local)?;
+    let split = split
+        .into_iter()
+        .zip(news)
+        .filter_map(|(s, keep)| keep.then_some(s))
+        .collect();
+    Ok((split, circles, rulings))
+}
+
 /// Every result face across all plane classes, before assembly (the driver's risky half, testable
 /// by face count without mutating the model). A declining class aborts the whole boolean.
 ///
@@ -470,14 +504,8 @@ pub(super) fn trace_result_faces(
                 // plane row would abort where an honest reject belongs.
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
-            // A disk cap's chord is one of these segments (both ends pierce-pinned,
-            // from the same parity sweep as every polygon's section).
-            let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, &local));
-            let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, &mut local))?;
-            let split = drop_newsless(split)?;
-            let circles = merge_circles(&tr.circles, &local)?;
-            let rulings = merge_rulings(&tr.rulings, &local);
-            Ok(((split, circles, rulings), local))
+            let skeleton = class_skeleton(jd, cyls, wc, &tr, &mut local)?;
+            Ok((skeleton, local))
         })?;
         splits.clear();
         for (split, local) in round {

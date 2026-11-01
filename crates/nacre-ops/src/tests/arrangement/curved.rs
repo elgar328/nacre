@@ -245,10 +245,8 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
         &setup.inc_b,
         &setup.plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, top, &Aliases::default());
-    let split =
-        split_at_crossings(&jd, &setup.cyls, top, &merged, &mut Aliases::default()).unwrap();
-    let split = drop_newsless(split).unwrap();
+    let (split, _, _) =
+        class_skeleton(&jd, &setup.cyls, top, &tr, &mut Aliases::default()).unwrap();
     let y0 = setup
         .geom
         .iter()
@@ -518,15 +516,12 @@ fn the_armed_wall_class_walks_to_closed_cells() {
         &setup.plane_ix,
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
-    let split = split_at_crossings(&jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
-    let split = drop_newsless(split).unwrap();
-    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
+    let (split, circles, rulings) =
+        class_skeleton(&jd, &setup.cyls, wc, &tr, &mut Aliases::default()).unwrap();
     // This fixture's class is parallel to the only cylinder in it, so it traces rulings and
     // no circle. Not a general law: a class may carry both, when the circle
     // belongs to a *different*, perpendicular cylinder.
     assert!(circles.is_empty(), "this class meets no ⊥ cylinder");
-    let rulings = merge_rulings(&tr.rulings, &Aliases::default());
     assert_eq!(rulings.len(), 2);
     let edges = ClassEdges::of(
         &jd,
@@ -594,11 +589,8 @@ fn armed_class_edges<'a>(
         &setup.plane_ix,
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-    let merged = merge_coincident(jd, &tr.segs, wc, &Aliases::default());
-    let split = split_at_crossings(jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
-    let split = drop_newsless(split).unwrap();
-    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
-    let rulings = merge_rulings(&tr.rulings, &Aliases::default());
+    let (split, circles, rulings) =
+        class_skeleton(jd, &setup.cyls, wc, &tr, &mut Aliases::default()).unwrap();
     let e = ClassEdges::of(
         jd,
         &setup.cyls,
@@ -1611,11 +1603,8 @@ fn with_cut_rings(
             &inc_b,
             &plane_ix,
         );
-        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
-        let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()) else {
-            continue;
-        };
-        let Ok(circles) = merge_circles(&tr.circles, &Aliases::default()) else {
+        let Ok((split, circles, _)) = class_skeleton(&jd, &cyls, wc, &tr, &mut Aliases::default())
+        else {
             continue;
         };
         let Ok(edges) = ClassEdges::of(
@@ -1888,11 +1877,8 @@ fn the_two_roads_agree_on_every_rational_ring() {
             &inc_b,
             &plane_ix,
         );
-        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
-        let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()) else {
-            continue;
-        };
-        let Ok(circles) = merge_circles(&tr.circles, &Aliases::default()) else {
+        let Ok((split, circles, _)) = class_skeleton(&jd, &cyls, wc, &tr, &mut Aliases::default())
+        else {
             continue;
         };
         let Ok(edges) = ClassEdges::of(
@@ -2183,9 +2169,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         tr.circles
     );
 
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
-    let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
-    let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()).unwrap();
+    let (split, circles, _) = class_skeleton(&jd, &cyls, wc, &tr, &mut Aliases::default()).unwrap();
     assert_eq!(
         split.len(),
         4,
