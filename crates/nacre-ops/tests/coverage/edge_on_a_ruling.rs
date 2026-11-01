@@ -201,16 +201,6 @@ fn every_six<'q>(
     a: fn() -> Profile2d,
     quads: &[(&'q str, &'q [[f64; 2]])],
 ) -> Vec<(Placement<'q>, Six)> {
-    every_six_drawn(a, quads, drawn)
-}
-
-/// [`every_six`] with the mesh asked by `draw` rather than [`drawn`] — for a family whose built
-/// results the mesher does not all draw yet.
-fn every_six_drawn<'q>(
-    a: fn() -> Profile2d,
-    quads: &[(&'q str, &'q [[f64; 2]])],
-    mut draw: impl FnMut(&Case<'_, '_>, &Model, &[Handle<Solid>], f64),
-) -> Vec<(Placement<'q>, Six)> {
     let mut out: Vec<(Placement<'q>, Six)> = Vec::new();
     let mut cur: Vec<Result<(usize, f64), RejectReason>> = Vec::new();
     every_placement(a, quads, |c, m, got| {
@@ -220,7 +210,7 @@ fn every_six_drawn<'q>(
                 let vs = nacre_validate::validate(m);
                 assert!(vs.is_empty(), "{c}: {vs:?}");
                 let v = solids.iter().map(|&s| volume(m, s)).sum();
-                draw(c, m, &solids, v);
+                drawn(c, m, &solids, v);
                 Ok((solids.len(), v))
             }
             Err(BoolError::Rejected { reason, .. }) => Err(reason),
@@ -236,7 +226,8 @@ fn every_six_drawn<'q>(
 
 /// **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
 /// (`tess_census`), which these front-door tests do not pass through. The mesh exists, is
-/// watertight, and its signed volume is the solids' own up to what sampling cuts off a curved face:
+/// watertight, has no lateral triangle leaning off its surface, and its signed volume is the
+/// solids' own up to what sampling cuts off a curved face:
 /// at most the face's area times the sagitta the budget allows, the smaller of `TessConfig::tol`
 /// and `r(1 − cos(max_angle / 2))` — the two budgets `TessConfig` states. The slack comes from the
 /// budget, not from the fixture: `tol` alone would allow `0.126` on the unit cylinder's lateral,
@@ -246,6 +237,8 @@ fn drawn(c: &Case<'_, '_>, m: &Model, solids: &[Handle<Solid>], volume: f64) {
     let t = nacre_tess::tessellate(m, &cfg)
         .unwrap_or_else(|e| panic!("{c}: the mesher refuses it: {e:?}"));
     assert_eq!(non_watertight(&t), 0, "{c}: the mesh leaks");
+    let leaning = nacre_tess::leaning_laterals(m, &t, cfg.max_angle_deg);
+    assert!(leaning.is_empty(), "{c}: {leaning:?}");
     let mut slack = 0.0;
     for &s in solids {
         let solid = m.solid(s);
@@ -548,38 +541,24 @@ fn half_bored_box() -> Profile2d {
 /// cylinder, but its lateral still bends to the axis on both sides of the tangent line, so on
 /// `B`'s wall class the lateral's side of the line is the axis side, as on a boss — the one bit
 /// that holds for both (`arrangement::rulings::axis_above`). Every boolean builds, valid, the
-/// volumes in closed form, but those pinned below: `A ∩ B` over the bore in the world frame, in
-/// either order and at every height, where the grouping's rays all abstain (`NoClearRay`) and the
-/// tilted frame builds the same booleans, and results the mesher does not draw yet
-/// (`OverBudget`): `A ∪ B` beside the bore and `A − B` away from it, with `B` short of either of
-/// `A`'s caps — a vertex part way along the lateral's ruling edge, which a secant wall at
-/// `x = 0.5` leaves as well.
+/// volumes in closed form, and is drawn, but those pinned below: `A ∩ B` over the bore in the world
+/// frame, in either order and at every height, where the grouping's rays all abstain
+/// (`NoClearRay`) and the tilted frame builds the same booleans. `A ∪ B` beside the bore and
+/// `A − B` away from it, with `B` short of either of `A`'s caps, leave a vertex part way along the
+/// lateral's ruling edge, with no circle at its height — drawn too, in both frames.
 #[test]
 fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
     let below: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 0.0], [1.0, 0.0]];
     let away: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 0.5], [1.0, 0.5]];
     let over: &[[f64; 2]] = &[[-3.0, 0.0], [1.0, 0.0], [1.0, 0.5], [-3.0, 0.5]];
     let strip = 0.5 * 0.75f64.sqrt() + std::f64::consts::FRAC_PI_6;
-    let mut unmeshed: std::collections::BTreeMap<String, usize> = Default::default();
-    let all = every_six_drawn(
+    let all = every_six(
         half_bored_box,
         &[
             ("below, beside", below),
             ("above, away from the bore", away),
             ("above, over the bore", over),
         ],
-        |c, m, solids, v| match nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()) {
-            Err(nacre_tess::TessError::OverBudget) => {
-                let p = c.placement;
-                *unmeshed
-                    .entry(format!(
-                        "{} {:?} {:?} swapped={}",
-                        p.family, p.height, c.kind, c.swapped
-                    ))
-                    .or_default() += 1;
-            }
-            _ => drawn(c, m, solids, v),
-        },
     );
     assert_eq!(all.len(), 3 * 2 * 2 * 4, "the family");
     let a = 16.0 - std::f64::consts::PI;
@@ -625,23 +604,7 @@ fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
             })
         })
         .collect();
-    // Both frames and both vertex orders alike; `B` past both caps is drawn.
-    let want_unmeshed: std::collections::BTreeMap<String, usize> =
-        [Height::OnBase, Height::Inside, Height::PastTop]
-            .iter()
-            .flat_map(|h| {
-                [
-                    (format!("below, beside {h:?} Fuse swapped=false"), 4),
-                    (format!("below, beside {h:?} Fuse swapped=true"), 4),
-                    (
-                        format!("above, away from the bore {h:?} Cut swapped=false"),
-                        4,
-                    ),
-                ]
-            })
-            .collect();
     assert_eq!(refused, want_refused, "the refusals");
-    assert_eq!(unmeshed, want_unmeshed, "the meshes not drawn");
 }
 
 /// **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off

@@ -1100,8 +1100,8 @@ fn planar_chart(
 ///
 /// **`u` of a circle's point is the circle's place**, [`station`], not the point's own axial
 /// coordinate — so every arc is level in the chart, at the height the lattice lays its row
-/// ([`interior_nodes`]). Only a point on no circle — measured: none, over the lib suite and the
-/// census; a ruling broken at a vertex by another face's edge would be one — reads its own.
+/// ([`interior_nodes`]). A point on no circle stands part way along a ruling, where another face's
+/// edge breaks it; its `u` is [`ruling_break_place`], and the lattice lays a row there too.
 fn cylinder_chart(
     t: &Tessellation,
     model: &Model,
@@ -1122,6 +1122,7 @@ fn cylinder_chart(
     // the lattice lays its rows at, so a row point on an arc lies on the arc's chord exactly.
     let mut stations: Vec<f64> = Vec::new();
     let mut place: HashMap<Handle<TessVertex>, f64> = HashMap::new();
+    let mut circles: HashMap<Handle<nacre_topo::Surface>, f64> = HashMap::new();
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for he in &lp.half_edges {
             if let Curve::Circle(c) = model.edge_curve(he.edge) {
@@ -1129,6 +1130,9 @@ fn cylinder_chart(
                 stations.push(s);
                 for &h in &t.by_edge[&he.edge] {
                     place.insert(h, s);
+                }
+                for plane in model.edge(he.edge).surfaces {
+                    circles.insert(plane, s);
                 }
             }
         }
@@ -1140,10 +1144,13 @@ fn cylinder_chart(
         let (thetas, _) = unwrapped_thetas(t, cyl, &ring_handles);
         let (mut lo, mut hi) = (f64::MAX, f64::MIN);
         for (&i, &theta) in ring.iter().zip(&thetas) {
-            let u = place
-                .get(&handles[i])
-                .copied()
-                .unwrap_or_else(|| (t.vertices.get(handles[i]).pos - o).dot(w_dir));
+            let u = place.get(&handles[i]).copied().unwrap_or_else(|| {
+                let v = t.vertices.get(handles[i]);
+                let u = ruling_break_place(model, face, cyl, &circles, v)
+                    .unwrap_or_else(|| (v.pos - o).dot(w_dir));
+                stations.push(u);
+                u
+            });
             uv[i] = [u, r * theta];
             lo = lo.min(uv[i][1]);
             hi = hi.max(uv[i][1]);
@@ -1663,9 +1670,9 @@ fn joined_band(
 
 /// The axial place of `circle` on `cyl`: its centre, measured along the axis.
 ///
-/// **One spelling, three readers** — the band cut orders its points along the generator by it,
-/// the chart gives every point of a circle's polyline it as `u`, and the lattice lays its rows at
-/// it. Read from the curve, never from a point on it: every arc of one circle agrees on it bitwise
+/// **One spelling, four readers** — the band cut orders its points along the generator by it,
+/// the chart gives every point of a circle's polyline it as `u`, the lattice lays its rows at
+/// it, and a ruling's break stands at its plane's ([`ruling_break_place`]). Read from the curve, never from a point on it: every arc of one circle agrees on it bitwise
 /// (see [`interior_nodes`]), while a point's own axial coordinate carries its rounding — on a
 /// tilted axis an arc's samples sit a few ulps off their circle's place, and a lattice row computed
 /// one way next to a boundary computed the other was a sliver leaning off the lateral — up to 90°,
@@ -1674,12 +1681,64 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
     (circle.center() - cyl.axis().origin()).dot(cyl.axis().direction())
 }
 
+/// **Where a ruling broken part way stands along the axis** — the place of the plane across the
+/// axis that breaks it: the [`station`] of that plane's circle on the face where the face has one
+/// (`circles`, keyed by the circle edges' carriers — the stored curve, so bit for bit its points'
+/// `u`), else of the circle [`Model::derive_edge_curve`] derives for the cylinder and that plane.
+/// A plane along the axis has no circle on the face and derives a line, which two ends at this one
+/// vertex refuse (`Coincident`) — so only the plane across answers.
+///
+/// One number twice is the hazard: two breaks on one plane are one height, and on a tilted axis
+/// their own axial coordinates are one ulp apart — `1.0` and `0.9999999999999999` on the D-shaped
+/// cylinder of `a_ruling_broken_part_way_lays_a_row_at_its_vertex` turned 37° and 23°, two rows
+/// and 230 triangles leaning off the lateral. Read from the plane, both breaks and the plane's
+/// circle on the face are one `f64`.
+///
+/// `None` where the point is not a [`Vertex::Pierce`] of this face's cylinder (measured: never,
+/// over the workspace suite, the ignored sweep, the census and the kit) — the caller then reads the
+/// point's own coordinate and lays a row there too. A [`Vertex::CylinderPair`] on a ruling two
+/// cylinders share would be one; nothing mints it part way along that ruling, because `boolean`
+/// refuses a solid with such an edge.
+fn ruling_break_place(
+    model: &Model,
+    face: &Face,
+    cyl: &Cylinder,
+    circles: &HashMap<Handle<nacre_topo::Surface>, f64>,
+    v: &TessVertex,
+) -> Option<f64> {
+    let TessOrigin::OnVertex(vh) = v.origin else {
+        return None;
+    };
+    let Vertex::Pierce {
+        planes, cylinder, ..
+    } = *model.vertex(vh)
+    else {
+        return None;
+    };
+    if cylinder != face.surface {
+        return None;
+    }
+    planes.iter().find_map(|&plane| {
+        circles.get(&plane).copied().or_else(|| {
+            match model
+                .derive_edge_curve([cylinder, plane], [vh, vh], |_| nacre_topo::EdgeGiven::NONE)
+            {
+                Ok(Curve::Circle(c)) => Some(station(cyl, &c)),
+                _ => None,
+            }
+        })
+    })
+}
+
 /// **The points a cylindrical face's boundary does not supply, and the mesh needs.**
 ///
 /// A band's rims sample θ finely, and every diagonal the sweep draws between them lands on a
-/// closely-sampled arc, so the interior is fine for free. It stops being free where a face's
-/// boundary leaves part of its θ range without arcs: the sweep then has only chords across that
-/// stretch (measured on a lateral merged across erased seams: chords spanning half a turn).
+/// closely-sampled arc, so the interior is fine for free. It stops being free in two places. Where
+/// a face's boundary leaves part of its θ range without arcs, the sweep has only chords across that
+/// stretch (measured on a lateral merged across erased seams: chords spanning half a turn). And where
+/// a ruling breaks part way between the rims, the break is a boundary point with no arc at its
+/// height, and an interior edge from it leaves the angular budget though the rims cover every θ
+/// (`OverBudget`, measured on a half bore with a box beside it).
 ///
 /// So the chart — the layer that knows the surface — supplies them, on a **lattice with no free
 /// parameter in it**:
@@ -1690,14 +1749,16 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
 ///   `v` range, because a chart's θ is *unwrapped* — a hole rides whole turns from the outer ring,
 ///   and a single turn's worth of lattice would miss it entirely.
 /// * **along** (`u`): each boundary circle's place, [`station`] — the very number the chart gave
-///   that circle's points. Read from the curve, never from the sampled points: one rim's points
+///   that circle's points — and each ruling's break, at [`ruling_break_place`]. Read from the
+///   curve, never from the sampled points: one rim's points
 ///   agree on that coordinate mathematically and differ by ulps in `f64`, so deduplicating *those*
 ///   would turn one rim into 181 stations.
 ///   Two arcs of one circle share a centre **bitwise**, and that is a guarantee rather than luck:
 ///   [`Model::push_edge`] derives the curve from the **canonicalized carrier pair alone** — the
 ///   circle arm never reads the endpoints — so two edges cut from the same circle by the same two
-///   surfaces are handed identical inputs. The station count is therefore the number of planes the
-///   face actually crosses, which is why `dedup` may compare `f64` with `==` here.
+///   surfaces are handed identical inputs, and a break reads the same derivation for the plane that
+///   breaks it. The station count is therefore the number of planes across the axis the face's
+///   boundary meets, which is why `dedup` may compare `f64` with `==` here.
 ///
 /// **Where the boundary already stands, no lattice point enters the mesh** — a row lies at an
 /// arc's height on purpose, so part of every row is boundary, and a point placed there a few ulps
@@ -1714,8 +1775,8 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
 ///   (a ruling, or a band's cut generator; the arcs are level) is withheld.
 ///
 /// **The lowest and highest stations are not laid at all** — they are the face's own two rims,
-/// where every row point lies on a rim's chord or outside the face (a ruling's ends lie on arcs, so
-/// the arcs bound the `u` range). Laid anyway, an ordinary band is offered 358 points and the sweep
+/// where every row point lies on a rim's chord or outside the face (a ruling runs from arc to arc,
+/// any break between, so the arcs bound the `u` range). Laid anyway, an ordinary band is offered 358 points and the sweep
 /// drops every one (measured): the mesh is the same, the work is not.
 fn interior_nodes(
     cfg: &TessConfig,
@@ -1767,7 +1828,7 @@ fn interior_nodes(
 /// in units of the lattice's own step — see [`interior_nodes`].
 ///
 /// **Not a knob**: over the lib suite's meshes and the census, every point withheld stands
-/// within 2.8e-13 steps of a ruling and every point kept at least 0.095 steps from one, and the
+/// within 3.6e-13 steps of a ruling and every point kept at least 0.095 steps from one, and the
 /// census meshes are the same at `1e-12`, `1e-9`, `1e-6` and `1e-3`; at `1e-1` the kept 0.095
 /// goes too and a mesh fails its budget. `1e-6` sits in the middle of that gap.
 const ON_RULING: f64 = 1e-6;

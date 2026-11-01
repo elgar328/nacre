@@ -1380,6 +1380,136 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
     }
 }
 
+/// `s` turned by `deg` degrees about the world `axis` through the origin.
+fn rotate_solid(
+    m: &mut Model,
+    s: Handle<Solid>,
+    axis: nacre_exact::Axis,
+    deg: i128,
+) -> Handle<Solid> {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
+    use nacre_ops::{OpOutput, Operation, apply};
+    let isometry = Isometry::rotation(Rotation {
+        axis,
+        pivot: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
+    });
+    match apply(m, &Operation::Transform { solid: s, isometry }).expect("a turn") {
+        OpOutput::Transform { solid } => solid,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// **A ruling broken part way lays a lattice row at its break — one row, however many breaks.**
+///
+/// A D-shaped cylinder (its flat at `x = 0.5`) with a box fused on the flat's plane up to `z = 1`:
+/// the lateral's ruling at 60° changes neighbour there, so its boundary has a point on no circle,
+/// and its only circles are its two rims — the lattice's lowest and highest stations, which it does
+/// not lay. Without a row at the break the chart offers nothing, and an interior edge from the
+/// break leaves the angular budget (`OverBudget`). Then the box is widened to break the ruling at
+/// −60° too, and a notch is cut whose floor `z = 1` crosses the lateral in an arc: two breaks on one
+/// plane, and a break and that plane's arc, are one height, read from that plane
+/// ([`ruling_break_place`]) — each break's own axial coordinate is one ulp off the other's at 37°
+/// and 23°, two rows.
+///
+/// Turned, the mesh is given as many lattice points; its triangle count is not compared, because
+/// the edge sampler cuts one 240° arc into 121 chords flat and 120 turned.
+#[test]
+fn a_ruling_broken_part_way_lays_a_row_at_its_vertex() {
+    use nacre_exact::Axis;
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let cfg = TessConfig::default();
+    for (name, y_min, notched) in [
+        ("one ruling", 0.0, false),
+        ("both rulings", -2.0, false),
+        ("a ruling and an arc", 0.0, true),
+    ] {
+        let mut minted = Vec::new();
+        for tilted in [false, true] {
+            let mut m = Model::new();
+            let z = Vector3::from_array([0.0, 0.0, 1.0]);
+            let seam = Vector3::from_array([-1.0, 0.0, 0.0]);
+            let c = fixtures::cylinder_with_seam(&mut m, Point3::origin(), z, seam, 1.0, 2.0).solid;
+            let flat = fixtures::cuboid(
+                &mut m,
+                Point3::from_array([0.5, -3.0, -1.0]),
+                Point3::from_array([3.0, 3.0, 3.0]),
+            );
+            m.rebuild_adjacency();
+            let mut d = boolean(&mut m, BoolKind::Cut, c, flat).expect("the D")[0];
+            m.rebuild_adjacency();
+            if notched {
+                let notch = fixtures::cuboid(
+                    &mut m,
+                    Point3::from_array([-3.0, -3.0, 1.0]),
+                    Point3::from_array([-0.5, 3.0, 3.0]),
+                );
+                m.rebuild_adjacency();
+                d = boolean(&mut m, BoolKind::Cut, d, notch).expect("the notch")[0];
+                m.rebuild_adjacency();
+            }
+            let b = fixtures::cuboid(
+                &mut m,
+                Point3::from_array([0.5, y_min, -1.0]),
+                Point3::from_array([3.0, 2.0, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let mut s = boolean(&mut m, BoolKind::Fuse, d, b).expect("the fuse")[0];
+            if tilted {
+                s = rotate_solid(&mut m, s, Axis::X, 37);
+                s = rotate_solid(&mut m, s, Axis::Y, 23);
+            }
+            m.rebuild_adjacency();
+            let t =
+                tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{name} tilted={tilted}: {e:?}"));
+            let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
+            assert!(leaning.is_empty(), "{name} tilted={tilted}: {leaning:?}");
+            let lateral = m
+                .shell(m.solid(s).outer)
+                .faces
+                .iter()
+                .copied()
+                .find(|&f| {
+                    matches!(
+                        m.surface(m.face(f).surface),
+                        nacre_topo::Surface::Cylinder { .. }
+                    )
+                })
+                .expect("one lateral");
+            let chart = chart_of(&t, &m, &cfg, lateral);
+            // The rims are the extreme `u`; every boundary point between them is a break or on the
+            // notch's arc.
+            let (lo, hi) = chart.uv.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+                (lo.min(p[0]), hi.max(p[0]))
+            });
+            let mut breaks: Vec<f64> = chart
+                .uv
+                .iter()
+                .map(|p| p[0])
+                .filter(|&u| lo < u && u < hi)
+                .collect();
+            breaks.sort_by(f64::total_cmp);
+            breaks.dedup();
+            assert_eq!(breaks.len(), 1, "{name} tilted={tilted}: breaks {breaks:?}");
+            assert!(!chart.interior.is_empty(), "{name} tilted={tilted}");
+            assert!(
+                chart.interior.iter().all(|p| p[0] == breaks[0]),
+                "{name} tilted={tilted}: a lattice point off the break's row"
+            );
+            minted.push(
+                t.vertices
+                    .iter()
+                    .filter(|(_, v)| matches!(v.origin, TessOrigin::OnFace { .. }))
+                    .count(),
+            );
+        }
+        assert_eq!(
+            minted[0], minted[1],
+            "{name}: turning it changed the lattice"
+        );
+    }
+}
+
 /// **A lattice point on the boundary never enters the mesh — so no lateral triangle leans off
 /// its surface.**
 ///
@@ -1400,20 +1530,9 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
 ///   because the census is a gate-only binary and this runs with every `cargo test`.
 #[test]
 fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
-    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
-    use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean, fixtures};
+    use nacre_exact::Axis;
+    use nacre_ops::{BoolKind, boolean, fixtures};
     let cfg = TessConfig::default();
-    let turn = |m: &mut Model, s: Handle<Solid>, axis: Axis, deg: i128| -> Handle<Solid> {
-        let isometry = Isometry::rotation(Rotation {
-            axis,
-            pivot: [Rat::from_int(0); 3],
-            angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
-        });
-        match apply(m, &Operation::Transform { solid: s, isometry }).expect("a turn") {
-            OpOutput::Transform { solid } => solid,
-            other => panic!("{other:?}"),
-        }
-    };
     // (lateral triangles, after checking that none leans)
     let lateral_mesh = |m: &Model, name: &str| -> usize {
         let t = tessellate(m, &cfg).expect("a mesh");
@@ -1451,8 +1570,8 @@ fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
         let untilted = lateral_mesh(&m, name);
         let mut m = Model::new();
         let s = build(&mut m);
-        let s = turn(&mut m, s, Axis::X, 37);
-        turn(&mut m, s, Axis::Y, 23);
+        let s = rotate_solid(&mut m, s, Axis::X, 37);
+        rotate_solid(&mut m, s, Axis::Y, 23);
         m.rebuild_adjacency();
         assert_eq!(
             lateral_mesh(&m, name),
