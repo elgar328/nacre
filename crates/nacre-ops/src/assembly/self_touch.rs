@@ -300,13 +300,14 @@ pub(super) fn self_touch_reject(
         // own cap there (the planar arm's touch), or the face lies on a wall tangent along the
         // ruling (the tangency verdict), or it is slanted to the axis (`ObliqueCylinderCut`), or the
         // face's bound is another cylinder's arc (`CylinderPairContact`) — the last two lean on the
-        // gate refusing first. Two gaps, not abstentions: a vertex whose name is a pierce name —
-        // a point the alias table knows on a cylinder's surface is represented by one
-        // (`Aliases::rep_rank`), a three-plane corner on it included — is asked by no arm, and a
-        // lateral face touched at a single point is not asked. Slanted planes reach both and the
-        // gate refuses most of them first; planes along and across the axis reach both too, at
-        // a rim or on the surface beyond a lateral, and what answers there is whatever guard
-        // happens to fire, or nothing (the todo item names the measured rows).
+        // gate refusing first. What is not asked: a lateral face touched at a single point — a
+        // gap, not an abstention; and a vertex the point arm's reading cannot place, whose
+        // abstention is dropped — a pierce point with no rational coordinates against a mixed
+        // ring, or against a polygon when the face's plane is not of its pair (no ray along the
+        // pair's line lies on it), and a point the mixed ring's coordinate walk abstains on. Slanted planes reach both and
+        // the gate refuses most of them first; planes along and across the axis reach both too, at
+        // a rim, and what answers there is whatever guard happens to fire, or nothing (the todo
+        // item names the measured rows).
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -457,15 +458,16 @@ pub(super) fn self_touch_reject(
         // name the open shell further on) or neither (the counts close and nothing else sees it).
         // The cost: a producer's T-junction — a node one face lists and its neighbour across the
         // edge does not — would read here as a self-touch, `Impossible` where `SuspectedDefect` is
-        // the truth; the suite holds no such vertex (measured).
+        // the truth; the suite holds no such vertex, three-plane or pierce-named (measured).
         //
-        // A vertex whose name is a pierce name is not asked — the gap the arms' note above names.
+        // Every vertex is asked, whatever kind its name is: a point the alias table knows on a
+        // cylinder's surface — a three-plane corner there included — is represented by its pierce
+        // name (`Aliases::rep_rank`), and filtering on the name's kind let such a corner pressing a
+        // face of its own body through. The reading is `named_point_in_face`'s; what it cannot read
+        // it abstains on, and an abstention here is dropped.
         visits.sort_unstable();
         for at in visits.chunk_by(|x, y| x.0 == y.0) {
             let n = at[0].0;
-            let Some(name) = combinatorics::three_plane_name(n) else {
-                continue;
-            };
             let mine = |j: usize| at.binary_search(&(n, j)).is_ok();
             let (nl, nh) = reach_of(n);
             for &j in near_buf.of(&grid, &boxes, nl, nh) {
@@ -487,7 +489,7 @@ pub(super) fn self_touch_reject(
                         }
                     }
                 }
-                match combinatorics::named_point_in_face(jd, cyls, q, name, &read[&j]) {
+                match combinatorics::named_point_in_face(jd, cyls, q, n, &read[&j]) {
                     Ok(Some(RingSide::Inside | RingSide::OnBoundary)) => {
                         found_at(Touch::Point(n));
                         break;

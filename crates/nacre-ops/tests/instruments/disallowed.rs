@@ -4,7 +4,7 @@
 //! write doors (product code reaches them through `nacre-ops`' realization funnel alone), rayon's
 //! parallel entry points (`par.rs` alone), and the three ring predicates a shared rule sits above
 //! (`point_in_ring` under `cell_inside`'s retry, `side_of` under `ring_against_plane`'s walk,
-//! `point_in_mixed_ring` under `rational_point_in_ring`'s order of causes) — and
+//! `point_in_mixed_ring` under `rational_ring_side`'s order of causes) — and
 //! the pre-commit hook's `clippy -D warnings` refuses one anywhere else. An exemption is one
 //! attribute (`allow`, `expect`, a `cfg_attr` around either), so a caller who meets the lint could
 //! add one and be through. This makes that a second, visible step: every exemption in the
@@ -100,7 +100,7 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "nacre-ops/src/combinatorics/in_faces.rs",
         2,
         "`side_of`: a point question in `point_in_component` (does the query lie on the face's \
-         plane); `point_in_mixed_ring`: `rational_point_in_ring`'s mixed arm, the one coordinate \
+         plane); `point_in_mixed_ring`: `rational_ring_side`'s mixed arm, the one coordinate \
          reading of a ring",
     ),
     (

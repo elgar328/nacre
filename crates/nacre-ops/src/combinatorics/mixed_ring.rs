@@ -2,7 +2,7 @@ use super::*;
 /// A ring the rational chart road cannot name: a pierce corner (no rational coordinates) or an
 /// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
 /// step by step in quadratic radicals; the one coordinate reading of a ring
-/// ([`rational_point_in_ring`]) forks on this.
+/// ([`rational_ring_side`]) forks on this.
 pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
     ring.iter()
         .any(|e| matches!(e.carrier, Carrier::Arc(_)) || pierce_name(e.node).is_some())
@@ -154,7 +154,8 @@ impl ChartCorner {
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
 /// across the ray, at an arc root inside the arc's closed span), a tangent ray, a horizontal
 /// tangent at an arc end the root lands on, checked-`Rat` overflow — and its one reader takes it as
-/// one: the coordinate reading of a ring ([`rational_point_in_ring`]) as [`Said::Abstain`]. A root
+/// one: the coordinate reading of a ring ([`rational_ring_side`]) as what it cannot say,
+/// [`Said::Abstain`]. A root
 /// on the seam is none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
 /// **A radical mismatch is not among them**, and nothing here can reach one: every value two

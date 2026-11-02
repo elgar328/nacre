@@ -1078,3 +1078,124 @@ fn a_segment_meets_a_cap_disk_across_its_chord_or_at_its_tangent_point() {
         }
     }
 }
+
+/// **A vertex whose name is a pierce name is read against a plane face by what it carries.** The
+/// cylinder of radius 1 about the `z` axis, and an L-shaped body whose planes are `x = 0.5, 2, 3`,
+/// `y = ±2`, `z = 1, 2, 3`: the pierce name `{z = 3, x = 0.5, Lo}` is the point `(0.5, −√0.75, 3)`,
+/// with no rational coordinates.
+/// - Against the cylinder's own disk on `z = 3` it is on the circle, by its name.
+/// - Against the square `x ∈ [0.5, 2]` on `z = 3` it is on the side `x = 0.5`: the ray cast from it
+///   along its pair's line starts on the ring, and that is the boundary.
+/// - Against the square `x ∈ [2, 3]` on `z = 3` the same ray crosses nothing: outside.
+#[test]
+fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_ray() {
+    use crate::draft::{Bound, LocalFace, Ring};
+    use nacre_exact::Rat;
+    use nacre_geom::intersect::RingSide;
+    use nacre_math::{Point3, Vector3};
+    let ri = Rat::from_int;
+    let mut m = Model::new();
+    let boss = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        3.0,
+    );
+    let surf = m.face(boss.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def: def.clone(),
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let mut m = Model::new();
+    let low = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.5, -2.0, 1.0]),
+        Point3::from_array([3.0, 2.0, 2.0]),
+    );
+    let high = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([2.0, -2.0, 1.0]),
+        Point3::from_array([3.0, 2.0, 3.0]),
+    );
+    let ell = crate::boolean(&mut m, crate::BoolKind::Fuse, low, high).expect("the L")[0];
+    m.rebuild_adjacency();
+    let rows = crate::planes::collect_planes(&m, ell).expect("the L's face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    // The class whose plane is `x_k = d`.
+    let class = |k: usize, d: f64| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                (0..3).all(|i| (i == k) != (w[i] == ri(0)))
+                    && Rat::try_from_f64(d)
+                        .and_then(|d| w[k].checked_mul(d))
+                        .is_some_and(|wd| wd.checked_add(w[3]) == Some(ri(0)))
+            })
+            .expect("the L holds that plane")
+    };
+    let (top, x05, x2, x3, ylo, yhi) = (
+        class(2, 3.0),
+        class(0, 0.5),
+        class(0, 2.0),
+        class(0, 3.0),
+        class(1, -2.0),
+        class(1, 2.0),
+    );
+    let n = NodeId::pierce(top, x05, 0, crate::combinatorics::QuadRoot::Lo);
+    assert!(
+        crate::combinatorics::pierce_coords_rat(&jd, &cyls, n).is_none(),
+        "the point has no rational coordinates"
+    );
+    let disk = CompFace {
+        surf: CompSurf::Plane(top),
+        outer: BoundEdges::Circle(Box::new(def.clone())),
+        inner: Vec::new(),
+    };
+    // The square `x ∈ [xa, xb]`, `y ∈ [−2, 2]` on `z = 3`, counter-clockwise about `+z`.
+    let square = |xa: usize, xb: usize| {
+        let c = |x: usize, y: usize| NodeId::three_planes(Canon3::three([top, x, y]));
+        let face = LocalFace {
+            surf: crate::planes::ClassIx::Plane(top),
+            outer: Bound::Ring(Ring::new(
+                vec![c(xa, ylo), c(xb, ylo), c(xb, yhi), c(xa, yhi)],
+                vec![
+                    Wall::Plane(ylo),
+                    Wall::Plane(xb),
+                    Wall::Plane(yhi),
+                    Wall::Plane(xa),
+                ],
+            )),
+            inner: Vec::new(),
+            flip: false,
+        };
+        crate::assembly::comp_face(&jd, &cyls, &face).expect("a component face")
+    };
+    for (what, face, want) in [
+        ("the cylinder's own disk", disk, RingSide::OnBoundary),
+        (
+            "the square whose side holds it",
+            square(x05, x2),
+            RingSide::OnBoundary,
+        ),
+        ("the square beside it", square(x2, x3), RingSide::Outside),
+    ] {
+        assert_eq!(
+            named_point_in_face(&jd, &cyls, top, n, &face).expect("decided"),
+            Some(want),
+            "{what}"
+        );
+    }
+}

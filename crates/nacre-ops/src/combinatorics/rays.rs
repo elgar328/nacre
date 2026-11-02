@@ -166,8 +166,8 @@ pub(crate) fn every_ray(
 /// bound — a circle, or an arc at a point strictly inside it ([`arc_touch`]) — it meets the face's
 /// closed region at a point and leaves on the side it came from. A touch strictly inside `(u, v)`
 /// is a point of the edge on the face that no vertex names, and answers `true` whatever the
-/// alternation says; a touch at `u` or `v` is that vertex's — on a circle, so its name is a pierce
-/// name, which the self-touch point arm does not ask (the gap `self_touch_reject` names).
+/// alternation says; a touch at `u` or `v` is that vertex's, and the self-touch point arm asks it
+/// (`named_point_in_face` — on a circle, its name is a pierce name, read by what it carries).
 ///
 /// **Holes come along for free.** All bounds go into one bag: the bounds of a face are disjoint, so
 /// even-odd over the union *is* the material region (a point inside a hole has crossed twice) — the

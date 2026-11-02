@@ -329,7 +329,7 @@ fn outside_ring_box(
 /// silent names its corners or the point — the one question intervals answer: outside the ring's
 /// box ([`outside_ring_box`]) is [`Said::Out`]; anything else is the gate's undecidedness,
 /// [`Said::Silent`]. Names read it through [`silent_name_by_box`], coordinates through the one
-/// coordinate reading of a ring ([`rational_point_in_ring`]).
+/// coordinate reading of a ring ([`rational_ring_side`]).
 pub(crate) fn ring_box_says(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -474,11 +474,12 @@ pub(crate) fn pierce_point(
 /// for a root [`nacre_exact::quad::QuadVal::as_rat`] can state (a wall through or perpendicular
 /// to the axis, a tangent wall's double root); `None` for any other corner or name.
 ///
-/// A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a pierce node
-/// is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must stay so.
-/// This answers a different question — "is there a rational point *here* to cast from?" — and is
-/// total over its input: the corners it cannot state simply do not join the probe list, the way
-/// [`edge_interior_points`] abstains per edge. A
+/// A **supply of rational points**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a
+/// pierce node is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must
+/// stay so. This answers a different question — "is there a rational point *here*?" — and is total
+/// over its input: the witness supplies leave a corner it cannot state off their probe lists, the way
+/// [`edge_interior_points`] abstains per edge, and the named reading of a vertex
+/// ([`named_point_in_face`]) reads that point where it has one and another road where it has not. A
 /// half-cylinder prism's cap has two corners, both pierce, both rational, and no other point.
 pub(crate) fn pierce_coords_rat(
     jd: &Judge<'_, WorkingPlane>,

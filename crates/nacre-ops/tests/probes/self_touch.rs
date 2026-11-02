@@ -1385,3 +1385,103 @@ fn a_body_touching_its_own_cap_rim_at_a_point_is_refused() {
         }
     }
 }
+
+/// **A body whose vertex on a cylinder's surface presses a face of its own is refused** — the point
+/// arm asks every vertex, whatever kind its name is.
+///
+/// A plate carries a boss of radius 5 up to 3 above it, and a post on the plate carries a slab
+/// whose underside is the plane `z = 10`. A pyramid stands on a column of its own on the plate, its
+/// apex up against the slab's underside: on the boss's cylinder's surface above the boss at
+/// `(3, 4)` or `(−3, 4)`, where the vertex is represented by its pierce name, or off it at
+/// `(3.25, 4)`, where it keeps its three-plane name. (Every coordinate the fixture adds is exact in
+/// `f64`: a datum offset off the shortest decimal is a plane with a wide name.) The body is joined through the plate, so its
+/// surface touches itself at the apex either way. Lowered 0.5, each is one body. In either operand
+/// order.
+#[test]
+fn a_body_whose_vertex_on_a_cylinder_surface_touches_its_own_face_is_refused() {
+    let rect = |x0: f64, y0: f64, x1: f64, y1: f64| [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    for (ax, ay) in [(3.0, 4.0), (-3.0, 4.0), (3.25, 4.0)] {
+        for drop in [0.0, 0.5] {
+            for swapped in [false, true] {
+                let at = format!("apex at ({ax}, {ay}), dropped {drop}, swapped = {swapped}");
+                let mut m = Model::new();
+                let world = SketchFrame::world(&m, Axis::Z);
+                let floor = offset_of(&mut m, world, -2.0);
+                let plate = prism_on(&mut m, floor, &rect(-10.0, -10.0, 12.0, 12.0), 2.0);
+                let disk = nacre_ops::from_paths(vec![
+                    nacre_ops::Ring2d::circle(Point2::from_array([0.0, 0.0]), 5.0)
+                        .expect("a circle"),
+                ])
+                .expect("a disk")
+                .remove(0);
+                let boss = extrude_on(&mut m, world, disk, 3.0);
+                let mut a = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
+                m.rebuild_adjacency();
+                let level = offset_of(&mut m, world, 10.0);
+                let slab = prism_on(&mut m, level, &rect(-6.0, -2.0, 8.0, 8.0), 1.0);
+                let post = prism_on(&mut m, world, &rect(7.0, 7.0, 8.0, 8.0), 10.0);
+                let slab = boolean(&mut m, BoolKind::Fuse, slab, post).expect("the slab");
+                assert_eq!(slab.len(), 1, "{at}: the slab on its post is one body");
+                m.rebuild_adjacency();
+                a = boolean(&mut m, BoolKind::Fuse, a, slab[0]).expect("the slab")[0];
+                m.rebuild_adjacency();
+                // The pyramid: two wedges' common part, apex `(ax, ay, 10 − drop)`, base 3 below.
+                let (top, bot) = (10.0 - drop, 7.0 - drop);
+                let yz = frame_on(&mut m, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+                let at_x = offset_of(&mut m, yz, ax - 3.5);
+                let along_x = prism_on(
+                    &mut m,
+                    at_x,
+                    &[[ay, top], [ay - 2.0, bot], [ay + 2.0, bot]],
+                    7.0,
+                );
+                // This datum's canonical frame reads the sketch as `x = −s`, `z = t`.
+                let zx = frame_on(&mut m, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+                let at_y = offset_of(&mut m, zx, ay - 3.5);
+                let along_y = prism_on(
+                    &mut m,
+                    at_y,
+                    &[[-ax, top], [-(ax + 2.0), bot], [-(ax - 2.0), bot]],
+                    7.0,
+                );
+                let pyramid =
+                    boolean(&mut m, BoolKind::Common, along_x, along_y).expect("the pyramid");
+                assert_eq!(pyramid.len(), 1, "{at}: one pyramid");
+                m.rebuild_adjacency();
+                let column = prism_on(&mut m, world, &rect(ax - 1.0, ay + 1.0, ax, ay + 2.0), bot);
+                let b = boolean(&mut m, BoolKind::Fuse, pyramid[0], column).expect("the column");
+                assert_eq!(b.len(), 1, "{at}: the pyramid on its column is one body");
+                let b = b[0];
+                m.rebuild_adjacency();
+                let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
+                let want = vol(&m, a) + vol(&m, b);
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                match (drop == 0.0, boolean(&mut m, BoolKind::Fuse, x, y)) {
+                    (
+                        true,
+                        Err(BoolError::Rejected {
+                            reason: RejectReason::SelfTouchingResult,
+                            at: Some(nacre_ops::RejectWhere::Point(p)),
+                        }),
+                    ) => {
+                        let [x, y, z] = p.as_array();
+                        assert!(
+                            (x - ax).abs() < 1e-9
+                                && (y - ay).abs() < 1e-9
+                                && (z - 10.0).abs() < 1e-9,
+                            "{at}: witness {p:?}"
+                        );
+                    }
+                    (false, Ok(solids)) => {
+                        m.rebuild_adjacency();
+                        assert_eq!(solids.len(), 1, "{at}: one body");
+                        assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                        let got: f64 = solids.iter().map(|&s| vol(&m, s)).sum();
+                        assert!((got - want).abs() < 1e-6, "{at}: volume {got}, want {want}");
+                    }
+                    (_, other) => panic!("{at}: {other:?}"),
+                }
+            }
+        }
+    }
+}

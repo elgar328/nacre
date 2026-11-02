@@ -201,8 +201,9 @@ fn ray_misses_face(
 
 /// **Where `p` is against this circle** — inside its disk, outside, or on the circle.
 ///
-/// It takes **coordinates**, so both roads ask it: the named probe realizes its three-plane
-/// crossing first, the coordinate road already has one. The rule must not be written twice.
+/// It takes **coordinates**, so both roads ask it: the named reading ([`named_point_in_disk`]) reads
+/// the name's rational point first, the coordinate road already has one. The rule must not be
+/// written twice.
 ///
 /// The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
@@ -214,18 +215,47 @@ pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::Cylinde
     }
 }
 
-/// **Is the rational point `p` on class `wc` inside this ring?** — the one exact reading of a
-/// coordinate against a ring. The 2-D coordinate witness (`nesting`) asks it of a cell, the one
-/// coordinate reading of a face ([`rational_point_in_face`]) of each of the face's rings, and the
-/// named road ([`named_point_in_face`]) of a mixed ring at the name's rational coordinates.
+/// **What the rational point `p` on class `wc` says of this ring as a witness** — [`rational_ring_side`]
+/// read as one witness reads it: `In` or `Out`; a point on the ring cannot rank itself and
+/// [`Said::Abstain`]s; what keeps the reading from saying is said as it said it. The 2-D coordinate
+/// witness (`nesting`) asks it of a cell, the one coordinate reading of a face
+/// ([`rational_point_in_face`]) of each of the face's rings, and the named reading
+/// ([`named_point_in_face`]) of a mixed ring at a three-plane name's rational coordinates.
+pub(crate) fn rational_point_in_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    p: &[nacre_exact::Rat; 3],
+    ring: &[RingEdge],
+) -> Result<Said, BoolError> {
+    Ok(match rational_ring_side(jd, cyls, wc, p, ring)? {
+        RingRead::At(RingSide::Inside) => Said::In,
+        RingRead::At(RingSide::Outside) => Said::Out,
+        RingRead::At(RingSide::OnBoundary) => Said::Abstain,
+        RingRead::Cannot(said) => said,
+    })
+}
+
+/// What [`rational_ring_side`] reads of a point against a ring.
+pub(crate) enum RingRead {
+    /// Where the point is.
+    At(RingSide),
+    /// Why the reading could not say, as one witness would say it.
+    Cannot(Said),
+}
+
+/// **Where the rational point `p` on class `wc` is against this ring** — the one exact reading of a
+/// coordinate against a ring: inside, outside or on it ([`RingRead::At`]), or what keeps it from
+/// saying ([`RingRead::Cannot`]). The one witness reading ([`rational_point_in_ring`]) and the named
+/// reading of a vertex whose name is a pierce name ([`named_point_in_face`]) both ask it.
 ///
-/// The answer is what one witness says ([`Said`]): `In` or `Out`; [`Said::Abstain`] where this
-/// point cannot rank itself — on the ring, or where the mixed walk abstains; [`Said::Silent`] for a
-/// ring whose corners name a class the gate passed silent, when the ring's box does not show the
-/// point outside; [`Said::Unformed`] for a value that could not be formed — a class with no rational
-/// description, or a corner or the chart past `Rat`. It never declines: a coordinate reads every
-/// ring kind. `Err` is a producer defect, a straight ring of fewer than three edges.
-///
+/// It says [`RingRead::Cannot`] with [`Said::Abstain`] where the mixed walk abstains (a point on a
+/// mixed ring among its causes — that walk does not tell it from a graze), with [`Said::Silent`]
+/// for a ring whose corners name a class the gate passed silent, when the ring's box does not show
+/// the point outside, and with [`Said::Unformed`] for a value that could not be formed — a class
+/// with no rational description, or a corner or the chart past `Rat`. It never declines: a
+/// coordinate reads every ring kind. `Err` is a producer defect, a straight ring of fewer than three
+/// edges.
 /// **The order is the rule; the cause that knows itself speaks first.**
 /// 1. A ring a silent class names has no rational corners, for the gate's own reason, so its box
 ///    answers ([`ring_box_says`]) before anything reads a corner.
@@ -241,36 +271,40 @@ pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::Cylinde
 /// 4. A ring with a pierce corner or an arc step takes [`point_in_mixed_ring`].
 /// 5. Every other ring is a polygon of rational corners in the class's chart
 ///    ([`nacre_geom::intersect::point_in_ring_2d_rat`] — half-open in y, so a corner on the ray is
-///    decided rather than abstained on).
-pub(crate) fn rational_point_in_ring(
+///    decided rather than abstained on), and a point on the polygon is on it.
+pub(crate) fn rational_ring_side(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     p: &[nacre_exact::Rat; 3],
     ring: &[RingEdge],
-) -> Result<Said, BoolError> {
+) -> Result<RingRead, BoolError> {
     if names_a_silent_class(cyls, ring) {
         let prec = jd.standard.prec;
         let ph = p.map(|v| nacre_exact::HpBounded::of_rat(v, prec));
-        return Ok(ring_box_says(jd, cyls, wc, &ph, ring));
+        return Ok(match ring_box_says(jd, cyls, wc, &ph, ring) {
+            Said::In => RingRead::At(RingSide::Inside),
+            Said::Out => RingRead::At(RingSide::Outside),
+            said => RingRead::Cannot(said),
+        });
     }
     let mixed = ring_is_mixed(ring);
     if !mixed && ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
     let Some(coeffs) = jd.world_rat(wc) else {
-        return Ok(Said::Unformed);
+        return Ok(RingRead::Cannot(Said::Unformed));
     };
     let Some((chart, p2)) = Chart2dRat::of_normal(&[coeffs[0], coeffs[1], coeffs[2]])
         .and_then(|chart| chart.project(p).map(|p2| (chart, p2)))
     else {
-        return Ok(Said::Unformed);
+        return Ok(RingRead::Cannot(Said::Unformed));
     };
     if ring
         .iter()
         .any(|e| three_plane_name(e.node).is_some() && node_coords_rat(jd, e.node).is_none())
     {
-        return Ok(Said::Unformed);
+        return Ok(RingRead::Cannot(Said::Unformed));
     }
     if mixed {
         #[expect(
@@ -279,22 +313,18 @@ pub(crate) fn rational_point_in_ring(
         )]
         let inside = point_in_mixed_ring(jd, cyls, &coeffs, p, ring);
         return Ok(match inside {
-            Some(true) => Said::In,
-            Some(false) => Said::Out,
-            None => Said::Abstain,
+            Some(true) => RingRead::At(RingSide::Inside),
+            Some(false) => RingRead::At(RingSide::Outside),
+            None => RingRead::Cannot(Said::Abstain),
         });
     }
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let Some(ring2) = chart.ring(jd, &nodes) else {
-        return Ok(Said::Unformed);
+        return Ok(RingRead::Cannot(Said::Unformed));
     };
-    Ok(
-        match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
-            RingSide::Inside => Said::In,
-            RingSide::Outside => Said::Out,
-            RingSide::OnBoundary => Said::Abstain,
-        },
-    )
+    Ok(RingRead::At(nacre_geom::intersect::point_in_ring_2d_rat(
+        p2, &ring2,
+    )))
 }
 
 /// **Where the rational point `x` on class `q` is against the plane face `f`** — the one coordinate
@@ -338,28 +368,39 @@ pub(crate) fn rational_point_in_face(
     })
 }
 
-/// **Where the point named `t` is against the disk `def` bounds**, on a plane through both.
+/// **Where the point named `n` is against the disk `def` bounds**, on a plane through both — the
+/// caller has shown the point on the disk's plane.
 ///
 /// **On a class the gate proved this cylinder beside, outside — exactly.** Every lateral face
 /// of the cylinder lies strictly on one side of that class's plane, so its rims and the disks
 /// they bound do too, and the point, on the plane, is off the disk whatever else names it. This
 /// needs nothing of where the point came from, which is why every reader of a named point takes
-/// it. Otherwise the point's rational coordinates answer by their radial side, and with none the
-/// answer is unknown.
+/// it. **A pierce name of the disk's own cylinder is on the circle, by its name**: it lies on that
+/// cylinder and on the disk's plane, and their meet is the circle. Otherwise the point's rational
+/// coordinates answer by their radial side — a three-plane name's meet, or a pierce name's when its
+/// root is rational ([`pierce_coords_rat`]) — and with none the answer is unknown.
 pub(crate) fn named_point_in_disk(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    t: [usize; 3],
+    n: NodeId,
     def: &nacre_topo::CylinderDef,
 ) -> Option<RingSide> {
+    let planes = name_planes(n);
     if cyls
         .iter()
         .find(|cy| cy.def == *def)
-        .is_some_and(|cy| t.iter().any(|&k| cy.beside(k).is_some()))
+        .is_some_and(|cy| planes.iter().any(|&k| cy.beside(k).is_some()))
     {
         return Some(RingSide::Outside);
     }
-    node_coords_rat(jd, NodeId::three_planes(Canon3::three(t))).map(|p| point_in_disk(&p, def))
+    if let Some((_, cyl, _)) = pierce_name(n) {
+        if cyls.get(cyl).is_some_and(|cy| cy.def == *def) {
+            return Some(RingSide::OnBoundary);
+        }
+    }
+    node_coords_rat(jd, n)
+        .or_else(|| pierce_coords_rat(jd, cyls, n))
+        .map(|p| point_in_disk(&p, def))
 }
 
 /// [`lateral_face_crossings`] for a probe ray named by three plane classes: it states the ray's
@@ -704,16 +745,27 @@ pub(crate) fn ruling_meets_lateral(
 /// A component as its faces, each boundary already carrying its edges' walls.
 pub(crate) type ComponentFaces = Vec<CompFace>;
 
-/// **Where the point named `x` is against the plane face `f` on class `q`** — inside it, outside
-/// it, or on its boundary; `None` where a bound could not tell. `x` lies on `q` and its name need
-/// not carry `q`.
+/// **Where the point named `n` is against the plane face `f` on class `q`** — inside it, outside
+/// it, or on its boundary; `None` where a bound could not tell. `n` lies on `q` and its name need
+/// not carry `q`. The self-touch point arm asks every vertex here, whatever kind its name is, and
+/// [`point_in_component`] its probe triples; each bound is read by what the point carries.
 ///
-/// Each bound answers by its own kind — a polygon by a ring walk, a circle by its radial side, a
-/// mixed ring (an arc step, a pierce corner) by the one coordinate reading of a ring
-/// ([`rational_point_in_ring`]) at the name's rational coordinates. The ray road's walk cannot read
-/// a pierce corner against a class with a world statement (it sides nodes with no cylinder table
-/// there) — letting it try would refuse with `PierceVertexUnnamed`. That reading's abstention does
-/// not tell a point on its ring from a graze, so a point on a mixed ring is unknown.
+/// - **A circle** — [`named_point_in_disk`].
+/// - **A ring, a three-plane name.** A polygon is read by a ring walk on the name's planes
+///   ([`point_on_ring`], then [`every_ray`]) — it answers on classes with no rational coordinates
+///   too; a mixed ring (an arc step, a pierce corner) by the one coordinate reading of a ring at the
+///   name's rational coordinates. The ray road's walk cannot read a pierce corner against a class
+///   with a world statement (it sides nodes with no cylinder table there) — letting it try would
+///   refuse with `PierceVertexUnnamed`.
+/// - **A ring, a pierce name.** Its rational point, when its root is rational
+///   ([`pierce_coords_rat`]), by the one coordinate reading of a ring ([`rational_ring_side`]) — a
+///   polygon up to its boundary; where that reading cannot say, a polygon is asked by a ray cast
+///   from the name along its pair's line ([`every_ray`] — only where `q` is of that pair), and a
+///   ray whose origin lies on the ring (`PointOnRing`) is a point on the boundary. A mixed ring has
+///   no reading for a pierce point with no rational coordinates.
+///
+/// The mixed walk's abstention does not tell a point on its ring from a graze, so a point on a
+/// mixed ring is unknown.
 ///
 /// **A name holding a class the gate passed silent** has no rational coordinates, so where a ring
 /// bound says nothing it is asked the one question its interval answers — whether it stands
@@ -722,15 +774,23 @@ pub(crate) fn named_point_in_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     q: usize,
-    x: [usize; 3],
+    n: NodeId,
     f: &CompFace,
 ) -> Result<Option<RingSide>, BoolError> {
-    let at = || node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)));
+    let ray = |r: &[RingEdge]| -> Result<Option<RingSide>, BoolError> {
+        Ok(every_ray(jd, cyls, q, n, r)?.first().map(|&b| {
+            if b {
+                RingSide::Inside
+            } else {
+                RingSide::Outside
+            }
+        }))
+    };
     let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
-        match b {
-            BoundEdges::Ring(r) => {
+        match (b, three_plane_name(n)) {
+            (BoundEdges::Ring(r), Some(x)) => {
                 if ring_is_mixed(r) {
-                    let Some(px) = at() else {
+                    let Some(px) = node_coords_rat(jd, n) else {
                         return Ok(None); // no rational coordinate: abstain
                     };
                     return Ok(match rational_point_in_ring(jd, cyls, q, &px, r)? {
@@ -742,31 +802,36 @@ pub(crate) fn named_point_in_face(
                 if point_on_ring(jd, q, x, r)? {
                     return Ok(Some(RingSide::OnBoundary));
                 }
-                Ok(
-                    every_ray(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), r)?
-                        .first()
-                        .map(|&b| {
-                            if b {
-                                RingSide::Inside
-                            } else {
-                                RingSide::Outside
-                            }
-                        }),
-                )
+                ray(r)
             }
-            BoundEdges::Circle(def) => Ok(named_point_in_disk(jd, cyls, x, def)),
+            (BoundEdges::Ring(r), None) => {
+                if let Some(px) = pierce_coords_rat(jd, cyls, n) {
+                    if let RingRead::At(side) = rational_ring_side(jd, cyls, q, &px, r)? {
+                        return Ok(Some(side));
+                    }
+                }
+                if ring_is_mixed(r) {
+                    return Ok(None);
+                }
+                match ray(r) {
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::PointOnRing,
+                        ..
+                    }) => Ok(Some(RingSide::OnBoundary)),
+                    got => got,
+                }
+            }
+            (BoundEdges::Circle(def), _) => Ok(named_point_in_disk(jd, cyls, n, def)),
             // Loops bound a cylinder, never a plane — a producer error, not an input.
-            BoundEdges::Lateral(_) => Ok(None),
+            (BoundEdges::Lateral(_), _) => Ok(None),
         }
     };
-    let silent = crate::planes::silent_among(cyls, &x);
+    let silent = crate::planes::silent_among(cyls, &name_planes(n));
     material_of(f, |b| match (inside(b)?, b) {
-        (None, BoundEdges::Ring(r)) if silent => Ok(
-            match silent_name_by_box(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), r) {
-                Said::Out => Some(RingSide::Outside),
-                _ => None,
-            },
-        ),
+        (None, BoundEdges::Ring(r)) if silent => Ok(match silent_name_by_box(jd, cyls, q, n, r) {
+            Said::Out => Some(RingSide::Outside),
+            _ => None,
+        }),
         (side, _) => Ok(side),
     })
 }
@@ -819,7 +884,10 @@ pub(crate) fn point_in_component(
             // Inside `q`'s material at the point `x`: inside the outer bound, outside every hole.
             // On the face's boundary is no answer here — the same non-generic abandon
             // `point_on_ring` has always raised.
-            let material = |x: [usize; 3]| named_point_in_face(jd, cyls, q, x, f).map(decided);
+            let material = |x: [usize; 3]| {
+                named_point_in_face(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), f)
+                    .map(decided)
+            };
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 // `L` is parallel to `q` — and possibly **in** it, which is not the same thing.
                 // A coplanar ray never passes from one side of this face to the other, so zero

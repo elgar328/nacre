@@ -494,7 +494,7 @@ fn ask(
             if apart {
                 return Ok(Said::Out);
             }
-            match combinatorics::named_point_in_disk(jd, cyls, t, def) {
+            match combinatorics::named_point_in_disk(jd, cyls, *n, def) {
                 Some(side) => disk(side),
                 None => Said::Unformed,
             }
