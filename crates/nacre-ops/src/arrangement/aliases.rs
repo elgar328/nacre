@@ -42,6 +42,7 @@ pub(super) fn seed_from_operands(
         .map(|c| jd.world_rat(c).is_none())
         .collect();
     let mut corners: Vec<NodeId> = Vec::new();
+    let mut three: Vec<NodeId> = Vec::new();
     for side in &trace_in.faces {
         for (_, loops) in side {
             let rings = loops
@@ -60,6 +61,12 @@ pub(super) fn seed_from_operands(
                             .copied()
                             .filter(|&n| combinatorics::pierce_name(n).is_some()),
                     );
+                    three.extend(
+                        nr.triples
+                            .iter()
+                            .copied()
+                            .filter(|&n| combinatorics::three_plane_name(n).is_some()),
+                    );
                 }
             }
         }
@@ -67,9 +74,9 @@ pub(super) fn seed_from_operands(
     // **The operands' cylinder corners, against every class.** A pierce corner
     // (`Pierce{[p0, p1], cyl, root}` — a fillet's tangent corner, a boss's foot) is a point some
     // *other* class may pass through: the gusset's side plane through the fillet axis contains
-    // the tangent ruling, and so the corner. Then the point has three names — its own, the
-    // three-plane `[p0, p1, wc]`, and the class's crossing of that ruling — and
-    // [`Aliases::record_on_cylinder`] joins them. Asked here, once, of the operands' own
+    // the tangent ruling, and so the corner. Then the point has every name that set gives it —
+    // its own, the three-plane `[p0, p1, wc]`, and each of its planes' crossings with the class —
+    // and [`Aliases::record_on_cylinder`] joins them. Asked here, once, of the operands' own
     // topology and the class table, so every round and every class trace starts knowing it:
     // asked during a trace instead (where `third_on_l` meets the corner on `wc`), a class traced
     // in the same round could refuse the coincidence before the round that learnt it — a round
@@ -84,6 +91,34 @@ pub(super) fn seed_from_operands(
         }
         for gl in &cyl.grazed {
             aliases.record_graze_line(jd, cyls, ci, gl);
+        }
+    }
+    // **The operands' three-plane corners on a cylinder.** A corner whose three planes meet exactly
+    // on a cylinder's surface — a gusset's foot on a bore's rim — is one point with its pairs'
+    // crossings there, folded before any class is traced for the same reason as the pierce corners
+    // below. Asked of the surface, not of a lateral face: a name is a surface's (design «점의
+    // 이름»), and whether a face is there is the result's question — the result vertex names only
+    // the surfaces of the faces through it. A corner with no rational coordinates (a class with no
+    // world statement among its planes) is not asked: no exact test puts it on the cylinder.
+    three.sort_unstable();
+    three.dedup();
+    for &n in &three {
+        let Some(t) = combinatorics::three_plane_name(n) else {
+            continue;
+        };
+        // The coordinates are the cylinders' question: asked once, when the first one asks.
+        let mut coords = None;
+        for (ci, cy) in cyls.iter().enumerate() {
+            let Some(p) = coords.get_or_insert_with(|| combinatorics::node_coords_rat(jd, n))
+            else {
+                break;
+            };
+            let def = &cy.def;
+            if nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2())
+                == nacre_exact::Orient::Zero
+            {
+                aliases.record_cylinder_point(jd, cyls, ci, n, &t);
+            }
         }
     }
     corners.sort_unstable();
@@ -189,15 +224,11 @@ impl Aliases {
 
     /// **A pierce corner found on a further plane class** — the cylinder twin of
     /// [`Aliases::record`]. The corner's planes `p0, p1` and the class `wc` all pass through the
-    /// point, and so does the cylinder; every name that set can produce denotes it: the corner's
-    /// own, the three-plane name of `{p0, p1, wc}` (when independent), and `wc`'s ruling crossing
-    /// with the corner's cap at the root that lies on the corner's side of `wc`. All of them are
-    /// folded here, in one place, so the ruling sweep and the plane roads — which mint the names
+    /// point, and so does the cylinder; every name that set produces denotes it — the corner's own,
+    /// the three-plane name of `{p0, p1, wc}` (when independent), and each of the corner's planes'
+    /// crossing with `wc` at the root on the corner's other plane ([`Aliases::record_cylinder_point`]).
+    /// All of them are folded here, so the ruling sweep and the plane roads — which mint the names
     /// on their own — never have to decide "same point" themselves.
-    ///
-    /// The crossing's side is the corner's own: [`crate::combinatorics::ruling_side`] of the
-    /// corner's meet against
-    /// `wc`'s stored normal, the predicate the sweep uses to tell `wc`'s two rulings apart.
     pub(crate) fn record_on_cylinder(
         &mut self,
         jd: &Judge<'_, WorkingPlane>,
@@ -214,38 +245,34 @@ impl Aliases {
         if s.len() < 3 {
             return; // `wc` is one of the corner's own planes: the ordinary corner, nothing to fold
         }
-        if let Some(t) = combinatorics::canonical_triple(jd, &s) {
-            self.union_point(corner, NodeId::three_planes(t));
-        }
-        let Some(wcy) = cyls.get(cyl) else { return };
-        let def = &wcy.def;
-        let Some(w) = jd.world_rat(wc) else {
-            return;
-        };
-        let Some((line, s)) =
-            combinatorics::pierce_meet(jd, cyl, def, corner).and_then(|m| m.into_exact())
-        else {
-            return;
-        };
-        let Some(side) = combinatorics::ruling_side(&w, def, (&line, &s)) else {
-            return; // the corner sits on `wc`'s axis plane's own line: no ruling to name
-        };
-        for fc in planes {
-            if let Ok(id) = combinatorics::crossing_on_ruling(jd, def, fc, wc, cyl, side) {
-                self.union_point(corner, id);
-            }
+        self.record_cylinder_point(jd, cyls, cyl, corner, &s);
+    }
+
+    /// **Every name of one point on cylinder `cyl`, folded** — `at` is one, `s` the plane classes
+    /// through it ([`combinatorics::names_on_cylinder`], the one rule). Every seed of a point on a
+    /// cylinder ends here.
+    fn record_cylinder_point(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
+        cyl: usize,
+        at: NodeId,
+        s: &[usize],
+    ) {
+        for n in combinatorics::names_on_cylinder(jd, cyls, cyl, at, s) {
+            self.union_point(at, n);
         }
     }
 
     /// **A plane-pair line lying on a cylinder's lateral face** — the other twin of
     /// [`Aliases::record`], read off the gate's record ([`crate::planes::SharedRuling`]) rather
-    /// than off an operand's corners. Every class across the axis meets the line `t1 ∩ t2` in one
-    /// point, and every name that point has is folded here: the three-plane `{c, t1, t2}`, each
-    /// secant's ruling crossing with `c` (the root on the recorded line), a tangent partner's double
-    /// root, and a sectioned partner's root, restated from the secant's
-    /// ([`combinatorics::restate_pierce`]). Asked of every class across the axis, not of the operands' corners:
-    /// where the prism reaches past the cylinder's cap, the point on the cap is no corner of
-    /// either operand, and it is the same point all the same.
+    /// than off an operand's corners. Every named class that cuts the line `t1 ∩ t2` — across the
+    /// axis or slanted to it — meets it in one point, and every name that point has is folded here
+    /// ([`Aliases::record_cylinder_point`]): the three-plane `{c, t1, t2}`, each secant's crossing
+    /// with `c` (the root on the recorded line), a tangent partner's double root, and a sectioned
+    /// partner's root, the one the intervals leave. Asked of every class cutting the line, not of
+    /// the operands' corners: where the prism reaches past the cylinder's cap, the point on the cap
+    /// is no corner of either operand, and it is the same point all the same.
     pub(super) fn record_shared_ruling(
         &mut self,
         jd: &Judge<'_, WorkingPlane>,
@@ -253,62 +280,24 @@ impl Aliases {
         cyl: usize,
         sr: &crate::planes::SharedRuling,
     ) {
-        use crate::combinatorics::QuadRoot;
-        use nacre_exact::quad::{CylinderMeet, QuadVal};
-        let Some(wcy) = cyls.get(cyl) else { return };
-        let def = &wcy.def;
-        let (o, m, r2) = (def.origin(), def.dir(), def.r2());
         let (t1, t2) = sr.line;
         for c in 0..jd.planes.len() {
-            let Some(wc) = jd.world_rat(c) else {
-                continue;
-            };
-            if !class_carries_circle(&[wc[0], wc[1], wc[2]], &m) {
-                continue; // only a class across the axis meets the line in a point
+            if jd.world_rat(c).is_none() || jd.plane_pair_dir_sign(t1, t2, c) == 0 {
+                continue; // only a named class that cuts the line meets it in a point it can state
             }
             let mut s = [c, t1, t2];
             s.sort_unstable();
             let Some(t) = combinatorics::canonical_triple(jd, &s) else {
                 continue;
             };
-            let point = NodeId::three_planes(t);
-            // The named class first: its roots are exact. A class with no world statement —
-            // a sectioned partner — then has its root restated from that name.
-            let mut named_root = None;
-            for x in [t1, t2] {
-                let Some(wx) = jd.world_rat(x) else { continue };
-                // A root of `c ∩ x` is on the line exactly when the record holds it.
-                let on_line = |line: &nacre_exact::quad::MeetLine, sv: &QuadVal| {
-                    sr.holds(&wx, &m, line, sv) == Some(true)
-                };
-                match nacre_exact::quad::plane_plane_cylinder(&wc, &wx, &o, &m, r2) {
-                    Some(CylinderMeet::Pair { line, s }) => {
-                        for (root, sv) in [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])] {
-                            if on_line(&line, sv) {
-                                let n = NodeId::pierce(c, x, cyl, root);
-                                named_root = Some(n);
-                                self.union_point(point, n);
-                            }
-                        }
-                    }
-                    Some(CylinderMeet::Tangent { line, s })
-                        if on_line(&line, &QuadVal::from_rat(s)) =>
-                    {
-                        let n = NodeId::pierce(c, x, cyl, QuadRoot::Double);
-                        named_root = Some(n);
-                        self.union_point(point, n);
-                    }
-                    _ => {}
-                }
-            }
-            let Some(n) = named_root else { continue };
-            for x in [t1, t2] {
-                if jd.planes[x].world.is_none()
-                    && let Some(r) = combinatorics::restate_pierce(jd, cyls, n, c, x)
-                {
-                    self.union_point(point, r);
-                }
-            }
+            // The point by its most exact name: a named partner's crossing with `c`, the root the
+            // record holds on the line (the record knows the line exactly where a partner with no
+            // world statement leaves the three-plane name to the intervals).
+            let at = [t1, t2]
+                .into_iter()
+                .find_map(|x| record_root(jd, cyls, cyl, sr, c, x))
+                .unwrap_or(NodeId::three_planes(t));
+            self.record_cylinder_point(jd, cyls, cyl, at, &s);
         }
     }
 
@@ -316,9 +305,12 @@ impl Aliases {
     /// ([`crate::planes::GrazeLine`]). Every class `k` across the axis whose station falls on a lateral
     /// face meets the line in one point: the three-plane `{k, section, graze}` and the root of
     /// `k ∩ section` the intervals leave ([`combinatorics::root_through`] — the record is the word that
-    /// the point lies on the cylinder). A station off the faces is left alone: the point is on the
+    /// the point lies on the cylinder), folded as every seed's point is
+    /// ([`Aliases::record_cylinder_point`]). A station off the faces is left alone: the point is on the
     /// infinite cylinder only, and folding it would hand a corner there (a box's, standing past the
-    /// lateral) a pierce name a class with no world statement cannot build into a vertex.
+    /// lateral) a pierce name a class with no world statement cannot build into a vertex — unlike
+    /// an operand's corner of three named planes on a cylinder's surface, whose names are all exact
+    /// ([`seed_from_operands`]).
     ///
     /// The fold puts the grazing class into the name of a point off its faces, which the disk
     /// shortcut in `nesting` would misread («a corner a silent class names lies on its faces»). It does
@@ -353,13 +345,12 @@ impl Aliases {
                 continue;
             };
             let point = NodeId::three_planes(tri);
-            let at = nacre_judge::cylinder::CylPoint::Three(s);
-            let Some(r) = combinatorics::root_through(jd, cyl, def, [k, gl.section], at) else {
-                continue;
-            };
-            self.union_point(point, r);
+            self.record_cylinder_point(jd, cyls, cyl, point, &s);
             debug_assert!(
-                combinatorics::pierce_name(self.canon_point(point)).is_some(),
+                !combinatorics::names_on_cylinder(jd, cyls, cyl, point, &s)
+                    .iter()
+                    .any(|&n| combinatorics::pierce_name(n).is_some())
+                    || combinatorics::pierce_name(self.canon_point(point)).is_some(),
                 "a point folded onto a grazed ruling is represented by its pierce name"
             );
         }
@@ -506,6 +497,37 @@ impl Aliases {
     /// count where it was.
     pub(super) fn learned(&self) -> usize {
         self.joined
+    }
+}
+
+/// **The crossing of named classes `c` and `x` on the line a [`crate::planes::SharedRuling`] records**
+/// — `Pierce{[c, x]}` at the root the record holds on the line (a tangency's `Double` likewise);
+/// `None` where `x` has no world statement or no root of the pair is on the line.
+fn record_root(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cyl: usize,
+    sr: &crate::planes::SharedRuling,
+    c: usize,
+    x: usize,
+) -> Option<NodeId> {
+    use crate::combinatorics::QuadRoot;
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
+    let def = &cyls.get(cyl)?.def;
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let (wc, wx) = (jd.world_rat(c)?, jd.world_rat(x)?);
+    let on_line = |line: &nacre_exact::quad::MeetLine, sv: &QuadVal| {
+        sr.holds(&wx, &m, line, sv) == Some(true)
+    };
+    match nacre_exact::quad::plane_plane_cylinder(&wc, &wx, &o, &m, r2)? {
+        CylinderMeet::Pair { line, s } => [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])]
+            .into_iter()
+            .find(|(_, sv)| on_line(&line, sv))
+            .map(|(root, _)| NodeId::pierce(c, x, cyl, root)),
+        CylinderMeet::Tangent { line, s } if on_line(&line, &QuadVal::from_rat(s)) => {
+            Some(NodeId::pierce(c, x, cyl, QuadRoot::Double))
+        }
+        _ => None,
     }
 }
 

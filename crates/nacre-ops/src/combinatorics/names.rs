@@ -206,18 +206,10 @@ pub(crate) fn line_sense(
         * jd.canon_sense(q[1])
 }
 
-/// **A pierce point restated on another pair of plane classes through it** — `Pierce{[a, b],
-/// cyl, root}` for the point `node` names, with the root that puts it there: of `a ∩ b`'s meets
-/// with the cylinder, the one lying on the name's own planes (a tangency's single `Double` root
-/// likewise). `None` when the pair does not meet the cylinder at that point or the arithmetic
-/// could not say. The result's naming asks it where the planes a result vertex's faces lie on
-/// are not the pair its name was minted from — a line two classes share on the cylinder names
-/// one point by several pairs, and the result keeps faces on only some of them.
-///
-/// **A pair with a class of no world statement is read on the caller's word** that the point lies
-/// on both planes — the gate's record of a line two classes share (`Aliases::record_shared_ruling`)
-/// or the faces through a result vertex — and its root is the one the intervals leave
-/// ([`root_through`]).
+/// **A pierce point restated on another pair of plane classes through it** — [`pierce_of_pair`]
+/// for a pierce name, on its own cylinder. The result's naming asks it where the planes a result
+/// vertex's faces lie on are not the pair its name was minted from — a line two classes share on
+/// the cylinder names one point by several pairs, and the result keeps faces on only some of them.
 pub(crate) fn restate_pierce(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -225,25 +217,77 @@ pub(crate) fn restate_pierce(
     a: usize,
     b: usize,
 ) -> Option<NodeId> {
+    let (_, cyl, _) = pierce_name(node)?;
+    pierce_of_pair(jd, cyls, cyl, node, a, b)
+}
+
+/// **The name the pair `a ∩ b` gives the point `at`, a point on cylinder `cyl`** — `Pierce{[a, b],
+/// cyl, root}` with the root that puts it there: of `a ∩ b`'s meets with the cylinder, the one
+/// lying on `at`'s other planes (a tangency's single `Double` root likewise). `at` is a pierce name
+/// of `cyl` or a three-plane name of a point on it. `None` when the pair does not meet the cylinder
+/// at that point or the arithmetic could not say.
+///
+/// **A pair with a class of no world statement is read on the caller's word** that the point lies
+/// on both planes — the gate's record of a line two classes share (`Aliases::record_shared_ruling`)
+/// or the faces through a result vertex — and its root is the one the intervals leave
+/// ([`root_through`]).
+///
+/// **Where both of the pair's roots lie on `at`'s named other planes**, either those planes hold the
+/// line `a ∩ b` — a pencil, when both planes of a pierce `at`'s own pair hold it: the name is
+/// restated along the other pair's direction ([`line_sense`]) — or a plane of `at` with no world
+/// statement is the one that cuts it, and the intervals read the root.
+pub(crate) fn pierce_of_pair(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cyl: usize,
+    at: NodeId,
+    a: usize,
+    b: usize,
+) -> Option<NodeId> {
     use nacre_exact::quad::{CylinderMeet, QuadVal};
-    let (own, cyl, own_root) = pierce_name(node)?;
     let def = &cyls.get(cyl)?.def;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let (Some(wa), Some(wb)) = (jd.world_rat(a), jd.world_rat(b)) else {
-        let at = jd.pierce(own, cyl, def, own_root)?;
-        return root_through(
+    let own = name_planes(at);
+    if let Some((planes, c, _)) = pierce_name(at)
+        && c == cyl
+        && planes == [a.min(b), a.max(b)]
+    {
+        return Some(at); // the name is the pair's own
+    }
+    // The planes that pick the root: `at`'s others with a world statement. A pair or an `at` whose
+    // other planes have none is read by the intervals.
+    let others: Vec<[nacre_exact::Rat; 4]> = own
+        .iter()
+        .filter(|&&p| p != a && p != b)
+        .filter_map(|&p| jd.world_rat(p))
+        .collect();
+    let by_intervals = || match at.kind() {
+        NodeKind::Pierce {
+            planes,
+            cyl: c,
+            root,
+        } if c == cyl => {
+            let p = jd.pierce(planes, cyl, def, root)?;
+            root_through(
+                jd,
+                cyl,
+                def,
+                [a, b],
+                nacre_judge::cylinder::CylPoint::Pierce(&p),
+            )
+        }
+        NodeKind::Pierce { .. } => None,
+        NodeKind::ThreePlane(t) => root_through(
             jd,
             cyl,
             def,
             [a, b],
-            nacre_judge::cylinder::CylPoint::Pierce(&at),
-        );
+            nacre_judge::cylinder::CylPoint::Three(t),
+        ),
     };
-    let others: Vec<[nacre_exact::Rat; 4]> = own
-        .iter()
-        .filter(|&&p| p != a && p != b)
-        .map(|&p| jd.world_rat(p))
-        .collect::<Option<_>>()?;
+    let (Some(wa), Some(wb), false) = (jd.world_rat(a), jd.world_rat(b), others.is_empty()) else {
+        return by_intervals();
+    };
     let on = |line: &nacre_exact::quad::MeetLine, s: &QuadVal| {
         others
             .iter()
@@ -258,18 +302,24 @@ pub(crate) fn restate_pierce(
                 .collect();
             match hits[..] {
                 [r] => r,
-                // Both roots lie on the name's own planes: they hold `a ∩ b` too (a pencil), and
-                // the name's root is restated along the other pair's direction.
                 [_, _] => {
+                    // A pencil only where both planes of `at`'s own pair hold `a ∩ b` — the
+                    // proposition `names_the_line` asks. Otherwise a plane of `at` with no world
+                    // statement is the one that cuts the line, and the intervals read it.
+                    let Some((planes, c, own_root)) = pierce_name(at) else {
+                        return by_intervals();
+                    };
+                    if c != cyl || pin_on_line(jd, a, b, &planes).is_some() {
+                        return by_intervals();
+                    }
                     let ab = [a.min(b), a.max(b)];
                     let cut = (0..jd.planes.len())
                         .find(|&d| jd.plane_pair_dir_sign(ab[0], ab[1], d) != 0)?;
-                    return Some(NodeId::pierce(
-                        ab[0],
-                        ab[1],
-                        cyl,
-                        own_root.along(line_sense(jd, own, ab, cut) > 0),
-                    ));
+                    let sense = line_sense(jd, planes, ab, cut);
+                    if sense == 0 {
+                        return None;
+                    }
+                    return Some(NodeId::pierce(ab[0], ab[1], cyl, own_root.along(sense > 0)));
                 }
                 _ => return None,
             }
@@ -278,6 +328,57 @@ pub(crate) fn restate_pierce(
         _ => return None,
     };
     Some(NodeId::pierce(a, b, cyl, root))
+}
+
+/// **Every name a point on cylinder `cyl` has** — the one rule for a point on a cylinder, the
+/// cylinder twin of [`canonical_triple`]: given `s`, the plane classes through the point
+/// (ascending), and `at`, one name of it, the point is the three-plane name of `s`'s canonical
+/// independent triple (none where `s` holds no independent three) and the pierce name of every
+/// pair of `s` that meets the cylinder there ([`pierce_of_pair`]; a pair whose line lies on the
+/// cylinder — a ruling — has none). The names are surfaces' names: whether a face of the cylinder
+/// is there is not this question (design «점의 이름»).
+///
+/// **The pairs of named classes first.** Their roots are exact; a pair with a class of no world
+/// statement is then asked against the point as one of those exact names states it — the tightest
+/// description of `at` there is — rather than against `at` itself, which an interval alone may
+/// place where `at` is a three-plane name with such a class among its planes.
+pub(crate) fn names_on_cylinder(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cyl: usize,
+    at: NodeId,
+    s: &[usize],
+) -> Vec<NodeId> {
+    let mut names = Vec::new();
+    let independent = match *s {
+        [a, b, c] => jd.plane_pair_dir_sign(a, b, c) != 0,
+        _ => true,
+    };
+    if independent && let Some(t) = canonical_triple(jd, s) {
+        names.push(NodeId::three_planes(t));
+    }
+    let named = |c: usize| jd.world_rat(c).is_some();
+    let pairs: Vec<[usize; 2]> = (0..s.len())
+        .flat_map(|i| ((i + 1)..s.len()).map(move |j| [s[i], s[j]]))
+        .collect();
+    let (exact, interval): (Vec<[usize; 2]>, Vec<[usize; 2]>) =
+        pairs.into_iter().partition(|p| named(p[0]) && named(p[1]));
+    for [a, b] in exact {
+        if let Some(n) = pierce_of_pair(jd, cyls, cyl, at, a, b) {
+            names.push(n);
+        }
+    }
+    let anchor = names
+        .iter()
+        .copied()
+        .find(|&n| pierce_name(n).is_some())
+        .unwrap_or(at);
+    for [a, b] in interval {
+        if let Some(n) = pierce_of_pair(jd, cyls, cyl, anchor, a, b) {
+            names.push(n);
+        }
+    }
+    names
 }
 
 /// **The names of a list of *candidates*, pierce points dropped.**
@@ -649,34 +750,6 @@ pub(crate) struct RulingCarrier {
     /// held by every plane through its line, and its side differs between them (`0` against a
     /// tangent one, `±1` against one through the axis), so `side` reads only against this one.
     pub plane: usize,
-}
-
-/// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,
-/// with `n̂` the class's **canonical** coefficients ([`RulingCarrier::side`], the field this
-/// fills). The point arrives as `(line, s)` from [`nacre_exact::quad::plane_plane_cylinder`],
-/// so the sign is one [`nacre_exact::quad::plane_side`] against the plane through `o` with
-/// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
-/// tangent shape). **The abstention is deliberate and this is the abstaining door**: this
-/// function's `None` is a *sign* fact the ray caster (`departs_across`) and the arc departure
-/// read as "abstain", and answering `Some(0)` here would drop a ray into the `Negative` arm in
-/// silence. Callers that want the tangent ruling *named* — "which ruling of this wall, `0` being
-/// its tangent one" — take [`ruling_side_signed`] instead ([`crate::arrangement::node_ruling_side`],
-/// `curved_wall` and the ruling split; the corner's root does not mean the same thing).
-///
-/// **A side is a fact about the point and the wall, not about the point's own name.** Reading it
-/// off the name's root (`QuadRoot::Double ⇒ 0`) is the same statement *only* when the wall asked
-/// about is the very wall the name pairs — the tangent wall the corner was minted on. It is not the
-/// same statement once the alias table hands back a representative with another pair (a tangent
-/// corner a class through the axis also passes through) or once a `Double`-rooted corner is asked
-/// about a *different* wall: then the root says `0` for a point that sits squarely on one of that
-/// wall's two rulings — silently, and with the sign the caller needs. Both doors ask the point, so
-/// both cases answer correctly and the tangent wall still answers `0`.
-pub(crate) fn ruling_side(
-    w: &[nacre_exact::Rat; 4],
-    def: &nacre_topo::CylinderDef,
-    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
-) -> Option<i8> {
-    ruling_side_signed(w, def, at).filter(|&s| s != 0)
 }
 
 impl Carrier {

@@ -26,7 +26,7 @@ pub(crate) struct Hit {
     /// Distances to the class plane, the face plane, and the cylinder's surface.
     pub off: [f64; 3],
     /// `sign((x − o) · (m̂ × n_fc))` of the realized point — the f64 twin of
-    /// [`crate::combinatorics::ruling_side`].
+    /// [`crate::combinatorics::ruling_side_signed`].
     pub side_f64: i8,
     /// The side the ring's edge carried.
     pub side: i8,

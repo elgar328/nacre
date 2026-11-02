@@ -474,7 +474,7 @@ fn incident_plane_classes(
 /// plane section of the cylinder meets a second plane in at most two points).
 ///
 /// Coordinate-free: the counter-clockwise tangent's component along `n_q` is
-/// [`nacre_exact::quad::ccw_tangent_side`] — across the axis that is minus [`ruling_side`] at the
+/// [`nacre_exact::quad::ccw_tangent_side`] — across the axis that is minus [`ruling_side_signed`] at the
 /// node, `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))`, the very predicate that names which ruling a
 /// lateral point lies on — and a clockwise arc's is its negation. Then the same canonical → outward
 /// bridge as [`side_of`] ([`Judge::outward_fix`]), so the answer sits in the walk's frame. `None`
@@ -544,7 +544,7 @@ pub(crate) fn arc_departure_side(
 ///   is the *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
 ///   coordinate rather than read off a rule.
 ///
-/// `side` is [`ruling_side`]'s one spelling, and it needs a point on the ruling
+/// `side` is [`ruling_side_signed`]'s one spelling, and it needs a point on the ruling
 /// *exactly* — which is why the pierce name comes in: [`pierce_meet`] realizes it as the `(line, s)`
 /// that function takes. A ruling whose end is not a pierce point has no such point and is refused
 /// rather than guessed.
@@ -574,8 +574,7 @@ fn curved_wall(
             // or a slot's own walls are tangent to their cylinder, so without this every such
             // operand falls here as `CurvedOperandBoundary`.
             // The reading is the **point**'s, not the corner's **root**'s
-            // ([`ruling_side_signed`], which answers the axis plane instead
-            // of abstaining as `ruling_side` does for the ray caster's sake): the root says `0`
+            // ([`ruling_side_signed`], which answers `0` on the axis plane): the root says `0`
             // only when `near` is the very wall the name pairs, and `near` may be a plane through
             // the axis carrying that same corner on one of its two rulings.
             let side = ruling_side_signed(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?;

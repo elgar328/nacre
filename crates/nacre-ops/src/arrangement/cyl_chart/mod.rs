@@ -218,7 +218,7 @@ pub(crate) struct Event {
 /// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
 ///
 /// One name, not two. `RulingExtent` also carries a `side`, but that is *derived* from the same
-/// pair (`combinatorics::ruling_side`); a second spelling of one identity is where two copies
+/// pair (`combinatorics::ruling_side_signed`); a second spelling of one identity is where two copies
 /// drift apart.
 type RulingName = (usize, i8);
 

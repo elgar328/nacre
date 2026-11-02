@@ -2794,3 +2794,283 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
         "some pair runs against the line's own: a root's label alone names no crossing"
     );
 }
+
+/// **A point on a cylinder has every name its planes give it there, and only those.** The unit
+/// cube's corner `(1, 0, 0)` lies on the cylinder `x² + y² = 1` about `z`: its names are the
+/// three-plane one, the tangent pair `x = 1, z = 0`'s double root, and the pair `y = 0, z = 0`'s
+/// root at `x = 1` (not the one at `x = −1`). The pair `x = 1, y = 0` holds a ruling of the
+/// cylinder — its line lies on it — and gives no pierce name.
+#[test]
+fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
+    use crate::combinatorics::{QuadRoot, names_on_cylinder};
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder};
+    let mut m = Model::new();
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let bar = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        3.0,
+    );
+    m.rebuild_adjacency();
+    let surf = m.face(bar.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def: def.clone(),
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let rows = crate::planes::collect_planes(&m, cube).unwrap();
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    let class = |n: [i128; 3], d: i128| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                let k = (0..3).find(|&i| n[i] != 0).expect("a normal");
+                (0..3).all(|i| w[i].checked_mul(ri(n[k])) == w[k].checked_mul(ri(n[i])))
+                    && w[3].checked_mul(ri(n[k])) == w[k].checked_mul(ri(-d))
+            })
+            .expect("the cube holds that plane")
+    };
+    let (x1, y0, z0) = (
+        class([1, 0, 0], 1),
+        class([0, 1, 0], 0),
+        class([0, 0, 1], 0),
+    );
+    let mut s = vec![x1, y0, z0];
+    s.sort_unstable();
+    let corner = NodeId::three_planes(Canon3::three([x1, y0, z0]));
+    let names = names_on_cylinder(&jd, &cyls, 0, corner, &s);
+    // The root of `y = 0, z = 0` at `x = 1`: the crossing whose x coordinate is the larger.
+    let (wy, wz) = (jd.world_rat(y0).unwrap(), jd.world_rat(z0).unwrap());
+    let Some(CylinderMeet::Pair { line, .. }) =
+        plane_plane_cylinder(&wy, &wz, &def.origin(), &def.dir(), def.r2())
+    else {
+        panic!("the x axis crosses the cylinder twice")
+    };
+    let [lo, hi] = [y0.min(z0), y0.max(z0)];
+    // `ℓ = n_y × n_z` as solved; the name's pair runs along it or against it.
+    let along_plus_x = (line.dir()[0] > ri(0)) == (lo == y0);
+    let root = if along_plus_x {
+        QuadRoot::Hi
+    } else {
+        QuadRoot::Lo
+    };
+    let mut want = vec![
+        corner,
+        NodeId::pierce(x1, z0, 0, QuadRoot::Double),
+        NodeId::pierce(lo, hi, 0, root),
+    ];
+    let mut got = names.clone();
+    want.sort_unstable();
+    got.sort_unstable();
+    assert_eq!(got, want, "the corner's names");
+}
+
+/// **A pencil's restatement asks the name's own pair, not its named planes alone.** The `z` axis
+/// is held by `x = 0`, `y = 0` and `x + y = 0`, and crosses the cylinder about `y = 0.6, z = 2`
+/// (`r = 1`) at `z = 6/5` and `z = 14/5` — off the circle's top and bottom, where any line through a
+/// crossing enters the circle the same way up and a misread sense would come out right. Boxes'
+/// floors and tops turned ±20° about the `x` direction through each crossing are planes with no
+/// world statement through it, cutting the axis there (not ±37°: the 3-4-5 turn makes one of them
+/// tangent to the circle at the crossing). The crossing's name by `x = 0` and that floor, restated
+/// on another pair of the pencil, is that pair's name of the crossing: the named plane `x = 0`
+/// holds the axis, so both of the pair's roots lie on it, and the floor — the plane that cuts — is
+/// read by the intervals. Read as a pencil (the name's pair
+/// restated by direction), the floor's pair is no pair of the axis and the sign means nothing.
+#[test]
+fn a_restatement_reads_a_cutting_plane_with_no_world_statement() {
+    use crate::combinatorics::{PointOn, QuadRoot, order_on, pierce_of_pair};
+    use nacre_exact::{Angle, Axis as EAxis, Isometry, Rat, Rotation};
+    let mut m = Model::new();
+    let prism = |m: &mut Model, tri: [[f64; 2]; 3]| {
+        let p2 = |q: [f64; 2]| nacre_math::Point2::from_array(q);
+        let profile = crate::Profile2d::polygon(tri.into_iter().map(p2).collect()).unwrap();
+        let frame = SketchFrame::world(m, Axis::Z);
+        let Ok(OpOutput::Extrude { solid, .. }) = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 4.0,
+            },
+        ) else {
+            panic!("the prism extrudes")
+        };
+        solid
+    };
+    let a = prism(&mut m, [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
+    let b = prism(&mut m, [[0.0, 0.0], [-1.0, 1.0], [-1.0, 0.0]]);
+    // `below`: the box's top face, not its floor, passes through the crossing — the plane's stored
+    // normal then faces the other way.
+    // `z` in fifths: the crossings are `z = 6/5` and `z = 14/5`.
+    let turned = |m: &mut Model, z: i128, deg: i128, below: bool| {
+        let z0 = z - if below { 5 } else { 0 };
+        let floor = crate::fixtures::cuboid(
+            m,
+            Point3::from_array([-1.0, -1.0, z0 as f64 / 5.0]),
+            Point3::from_array([1.0, 1.0, (z0 + 5) as f64 / 5.0]),
+        );
+        crate::transform::transform(
+            m,
+            floor,
+            &Isometry::rotation(Rotation {
+                axis: EAxis::X,
+                pivot: [
+                    Rat::from_int(0),
+                    Rat::from_int(0),
+                    Rat::new(z, 5).expect("a fifth"),
+                ],
+                angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
+            }),
+        )
+        .expect("the box turns")
+    };
+    // Both crossings, both turns, both facings: the sense a pencil reading would take from the
+    // floor's pair is the floor's, so some of these read it the wrong way.
+    let floors: Vec<(i128, i128, Handle<Solid>)> = [6, 14]
+        .into_iter()
+        .flat_map(|z| {
+            [
+                (z, 20, false),
+                (z, 20, true),
+                (z, -20, false),
+                (z, -20, true),
+            ]
+        })
+        .map(|(z, deg, below)| (z, deg, turned(&mut m, z, deg, below)))
+        .collect();
+    let bar = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([-2.0, 0.6, 2.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        1.0,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    let surf = m.face(bar.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def: def.clone(),
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let mut rows = crate::planes::collect_planes(&m, a).unwrap();
+    rows.extend(crate::planes::collect_planes(&m, b).unwrap());
+    for &(_, _, f) in &floors {
+        rows.extend(crate::planes::collect_planes(&m, f).unwrap());
+    }
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    let class = |n: [i128; 3]| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                jd.world_rat(c).is_some_and(|w| {
+                    let k = (0..3).find(|&i| n[i] != 0).expect("a normal");
+                    (0..3).all(|i| w[i].checked_mul(ri(n[k])) == w[k].checked_mul(ri(n[i])))
+                        && w[3] == ri(0)
+                })
+            })
+            .expect("the prisms hold that plane")
+    };
+    let (cx, cy, cd) = (class([1, 0, 0]), class([0, 1, 0]), class([1, 1, 0]));
+    let apart = |p: NodeId, q: NodeId| -> bool {
+        let (pp, qq) = (
+            crate::combinatorics::pierce_name(p).unwrap(),
+            crate::combinatorics::pierce_name(q).unwrap(),
+        );
+        let (Some(x), Some(y)) = (
+            jd.pierce(pp.0, 0, &def, pp.2),
+            jd.pierce(qq.0, 0, &def, qq.2),
+        ) else {
+            panic!("both points are placed")
+        };
+        jd.points_apart(
+            nacre_judge::cylinder::CylPoint::Pierce(&x),
+            nacre_judge::cylinder::CylPoint::Pierce(&y),
+        )
+    };
+    for &(z, deg, _) in &floors {
+        // The turned floor: no world statement, through `(0, 0, z)` with normal
+        // `(0, −sin θ, cos θ)`.
+        let (s, c) = (
+            (deg as f64).to_radians().sin(),
+            (deg as f64).to_radians().cos(),
+        );
+        let tf = (0..planes.len())
+            .find(|&k| {
+                let n = planes[k].plane.normal().as_array();
+                jd.world_rat(k).is_none()
+                    && ((-n[1] * s + n[2] * c).abs() - 1.0).abs() < 1e-9
+                    && planes[k]
+                        .plane
+                        .signed_distance(Point3::from_array([0.0, 0.0, z as f64 / 5.0]))
+                        .abs()
+                        < 1e-9
+            })
+            .expect("the turned floor is a class with no world statement");
+        // The crossing on the axis by the floor and `x = 0`, and by the axis's own pair.
+        let at = [QuadRoot::Lo, QuadRoot::Hi]
+            .map(|r| NodeId::pierce(cx, tf, 0, r))
+            .into_iter()
+            .find(|&n| {
+                [QuadRoot::Lo, QuadRoot::Hi]
+                    .into_iter()
+                    .any(|r| !apart(n, NodeId::pierce(cx, cy, 0, r)))
+            })
+            .expect("one of the floor pair's crossings is on the axis");
+        let on_axis = [QuadRoot::Lo, QuadRoot::Hi]
+            .map(|r| NodeId::pierce(cx, cy, 0, r))
+            .into_iter()
+            .find(|&n| !apart(at, n))
+            .expect("the axis's crossing at the floor");
+        for (p, q) in [(cy, cd), (cx, cd)] {
+            let want = [QuadRoot::Lo, QuadRoot::Hi]
+                .map(|r| NodeId::pierce(p, q, 0, r))
+                .into_iter()
+                .find(|&n2| {
+                    order_on(
+                        &jd,
+                        &cyls,
+                        cx,
+                        cy,
+                        PointOn::Pierce(on_axis),
+                        PointOn::Pierce(n2),
+                    ) == Some(0)
+                })
+                .expect("the pair's name of the crossing");
+            assert_eq!(
+                pierce_of_pair(&jd, &cyls, 0, at, p.min(q), p.max(q)),
+                Some(want),
+                "{at:?} restated on ({p}, {q})"
+            );
+        }
+    }
+}

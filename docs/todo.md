@@ -243,8 +243,9 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   범위를 진술하지 못한 사분원 — 볼록 꼭짓점에 닿기만 해도 이 갈래다). 비스듬한 클래스의 꼭짓점 run 은
   스위트·무시 스윕·census·kit 의 debug 실행에서 가로지름 64(kit 16)·볼록 닿음 36 이 전부이고(참조 실행이 배열을 한 번 더 돈 수까지) 기권하는 조합은 0 이다. 가로지름 없이 덜어낼 것이 없는 면은 림 둘인 띠 120 과
   각을 비운 사분원 36 이 전부이고 여기서도 기권은 0 이다. 추적기의 기권은
-  모두 `DeclineKind::ObliqueSection`, 거절 이름은 `ObliqueCylinderCut`. 단면 클래스가 공유 룰링·접선 룰링과 만나는 점의 별칭(`record_shared_ruling`·
-  `record_graze_line` 은 축을 가로지르는 클래스만 접는다)은 인구가 0 이라 짓지 않았다.
+  모두 `DeclineKind::ObliqueSection`, 거절 이름은 `ObliqueCylinderCut`. 단면 클래스가 공유 룰링과 만나는 점은 다른
+  클래스처럼 접힌다(`record_shared_ruling` — 그 선을 자르는 이름 있는 클래스). 스침선(`GrazeLine`)과 만나는 점은 축을
+  가로지르는 클래스만 접는다 — 스침선에는 유리수 점이 없어 비스듬한 클래스가 그 선을 만나는 높이를 정확히 물을 수 없다.
 - **호 변의 면도 떨어진다** — `faces_apart` 가 곡선 간선을 거절해, 비스듬한 클래스의 면이 원판이면(비스듬한 원통의 캡)
   단면 갈래에 못 든다(`wall_faces.rs` 의 `an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes`, z = 2.4).
 - **차트 위 비스듬한 절단** — 게이트가 면이 옆면에 닿는 비스듬한 클래스를 들이고(`faces_apart` 의 요구), 룰링이 단면에서
