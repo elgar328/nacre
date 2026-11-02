@@ -998,3 +998,83 @@ fn a_straight_ring_of_two_edges_is_refused_and_a_square_is_read() {
         })
     ));
 }
+
+/// **A cap disk is read like any face: its circle bounds it, and a line tangent to that circle
+/// touches it.** A disk of radius 1 about the `z` axis on the plane `z = 3`, and segments of the
+/// lines `x = d` on that plane from `y = −2` to `y = 2` (or to `y = −1.5`): the chord `x = 0.5`
+/// crosses the disk, the line `x = 2` misses it, the segment that stops at `y = −1.5` ends before
+/// the circle, and the line `x = 1` touches the circle at `(1, 0, 3)` — a point of the disk's
+/// closed region inside the segment that no vertex names.
+#[test]
+fn a_segment_meets_a_cap_disk_across_its_chord_or_at_its_tangent_point() {
+    use nacre_exact::Rat;
+    use nacre_math::{Point3, Vector3};
+    let ri = Rat::from_int;
+    let mut m = Model::new();
+    let boss = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        3.0,
+    );
+    let surf = m.face(boss.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def: def.clone(),
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let disk = CompFace {
+        surf: CompSurf::Plane(0),
+        outer: BoundEdges::Circle(Box::new(def.clone())),
+        inner: Vec::new(),
+    };
+    for (x0, x1, y1, want) in [
+        (0.5, 2.0, 2.0, [true, false]),
+        (0.5, 2.0, -1.5, [false, false]),
+        (1.0, 3.0, 2.0, [true, false]),
+    ] {
+        let mut m = Model::new();
+        let block = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([x0, -2.0, 1.0]),
+            Point3::from_array([x1, y1, 3.0]),
+        );
+        let rows = crate::planes::collect_planes(&m, block).expect("the block's face table");
+        let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+        let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+        let jd = crate::planes::test_judge(&planes);
+        // The class whose plane is `x_k = d`.
+        let class = |k: usize, d: f64| -> usize {
+            (0..planes.len())
+                .find(|&c| {
+                    let w = jd.world_rat(c).expect("a named class");
+                    (0..3).all(|i| (i == k) != (w[i] == ri(0)))
+                        && Rat::try_from_f64(d)
+                            .and_then(|d| w[k].checked_mul(d))
+                            .is_some_and(|wd| wd.checked_add(w[3]) == Some(ri(0)))
+                })
+                .expect("the block holds that plane")
+        };
+        let (p, lo, hi) = (class(2, 3.0), class(1, -2.0), class(1, y1));
+        for (w, want) in [class(0, x0), class(0, x1)].into_iter().zip(want) {
+            let node = |y: usize| NodeId::three_planes(Canon3::three([p, w, y]));
+            let face = CompFace {
+                surf: CompSurf::Plane(p),
+                ..disk.clone()
+            };
+            let got =
+                segment_meets_face(&jd, &cyls, p, w, node(lo), node(hi), &face).expect("decided");
+            assert_eq!(got, want, "x0 = {x0}, x1 = {x1}, y1 = {y1}, class {w}");
+        }
+    }
+}

@@ -162,14 +162,25 @@ pub(crate) fn every_ray(
 /// alternation it also subsumes the endpoint test: an endpoint strictly inside puts `u` in an
 /// inside stretch.
 ///
+/// **A touch is the closed region's, and it does not flip.** Where the line is tangent to a curved
+/// bound — a circle, or an arc at a point strictly inside it ([`arc_touch`]) — it meets the face's
+/// closed region at a point and leaves on the side it came from. A touch strictly inside `(u, v)`
+/// is a point of the edge on the face that no vertex names, and answers `true` whatever the
+/// alternation says; a touch at `u` or `v` is that vertex's — on a circle, so its name is a pierce
+/// name, which the self-touch point arm does not ask (the gap `self_touch_reject` names).
+///
 /// **Holes come along for free.** All bounds go into one bag: the bounds of a face are disjoint, so
 /// even-odd over the union *is* the material region (a point inside a hole has crossed twice) — the
-/// rule `design.md` states one dimension down for 2D sketches. A circle hole meets the line at the
-/// two points where it crosses the hole's cylinder ([`class_line_meets_cylinder`] — a tangent line
-/// touches without crossing), and they toggle like any crossing. The circles are read only when
-/// the polygon bounds alone leave an inside stretch overlapping the segment: a hole only takes
-/// material away, so a «no» needs no circle, and asking one can fail where the answer needed none.
-/// A face bounded outside by a circle (a cap disk) is not this road's: its polygon bounds are holes.
+/// rule `design.md` states one dimension down for 2D sketches. A circle meets the line at the
+/// two points where it crosses the circle's cylinder ([`class_line_meets_cylinder`] — a tangent line
+/// touches without crossing), and they toggle like any crossing — a hole's and a cap disk's outer
+/// circle alike, the line's two unbounded ends outside either way. On a face bounded outside by
+/// polygons, hole circles are read only when the polygon bounds alone leave an inside stretch
+/// overlapping the segment: a hole only takes material away, so a «no» needs no hole, and asking
+/// one can fail where the answer needed none. On a face bounded outside by a circle every circle
+/// is read. A circle of a cylinder the gate passed `w` silent about is not read at all: the line
+/// misses it where the whole cylinder lies beside `w`'s plane, and on the other silences `w`'s
+/// faces stand apart from every lateral box, one of which holds the circle.
 ///
 /// **A `Run` is a stretch, not a place.** `Run { len >= 2 }` means the boundary *lies along* the
 /// line, so it occupies an interval where the segment would be **on** the face rather than inside
@@ -204,9 +215,6 @@ pub(crate) fn segment_meets_face(
     let (Some(hu), Some(hv)) = (end_on_line(jd, p, w, u), end_on_line(jd, p, w, v)) else {
         return Err(reject(RejectReason::RingNaming));
     };
-    let BoundEdges::Ring(_) = &face.outer else {
-        return Err(reject(RejectReason::RingNaming));
-    };
     // Two places on the line, ordered ([`order_on`]).
     let order = |a: PointOn, b: PointOn| -> Result<i8, BoolError> {
         order_on(jd, cyls, p, w, a, b).ok_or_else(|| reject(RejectReason::WitnessNotRational))
@@ -214,6 +222,9 @@ pub(crate) fn segment_meets_face(
     // Every place a bound meets the line: `[lo, hi]` (equal for a crossing at a point) and whether
     // passing it flips inside/outside.
     let mut events: Vec<([PointOn; 2], bool)> = Vec::new();
+    // Every place the line touches a curved bound without crossing it — a point of the face's
+    // closed region that no vertex names.
+    let mut touches: Vec<PointOn> = Vec::new();
     let mut circles: Vec<&nacre_topo::CylinderDef> = Vec::new();
     for bound in core::iter::once(&face.outer).chain(&face.inner) {
         let ring = match bound {
@@ -229,6 +240,16 @@ pub(crate) fn segment_meets_face(
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
         let line = ClassLine::new(jd, cyls, p, w, &nodes, |i| (&ring[i].carrier).into());
+        for i in 0..nodes.len() {
+            if let LineCarrier::Arc { cyl, ccw } = (&ring[i].carrier).into() {
+                let ends = [nodes[i], nodes[(i + 1) % nodes.len()]];
+                match arc_touch(jd, cyls, w, p, cyl, ccw, ends) {
+                    Some(Some(at)) => touches.push(PointOn::Pierce(at)),
+                    Some(None) => {}
+                    None => return Err(reject(RejectReason::WitnessNotRational)),
+                }
+            }
+        }
         let features = match line.walk() {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
@@ -272,20 +293,38 @@ pub(crate) fn segment_meets_face(
     let by_place = |x: &([PointOn; 2], bool), y: &([PointOn; 2], bool)| {
         order(x.0[0], y.0[0]).map(|o| o.cmp(&0))
     };
+    // **A touch strictly inside the segment is a point of the face's closed region on the edge**,
+    // and not one of its ends: the edge meets the face there whatever the alternation says.
+    let strictly_inside =
+        |t: PointOn| -> Result<bool, BoolError> { Ok(order(lo, t)? < 0 && order(t, hi)? < 0) };
+    for &t in &touches {
+        if strictly_inside(t)? {
+            return Ok(true);
+        }
+    }
     try_sort_by(&mut events, by_place)?;
-    let polygons = inside_overlaps(&events, lo, hi, &order)?;
-    if !polygons || circles.is_empty() {
-        return Ok(polygons);
+    // A hole only takes material away, so where the polygons leave no inside stretch over the
+    // segment no hole circle can add one; an outer circle is the face's whole extent and is read
+    // always.
+    let outer_circle = matches!(face.outer, BoundEdges::Circle(_));
+    if !outer_circle {
+        let polygons = inside_overlaps(&events, lo, hi, &order)?;
+        if !polygons || circles.is_empty() {
+            return Ok(polygons);
+        }
     }
     for def in circles {
         let cyl = cyls
             .iter()
             .position(|c| c.def == *def)
             .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
-        // A class with no world statement the gate proved this cylinder beside: the line lies in
-        // that plane and the whole cylinder off it, so the line misses the circle. Proved apart
-        // only, it may cross the circle at points no world statement names — not read.
-        if cyls[cyl].beside(w).is_some() {
+        // A class the gate passed silent about this cylinder. Beside: the whole cylinder lies on
+        // one side of `w`'s plane, and the line, in it, misses the circle. The other silences:
+        // every face on `w` stands apart from every lateral face's box, and a lateral box holds
+        // the circle — so the segment, an edge of a face on `w`, lies outside a box the line
+        // crosses the circle within, and the crossings toggle twice on one side of it. Not read: a
+        // class with no world statement has no crossing to name.
+        if cyls[cyl].is_silent(w) {
             continue;
         }
         use nacre_exact::quad::CylinderMeet;
@@ -296,12 +335,15 @@ pub(crate) fn segment_meets_face(
                     events.push(([at; 2], true));
                 }
             }
-            // A tangent line touches the circle without crossing it; a missing one meets nothing.
-            Some(
-                CylinderMeet::Tangent { .. }
-                | CylinderMeet::Miss(_)
-                | CylinderMeet::AxisParallelMiss(_),
-            ) => {}
+            // A tangent line touches the circle without crossing it — a touch, not a toggle.
+            Some(CylinderMeet::Tangent { .. }) => {
+                let at = PointOn::Pierce(NodeId::pierce(p, w, cyl, QuadRoot::Double));
+                if strictly_inside(at)? {
+                    return Ok(true);
+                }
+            }
+            // A missing line meets nothing.
+            Some(CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_)) => {}
             _ => return Err(reject(RejectReason::WitnessNotRational)),
         }
     }

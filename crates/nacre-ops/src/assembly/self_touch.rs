@@ -186,10 +186,11 @@ pub(crate) fn assemble_fuse_cut(
 
 /// **A solid whose surface touches itself is not a solid.**
 ///
-/// The proposition: *an edge of this solid lies in the interior of one of this same solid's faces,
-/// or a vertex of it on the closed region of one it does not bound.* An embedded boundary cannot do
-/// that — the surface would occupy the same points twice — so a result that does is refused rather
-/// than returned. The unit is the **result solid**, outer shell
+/// The proposition: *an edge of this solid meets the closed region of one of this same solid's
+/// faces it does not bound at a point that is no vertex — inside the face, or where it touches a
+/// curved bound — or a vertex of it lies on the closed region of one it does not bound.* An
+/// embedded boundary cannot do that — the surface would occupy the same points twice — so a result
+/// that does is refused rather than returned. The unit is the **result solid**, outer shell
 /// and cavities together: a wedge cut whose tip lands on the far wall touches its own cavity, and
 /// asking the question per component would miss exactly that.
 ///
@@ -210,7 +211,13 @@ pub(crate) fn assemble_fuse_cut(
 ///    body that cannot exist (measured: `Ok(n=1)`, volume exact, `validate` silent). An end a
 ///    cylinder made is asked like a three-plane one — that test pins both kinds on the line — so a
 ///    lateral's own ruling edge, where the lateral ends on a flat face of the solid, is asked against
-///    the solid's other plane faces like any straight edge.
+///    the solid's other plane faces like any straight edge. A face bounded by a circle — a cap
+///    disk — is asked like any other. The test reads the face's **closed** region where no vertex
+///    stands: a line tangent to a circle or an arc of the face's bounds touches it there, the shape
+///    of an edge lying on a cap's plane tangent to its rim (measured before the test read it:
+///    `Ok(n=1)`, volume exact, `validate` silent). A polygon bound is touched at no such point — a
+///    line through a point inside one of its sides runs along it or enters the face, and one through
+///    a corner meets a vertex, the point arm's to ask.
 ///
 /// **One judge, not two.** The endpoint test is *subsumed* — an endpoint strictly inside puts that
 /// end in an inside stretch of the line, so the segment test answers it too. Measured across the
@@ -280,18 +287,26 @@ pub(super) fn self_touch_reject(
     };
     let any_shared = cyls.iter().any(|c| !c.shared.is_empty());
     for g in groups {
-        // **Two arms, one proposition** — "an edge of this solid lies in the interior of one of
-        // its own faces". The planar arm asks it of plane faces, through boxes and exact plane
-        // membership. The curved arm asks it of a lateral face, for the edges two of the
-        // solid's plane faces share along a ruling of that cylinder (the gate's record,
-        // `WorkingCyl::shared_of`) — a wedge's apex edge lying along the solid's own bore wall,
-        // say ([`combinatorics::ruling_meets_lateral`]). The point arm below asks a vertex
-        // against a plane face. What none asks abstains rather than pretends, each for a reason
-        // written down: an arc edge lies in a plane face only on its own circle's plane, where
-        // the faces overlap in area (the coplanar merge's); and a lateral face touched at a single
-        // point is not asked — where a plane face through that point is slanted to the axis the gate
-        // refuses it first (`ObliqueCylinderCut`), and on planes along or across the axis the case
-        // is not measured.
+        // **Three arms, one proposition** — "an edge or a vertex of this solid meets the closed
+        // region of one of its own faces it does not bound". The planar arm asks an edge of every
+        // plane face, through boxes and exact plane membership. The curved arm asks it of a
+        // lateral face, for the edges two of the solid's plane faces share along a ruling of that
+        // cylinder (the gate's record, `WorkingCyl::shared_of`) — a wedge's apex edge lying along
+        // the solid's own bore wall, say ([`combinatorics::ruling_meets_lateral`]). The point arm
+        // below asks a vertex against every plane face. What none asks abstains rather than
+        // pretends, each for a reason written down — or is a gap the reason names. An arc edge:
+        // where it lies in a plane face the faces overlap in area (the coplanar merge's), and where
+        // it touches one at a point no vertex names, a straight edge of that face touches the arc's
+        // own cap there (the planar arm's touch), or the face lies on a wall tangent along the
+        // ruling (the tangency verdict), or it is slanted to the axis (`ObliqueCylinderCut`), or the
+        // face's bound is another cylinder's arc (`CylinderPairContact`) — the last two lean on the
+        // gate refusing first. Two gaps, not abstentions: a vertex whose name is a pierce name —
+        // a point the alias table knows on a cylinder's surface is represented by one
+        // (`Aliases::rep_rank`), a three-plane corner on it included — is asked by no arm, and a
+        // lateral face touched at a single point is not asked. Slanted planes reach both and the
+        // gate refuses most of them first; planes along and across the axis reach both too, at
+        // a rim or on the surface beyond a lateral, and what answers there is whatever guard
+        // happens to fire, or nothing (the todo item names the measured rows).
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -322,6 +337,24 @@ pub(super) fn self_touch_reject(
                     hi[k] = hi[k].max(rh[k]);
                 }
             };
+            // A circle bulges past every node, so a curved bound takes its whole circle's box — and
+            // with no exact circle the box holds everything: a box with no proved bound must not
+            // drop a candidate.
+            let circle_box = |cyl: usize| match cyls.get(cyl).and_then(|c| {
+                combinatorics::arc_box_rat(jd, lf.surf.plane(), &c.def, crate::planes::Theta::Whole)
+            }) {
+                Some([cl, ch]) => (
+                    cl.map(|x| outward(x.to_f64(), -1.0)),
+                    ch.map(|x| outward(x.to_f64(), 1.0)),
+                ),
+                None => ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
+            };
+            // A face bounded outside by a circle — a cap disk — has no ring to grow from; its
+            // box is its circle's.
+            if let Bound::Circle { cyl } = lf.outer {
+                let (cl, ch) = circle_box(cyl);
+                grow(cl, ch);
+            }
             for r in rings_of(lf) {
                 let k = r.nodes.len();
                 for i in 0..k {
@@ -332,25 +365,11 @@ pub(super) fn self_touch_reject(
                     if let Some(&(_, (rl, rh))) = pt.get(&u) {
                         grow(rl, rh);
                     }
-                    // An arc bulges past its two ends: the box takes its whole circle's, and with
-                    // no exact circle it holds everything — a box with no proved bound must not
-                    // drop a candidate.
+                    // An arc bulges past its two ends: the box takes its whole circle's.
                     if let Wall::Arc { cyl, .. } = r.walls[i] {
                         arc_edges.insert(key);
-                        match cyls.get(cyl).and_then(|c| {
-                            combinatorics::arc_box_rat(
-                                jd,
-                                lf.surf.plane(),
-                                &c.def,
-                                crate::planes::Theta::Whole,
-                            )
-                        }) {
-                            Some([cl, ch]) => grow(
-                                cl.map(|x| outward(x.to_f64(), -1.0)),
-                                ch.map(|x| outward(x.to_f64(), 1.0)),
-                            ),
-                            None => grow([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
-                        }
+                        let (cl, ch) = circle_box(cyl);
+                        grow(cl, ch);
                     }
                 }
             }
@@ -391,13 +410,6 @@ pub(super) fn self_touch_reject(
                 // two decided by class order, that is by operand order.
                 let q = faces[j].surf.plane();
                 if !(on(u, q) && on(v, q)) {
-                    continue;
-                }
-                // A face bounded outside by a circle — a cap disk — is not asked. Its plane is
-                // ⊥ to the cylinder's axis, and an edge of the same body lying on it from
-                // outside needs a plane slanted to that axis through a point of the disk,
-                // which cannot clear the cylinder's side: `ObliqueCylinderCut` refuses first.
-                if matches!(faces[j].outer, Bound::Circle { .. }) {
                     continue;
                 }
                 if let std::collections::hash_map::Entry::Vacant(slot) = read.entry(j) {
@@ -447,9 +459,7 @@ pub(super) fn self_touch_reject(
         // edge does not — would read here as a self-touch, `Impossible` where `SuspectedDefect` is
         // the truth; the suite holds no such vertex (measured).
         //
-        // A pierce vertex abstains. A plane face through it is slanted to the cylinder's axis, along
-        // it, or across it: the first the gate refuses (`ObliqueCylinderCut`); the other two are not
-        // measured here.
+        // A vertex whose name is a pierce name is not asked — the gap the arms' note above names.
         visits.sort_unstable();
         for at in visits.chunk_by(|x, y| x.0 == y.0) {
             let n = at[0].0;
@@ -459,7 +469,7 @@ pub(super) fn self_touch_reject(
             let mine = |j: usize| at.binary_search(&(n, j)).is_ok();
             let (nl, nh) = reach_of(n);
             for &j in near_buf.of(&grid, &boxes, nl, nh) {
-                if mine(j) || matches!(faces[j].outer, Bound::Circle { .. }) {
+                if mine(j) {
                     continue;
                 }
                 let q = faces[j].surf.plane();
@@ -568,8 +578,8 @@ enum Touch {
 /// perf folds both arms took 242 ms through the window and 196 ms through this grid (measured).
 /// A query collects into one buffer and drops repeats by a stamp ([`NearFaces`]); collecting a
 /// fresh vector per query and sorting it to drop them was slower than the window. A face whose box
-/// has no finite bound (an arc whose circle has no exact description) is filed everywhere; an empty
-/// box (a ring-less cap disk) nowhere.
+/// has no finite bound (a circle with no exact description) is filed everywhere; an empty box
+/// nowhere.
 struct FaceGrid {
     lo: [f64; 3],
     step: [f64; 3],

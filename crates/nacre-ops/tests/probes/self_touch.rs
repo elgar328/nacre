@@ -1258,3 +1258,130 @@ fn an_edge_at_a_grooves_mouth_builds() {
     let want = Want::Refused(RejectReason::ObliqueCylinderCut);
     expect_fuse(&mut m, a, wedge, want, true, "a wedge leaning off the wall");
 }
+
+/// **A body whose edge touches its own cap's rim at one point is refused** — the edge test's
+/// touch: a line tangent to a curved bound meets the face's closed region at a point no vertex
+/// names.
+///
+/// A plate carries a boss of radius 5 up to 4 above it, and a column on the plate carries an arm
+/// over the boss's side of it whose bottom face lies on the cap's plane and whose edge there runs
+/// along the line tangent to the rim at `(3, 4)` (or at `(1.4, 4.8)`). The arm and the boss meet at
+/// that one point and the body is joined through the plate: its surface touches itself there. The
+/// cap is a whole disk (a circle bound), or the boss is trimmed to `x ≥ −3` and its top is a ring of
+/// an arc and a chord. Each row's twin, the arm raised 0.5, is one body. The control: the boss
+/// trimmed to `x ≤ 2`, whose arc stops short of the tangent point — the line touches the circle but
+/// not the face, and the body builds. On the world frame and a 3-4-5 one, in either operand order.
+#[test]
+fn a_body_touching_its_own_cap_rim_at_a_point_is_refused() {
+    // The arm's floor over the tangent line through `at`, 2 deep beyond it, and a column under it.
+    type Arm = (&'static [[f64; 2]], [[f64; 2]; 4]);
+    let tangent_at_3_4: Arm = (
+        &[[7.0, 1.0], [8.2, 2.6], [0.2, 8.6], [-1.0, 7.0]],
+        [[6.6, 2.0], [7.4, 2.0], [7.4, 2.6], [6.6, 2.6]],
+    );
+    let tangent_at_1_4_4_8: Arm = (
+        &[[6.2, 3.4], [6.76, 5.32], [-2.84, 8.12], [-3.4, 6.2]],
+        [[1.6, 5.8], [2.4, 5.8], [2.4, 6.4], [1.6, 6.4]],
+    );
+    // `(row, trim: the half-plane cut off the boss, arm, refused)`.
+    type Row = (&'static str, Option<[[f64; 2]; 4]>, Arm, bool);
+    let rows: [Row; 4] = [
+        ("a whole cap, tangent at (3, 4)", None, tangent_at_3_4, true),
+        (
+            "a whole cap, tangent at (1.4, 4.8)",
+            None,
+            tangent_at_1_4_4_8,
+            true,
+        ),
+        (
+            "a D cap (x ≥ −3), tangent at (3, 4)",
+            Some([[-6.0, -6.0], [-3.0, -6.0], [-3.0, 6.0], [-6.0, 6.0]]),
+            tangent_at_3_4,
+            true,
+        ),
+        (
+            "a D cap (x ≤ 2), the tangent point off its arc",
+            Some([[2.0, -6.0], [6.0, -6.0], [6.0, 6.0], [2.0, 6.0]]),
+            tangent_at_3_4,
+            false,
+        ),
+    ];
+    for (row, trim, (arm, column), refused) in rows {
+        for tilted in [false, true] {
+            for lift in [0.0, 0.5] {
+                for swapped in [false, true] {
+                    let at =
+                        format!("{row}, tilted = {tilted}, lift = {lift}, swapped = {swapped}");
+                    let mut m = Model::new();
+                    let (base, _) = base_frame(&mut m, tilted);
+                    let floor = offset_of(&mut m, base, -2.0);
+                    let plate = prism_on(
+                        &mut m,
+                        floor,
+                        &[[-10.0, -10.0], [12.0, -10.0], [12.0, 12.0], [-10.0, 12.0]],
+                        2.0,
+                    );
+                    let disk = nacre_ops::from_paths(vec![
+                        nacre_ops::Ring2d::circle(Point2::from_array([0.0, 0.0]), 5.0)
+                            .expect("a circle"),
+                    ])
+                    .expect("a disk")
+                    .remove(0);
+                    let boss = extrude_on(&mut m, base, disk, 4.0);
+                    let mut a = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
+                    m.rebuild_adjacency();
+                    if let Some(half) = trim {
+                        let cutter = prism_on(&mut m, base, &half, 5.0);
+                        a = boolean(&mut m, BoolKind::Cut, a, cutter).expect("the D")[0];
+                        m.rebuild_adjacency();
+                    }
+                    let level = offset_of(&mut m, base, 4.0 + lift);
+                    let floor_of_arm = prism_on(&mut m, level, arm, 2.0);
+                    let post = prism_on(&mut m, base, &column, 4.0 + lift);
+                    let b = boolean(&mut m, BoolKind::Fuse, floor_of_arm, post).expect("the arm");
+                    assert_eq!(b.len(), 1, "{at}: the arm is one body");
+                    let b = b[0];
+                    m.rebuild_adjacency();
+                    let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
+                    let want = vol(&m, a) + vol(&m, b);
+                    let (x, y) = if swapped { (b, a) } else { (a, b) };
+                    match (
+                        refused && lift == 0.0,
+                        boolean(&mut m, BoolKind::Fuse, x, y),
+                    ) {
+                        (
+                            true,
+                            Err(BoolError::Rejected {
+                                reason: RejectReason::SelfTouchingResult,
+                                at: witness,
+                            }),
+                        ) => {
+                            if !tilted {
+                                // The witness is the arm's edge on the tangent line.
+                                let Some(nacre_ops::RejectWhere::Segment(ends)) = witness else {
+                                    panic!("{at}: witness {witness:?}");
+                                };
+                                let line = |p: Point3| {
+                                    let [x, y, z] = p.as_array();
+                                    let [a, b] = [arm[0], arm[3]];
+                                    let cross =
+                                        (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+                                    cross.abs() < 1e-9 && (z - 4.0).abs() < 1e-9
+                                };
+                                assert!(ends.iter().all(|&p| line(p)), "{at}: witness {ends:?}");
+                            }
+                        }
+                        (false, Ok(solids)) => {
+                            m.rebuild_adjacency();
+                            assert_eq!(solids.len(), 1, "{at}: one body");
+                            assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                            let got: f64 = solids.iter().map(|&s| vol(&m, s)).sum();
+                            assert!((got - want).abs() < 1e-6, "{at}: volume {got}, want {want}");
+                        }
+                        (_, other) => panic!("{at}: {other:?}"),
+                    }
+                }
+            }
+        }
+    }
+}

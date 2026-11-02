@@ -388,6 +388,52 @@ pub(crate) fn arc_crossings_of(
     arc_crossings(jd, &wcy.def, wc, fc, cyl, ccw, ends, on_end)
 }
 
+/// **Where the class line `L = wc ∩ fc` touches the arc of cylinder `cyl` from `ends[0]` to
+/// `ends[1]` without crossing it** — the tangent point, when `L` is tangent to the circle there and
+/// the point lies strictly inside the arc; [`arc_crossings`]'s other half, which reads the same
+/// meet and drops the tangent.
+///
+/// The point is named as [`arc_crossings`] names a root, with the one root a tangent has
+/// (`QuadRoot::Double`). A tangent point at an arc's end is not this answer: that end is a node of
+/// the ring, named by a pierce name. A class the gate passed silent about the cylinder is not
+/// asked: where the whole cylinder lies beside its plane the line misses the arc, and on the other
+/// silences every face on it stands apart from every lateral face's box — the class's plane may
+/// cut the cylinder, but the caller's segment lies on such a face, outside the box that holds the
+/// arc. `None` where the meet or the angular order cannot be read.
+pub(crate) fn arc_touch(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    fc: usize,
+    cyl: usize,
+    ccw: bool,
+    [a, b]: [NodeId; 2],
+) -> Option<Option<NodeId>> {
+    use nacre_judge::cylinder::LineMeet;
+    let wcy = cyls.get(cyl)?;
+    if wcy.is_silent(wc) {
+        return Some(None);
+    }
+    match jd.line_meet(wc, fc, &wcy.def, false) {
+        LineMeet::Tangent(..) => {}
+        LineMeet::Pair(_) | LineMeet::ParallelPlanes | LineMeet::Miss => return Some(None),
+        // `fc` carries an arc, so its plane meets the axis: a line on it is no ruling and not
+        // parallel to the axis, and `wc` is another class. These three do not arise.
+        LineMeet::CoincidentPlanes
+        | LineMeet::OnRuling(_)
+        | LineMeet::AxisParallelMiss
+        | LineMeet::Undecided
+        | LineMeet::Wide
+        | LineMeet::Overflow => return None,
+    }
+    let (lo, hi) = if ccw { (a, b) } else { (b, a) };
+    let node = NodeId::pierce(wc, fc, cyl, QuadRoot::Double);
+    match theta_place(jd, cyl, &wcy.def, lo, hi, node)? {
+        ThetaPlace::Inside => Some(Some(node)),
+        ThetaPlace::Outside | ThetaPlace::At(_) => Some(None),
+    }
+}
+
 /// **The planar scan's crossing on a ruling** — the point where the class line `L = wc ∩ fc`
 /// leaves the face across an edge riding a cylinder's ruling, named as the pierce node
 /// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
