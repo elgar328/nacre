@@ -229,10 +229,11 @@ impl Ring {
     /// table's def - the same clone convention every producer follows; its `plane` stays behind,
     /// the predicates reading the circle off the cylinder and the ring's own plane; a
     /// `Wall::Ruling`'s, the plane its `side` was measured against, is carried on), a pierce end
-    /// on a plane edge by `pin_for` (its cylinder when its pair is the edge's line) and elsewhere
-    /// by its cylinder, and a three-plane end by `pin_on_line` - so a mixed ring yields edges its
-    /// consumers fork on (`ring_is_mixed`). Flattening walls to plane indices for a plane-only
-    /// derivation would refuse every mixed ring here, before any consumer could abstain.
+    /// on a plane edge by `pin_for` (its cylinder when both planes of its pair hold the edge's
+    /// line) and elsewhere by its cylinder, and a three-plane end by `pin_on_line` - so a mixed
+    /// ring yields edges its consumers fork on (`ring_is_mixed`). Flattening walls to plane indices
+    /// for a plane-only derivation would refuse every mixed ring here, before any consumer could
+    /// abstain.
     ///
     /// `p` is the plane class the ring lies in, which pins a **three-plane** end on its edge's
     /// line; a lateral ring (on a cylinder) has none — its corners are pierce names — and passes
@@ -248,10 +249,10 @@ impl Ring {
         }
         let pin = |n: NodeId, wall: &Wall| -> Result<combinatorics::EndPin, BoolError> {
             if combinatorics::pierce_name(n).is_some() {
-                // A pierce end is pinned by its cylinder only on the line its pair spells; a
-                // point on a line two classes share on the cylinder can arrive under the other
-                // pair's name, and on a plane edge its pin is then derived — `pin_for`, the one
-                // rule («a pin is a function of the name and the line»).
+                // A pierce end is pinned by a plane of its pair that cuts the line, or by its
+                // cylinder where both hold it; a point on a line two classes share on the cylinder
+                // can arrive under the other pair's name, so on a plane edge its pin is derived —
+                // `pin_for`, the one rule («a pin is a function of the name and the line»).
                 return match (wall, p) {
                     (Wall::Plane(c), Some(p)) => combinatorics::pin_for(jd, p, *c, n)
                         .ok_or_else(|| reject(RejectReason::RingNaming)),

@@ -558,7 +558,7 @@ fn coincident_cap_edges_merge_by_footprint() {
             &inc_b,
             &plane_ix,
         );
-        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
         assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
         for e in &merged {
             assert_eq!(
@@ -610,7 +610,7 @@ fn coincident_cap_edges_merge_by_footprint() {
             &inc_b,
             &plane_ix,
         );
-        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
         assert_eq!(
             merged.len(),
             8,
@@ -670,7 +670,7 @@ fn split_cuts_the_cross_into_the_right_pieces() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     assert_eq!(merged.len(), 8, "8 merged edges before split");
 
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -782,7 +782,7 @@ fn partial_overlap_is_resolved() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
     // The shared y=1 wall (a face at y=1).
@@ -870,7 +870,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let z = |v: i128| nacre_exact::Rat::from_int(v);
@@ -1048,7 +1048,7 @@ fn the_cross_arrangement_has_six_cells() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
     let edges =
@@ -1190,7 +1190,7 @@ fn cell_labels_propagate_and_match_footprints() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let edges =
         ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
@@ -1278,7 +1278,7 @@ fn a_straddle_drives_the_above_bit_and_seated_wins() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let edges =
         ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
@@ -1345,7 +1345,7 @@ fn boolean_keep_and_result_faces_on_the_cross() {
         &inc_b,
         &plane_ix,
     );
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let edges =
         ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();

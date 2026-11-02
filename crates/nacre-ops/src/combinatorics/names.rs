@@ -847,11 +847,12 @@ pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Opt
 /// **What pins a named point on the line `a ∩ b`** — the one rule, read from the name.
 ///
 /// A three-plane name is pinned by whichever of its planes cuts the line ([`pin_on_line`]). A
-/// pierce name whose pair *is* the line's is pinned by its cylinder ([`EndPin::Cylinder`] — the
-/// quadric's root along that very line); a pierce name with another pair — a ruling's end on a
-/// cap, a corner the line passes through — is pinned by whichever of that pair's planes cuts the
-/// line. Where both of them hold the line (a pencil), neither cuts it and the answer is `None`: the
-/// rule finds no pin on that line, and each reader says what that means there.
+/// pierce name is pinned by whichever of its pair's planes cuts the line — a ruling's end on a cap,
+/// a corner the line passes through — and by its cylinder ([`EndPin::Cylinder`] — the quadric's
+/// root along the line) where neither does: then both hold the line, the pair *is* the line's or
+/// another pair of the classes holding it (a pencil), and the name's own pair solves the point on
+/// it. A pierce name always has a pin; `None` is a three-plane name none of whose planes cuts the
+/// line, which is no point on it.
 ///
 /// Why it exists: a segment's endpoint travels as a (name, pin) pair, and the alias table can
 /// fold the name onto a representative of another **variant** — a tangent corner's `Pierce` onto
@@ -866,12 +867,7 @@ pub(crate) fn pin_for(
     match name.kind() {
         NodeKind::ThreePlane(t) => pin_on_line(jd, a, b, &t).map(EndPin::Class),
         NodeKind::Pierce { planes, .. } => {
-            let mut line = [a, b];
-            line.sort_unstable();
-            if planes == line {
-                return Some(EndPin::Cylinder);
-            }
-            pin_on_line(jd, a, b, &planes).map(EndPin::Class)
+            Some(pin_on_line(jd, a, b, &planes).map_or(EndPin::Cylinder, EndPin::Class))
         }
     }
 }

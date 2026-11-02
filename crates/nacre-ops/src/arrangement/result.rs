@@ -367,7 +367,7 @@ pub(super) fn class_skeleton(
 ) -> Result<Skeleton, BoolError> {
     // A disk cap's chord is one of these segments (both ends pierce-pinned,
     // from the same parity sweep as every polygon's section).
-    let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, local));
+    let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, local))?;
     let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, local))?;
     let news = carries_news(&split)?;
     let circles = merge_circles(&tr.circles, local)?;

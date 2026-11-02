@@ -104,7 +104,7 @@ pub(crate) fn concurrency_audit(
         // Names this class used: segment endpoints and — since a crossing the arrangement mints
         // is a vertex too — the split's endpoints where it got that far. A ring vertex that only
         // touches the class is no segment's end; it is among the operand vertices below.
-        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
         let mut names: Vec<NodeId> = Vec::new();
         for s in merged.iter().chain(
             split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default())
@@ -330,7 +330,7 @@ pub(crate) fn pierce_corner_audit(
     for wc in 0..geom.len() {
         let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
         aliases.absorb(&tr.aliases);
-        let merged = merge_coincident(&jd, &tr.segs, wc, &aliases);
+        let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
         let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
     }
     // The corners: every pierce name a plane face's ring carries, once per vertex.
@@ -454,7 +454,7 @@ pub(crate) fn operand_vertex_audit(
     for wc in 0..geom.len() {
         let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
         aliases.absorb(&tr.aliases);
-        let merged = merge_coincident(&jd, &tr.segs, wc, &aliases);
+        let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
         let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
     }
     let plane_class = |k: usize| match plane_ix[k] {
@@ -774,7 +774,7 @@ pub(crate) fn frame_audit(
             let mut tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
             aliases.absorb(&std::mem::take(&mut tr.aliases));
             if tr.declined.is_empty() {
-                let merged = merge_coincident(&jd, &tr.segs, wc, &aliases);
+                let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
                 let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
             }
         }

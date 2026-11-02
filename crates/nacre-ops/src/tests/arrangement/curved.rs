@@ -2544,7 +2544,7 @@ fn partial_overlap_is_not_merged() {
     // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
     // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
     // seated≡transversal coincidence).
-    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+    let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     // The shared y=1 wall class (a face at y=1).
     let y1 = planes
         .iter()
@@ -2676,4 +2676,106 @@ fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
             );
         }
     }
+}
+
+/// **A pencil names one crossing by any pair of its classes, and a split point keeps the name it
+/// came with.** The classes `x = 0`, `y = 0` and `x + y = 0` hold one line, the `z` axis; a cylinder
+/// about the line `y = 0, z = 2`, `r = 1`, crosses it at `z = 1` and `z = 3`. Each pair's roots run
+/// along that pair's own direction, and one pair's direction is another's reversed, so one crossing
+/// wears `Lo` under one pair and `Hi` under another (the third normal at 45° between the first two
+/// makes that so whichever way the class numbers fall). Every name of a crossing places it at one place
+/// on the line, its pin there is the cylinder, and a split point hands the name back verbatim —
+/// restated on the line's own pair with its root kept, it would be the other crossing.
+#[test]
+fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
+    use crate::combinatorics::{EndPin, PointOn, QuadRoot, order_on, pierce_name, pin_for};
+    use nacre_exact::Rat;
+    let mut m = Model::new();
+    let prism = |m: &mut Model, tri: [[f64; 2]; 3]| {
+        let p2 = |q: [f64; 2]| nacre_math::Point2::from_array(q);
+        let profile = crate::Profile2d::polygon(tri.into_iter().map(p2).collect()).unwrap();
+        let frame = SketchFrame::world(m, Axis::Z);
+        let Ok(OpOutput::Extrude { solid, .. }) = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 4.0,
+            },
+        ) else {
+            panic!("the prism extrudes")
+        };
+        solid
+    };
+    let a = prism(&mut m, [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]); // x = 0, y = 0
+    let b = prism(&mut m, [[0.0, 0.0], [-1.0, 1.0], [-1.0, 0.0]]); // x + y = 0
+    let bar = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([-2.0, 0.0, 2.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        1.0,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    let surf = m.face(bar.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def,
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let mut rows = crate::planes::collect_planes(&m, a).unwrap();
+    rows.extend(crate::planes::collect_planes(&m, b).unwrap());
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    let class = |n: [i128; 3]| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                let k = (0..3).find(|&i| n[i] != 0).expect("a normal");
+                (0..3).all(|i| w[i].checked_mul(ri(n[k])) == w[k].checked_mul(ri(n[i])))
+                    && w[3] == ri(0)
+            })
+            .expect("the prisms hold that plane")
+    };
+    let (cx, cy, cd) = (class([1, 0, 0]), class([0, 1, 0]), class([1, 1, 0]));
+    let at =
+        |p: NodeId, q: NodeId| order_on(&jd, &cyls, cx, cy, PointOn::Pierce(p), PointOn::Pierce(q));
+    let root = |n: NodeId| pierce_name(n).expect("a pierce name").2;
+    let mut reversed = false;
+    for r in [QuadRoot::Lo, QuadRoot::Hi] {
+        let n = NodeId::pierce(cx, cy, 0, r);
+        for (p, q) in [(cx, cd), (cy, cd)] {
+            let same: Vec<NodeId> = [QuadRoot::Lo, QuadRoot::Hi]
+                .into_iter()
+                .map(|r2| NodeId::pierce(p, q, 0, r2))
+                .filter(|&n2| at(n, n2) == Some(0))
+                .collect();
+            let [n2] = same[..] else {
+                panic!("one root of ({p}, {q}) is {n:?}'s crossing: {same:?}")
+            };
+            reversed |= root(n2) != root(n);
+            assert_eq!(pin_for(&jd, cx, cy, n2), Some(EndPin::Cylinder), "{n2:?}");
+            let split = Split::of(n2, EndPin::Cylinder);
+            assert_eq!(
+                order_on(&jd, &cyls, cx, cy, split.on(cx, cy), PointOn::Pierce(n)),
+                Some(0),
+                "{n2:?} split on ({cx}, {cy}) is still {n:?}'s crossing"
+            );
+        }
+    }
+    assert!(
+        reversed,
+        "some pair runs against the line's own: a root's label alone names no crossing"
+    );
 }

@@ -321,10 +321,11 @@ pub(super) fn split_segments_at(
             }
             // The crossing arrives under the table's name, which may carry another
             // pair — a corner's own, or a secant's on a line two classes share on the cylinder —
-            // so its pin on *this* line is derived, not assumed (`pin_for`: the cylinder when the
-            // pair is the line's, else the plane of its pair that cuts the line), and the point
-            // is located by that pin, the ends' own rule: a pierce name is a locator only on
-            // the line its pair spells (`on_line`'s `names_the_line`).
+            // so its pin on *this* line is derived, not assumed (`pin_for`: the plane of its pair
+            // that cuts the line, else the cylinder — both planes then hold the line, the line's
+            // own pair or another pair of the classes holding it), and the point is located by
+            // that pin, the ends' own rule: a pierce name is a locator on a line both its planes
+            // hold (`on_line`'s `names_the_line`).
             let Some(pin) = combinatorics::pin_for(jd, pair[0], pair[1], n) else {
                 return Err(reject(RejectReason::RingNaming));
             };

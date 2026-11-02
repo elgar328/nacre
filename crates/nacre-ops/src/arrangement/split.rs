@@ -1,34 +1,46 @@
 use super::*;
-/// **A split point on one wall's line, named by what is common to every point there.**
+/// **A split point on one wall's line, in sixteen bytes.**
 ///
-/// The line is `wc ∩ w`, so those two planes are the same for all of them and only the third thing
-/// differs: a plane class that cuts the line, or which root of which cylinder. The full
+/// The line is `wc ∩ w`, so a plane split point is named by the third plane alone and its full
 /// [`NodeId`] is derived by [`Split::name`] where it is needed — the same trade
 /// [`combinatorics::OnLine::Class`] makes, and for the same measured reason: these vectors are
-/// rebuilt once per wall and a rotated fold spends most of itself allocating.
+/// rebuilt once per wall and a rotated fold spends most of itself allocating. A pierce split point
+/// carries its own name, pair and all, narrowed to fit the same size.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum Split {
     /// First, so `Ord` still runs ascending in the class — the tie groups below hand
     /// `group.first()` to the output as the point's name, and that is the "smallest name wins"
     /// rule the arrangement replays on.
     Class(usize),
+    /// The pierce name itself, its pair included: the pair need not be the line's. A pencil — three
+    /// or more classes holding the line — names one crossing by any pair of its classes, and the
+    /// root is along *that* pair's direction, which can be the line's reversed; restating the name
+    /// on the line's pair would keep the root and so name the other crossing. The indices are
+    /// narrowed so the whole name fits where a class does (the size lock below).
     Pierce {
-        cyl: usize,
-        /// **Already canonical**, because it was read out of a [`NodeId`] rather than solved
-        /// here — which is why [`Split::name`] hands the door a *sorted* pair, where
-        /// `QuadRoot::canonical` has nothing to do. Passing `(p, q)` in caller order instead
-        /// would flip a root that is already right.
+        planes: [u32; 2],
+        cyl: u32,
         root: crate::combinatorics::QuadRoot,
     },
 }
 
+// **Sixteen bytes, as a plane split point is.** These vectors are rebuilt per wall, and widening
+// the element to a full `NodeId` (32 bytes) cost the collecting loop 36% on a rotated fold — see
+// `split_at_crossings`.
+const _: () = assert!(std::mem::size_of::<Split>() == 16);
+
+/// A class or cylinder index, narrowed for [`Split::Pierce`]; a table of `u32::MAX` classes is
+/// out of every reach.
+fn narrow(i: usize) -> u32 {
+    u32::try_from(i).expect("a class index fits in u32")
+}
+
 impl Split {
-    /// **The pierce arm keeps the root the producer wrote, not a re-canonicalized one.** A
-    /// segment on `w` in class `wc` has a pierce end pinned by the cylinder only where the name's
-    /// plane pair *is* `{wc, w}` ([`combinatorics::pin_for`] — a corner whose pair is another line
-    /// is pinned by its other plane and arrives here as [`Split::Class`]), so the stored name is
-    /// already canonical for it and [`Split::name`] can put it back verbatim. Restating it
-    /// through `NodeId::pierce` would re-run the pair ordering and could flip the root.
+    /// **The pierce arm keeps the name the producer wrote.** A segment on `w` in class `wc` has a
+    /// pierce end pinned by the cylinder where both planes of the name's pair hold the line `wc ∩ w`
+    /// ([`combinatorics::pin_for`] — a corner whose pair is another line is pinned by its other
+    /// plane and arrives here as [`Split::Class`]), and the pair is `{wc, w}` itself or another pair
+    /// of the classes holding it; [`Split::name`] puts the name back verbatim.
     /// **A cylinder pin arrives with a pierce name, and that is a producer's invariant, so
     /// this panics rather than naming a refusal.** Every site that writes an `EndPin::Cylinder`
     /// writes the `NodeId::Pierce` beside it — the seated walk, the arc split, the chord pass — so
@@ -42,8 +54,12 @@ impl Split {
     pub(super) fn of(name: NodeId, pin: combinatorics::EndPin) -> Split {
         match (name.kind(), pin) {
             (_, combinatorics::EndPin::Class(r)) => Split::Class(r),
-            (NodeKind::Pierce { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
-                Split::Pierce { cyl, root }
+            (NodeKind::Pierce { planes, cyl, root }, combinatorics::EndPin::Cylinder) => {
+                Split::Pierce {
+                    planes: planes.map(narrow),
+                    cyl: narrow(cyl),
+                    root,
+                }
             }
             (n, combinatorics::EndPin::Cylinder) => unreachable!(
                 "a cylinder pin was written beside a three-plane name: {n:?} — the producer that \
@@ -65,19 +81,12 @@ impl Split {
     fn name(self, p: usize, q: usize) -> NodeId {
         match self {
             Split::Class(r) => NodeId::three_planes(Canon3::three([p, q, r])),
-            // The pair is sorted before the door, not after: `root` came out of a name and is
-            // already canonical against the sorted pair, so `QuadRoot::canonical` must find
-            // nothing to do. Handing it `(p, q)` in caller order would flip a root that is
-            // already right — and the classes do arrive out of order.
-            Split::Pierce { cyl, root } => NodeId::pierce(p.min(q), p.max(q), cyl, root),
-        }
-    }
-
-    /// What pins it — the arrangement ships this beside the name.
-    fn pin(self) -> combinatorics::EndPin {
-        match self {
-            Split::Class(r) => combinatorics::EndPin::Class(r),
-            Split::Pierce { .. } => combinatorics::EndPin::Cylinder,
+            // The pair came out of a name, so it is sorted and `QuadRoot::canonical` finds nothing
+            // to do: the name goes back as it came.
+            Split::Pierce { planes, cyl, root } => {
+                let [p, q] = planes.map(|i| i as usize);
+                NodeId::pierce(p, q, cyl as usize, root)
+            }
         }
     }
 }
@@ -218,12 +227,14 @@ pub(super) fn split_at_crossings(
         // endpoint: the two pieces either side of a boss then cover no interval and vanish,
         // leaving the class's boundary open (measured).
         //
-        // **`Split`, not a `NodeId` — the name is derived.** On *this* line a point is either
-        // a third plane or a root of a cylinder, so `{wc, w}` is common to every one of them and
-        // storing it 114k–134k times is waste. Carrying the full name instead cost the collecting
-        // loop 36% on a rotated fold (75.8→103.5ms, same trip counts): these vectors are rebuilt
-        // per wall, and allocation is where that fixture spends most of its time. The same lesson
-        // as [`combinatorics::OnLine::Class`] dropping its `name`, one file over.
+        // **`Split`, not a `NodeId` — sixteen bytes.** On *this* line a plane point is a third
+        // plane, `{wc, w}` common to every one of them, and storing the pair 114k–134k times is
+        // waste. Carrying the full name instead cost the collecting loop 36% on a rotated fold
+        // (75.8→103.5ms, same trip counts): these vectors are rebuilt per wall, and allocation is
+        // where that fixture spends most of its time. The same lesson as
+        // [`combinatorics::OnLine::Class`] dropping its `name`, one file over. A pierce point keeps
+        // its pair — a pencil's need not be `{wc, w}` — in narrowed indices, so the element does
+        // not grow.
         let mut pts: Vec<Split> = Vec::new();
         {
             watch!(COLLECT);
@@ -460,13 +471,14 @@ pub(super) fn split_at_crossings(
                 // point the table represents under another name — a class's root that is an
                 // operand's corner — is pinned as that name is on this line.
                 let (np, nq) = (sorted(p, aliases), sorted(q, aliases));
-                let pin = |s: Split, n: NodeId| {
-                    combinatorics::pin_for(jd, wc, w, n).unwrap_or_else(|| s.pin())
+                let pin = |n: NodeId| {
+                    combinatorics::pin_for(jd, wc, w, n)
+                        .ok_or_else(|| reject(RejectReason::RingNaming))
                 };
                 out.push(MergedSeg {
                     wall: w,
                     end: [np, nq],
-                    end_h: [pin(p, np), pin(q, nq)],
+                    end_h: [pin(np)?, pin(nq)?],
                     merged,
                     sense: None,
                 });

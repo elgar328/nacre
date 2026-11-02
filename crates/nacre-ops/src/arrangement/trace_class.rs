@@ -135,7 +135,7 @@ pub(super) fn merge_coincident(
     segs: &[Seg],
     wc: usize,
     aliases: &Aliases,
-) -> Vec<MergedSeg> {
+) -> Result<Vec<MergedSeg>, BoolError> {
     // Key an edge by (wall, sorted endpoint pair) — both folded onto their canonical names first,
     // because two producers can describe one edge with a different wall *and* different endpoint
     // names when planes are concurrent, and it takes both folds for the two keys to coincide.
@@ -150,44 +150,43 @@ pub(super) fn merge_coincident(
     let mut groups: HashMap<(usize, [NodeId; 2]), MergedSeg> = HashMap::new();
     for s in segs {
         let k = key(s);
-        groups
-            .entry(k)
-            .or_insert_with(|| {
+        let group = match groups.entry(k) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(v) => {
                 order.push(k);
-                {
-                    // The canonical name of the line, so every producer on it agrees. A handle
-                    // stays as recorded while the endpoint's name does: an aliased wall carries
-                    // the *same* line, so a handle that pinned an endpoint there still pins it
-                    // here. When the **name** folds (a tangent corner's `Pierce` onto
-                    // the `ThreePlane` of its planes with this class) the pin is derived again
-                    // from the representative and the line — [`combinatorics::pin_for`], the one
-                    // rule — because a pin is a fact about the name beside it, not luggage.
-                    let wall = aliases.canon_wall(wc, s.wall);
-                    let mut end = [NodeId::three_planes(Canon3::three([0, 1, 2])); 2];
-                    let mut end_h = s.end_h;
-                    for k in 0..2 {
-                        end[k] = aliases.canon_point(s.end[k]);
-                        if end[k] != s.end[k] {
-                            if let Some(pin) = combinatorics::pin_for(jd, wc, wall, end[k]) {
-                                end_h[k] = pin;
-                            }
-                        }
-                    }
-                    MergedSeg {
-                        wall,
-                        end,
-                        end_h,
-                        merged: Vec::new(),
-                        sense: None,
+                // The canonical name of the line, so every producer on it agrees. A handle stays as
+                // recorded while the endpoint's name does: an aliased wall carries the *same* line,
+                // so a handle that pinned an endpoint there still pins it here — a plane that cuts
+                // the line cuts it under either wall, and a cylinder pin's name holds the line
+                // whichever of its holders the wall is ([`combinatorics::pin_for`]). When the
+                // **name** folds (a tangent corner's `Pierce` onto the `ThreePlane` of its planes
+                // with this class) the pin is derived again from the representative and the line —
+                // `pin_for`, the one rule — because a pin is a fact about the name beside it, not
+                // luggage.
+                let wall = aliases.canon_wall(wc, s.wall);
+                let mut end = [NodeId::three_planes(Canon3::three([0, 1, 2])); 2];
+                let mut end_h = s.end_h;
+                for k in 0..2 {
+                    end[k] = aliases.canon_point(s.end[k]);
+                    if end[k] != s.end[k] {
+                        end_h[k] = combinatorics::pin_for(jd, wc, wall, end[k])
+                            .ok_or_else(|| reject(RejectReason::RingNaming))?;
                     }
                 }
-            })
-            .merged
-            .push((s.solid, s.kind));
+                v.insert(MergedSeg {
+                    wall,
+                    end,
+                    end_h,
+                    merged: Vec::new(),
+                    sense: None,
+                })
+            }
+        };
+        group.merged.push((s.solid, s.kind));
     }
     // Deterministic order: first appearance.
-    order
+    Ok(order
         .into_iter()
         .map(|k| groups.remove(&k).unwrap())
-        .collect()
+        .collect())
 }

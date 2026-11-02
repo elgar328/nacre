@@ -61,7 +61,7 @@ pub(crate) fn every_ray(
         // Where `v` sits on the line, by the rule every handle on a line takes ([`pin_for`]): a
         // three-plane name by one of its own planes that cuts `p ∩ qa` — when `p` is not among
         // them one of the other two can hold the line (a pencil), and read there it orders nothing
-        // — and a pierce name, whose pair is this line, by its cylinder.
+        // — and a pierce name by its cylinder where both its planes hold this line.
         let v_at = end_on_line(jd, p, qa, v).ok_or_else(|| reject(RejectReason::RingNaming))?;
         // A pierce `v` is placed once per ray, with the whole cylinder table: the walk's `table`
         // withholds it from a ray plane with a world statement, and that withholding is about the
@@ -103,9 +103,9 @@ pub(crate) fn every_ray(
             };
             let ends = [first, (first + len - 1) % nodes.len()];
             // A node on the line is a crossing point in its own right, pinned there by the one
-            // rule ([`pin_for`]): a plane of its own that cuts the line, or — for a pierce corner of
-            // the line's own pair — its cylinder. A name nothing of its own pins here (every plane
-            // of it holds the line) leaves this ray uncast.
+            // rule ([`pin_for`]): a plane of its own that cuts the line, or — for a pierce name both
+            // of whose planes hold the line — its cylinder. A three-plane name nothing of its own
+            // pins here (every plane of it holds the line) leaves this ray uncast.
             let pin = |i: usize| end_on_line(jd, p, qa, nodes[i]);
             let (Some(lo), Some(hi)) = (pin(ends[0]), pin(ends[1])) else {
                 unnameable = true;
@@ -188,12 +188,10 @@ pub(crate) fn every_ray(
 /// **The segment's own two ends are pinned by the same rule** ([`pin_for`]), so an end a cylinder
 /// made is asked like a three-plane one: a lateral's own ruling edge, its ends pierce points of the
 /// flat face it bounds and a cap, is pinned by the cap. An end the rule does not pin is
-/// `RingNaming`. The risk is a pencil: where planes beyond `P` and `w` hold the edge's line, a pierce
-/// end named by a pair other than `P` and `w` can have both its planes holding the line, and then
-/// neither cuts it (named by `P` and `w` themselves, its cylinder pins it) — which pair the name
-/// carries, against which of the edge's faces gave `w`, comes down to the order of the faces, and
-/// so does whether the end is pinned. Pinning it regardless needs its root carried from one pair to the other,
-/// which nothing does.
+/// `RingNaming`. A pencil — planes beyond `P` and `w` holding the edge's line — names a pierce end
+/// by whichever pair of them the faces' order gave it, and both planes of that pair hold the line:
+/// its cylinder pins it there, and the end is placed by solving its own pair, which reads the
+/// point's coordinates along the line rather than the root's label.
 pub(crate) fn segment_meets_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

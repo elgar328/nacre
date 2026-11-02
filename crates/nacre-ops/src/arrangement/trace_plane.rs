@@ -211,9 +211,10 @@ fn trace_transversal_face(
         |n: NodeId, out: &mut Trace| -> Result<(NodeId, combinatorics::EndPin), DeclineKind> {
             // **A corner a cylinder made keeps its own name**, and `wc` in that name means
             // there is no fourth-plane alias to record. What pins it on `L` is a function of the
-            // name and the line ([`combinatorics::pin_for`]): the quadric where its pair *is*
-            // `{wc, fc}`, and otherwise its other plane — a corner on three planes and the
-            // cylinder is named by the pair its definition chose, which need not be this line's.
+            // name and the line ([`combinatorics::pin_for`]): the quadric where both planes of its
+            // pair hold `L` — `{wc, fc}` itself or another pair of the classes holding it — and
+            // otherwise its plane that cuts `L` — a corner on three planes and the cylinder is
+            // named by the pair its definition chose, which need not be this line's.
             let (n, t) = match three_plane_name(n) {
                 Some(t) => (n, t),
                 None => match combinatorics::pierce_name(n) {
@@ -728,11 +729,13 @@ pub(super) fn trace_one(
                 // **What pins each end is a function of its name and this line**
                 // ([`combinatorics::pin_for`] — the rule `draft::Ring::edges` and the scan road
                 // read). A three-plane corner is pinned by a plane ([`combinatorics::pin_on_line`]).
-                // A corner a cylinder made is pinned by the quadric where its pair is `{fc, wall}`
-                // ([`combinatorics::EndPin::Cylinder`], the name beside it saying which root) —
-                // and by its other plane where it is a corner on three planes whose name's pair is
-                // another: read as the quadric there, the name's root would be taken for a root of
-                // this line, the circle's far point.
+                // A corner a cylinder made is pinned by the quadric where both planes of its pair
+                // hold `fc ∩ wall` — the pair `{fc, wall}`, or another pair of a pencil holding it
+                // ([`combinatorics::EndPin::Cylinder`], the name beside it saying which root, along
+                // its own pair) — and by its other plane where it is a corner on three planes whose
+                // name's pair is another line: read as the quadric there, the name's root would be
+                // taken for a root of this line, the circle's far point. Only a three-plane end
+                // can go unpinned, and that is a name that is no point on the line.
                 let pin = |k: usize| combinatorics::pin_for(jd, fc, wall, ns[k]);
                 let (Some(h0), Some(h1)) = (pin(i), pin((i + 1) % n)) else {
                     out.declined.push((fp, DeclineKind::NoPinOnLine));

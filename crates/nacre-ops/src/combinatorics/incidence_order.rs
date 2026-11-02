@@ -488,7 +488,10 @@ pub(crate) fn on_line(
                 NodeKind::Pierce { cyl, .. } => cyl,
                 NodeKind::ThreePlane(_) => return None,
             };
-            debug_assert!(names_the_line(name, p, q), "{name:?} is not on {p} ∩ {q}");
+            debug_assert!(
+                names_the_line(jd, name, p, q),
+                "{name:?} is not on {p} ∩ {q}"
+            );
             Some(OnLine::Pierce {
                 name,
                 at: PierceAt::of(jd, cyls.get(cyl)?, cyl, name)?,
@@ -500,17 +503,17 @@ pub(crate) fn on_line(
 /// Whether a pierce point's name puts it on the line `p ∩ q` — the pair the two locators are handed.
 ///
 /// **A producer's invariant, asserted rather than trusted.** A pierce point is located as one
-/// only on the line its own pair names: a site that mints the point on a line names it by that
-/// line's pair, and a site that pins an end arriving under a name asks [`pin_for`], which answers
-/// the quadric for the name's own pair alone and the point's other plane for any other line. The
-/// quadratic road leans on it: the point's meet line is solved from the name's planes, and the axis two pierce points are
-/// compared on comes from the line's (`stored_line_dir`). A pair that disagreed would compare a
-/// point against a line it does not lie on. `false` for a three-plane name, which no pierce arm hands in.
-fn names_the_line(name: NodeId, p: usize, q: usize) -> bool {
-    pierce_name(name).is_some_and(|(mut planes, ..)| {
-        planes.sort_unstable();
-        planes == [p.min(q), p.max(q)]
-    })
+/// only on a line both planes of its own pair hold: the pair `{p, q}` itself, or another pair of
+/// the classes holding that line (a pencil). A site that mints the point on a line names it by a
+/// pair holding it, and a site that pins an end arriving under a name asks [`pin_for`], which
+/// answers the quadric exactly where neither plane of the name cuts the line. The quadratic road
+/// leans on it: the point's meet line is solved from the name's planes, and the axis two pierce
+/// points are compared on comes from the line's (`stored_line_dir`) — one line, so one axis up to
+/// sign, and the comparison reads coordinates, not the root's label. A pair that disagreed would
+/// compare a point against a line it does not lie on. `false` for a three-plane name, which no
+/// pierce arm hands in.
+fn names_the_line(jd: &Judge<'_, WorkingPlane>, name: NodeId, p: usize, q: usize) -> bool {
+    pierce_name(name).is_some_and(|(planes, ..)| pin_on_line(jd, p, q, &planes).is_none())
 }
 
 /// Put a point into the **first**-argument form — an [`on_line`] with the Cramer handle beside it.
@@ -536,7 +539,10 @@ pub(crate) fn locate<'j>(
                 NodeKind::Pierce { cyl, .. } => cyl,
                 NodeKind::ThreePlane(_) => return None,
             };
-            debug_assert!(names_the_line(name, p, q), "{name:?} is not on {p} ∩ {q}");
+            debug_assert!(
+                names_the_line(jd, name, p, q),
+                "{name:?} is not on {p} ∩ {q}"
+            );
             Some(Located::Pierce {
                 name,
                 at: PierceAt::of(jd, cyls.get(cyl)?, cyl, name)?,
