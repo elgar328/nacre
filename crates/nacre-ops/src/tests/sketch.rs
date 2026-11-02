@@ -406,3 +406,36 @@ fn the_normal_form_dissolves_flat_corners_and_keeps_every_reportable_defect() {
     assert_eq!(normal(&spike), ring(&spike), "a spike's tip survives");
     assert_eq!(normal(&[[0, 0], [1, 0], [2, 0]]).len(), 2, "all one line");
 }
+
+/// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
+/// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
+/// narrow-first), so this is the price of exactness-on-the-truth over f64 signs. Run it when
+/// `check` changes, in release and alone:
+///
+/// ```text
+/// cargo test -p nacre-ops --release --lib measure_profile_check_wall_clock -- --ignored --nocapture
+/// ```
+///
+/// Each size is timed once — at 5,000 points one run is over a minute — after one untimed
+/// check: the process's first check costs more than its size (53 ms against 36 ms at 100 points,
+/// measured), and that is start-up, not `check`.
+#[test]
+#[ignore = "a measurement, not an assertion (run with --ignored --nocapture)"]
+fn measure_profile_check_wall_clock() {
+    let convex = |n: usize| -> Profile2d {
+        let ring: Vec<Point2> = (0..n)
+            .map(|i| {
+                let a = std::f64::consts::TAU * (i as f64) / (n as f64);
+                pt(10.0 * a.cos(), 10.0 * a.sin())
+            })
+            .collect();
+        Profile2d::polygon(ring).unwrap()
+    };
+    convex(100).check().expect("a convex ring is clean");
+    for n in [100usize, 1_000, 5_000] {
+        let profile = convex(n);
+        let t = std::time::Instant::now();
+        profile.check().expect("a convex ring is clean");
+        println!("  check {n:>5} points : {:>10.2?}", t.elapsed());
+    }
+}

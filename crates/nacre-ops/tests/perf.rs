@@ -5,18 +5,17 @@
 //! commit message of whatever change moved them, next to the census diff that says the
 //! answers did not change.
 //!
-//! **Run it `--release`, and it is skipped by the routine `--ignored` sweep**.
-//! Measured in a *debug* build, this file's two wall-clock tests would take **1673 of the sweep's 1802 seconds
-//! — 93%** — and debug numbers are not the ones anyone wants. `--release` turns 28 minutes into 4,
-//! and the gate skips them by name (`overview.md` carries the command).
+//! **Its numbers are read from a `--release` run, and the routine `--ignored` sweep skips it** by
+//! name: debug numbers are not the ones anyone wants. Each line is timed once; what keeps other
+//! work out of the number is the gate's CPU check before it, not repetition (`overview.md` carries
+//! both commands).
 //!
-//! **But they are coverage, not only measurement, and that is what the split costs.** Nothing here
-//! asserts a duration, yet every boolean is `.expect("fuse")`ed and every fold's volume is taken —
-//! so a large *rotated* fold that stopped building would panic here and nowhere else in the suite
-//! at this scale. What `--release` gives up is the **`debug_assert!`** net over exactly those
-//! folds. So run this file in **debug** now and then
-//! (`cargo test -p nacre-ops --test perf -- --ignored`, ~28 min) — not on every change, but before
-//! believing the rotated path is healthy.
+//! **But [`measure_boolean_wall_clock`] is coverage, not only measurement.** Nothing here asserts a
+//! duration, yet every boolean is `.expect("fuse")`ed and every fold's volume is taken — so a large
+//! *rotated* fold that stopped building would panic here and nowhere else in the suite at this
+//! scale. A `--release` run gives up the **`debug_assert!`** net over exactly those folds, so the
+//! gate also runs this file in **debug** (`cargo test -p nacre-ops --test perf -- --ignored`) and
+//! reads only whether it passes.
 //!
 //! The workloads, chosen because parallelism and precision pull them in different directions:
 //!
@@ -376,30 +375,4 @@ fn measure_long_decimal_boxes() {
         "  long-decimal boxes   : {d:>12.2?} over {} booleans   climbs {climbs}  bits {bits}  exhausted {exhausted}",
         2 * pairs
     );
-}
-
-/// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
-/// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
-/// narrow-first), so this is the price of exactness-on-the-truth over f64 signs.
-#[test]
-#[ignore]
-fn measure_profile_check_wall_clock() {
-    for n in [100usize, 1_000, 5_000] {
-        let ring: Vec<Point2> = (0..n)
-            .map(|i| {
-                let a = std::f64::consts::TAU * (i as f64) / (n as f64);
-                p2(10.0 * a.cos(), 10.0 * a.sin())
-            })
-            .collect();
-        let profile = Profile2d::polygon(ring).unwrap();
-        let best = (0..3)
-            .map(|_| {
-                let t = std::time::Instant::now();
-                profile.check().expect("a convex ring is clean");
-                t.elapsed()
-            })
-            .min()
-            .unwrap();
-        println!("  check {n:>5} points : {best:>10.2?}");
-    }
 }

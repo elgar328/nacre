@@ -234,10 +234,8 @@ impl Profile2d {
     /// returns — construction dissolved flat corners first.
     ///
     /// `O(n²)` in the ring size, and it runs on every extrude and every replay of one. Measured
-    /// on a convex ring of 17-digit coordinates (the worst case — nothing short-circuits;
-    /// `measure_profile_check_wall_clock` in `tests/perf.rs`): **34 ms at 100 points, 3.2 s at 1
-    /// 000** —
-    /// each rational sign costs ~1.7 µs (the narrow route's gcd reductions; such coordinates stay
+    /// on a convex ring of 17-digit coordinates (the worst case — nothing short-circuits):
+    /// **34 ms at 100 points, 3.2 s at 1 000** — each rational sign costs ~1.7 µs (the narrow route's gcd reductions; such coordinates stay
     /// inside `i128`) against an f64 predicate's nanoseconds. Hand-drawn sketches are tens
     /// of points and pay well under a millisecond; a generator emitting thousands of points per
     /// ring is firmly outside this function's comfort, and the named follow-ups — an exact
