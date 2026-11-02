@@ -38,6 +38,9 @@ pub(super) fn seed_from_operands(
     cyls: &[crate::planes::WorkingCyl],
     trace_in: &combinatorics::TraceInput,
 ) {
+    aliases.nameless = (0..jd.planes.len())
+        .map(|c| jd.world_rat(c).is_none())
+        .collect();
     let mut corners: Vec<NodeId> = Vec::new();
     for side in &trace_in.faces {
         for (_, loops) in side {
@@ -116,8 +119,8 @@ pub(super) fn seed_from_operands(
 /// - **A line** shows up as a 3-subset of `S` whose planes share a line rather than meeting at the
 ///   point. On each of those three classes the other two are *the same wall* — the engine calls a
 ///   line by the plane it rides besides the cut plane, so that is two names for one line, and
-///   [`Aliases::canon_wall`] folds them onto the smallest — read off the one table of lines
-///   ([`Lines`]), so every class of the line answers alike.
+///   [`Aliases::canon_wall`] folds them onto one — the least by the line's order ([`Line::key`]),
+///   read off the one table of lines ([`Lines`]), so every class of the line answers alike.
 ///
 /// Neither fold is optional if the other happens: `merge_coincident` keys an edge by
 /// `(wall, endpoints)`, so a duplicate edge merges only when **both** its wall and its endpoint
@@ -146,10 +149,9 @@ pub(crate) struct Aliases {
     point: HashMap<NodeId, NodeId>,
     /// The lines three or more plane classes hold ([`Lines`]).
     lines: Lines,
-    /// The pierce names of a pair with a class of no world statement that the seed restates onto a
-    /// point another name states exactly ([`Aliases::record_shared_ruling`]) — names only an
-    /// interval places.
-    interval_only: std::collections::HashSet<NodeId>,
+    /// Which classes have no world statement — a pierce name whose pair holds one is placed by an
+    /// interval alone ([`Aliases::rep_rank`]). Learnt before any record ([`seed_from_operands`]).
+    nameless: Vec<bool>,
     /// How many unions joined two components — the fixed-point loop's measure ([`Aliases::learned`]).
     joined: usize,
 }
@@ -169,8 +171,14 @@ impl Aliases {
                 for k in (j + 1)..s.len() {
                     let t = [s[i], s[j], s[k]];
                     if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
-                        // Shares a line: names no point, and tells us two walls are one line.
-                        self.learn_line(&t);
+                        // Shares a line: names no point, and tells us two walls are one line. The
+                        // set is a point's, so some class of it cuts the line.
+                        if let Some(&cut) = s
+                            .iter()
+                            .find(|&&d| jd.plane_pair_dir_sign(t[0], t[1], d) != 0)
+                        {
+                            self.learn_line(jd, &t, cut);
+                        }
                     } else if let Some(rep) = rep {
                         self.union_point(rep, NodeId::three_planes(Canon3::three(t)));
                     }
@@ -298,7 +306,6 @@ impl Aliases {
                 if jd.planes[x].world.is_none()
                     && let Some(r) = combinatorics::restate_pierce(jd, cyls, n, c, x)
                 {
-                    self.interval_only.insert(r);
                     self.union_point(point, r);
                 }
             }
@@ -350,7 +357,6 @@ impl Aliases {
             let Some(r) = combinatorics::root_through(jd, cyl, def, [k, gl.section], at) else {
                 continue;
             };
-            self.interval_only.insert(r);
             self.union_point(point, r);
             debug_assert!(
                 combinatorics::pierce_name(self.canon_point(point)).is_some(),
@@ -392,7 +398,11 @@ impl Aliases {
     /// representative is a function of the class alone.
     fn rep_rank(&self, n: NodeId) -> (u8, NodeId) {
         let rank = match n.kind() {
-            NodeKind::Pierce { .. } if self.interval_only.contains(&n) => 1,
+            NodeKind::Pierce { planes, .. }
+                if planes.iter().any(|&p| self.nameless.get(p) == Some(&true)) =>
+            {
+                1
+            }
             NodeKind::Pierce { .. } => 0,
             NodeKind::ThreePlane(_) => 2,
         };
@@ -400,6 +410,13 @@ impl Aliases {
     }
 
     fn union_point(&mut self, a: NodeId, b: NodeId) {
+        self.join_points(self.lines.restate(a), self.lines.restate(b));
+    }
+
+    /// [`Aliases::union_point`] of the names as given — the table's keys are restated names
+    /// ([`Lines::restate`]), and this is what puts a key learnt before its line was in the
+    /// component of its restatement.
+    fn join_points(&mut self, a: NodeId, b: NodeId) {
         let (ra, rb) = (self.find_point(a), self.find_point(b));
         if ra == rb {
             return;
@@ -416,10 +433,12 @@ impl Aliases {
 
     /// The identity to key a vertex on — itself when nothing was merged with it.
     pub(crate) fn canon_point(&self, t: NodeId) -> NodeId {
-        if self.point.is_empty() {
+        if self.point.is_empty() && self.lines.is_empty() {
             return t; // the overwhelmingly common case pays nothing
         }
-        self.find_point(t)
+        // Restated before the find, as every key is; and after it, since a key learnt before its
+        // line names the component by a pair the line no longer goes by.
+        self.lines.restate(self.find_point(self.lines.restate(t)))
     }
 
     /// The name to call a line by on `class` — `w` itself when no other wall carries it.
@@ -436,21 +455,47 @@ impl Aliases {
         self.lines.family(class, w)
     }
 
-    pub(super) fn absorb(&mut self, other: &Aliases) {
-        self.interval_only
-            .extend(other.interval_only.iter().copied());
+    pub(super) fn absorb(&mut self, jd: &Judge<'_, WorkingPlane>, other: &Aliases) {
+        if self.nameless.is_empty() {
+            self.nameless.clone_from(&other.nameless);
+        }
+        for line in other.lines.learnt() {
+            self.learn_line(jd, &line.held, line.cut);
+        }
         for (&k, &v) in &other.point {
             self.union_point(k, v);
         }
-        for held in other.lines.held() {
-            self.learn_line(held);
-        }
     }
 
-    /// Learn that every class in `held` (sorted, three or more) holds one line.
-    fn learn_line(&mut self, held: &[usize]) {
-        if self.lines.learn(held) {
-            self.joined += 1;
+    /// Learn that every class in `held` (ascending, three or more) holds one line `cut` cuts. A
+    /// pierce name already in the table under another pair of that line is joined with its
+    /// restatement, so the table keeps one component per point whichever pair a key was learnt by.
+    fn learn_line(&mut self, jd: &Judge<'_, WorkingPlane>, held: &[usize], cut: usize) {
+        let named = |c: usize| jd.world_rat(c).is_some();
+        let sense = |p, q, cut| combinatorics::line_sense(jd, p, q, cut);
+        self.learn_line_by(held, cut, named, sense);
+    }
+
+    /// [`Aliases::learn_line`] with the planes' facts handed in ([`Lines::learn`]).
+    fn learn_line_by(
+        &mut self,
+        held: &[usize],
+        cut: usize,
+        named: impl Fn(usize) -> bool,
+        sense: impl Fn([usize; 2], [usize; 2], usize) -> i8,
+    ) {
+        if !self.lines.learn(held, cut, named, sense) {
+            return;
+        }
+        self.joined += 1;
+        let stale: Vec<NodeId> = self
+            .point
+            .keys()
+            .copied()
+            .filter(|&k| self.lines.restate(k) != k)
+            .collect();
+        for k in stale {
+            self.join_points(self.lines.restate(k), k);
         }
     }
 
@@ -469,57 +514,131 @@ impl Aliases {
 /// class asks the same set whichever of its partners it names the line by, and two pencils learnt
 /// apart that share two classes are one line. A line held by two classes alone has no entry; its
 /// pair is its name.
+///
+/// **The line's name is its least pair in the representative's order** ([`Line::key`] — a pair of
+/// two classes with a world statement before any other, then by number; `Aliases::rep_rank` reads
+/// a pierce name the same way, an interval-placed name being one whose pair holds a class with no
+/// world statement). The pierce names on the line are restated onto that pair
+/// ([`Lines::restate`]), so a restated name is never greater than the name it restates: a key the
+/// table learnt before its line can never be a component's representative, and the representative
+/// does not depend on the order the unions and the lines were learnt in. A named pair keeps the
+/// names exact wherever the line has one.
 #[derive(Default, Debug, Clone)]
 struct Lines {
-    /// Every pair of classes of a learnt line → that line's index in `held`.
-    of: HashMap<[usize; 2], usize>,
-    /// Each line's classes, ascending. A line merged into another is left empty.
-    held: Vec<Vec<usize>>,
+    /// Every pair of classes of a learnt line → that line's index in `lines`, and which way the
+    /// pair runs along the line's name ([`combinatorics::line_sense`]).
+    of: HashMap<[usize; 2], (usize, i8)>,
+    /// The learnt lines. A line merged into another is left empty.
+    lines: Vec<Line>,
+}
+
+/// One learnt line ([`Lines`]).
+#[derive(Default, Debug, Clone)]
+struct Line {
+    /// Its classes, ascending.
+    held: Vec<usize>,
+    /// Which of them have a world statement, beside `held`.
+    named: Vec<bool>,
+    /// A class whose plane cuts it — what [`combinatorics::line_sense`] reads the pairs' senses
+    /// against.
+    cut: usize,
+}
+
+impl Line {
+    /// A pair of the line's classes in the representative's order: both with a world statement
+    /// first, then the ascending pair by number.
+    fn key(&self, a: usize, b: usize) -> (bool, [usize; 2]) {
+        let named = |c: usize| self.held.binary_search(&c).is_ok_and(|i| self.named[i]);
+        (!(named(a) && named(b)), [a.min(b), a.max(b)])
+    }
+
+    /// The pair the line is named by — its least pair ([`Line::key`]).
+    fn name(&self) -> [usize; 2] {
+        let mut best = (true, [usize::MAX; 2]);
+        for i in 0..self.held.len() {
+            for j in (i + 1)..self.held.len() {
+                best = best.min(self.key(self.held[i], self.held[j]));
+            }
+        }
+        best.1
+    }
 }
 
 impl Lines {
-    fn line(&self, a: usize, b: usize) -> Option<&[usize]> {
+    fn line(&self, a: usize, b: usize) -> Option<&Line> {
         let pair = if a < b { [a, b] } else { [b, a] };
-        self.of.get(&pair).map(|&i| self.held[i].as_slice())
+        self.of.get(&pair).map(|&(i, _)| &self.lines[i])
     }
 
-    /// The wall `class` calls the line `class ∩ w` by: the least other class that holds it.
+    fn is_empty(&self) -> bool {
+        self.of.is_empty()
+    }
+
+    /// The wall `class` calls the line `class ∩ w` by: the other class whose pair with `class` is
+    /// least ([`Line::key`]) — on a class of the line's name, the name's other class.
     fn wall(&self, class: usize, w: usize) -> usize {
         self.line(class, w)
-            .and_then(|held| held.iter().copied().find(|&x| x != class))
+            .and_then(|line| {
+                line.held
+                    .iter()
+                    .copied()
+                    .filter(|&x| x != class)
+                    .min_by_key(|&x| line.key(class, x))
+            })
             .unwrap_or(w)
     }
 
     /// The walls that carry the line `class ∩ w` on `class` — every other class that holds it.
     fn family(&self, class: usize, w: usize) -> Vec<usize> {
         match self.line(class, w) {
-            Some(held) => held.iter().copied().filter(|&x| x != class).collect(),
+            Some(line) => line.held.iter().copied().filter(|&x| x != class).collect(),
             None => vec![w],
         }
     }
 
-    /// Every learnt line's classes.
-    fn held(&self) -> impl Iterator<Item = &[usize]> {
-        self.held
-            .iter()
-            .filter(|h| !h.is_empty())
-            .map(Vec::as_slice)
+    /// Every learnt line.
+    fn learnt(&self) -> impl Iterator<Item = &Line> {
+        self.lines.iter().filter(|l| !l.held.is_empty())
     }
 
-    /// Learn that every class in `held` holds one line, joining it with every learnt line that
-    /// shares a pair with it. `true` when that changed the table.
-    fn learn(&mut self, held: &[usize]) -> bool {
+    /// **A pierce name restated onto its line's name** — the pair a learnt line is called by, the
+    /// root carried along it ([`combinatorics::QuadRoot::along`]). Any other name as it is.
+    fn restate(&self, n: NodeId) -> NodeId {
+        let Some((planes, cyl, root)) = combinatorics::pierce_name(n) else {
+            return n;
+        };
+        let Some(&(i, sense)) = self.of.get(&planes) else {
+            return n;
+        };
+        let [a, b] = self.lines[i].name();
+        if [a, b] == planes || sense == 0 {
+            return n; // the line's own name — or a sense the predicate did not decide: kept apart
+        }
+        NodeId::pierce(a, b, cyl, root.along(sense > 0))
+    }
+
+    /// Learn that every class in `held` (ascending, three or more) holds one line that `cut` cuts,
+    /// joining it with every learnt line that shares a pair with it. `named` says which classes
+    /// have a world statement (the planes' order), `sense` which way one pair runs along another
+    /// against `cut` ([`combinatorics::line_sense`]). `true` when that changed the table.
+    fn learn(
+        &mut self,
+        held: &[usize],
+        cut: usize,
+        named: impl Fn(usize) -> bool,
+        sense: impl Fn([usize; 2], [usize; 2], usize) -> i8,
+    ) -> bool {
         let mut set: Vec<usize> = held.to_vec();
         let mut joined: Vec<usize> = Vec::new();
         loop {
             let before = set.len();
             for i in 0..set.len() {
                 for j in (i + 1)..set.len() {
-                    if let Some(&k) = self.of.get(&[set[i], set[j]])
+                    if let Some(&(k, _)) = self.of.get(&[set[i], set[j]])
                         && !joined.contains(&k)
                     {
                         joined.push(k);
-                        set.extend(self.held[k].iter().copied());
+                        set.extend(self.lines[k].held.iter().copied());
                     }
                 }
             }
@@ -529,22 +648,34 @@ impl Lines {
                 break;
             }
         }
-        if joined.len() == 1 && self.held[joined[0]] == set {
+        if joined.len() == 1 && self.lines[joined[0]].held == set {
             return false;
         }
-        let at = joined.iter().copied().min().unwrap_or(self.held.len());
-        if at == self.held.len() {
-            self.held.push(Vec::new());
+        let at = joined.iter().copied().min().unwrap_or(self.lines.len());
+        if at == self.lines.len() {
+            self.lines.push(Line::default());
         }
         for &k in &joined {
-            self.held[k].clear();
+            self.lines[k] = Line::default();
         }
-        for i in 0..set.len() {
-            for j in (i + 1)..set.len() {
-                self.of.insert([set[i], set[j]], at);
+        let line = Line {
+            named: set.iter().map(|&c| named(c)).collect(),
+            held: set,
+            cut,
+        };
+        let name = line.name();
+        for i in 0..line.held.len() {
+            for j in (i + 1)..line.held.len() {
+                let pair = [line.held[i], line.held[j]];
+                let along = if pair == name {
+                    1
+                } else {
+                    sense(pair, name, cut)
+                };
+                self.of.insert(pair, (at, along));
             }
         }
-        self.held[at] = set;
+        self.lines[at] = line;
         true
     }
 }

@@ -183,6 +183,29 @@ pub(crate) fn root_through(
     }
 }
 
+/// **Which way pair `q` runs along the line pair `p` also holds**, as pierce roots count it: `+1`
+/// where the two pairs' directions `n₀ × n₁` (each ascending, canonical normals — the roots'
+/// convention, [`QuadRoot`]) agree, `−1` where they oppose. Read against `cut`, any class whose
+/// plane cuts the line: `det(p₀, p₁, cut)` and `det(q₀, q₁, cut)` are each direction against one
+/// normal, so their product is the answer — in stored normals, which is what the predicate reads,
+/// and each plane's canonical normal is its stored one times its sense
+/// ([`Judge::canon_sense`]), so the four senses carry it over (`cut`'s cancels). Decided wherever
+/// the predicate is — two parallel directions are never at right angles.
+pub(crate) fn line_sense(
+    jd: &Judge<'_, WorkingPlane>,
+    p: [usize; 2],
+    q: [usize; 2],
+    cut: usize,
+) -> i8 {
+    let stored = jd.plane_pair_dir_sign(p[0], p[1], cut) * jd.plane_pair_dir_sign(q[0], q[1], cut);
+    debug_assert_ne!(stored, 0, "{cut} cuts the line {p:?} and {q:?} hold");
+    stored
+        * jd.canon_sense(p[0])
+        * jd.canon_sense(p[1])
+        * jd.canon_sense(q[0])
+        * jd.canon_sense(q[1])
+}
+
 /// **A pierce point restated on another pair of plane classes through it** — `Pierce{[a, b],
 /// cyl, root}` for the point `node` names, with the root that puts it there: of `a ∩ b`'s meets
 /// with the cylinder, the one lying on the name's own planes (a tangency's single `Double` root
@@ -235,6 +258,19 @@ pub(crate) fn restate_pierce(
                 .collect();
             match hits[..] {
                 [r] => r,
+                // Both roots lie on the name's own planes: they hold `a ∩ b` too (a pencil), and
+                // the name's root is restated along the other pair's direction.
+                [_, _] => {
+                    let ab = [a.min(b), a.max(b)];
+                    let cut = (0..jd.planes.len())
+                        .find(|&d| jd.plane_pair_dir_sign(ab[0], ab[1], d) != 0)?;
+                    return Some(NodeId::pierce(
+                        ab[0],
+                        ab[1],
+                        cyl,
+                        own_root.along(line_sense(jd, own, ab, cut) > 0),
+                    ));
+                }
                 _ => return None,
             }
         }

@@ -329,7 +329,7 @@ pub(crate) fn pierce_corner_audit(
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
         let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
-        aliases.absorb(&tr.aliases);
+        aliases.absorb(&jd, &tr.aliases);
         let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
         let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
     }
@@ -453,7 +453,7 @@ pub(crate) fn operand_vertex_audit(
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
         let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
-        aliases.absorb(&tr.aliases);
+        aliases.absorb(&jd, &tr.aliases);
         let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
         let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
     }
@@ -772,7 +772,7 @@ pub(crate) fn frame_audit(
         let before = aliases.learned();
         for wc in 0..geom.len() {
             let mut tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
-            aliases.absorb(&std::mem::take(&mut tr.aliases));
+            aliases.absorb(&jd, &std::mem::take(&mut tr.aliases));
             if tr.declined.is_empty() {
                 let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
                 let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);

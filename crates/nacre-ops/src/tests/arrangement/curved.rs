@@ -2685,7 +2685,9 @@ fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
 /// wears `Lo` under one pair and `Hi` under another (the third normal at 45° between the first two
 /// makes that so whichever way the class numbers fall). Every name of a crossing places it at one place
 /// on the line, its pin there is the cylinder, and a split point hands the name back verbatim —
-/// restated on the line's own pair with its root kept, it would be the other crossing.
+/// restated on the line's own pair with its root kept, it would be the other crossing. Once the
+/// alias table learns the line, every pair's name of a crossing is one point there, and a name
+/// restated on another pair of the pencil is that pair's name of the same crossing.
 #[test]
 fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
     use crate::combinatorics::{EndPin, PointOn, QuadRoot, order_on, pierce_name, pin_for};
@@ -2752,6 +2754,12 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
     let at =
         |p: NodeId, q: NodeId| order_on(&jd, &cyls, cx, cy, PointOn::Pierce(p), PointOn::Pierce(q));
     let root = |n: NodeId| pierce_name(n).expect("a pierce name").2;
+    // The table learns the line where a fourth class passes through it — the caps' `z = 0` — and
+    // from then on each crossing is one point under every pair's name.
+    let mut table = Aliases::default();
+    let mut four = vec![cx, cy, cd, class([0, 0, 1])];
+    four.sort_unstable();
+    table.record(&jd, &four);
     let mut reversed = false;
     for r in [QuadRoot::Lo, QuadRoot::Hi] {
         let n = NodeId::pierce(cx, cy, 0, r);
@@ -2765,6 +2773,13 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
                 panic!("one root of ({p}, {q}) is {n:?}'s crossing: {same:?}")
             };
             reversed |= root(n2) != root(n);
+            assert!(table.one_point(n, n2), "{n:?} and {n2:?} are one crossing");
+            let [lo, hi] = [p.min(q), p.max(q)];
+            assert_eq!(
+                crate::combinatorics::restate_pierce(&jd, &cyls, n, lo, hi),
+                Some(n2),
+                "{n:?} restated on ({lo}, {hi})"
+            );
             assert_eq!(pin_for(&jd, cx, cy, n2), Some(EndPin::Cylinder), "{n2:?}");
             let split = Split::of(n2, EndPin::Cylinder);
             assert_eq!(

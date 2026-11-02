@@ -721,6 +721,17 @@ impl QuadRoot {
         }
     }
 
+    /// **The name the same point takes along another pair holding its line** — kept where the two
+    /// pairs' directions `ℓ` agree, [`Self::flipped`] where they oppose. Two pairs of planes holding
+    /// one line have parallel `ℓ`, and `plane_plane_cylinder` fixes the base by `ℓ·x = 0`, which a
+    /// parallel `ℓ` satisfies identically: the base is one point, and the order along the line is
+    /// the order along either direction or its reverse. [`Self::canonical`] is the case where the
+    /// other pair is this one swapped.
+    #[inline]
+    pub fn along(self, agrees: bool) -> QuadRoot {
+        if agrees { self } else { self.flipped() }
+    }
+
     /// **The crossing this name means**, in the meet its two classes' statements solve to (in
     /// the name's order) — `None` where the meet does not hold it: a `Double` of a pair, a `Lo`
     /// or `Hi` of a tangency, or a meet with no crossing.

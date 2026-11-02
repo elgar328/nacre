@@ -462,8 +462,10 @@ pub(super) fn trace_result_faces(
         // its own discoveries on top — not whatever lower-numbered classes found meanwhile, as
         // a sequential loop would show it. The fixed point is the same, and for
         // two reasons that are both properties of `Aliases` rather than of the schedule:
-        // a merged class's representative is its **minimum** element, so the final partition
-        // does not depend on the order the unions happened in; and discoveries only
+        // a merged class's representative is its **least** name in one order fixed by the names
+        // alone (`Aliases::rep_rank`) — and a name restated onto its line's name is never greater
+        // than the name it restates — so neither the partition nor its representatives depend on
+        // the order the unions and the lines were learnt in; and discoveries only
         // accumulate, so learning something a round later just costs one more round. The last
         // round — the one whose splits are kept — runs on a table that
         // has stopped growing either way.
@@ -484,7 +486,7 @@ pub(super) fn trace_result_faces(
                 trace_on_class(trace_in, wc, jd, cyls, faces, plane_ix, &snapshot)
             );
             let mut local = snapshot.clone();
-            local.absorb(&std::mem::take(&mut tr.aliases));
+            local.absorb(jd, &std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
             // which operand face. A class can decline several faces; the first is the one
             // reported, and `try_map_range` picks the lowest-numbered class, which is the one
@@ -502,7 +504,7 @@ pub(super) fn trace_result_faces(
         for (split, local) in round {
             splits.push(split);
             // Absorbing the snapshot back is a no-op; only the round's discoveries are new.
-            aliases.absorb(&local);
+            aliases.absorb(jd, &local);
         }
         if aliases.learned() == before {
             break;
