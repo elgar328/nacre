@@ -1087,6 +1087,15 @@ fn a_segment_meets_a_cap_disk_across_its_chord_or_at_its_tangent_point() {
 /// - Against the square `x ∈ [0.5, 2]` on `z = 3` it is on the side `x = 0.5`: the ray cast from it
 ///   along its pair's line starts on the ring, and that is the boundary.
 /// - Against the square `x ∈ [2, 3]` on `z = 3` the same ray crosses nothing: outside.
+///
+/// **The same point named by another pair reads the same.** A slab beside the L stands on
+/// `4x + 3z = 11`, which holds the line `x = 0.5, z = 3`: the pair `{x = 0.5, 4x + 3z = 11}` names
+/// the point too, and its pair does not hold `z = 3`. Which pair represents a point is the alias
+/// table's choice, so the ray is cast along `z = 3`'s meet with each plane of the name, not only
+/// along the pair's own line — here a pencil, the cylinder pinning the point on that meet (three
+/// rational planes that cut each other meet at a rational point, so a pierce point off its pair's
+/// plane with no rational coordinates is always on a pencil's line). The polygon reads are the
+/// same, and so is the 2-D witness road's (`point_in_ring`), which had no ray to cast from it.
 #[test]
 fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_ray() {
     use crate::draft::{Bound, LocalFace, Ring};
@@ -1130,7 +1139,42 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
     );
     let ell = crate::boolean(&mut m, crate::BoolKind::Fuse, low, high).expect("the L")[0];
     m.rebuild_adjacency();
-    let rows = crate::planes::collect_planes(&m, ell).expect("the L's face table");
+    // The slab: a box standing on the plane `0.8x + 0.6z = 2.2`, stated through `(0.5, −3, 3)` —
+    // its floor cap lies on the plane whatever frame the datum settles on.
+    let slab = {
+        let plane = crate::SketchPlane::from_axes(
+            Point3::from_array([0.5, -3.0, 3.0]),
+            Vector3::from_array([0.0, 1.0, 0.0]),
+            Vector3::from_array([0.6, 0.0, -0.8]),
+        );
+        let frame = match crate::apply(
+            &mut m,
+            &crate::Operation::DatumPlane {
+                def: crate::DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(crate::OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("the slab's plane: {other:?}"),
+        };
+        let p = |s: f64, t: f64| nacre_math::Point2::from_array([s, t]);
+        let profile =
+            crate::Profile2d::polygon(vec![p(-1.0, -1.0), p(1.0, -1.0), p(1.0, 1.0), p(-1.0, 1.0)])
+                .expect("a square");
+        match crate::apply(
+            &mut m,
+            &crate::Operation::Extrude {
+                frame,
+                profile,
+                dist: 1.0,
+            },
+        ) {
+            Ok(crate::OpOutput::Extrude { solid, .. }) => solid,
+            other => panic!("the slab: {other:?}"),
+        }
+    };
+    m.rebuild_adjacency();
+    let mut rows = crate::planes::collect_planes(&m, ell).expect("the L's face table");
+    rows.extend(crate::planes::collect_planes(&m, slab).expect("the slab's face table"));
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
     let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
     let jd = crate::planes::test_judge(&planes);
@@ -1198,4 +1242,43 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
             "{what}"
         );
     }
+    // The class `0.8x + 0.6z = 2.2` — `4x + 3z = 11` — and the point's name by the pair it makes
+    // with `x = 0.5`.
+    let slant = (0..planes.len())
+        .find(|&c| {
+            let w = jd.world_rat(c).expect("a named class");
+            w[1] == ri(0)
+                && w[0].checked_mul(ri(3)) == w[2].checked_mul(ri(4))
+                && w[0].checked_mul(ri(-11)) == w[3].checked_mul(ri(4))
+        })
+        .expect("the slab holds `4x + 3z = 11`");
+    let other = crate::combinatorics::pierce_of_pair(&jd, &cyls, 0, n, x05, slant)
+        .expect("the pencil names the point");
+    assert_eq!(
+        name_planes(other),
+        vec![x05.min(slant), x05.max(slant)],
+        "the name is the other pair's"
+    );
+    for (what, face, want) in [
+        (
+            "the square whose side holds it",
+            square(x05, x2),
+            RingSide::OnBoundary,
+        ),
+        ("the square beside it", square(x2, x3), RingSide::Outside),
+    ] {
+        assert_eq!(
+            named_point_in_face(&jd, &cyls, top, other, &face).expect("decided"),
+            Some(want),
+            "{what}, named by the other pair"
+        );
+    }
+    let beside = square(x2, x3);
+    let BoundEdges::Ring(ring) = &beside.outer else {
+        panic!("a polygon")
+    };
+    assert!(
+        !crate::combinatorics::point_in_ring(&jd, &cyls, top, other, ring).expect("a clear ray"),
+        "the 2-D witness road reads it outside"
+    );
 }

@@ -302,9 +302,8 @@ pub(super) fn self_touch_reject(
         // face's bound is another cylinder's arc (`CylinderPairContact`) — the last two lean on the
         // gate refusing first. What is not asked: a lateral face touched at a single point — a
         // gap, not an abstention; and a vertex the point arm's reading cannot place, whose
-        // abstention is dropped — a pierce point with no rational coordinates against a mixed
-        // ring, or against a polygon when the face's plane is not of its pair (no ray along the
-        // pair's line lies on it), and a point the mixed ring's coordinate walk abstains on. Slanted planes reach both and
+        // abstention is dropped — a point with no rational coordinates against a mixed ring, and
+        // a point the mixed ring's coordinate walk abstains on. Slanted planes reach both and
         // the gate refuses most of them first; planes along and across the axis reach both too, at
         // a rim, and what answers there is whatever guard happens to fire, or nothing (the todo
         // item names the measured rows).

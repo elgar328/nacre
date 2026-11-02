@@ -92,11 +92,6 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "`side_of`: `ring_against_plane`, the ring walk itself",
     ),
     (
-        "nacre-ops/src/combinatorics/rays.rs",
-        1,
-        "`side_of`: a point question in `point_on_ring` (is the literal vertex on the edge's line)",
-    ),
-    (
         "nacre-ops/src/combinatorics/in_faces.rs",
         2,
         "`side_of`: a point question in `point_in_component` (does the query lie on the face's \

@@ -421,17 +421,6 @@ pub(crate) enum EndPin {
     Cylinder,
 }
 
-impl EndPin {
-    /// The plane class, for the sites that are still plane-only — and `None` is the honest answer
-    /// where a cylinder pinned the point, never a stand-in index.
-    pub(crate) fn class(self) -> Option<usize> {
-        match self {
-            EndPin::Class(c) => Some(c),
-            EndPin::Cylinder => None,
-        }
-    }
-}
-
 /// **What carries a ring edge** — the plane whose meet with `P` the edge rides, or the circle an
 /// arc rides.
 ///
@@ -757,16 +746,6 @@ impl Carrier {
     /// A plane carrier whose sense its endpoints still supply — every edge outside a split.
     pub(crate) fn plane(wall: usize) -> Carrier {
         Carrier::Plane { wall, sense: None }
-    }
-
-    /// The carrying plane class, `None` for an arc or a ruling. The named-road consumers (the ray
-    /// casts, the on-ring test) speak plane classes and nothing else, so this is where they
-    /// decline.
-    pub(crate) fn wall(&self) -> Option<usize> {
-        match self {
-            Carrier::Plane { wall, .. } => Some(*wall),
-            Carrier::Arc(_) | Carrier::Ruling(_) => None,
-        }
     }
 }
 

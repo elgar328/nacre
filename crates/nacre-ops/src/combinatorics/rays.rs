@@ -2,10 +2,14 @@ use super::*;
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
 /// says so, which is a second machine for free.
 ///
-/// `v` is a named point on plane `p`, either kind of name. A three-plane name casts along `p ∩ q`
-/// for each of its planes `q` other than `p`. A pierce name lies on its own pair's line and on no
-/// other line this road can state, so it casts along that line alone — and only when the pair holds
-/// `p`; a pierce name of another pair casts nothing here.
+/// `v` is a named point on plane `p`, either kind of name, and it casts along `p ∩ q` for each plane
+/// `q` of its name other than `p` — one rule for both kinds. A pierce name whose pair holds `p`
+/// casts along its own pair's line; one whose pair does not lies on `p ∩ q` for each plane `q` of
+/// the pair, and is placed there as every ray places its origin ([`pin_for`]): another plane of the
+/// pair that cuts the line pins it at a three-plane point, and where the pair's planes and `p`
+/// hold one line (a pencil) the cylinder does. Which pair names the point is the alias table's
+/// choice, so a rule that cast only along the pair's own line would read the point or not by the
+/// operands' order.
 pub(crate) fn every_ray(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -13,13 +17,7 @@ pub(crate) fn every_ray(
     v: NodeId,
     ring: &[RingEdge],
 ) -> Result<Vec<bool>, BoolError> {
-    let rays: Vec<usize> = match v.kind() {
-        NodeKind::ThreePlane(t) => t.into_iter().filter(|&x| x != p).collect(),
-        NodeKind::Pierce { planes, .. } if planes.contains(&p) => {
-            planes.into_iter().filter(|&x| x != p).collect()
-        }
-        NodeKind::Pierce { .. } => Vec::new(),
-    };
+    let rays: Vec<usize> = name_planes(v).into_iter().filter(|&x| x != p).collect();
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
@@ -392,46 +390,6 @@ pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<us
     // A lookup — the incidence table carries the vertex → faces map (built once per
     // operand), rather than a scan of every edge for every vertex asked.
     inc.faces_at(vh).to_vec()
-}
-
-/// Whether the point named by plane triple `v` lies on any edge of `ring` (a ring on plane `p`).
-/// Used by [`point_in_component`] to abandon a non-generic ray rather than guess on a boundary.
-pub(super) fn point_on_ring(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    mut v: [usize; 3],
-    ring: &[RingEdge],
-) -> Result<bool, BoolError> {
-    v.sort_unstable();
-    if ring.len() < 3 {
-        return Err(reject(RejectReason::DegenerateRing));
-    }
-    for e in ring {
-        let (Some(si), Some(sj)) = (e.from_h.class(), e.to_h.class()) else {
-            return Err(reject(RejectReason::RingNaming));
-        };
-        let r = e
-            .carrier
-            .wall()
-            .ok_or_else(|| reject(RejectReason::RingNaming))?;
-        // A literal triple, so `side_of`'s pierce arm is unreachable here and the empty
-        // cylinder table is never consulted — this asks about a *point*, not a ring.
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "a point question: is the literal vertex `v` on this edge's line"
-        )]
-        let on_line = side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r) == Some(0);
-        if !on_line {
-            continue; // `v` is not even on the edge's line
-        }
-        // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
-        let s = pin_on_line(jd, p, r, &v).ok_or_else(|| reject(RejectReason::RingNaming))?;
-        let (a, b) = (order_along(jd, p, r, s, si), order_along(jd, p, r, s, sj));
-        if a * b <= 0 {
-            return Ok(true); // between the endpoints (or on one)
-        }
-    }
-    Ok(false)
 }
 
 /// **The cylinder table [`every_ray`] reads a ring against plane `q` with** ([`ClassLine`]). This road

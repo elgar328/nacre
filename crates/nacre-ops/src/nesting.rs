@@ -141,7 +141,8 @@ pub(crate) enum Cell<'a> {
 /// A `Named` witness needs no coordinates, and that is not a convenience: a **rotated** class has
 /// no rational description, so its points have no rational coordinates at all — the ray road is
 /// the only road there, and it runs on names. A name is either kind — three planes, or a pierce
-/// point placed on its pair's line by its cylinder ([`combinatorics::every_ray`]).
+/// point placed by its cylinder on the face plane's meet with each plane of its pair
+/// ([`combinatorics::every_ray`]).
 #[derive(Clone, Copy, Debug)]
 enum Where {
     Named(NodeId),
@@ -341,9 +342,9 @@ pub(crate) fn rim_witness_count(
 /// rational **pierce** corners (a fillet tangency), then a whole chord's **midpoint**,
 /// then a rational point **inside** an edge whose ends are two solves' roots. Then an interior
 /// witness, where there is one: a disk's centre, and a ring that *is* a circle. Last, the
-/// corners' **pierce names** — boundary points the ray road casts from on their pair's line, and
-/// the only supply a ring whose every corner is a pierce point on a class with no world statement
-/// has (a cylinder's section between two rulings). They come after everything else, so a question
+/// corners' **pierce names** — boundary points the ray road casts from along the class's meet with
+/// each plane of their pair, and the only supply a ring whose every corner is a pierce point on a
+/// class with no world statement has (a cylinder's section between two rulings). They come after everything else, so a question
 /// another witness answers is answered by that one.
 ///
 /// **A circle has no corner — and the conclusion drawn from that is false.**

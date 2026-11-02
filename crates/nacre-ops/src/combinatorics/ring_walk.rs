@@ -336,8 +336,8 @@ pub(crate) fn ring_against_plane(
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
 ///
 /// **A ray, cast along a line we already have.** Every ring edge lies on `P ∩ R`, and `v`
-/// lies on `P ∩ Q_a` for either of its own two planes (a pierce name: for the other plane of its
-/// pair, [`every_ray`]). Those two lines meet at `X = {P, Q_a, R}`, which is *itself* a three-plane
+/// lies on `P ∩ Q_a` for each plane `Q_a` of its name other than `P` — a pierce name's pair, whether
+/// or not it holds `P` ([`every_ray`]). Those two lines meet at `X = {P, Q_a, R}`, which is *itself* a three-plane
 /// point — so "is `X` inside the edge" and "is `X` ahead of `v`" are both [`order_along`], the
 /// comparator already built for two three-plane points on one line, and a pierce `v` is placed
 /// on the line by its cylinder ([`order_located`]). **No coordinate is read and no point is

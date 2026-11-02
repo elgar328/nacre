@@ -85,8 +85,7 @@ pub(crate) enum CurvedHit {
     /// "behind" would be false for one of them.
     Counted(usize),
     /// The ray touched a boundary — tangent, on a ruling, or exactly through the query. Abandon
-    /// this ray and let the caller try the next plane pair, the same policy `point_on_ring` sets
-    /// for a polygon.
+    /// this ray and let the caller try the next plane pair.
     Graze,
 }
 

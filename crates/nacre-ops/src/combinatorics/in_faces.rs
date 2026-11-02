@@ -218,9 +218,8 @@ pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::Cylinde
 /// **What the rational point `p` on class `wc` says of this ring as a witness** — [`rational_ring_side`]
 /// read as one witness reads it: `In` or `Out`; a point on the ring cannot rank itself and
 /// [`Said::Abstain`]s; what keeps the reading from saying is said as it said it. The 2-D coordinate
-/// witness (`nesting`) asks it of a cell, the one coordinate reading of a face
-/// ([`rational_point_in_face`]) of each of the face's rings, and the named reading
-/// ([`named_point_in_face`]) of a mixed ring at a three-plane name's rational coordinates.
+/// witness (`nesting`) asks it of a cell, and the one coordinate reading of a face
+/// ([`rational_point_in_face`]) of each of the face's rings.
 pub(crate) fn rational_point_in_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -247,7 +246,7 @@ pub(crate) enum RingRead {
 /// **Where the rational point `p` on class `wc` is against this ring** — the one exact reading of a
 /// coordinate against a ring: inside, outside or on it ([`RingRead::At`]), or what keeps it from
 /// saying ([`RingRead::Cannot`]). The one witness reading ([`rational_point_in_ring`]) and the named
-/// reading of a vertex whose name is a pierce name ([`named_point_in_face`]) both ask it.
+/// reading of a point ([`named_point_in_face`]) both ask it.
 ///
 /// It says [`RingRead::Cannot`] with [`Said::Abstain`] where the mixed walk abstains (a point on a
 /// mixed ring among its causes — that walk does not tell it from a graze), with [`Said::Silent`]
@@ -748,24 +747,19 @@ pub(crate) type ComponentFaces = Vec<CompFace>;
 /// **Where the point named `n` is against the plane face `f` on class `q`** — inside it, outside
 /// it, or on its boundary; `None` where a bound could not tell. `n` lies on `q` and its name need
 /// not carry `q`. The self-touch point arm asks every vertex here, whatever kind its name is, and
-/// [`point_in_component`] its probe triples; each bound is read by what the point carries.
+/// [`point_in_component`] its probe triples.
 ///
+/// **One reading, by what the point carries, whatever kind its name is.**
 /// - **A circle** — [`named_point_in_disk`].
-/// - **A ring, a three-plane name.** A polygon is read by a ring walk on the name's planes
-///   ([`point_on_ring`], then [`every_ray`]) — it answers on classes with no rational coordinates
-///   too; a mixed ring (an arc step, a pierce corner) by the one coordinate reading of a ring at the
-///   name's rational coordinates. The ray road's walk cannot read a pierce corner against a class
-///   with a world statement (it sides nodes with no cylinder table there) — letting it try would
-///   refuse with `PierceVertexUnnamed`.
-/// - **A ring, a pierce name.** Its rational point, when its root is rational
-///   ([`pierce_coords_rat`]), by the one coordinate reading of a ring ([`rational_ring_side`]) — a
-///   polygon up to its boundary; where that reading cannot say, a polygon is asked by a ray cast
-///   from the name along its pair's line ([`every_ray`] — only where `q` is of that pair), and a
-///   ray whose origin lies on the ring (`PointOnRing`) is a point on the boundary. A mixed ring has
-///   no reading for a pierce point with no rational coordinates.
-///
-/// The mixed walk's abstention does not tell a point on its ring from a graze, so a point on a
-/// mixed ring is unknown.
+/// - **A ring** — the point's rational coordinates, where it has them (a three-plane meet, or a
+///   pierce name's rational root — [`pierce_coords_rat`]), by the one coordinate reading of a ring
+///   ([`rational_ring_side`]), a polygon up to its boundary. Where there are none or that reading
+///   cannot say, a polygon is asked by a ray cast from the name ([`every_ray`] — along `q`'s meet
+///   with each plane of the name, so on classes with no rational description too), and a ray whose
+///   origin lies on the ring (`PointOnRing`) is a point on the boundary. A mixed ring (an arc step,
+///   a pierce corner) is read by coordinates alone: the ray road's walk cannot read a pierce corner
+///   against a class with a world statement (it sides nodes with no cylinder table there), and the
+///   mixed walk's abstention does not tell a point on its ring from a graze, so there it is unknown.
 ///
 /// **A name holding a class the gate passed silent** has no rational coordinates, so where a ring
 /// bound says nothing it is asked the one question its interval answers — whether it stands
@@ -777,53 +771,35 @@ pub(crate) fn named_point_in_face(
     n: NodeId,
     f: &CompFace,
 ) -> Result<Option<RingSide>, BoolError> {
-    let ray = |r: &[RingEdge]| -> Result<Option<RingSide>, BoolError> {
-        Ok(every_ray(jd, cyls, q, n, r)?.first().map(|&b| {
-            if b {
-                RingSide::Inside
-            } else {
-                RingSide::Outside
-            }
-        }))
-    };
     let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
-        match (b, three_plane_name(n)) {
-            (BoundEdges::Ring(r), Some(x)) => {
-                if ring_is_mixed(r) {
-                    let Some(px) = node_coords_rat(jd, n) else {
-                        return Ok(None); // no rational coordinate: abstain
-                    };
-                    return Ok(match rational_point_in_ring(jd, cyls, q, &px, r)? {
-                        Said::In => Some(RingSide::Inside),
-                        Said::Out => Some(RingSide::Outside),
-                        _ => None,
-                    });
-                }
-                if point_on_ring(jd, q, x, r)? {
-                    return Ok(Some(RingSide::OnBoundary));
-                }
-                ray(r)
-            }
-            (BoundEdges::Ring(r), None) => {
-                if let Some(px) = pierce_coords_rat(jd, cyls, n) {
-                    if let RingRead::At(side) = rational_ring_side(jd, cyls, q, &px, r)? {
+        match b {
+            BoundEdges::Ring(r) => {
+                if let Some(x) = node_coords_rat(jd, n).or_else(|| pierce_coords_rat(jd, cyls, n)) {
+                    if let RingRead::At(side) = rational_ring_side(jd, cyls, q, &x, r)? {
                         return Ok(Some(side));
                     }
                 }
                 if ring_is_mixed(r) {
                     return Ok(None);
                 }
-                match ray(r) {
+                match every_ray(jd, cyls, q, n, r) {
+                    Ok(rays) => Ok(rays.first().map(|&b| {
+                        if b {
+                            RingSide::Inside
+                        } else {
+                            RingSide::Outside
+                        }
+                    })),
                     Err(BoolError::Rejected {
                         reason: RejectReason::PointOnRing,
                         ..
                     }) => Ok(Some(RingSide::OnBoundary)),
-                    got => got,
+                    Err(e) => Err(e),
                 }
             }
-            (BoundEdges::Circle(def), _) => Ok(named_point_in_disk(jd, cyls, n, def)),
+            BoundEdges::Circle(def) => Ok(named_point_in_disk(jd, cyls, n, def)),
             // Loops bound a cylinder, never a plane — a producer error, not an input.
-            (BoundEdges::Lateral(_), _) => Ok(None),
+            BoundEdges::Lateral(_) => Ok(None),
         }
     };
     let silent = crate::planes::silent_among(cyls, &name_planes(n));
@@ -882,8 +858,7 @@ pub(crate) fn point_in_component(
             };
             let q = *q;
             // Inside `q`'s material at the point `x`: inside the outer bound, outside every hole.
-            // On the face's boundary is no answer here — the same non-generic abandon
-            // `point_on_ring` has always raised.
+            // On the face's boundary is no answer here — a non-generic probe is abandoned.
             let material = |x: [usize; 3]| {
                 named_point_in_face(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), f)
                     .map(decided)
