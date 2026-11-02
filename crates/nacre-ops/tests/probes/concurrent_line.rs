@@ -8,7 +8,7 @@
 //! The fold covers concurrencies at *input* vertices and the ones where two planes **cross** a line
 //! at a point. A plane that **contains** the line is the other case: such a plane is in that line's
 //! own direction family, so it never becomes a handle and never orders against anything — nothing
-//! there notices it. `Aliases::wall` records it (folding two walls onto one line *is* the statement
+//! there notices it. `Aliases::canon_wall` records it (folding two walls onto one line *is* the statement
 //! that a second plane carries it), and the report reads that back out.
 //!
 //! The shapes here are reduced from a playground model, and what makes them worth a file is that

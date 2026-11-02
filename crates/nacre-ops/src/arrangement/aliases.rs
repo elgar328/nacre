@@ -116,7 +116,8 @@ pub(super) fn seed_from_operands(
 /// - **A line** shows up as a 3-subset of `S` whose planes share a line rather than meeting at the
 ///   point. On each of those three classes the other two are *the same wall* — the engine calls a
 ///   line by the plane it rides besides the cut plane, so that is two names for one line, and
-///   [`Aliases::wall`] folds them onto the smallest.
+///   [`Aliases::canon_wall`] folds them onto the smallest — read off the one table of lines
+///   ([`Lines`]), so every class of the line answers alike.
 ///
 /// Neither fold is optional if the other happens: `merge_coincident` keys an edge by
 /// `(wall, endpoints)`, so a duplicate edge merges only when **both** its wall and its endpoint
@@ -143,8 +144,8 @@ pub(super) fn seed_from_operands(
 pub(crate) struct Aliases {
     /// Union-find over vertex names.
     point: HashMap<NodeId, NodeId>,
-    /// Union-find over `(class, wall)` — walls of one class that carry the same line.
-    wall: HashMap<(usize, usize), usize>,
+    /// The lines three or more plane classes hold ([`Lines`]).
+    lines: Lines,
     /// The pierce names of a pair with a class of no world statement that the seed restates onto a
     /// point another name states exactly ([`Aliases::record_shared_ruling`]) — names only an
     /// interval places.
@@ -169,9 +170,7 @@ impl Aliases {
                     let t = [s[i], s[j], s[k]];
                     if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
                         // Shares a line: names no point, and tells us two walls are one line.
-                        self.union_wall(t[0], t[1], t[2]);
-                        self.union_wall(t[1], t[0], t[2]);
-                        self.union_wall(t[2], t[0], t[1]);
+                        self.learn_line(&t);
                     } else if let Some(rep) = rep {
                         self.union_point(rep, NodeId::three_planes(Canon3::three(t)));
                     }
@@ -415,28 +414,6 @@ impl Aliases {
         self.point.entry(lo).or_insert(lo);
     }
 
-    fn find_wall(&self, class: usize, w: usize) -> usize {
-        let mut x = w;
-        while let Some(&p) = self.wall.get(&(class, x)) {
-            if p == x {
-                break;
-            }
-            x = p;
-        }
-        x
-    }
-
-    fn union_wall(&mut self, class: usize, a: usize, b: usize) {
-        let (ra, rb) = (self.find_wall(class, a), self.find_wall(class, b));
-        if ra == rb {
-            return;
-        }
-        self.joined += 1;
-        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
-        self.wall.insert((class, hi), lo);
-        self.wall.entry((class, lo)).or_insert(lo);
-    }
-
     /// The identity to key a vertex on — itself when nothing was merged with it.
     pub(crate) fn canon_point(&self, t: NodeId) -> NodeId {
         if self.point.is_empty() {
@@ -447,10 +424,7 @@ impl Aliases {
 
     /// The name to call a line by on `class` — `w` itself when no other wall carries it.
     pub(crate) fn canon_wall(&self, class: usize, w: usize) -> usize {
-        if self.wall.is_empty() {
-            return w;
-        }
-        self.find_wall(class, w)
+        self.lines.wall(class, w)
     }
 
     /// The walls that carry **one line** with `w` on `class` — `w` alone when none does.
@@ -459,21 +433,7 @@ impl Aliases {
     /// that line lies on **every** plane in the family, and the point fold needs to hear about it
     /// (see the report in [`split_at_crossings`]).
     pub(super) fn wall_family(&self, class: usize, w: usize) -> Vec<usize> {
-        if self.wall.is_empty() {
-            return vec![w];
-        }
-        let rep = self.find_wall(class, w);
-        let mut fam: Vec<usize> = self
-            .wall
-            .keys()
-            .filter(|(c, _)| *c == class)
-            .map(|&(_, x)| x)
-            .filter(|&x| self.find_wall(class, x) == rep)
-            .collect();
-        fam.push(w);
-        fam.sort_unstable();
-        fam.dedup();
-        fam
+        self.lines.family(class, w)
     }
 
     pub(super) fn absorb(&mut self, other: &Aliases) {
@@ -482,18 +442,110 @@ impl Aliases {
         for (&k, &v) in &other.point {
             self.union_point(k, v);
         }
-        for (&(c, w), &v) in &other.wall {
-            self.union_wall(c, w, v);
+        for held in other.lines.held() {
+            self.learn_line(held);
+        }
+    }
+
+    /// Learn that every class in `held` (sorted, three or more) holds one line.
+    fn learn_line(&mut self, held: &[usize]) {
+        if self.lines.learn(held) {
+            self.joined += 1;
         }
     }
 
     /// **How much has been learned** — the fixed-point loop's measure: the unions that joined two
-    /// components, of names and of walls. Each one changes the partition and nothing else does, so the
+    /// components, of names and of lines. Each one changes the partition and nothing else does, so the
     /// loop has converged exactly when a round adds none. The number of keys is no such measure: a
     /// union of two components whose roots are both keys already re-points one of them and leaves the
     /// count where it was.
     pub(super) fn learned(&self) -> usize {
         self.joined
+    }
+}
+
+/// **The lines plane classes hold, one name each.** A line held by three or more classes (a pencil)
+/// is one entry: the set of every class that holds it, and every pair of that set maps to it — so a
+/// class asks the same set whichever of its partners it names the line by, and two pencils learnt
+/// apart that share two classes are one line. A line held by two classes alone has no entry; its
+/// pair is its name.
+#[derive(Default, Debug, Clone)]
+struct Lines {
+    /// Every pair of classes of a learnt line → that line's index in `held`.
+    of: HashMap<[usize; 2], usize>,
+    /// Each line's classes, ascending. A line merged into another is left empty.
+    held: Vec<Vec<usize>>,
+}
+
+impl Lines {
+    fn line(&self, a: usize, b: usize) -> Option<&[usize]> {
+        let pair = if a < b { [a, b] } else { [b, a] };
+        self.of.get(&pair).map(|&i| self.held[i].as_slice())
+    }
+
+    /// The wall `class` calls the line `class ∩ w` by: the least other class that holds it.
+    fn wall(&self, class: usize, w: usize) -> usize {
+        self.line(class, w)
+            .and_then(|held| held.iter().copied().find(|&x| x != class))
+            .unwrap_or(w)
+    }
+
+    /// The walls that carry the line `class ∩ w` on `class` — every other class that holds it.
+    fn family(&self, class: usize, w: usize) -> Vec<usize> {
+        match self.line(class, w) {
+            Some(held) => held.iter().copied().filter(|&x| x != class).collect(),
+            None => vec![w],
+        }
+    }
+
+    /// Every learnt line's classes.
+    fn held(&self) -> impl Iterator<Item = &[usize]> {
+        self.held
+            .iter()
+            .filter(|h| !h.is_empty())
+            .map(Vec::as_slice)
+    }
+
+    /// Learn that every class in `held` holds one line, joining it with every learnt line that
+    /// shares a pair with it. `true` when that changed the table.
+    fn learn(&mut self, held: &[usize]) -> bool {
+        let mut set: Vec<usize> = held.to_vec();
+        let mut joined: Vec<usize> = Vec::new();
+        loop {
+            let before = set.len();
+            for i in 0..set.len() {
+                for j in (i + 1)..set.len() {
+                    if let Some(&k) = self.of.get(&[set[i], set[j]])
+                        && !joined.contains(&k)
+                    {
+                        joined.push(k);
+                        set.extend(self.held[k].iter().copied());
+                    }
+                }
+            }
+            set.sort_unstable();
+            set.dedup();
+            if set.len() == before {
+                break;
+            }
+        }
+        if joined.len() == 1 && self.held[joined[0]] == set {
+            return false;
+        }
+        let at = joined.iter().copied().min().unwrap_or(self.held.len());
+        if at == self.held.len() {
+            self.held.push(Vec::new());
+        }
+        for &k in &joined {
+            self.held[k].clear();
+        }
+        for i in 0..set.len() {
+            for j in (i + 1)..set.len() {
+                self.of.insert([set[i], set[j]], at);
+            }
+        }
+        self.held[at] = set;
+        true
     }
 }
 

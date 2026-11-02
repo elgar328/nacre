@@ -206,7 +206,7 @@ pub(crate) fn stored_line_dir(
 /// arrangement names a point wherever a feature crosses an edge).
 ///
 /// **"Same plane" is not "same class".** Aliasing lets two classes name one plane, which is why
-/// `angular_order` folds them (`Aliases::union_wall`) and still keeps an honest `UnorderedEdges`
+/// `angular_order` folds them (`Aliases::canon_wall`) and still keeps an honest `UnorderedEdges`
 /// for the pair aliasing did not reach.
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
@@ -257,7 +257,7 @@ pub(crate) fn parallel_carriers(
 /// **It is not "the angle is π"**, and the guard that makes it one stays with the caller:
 /// [`angular_order`] asks this only inside the bucket where the turn already came
 /// back `0`. Pulled out of that guard the predicate answers a different question, because two
-/// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
+/// directions on *different* carriers can also be collinear (aliasing that `Aliases::canon_wall` did not
 /// reach), and those belong in the `0` bucket rather than the `π` one. For two directions at one
 /// node it needs no guard to be true when it says yes — one carrier through a shared point is one
 /// line or one circle — which is how [`loop_winding`] reads it, through [`one_carrier_pole`]: an
@@ -739,7 +739,7 @@ fn arc_side(
 /// **What it relies on, and who supplies it.** Two edges leaving one vertex with a `0` turn are on
 /// one line — parallel plus a shared point — and then they have no cyclic order to read. Upstream
 /// makes that impossible in two places: `merge_coincident` folds an edge traced twice (its own doc
-/// names this bucket as the reason), and `Aliases::union_wall` folds two walls that carry one line
+/// names this bucket as the reason), and `Aliases::canon_wall` folds two walls that carry one line
 /// so they arrive under a single `fp`. Collinear same-direction overlap is resolved earlier
 /// still, by `split_at_crossings`.
 ///
@@ -747,7 +747,7 @@ fn arc_side(
 /// planes meet at a point, and that every same-line wall pair meets such a point is not
 /// established — so a `0` turn that survives to here is an honest `UnorderedEdges` reject rather
 /// than an order picked arbitrarily. Measured: it fires nowhere in the suite, and disabling
-/// `union_wall` makes the four-plane concurrency model reject, which is what says the reliance is
+/// `Aliases::canon_wall` makes the four-plane concurrency model reject, which is what says the reliance is
 /// real and the check reaches it.
 pub(crate) fn angular_order(
     jd: &Judge<'_, WorkingPlane>,
@@ -786,7 +786,7 @@ pub(crate) fn angular_order(
     //
     // Upstream is supposed to make it impossible, in two places, and both are load-bearing:
     // `merge_coincident` folds an edge that was traced twice (its own doc names this bucket as
-    // the reason), and `Aliases::union_wall` folds two walls that carry one line. Measured, the
+    // the reason), and `Aliases::canon_wall` folds two walls that carry one line. Measured, the
     // second fires 122 times over the coverage suite and this check never does — but **"measured
     // never" is not "cannot"**: `Aliases::record` only folds where four or more planes meet at a
     // point (`s.len() < 4` returns early), and that every same-line wall pair meets such a point

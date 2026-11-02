@@ -381,7 +381,7 @@ pub(super) fn split_at_crossings(
         // be seen that way — it is in `W`'s own direction family, which the collector skips
         // (`other.dir == wall.dir`), so it never becomes a handle and never orders against anything.
         //
-        // But `Aliases::wall` already knows it: folding two walls onto one line is exactly the
+        // But `Aliases::canon_wall` already knows it: folding two walls onto one line is exactly the
         // statement that a second plane carries it. Every split point on this line therefore lies on
         // every plane of the family, and that is a four-plane concurrency the point fold must hear
         // about — otherwise one class names the point with the canonical wall and another names it
