@@ -743,12 +743,12 @@ fn arc_side(
 /// so they arrive under a single `fp`. Collinear same-direction overlap is resolved earlier
 /// still, by `split_at_crossings`.
 ///
-/// **That reliance is checked, not assumed.** `Aliases::record` only folds where four or more
-/// planes meet at a point, and that every same-line wall pair meets such a point is not
-/// established — so a `0` turn that survives to here is an honest `UnorderedEdges` reject rather
-/// than an order picked arbitrarily. Measured: it fires nowhere in the suite, and disabling
-/// `Aliases::canon_wall` makes the four-plane concurrency model reject, which is what says the reliance is
-/// real and the check reaches it.
+/// **That reliance is checked, not assumed.** `Aliases::record` learns a line only where its
+/// planes are recorded passing through one point, and that every same-line wall pair is recorded
+/// so is not established — so a `0` turn that survives to here is an honest `UnorderedEdges`
+/// reject rather than an order picked arbitrarily. Measured: it fires nowhere in the suite, and
+/// disabling `Aliases::canon_wall` makes the four-plane concurrency model reject, which is what
+/// says the reliance is real and the check reaches it.
 pub(crate) fn angular_order(
     jd: &Judge<'_, WorkingPlane>,
     w: usize,
@@ -786,12 +786,11 @@ pub(crate) fn angular_order(
     //
     // Upstream is supposed to make it impossible, in two places, and both are load-bearing:
     // `merge_coincident` folds an edge that was traced twice (its own doc names this bucket as
-    // the reason), and `Aliases::canon_wall` folds two walls that carry one line. Measured, the
-    // second fires 122 times over the coverage suite and this check never does — but **"measured
-    // never" is not "cannot"**: `Aliases::record` only folds where four or more planes meet at a
-    // point (`s.len() < 4` returns early), and that every same-line wall pair meets such a point
-    // is *not* established. So the assumption is checked rather than trusted, and a failure is an
-    // honest reject.
+    // the reason), and `Aliases::canon_wall` names two walls that carry one line by one. Measured,
+    // this check never fires over the coverage suite — but **"measured never" is not "cannot"**:
+    // `Aliases::record` learns a line only where its planes are recorded passing through one point,
+    // and that every same-line wall pair is recorded so is *not* established. So the assumption is
+    // checked rather than trusted, and a failure is an honest reject.
     //
     // The pairs are checked before sorting rather than inside the comparator: the sort does not
     // compare every pair, so a tie it happens not to evaluate would slip through — and that is

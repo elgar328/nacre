@@ -304,7 +304,9 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
     let named = edges(&Aliases::default());
     assert!(coincident(&named), "the end's two names: {named:?}");
     let mut aliases = Aliases::default();
-    aliases.record_on_cylinder(&jd, &setup.cyls, touch, x40);
+    aliases
+        .record_on_cylinder(&jd, &setup.cyls, touch, x40)
+        .expect("one cylinder");
     assert_eq!(
         aliases.canon_point(near),
         aliases.canon_point(touch),
@@ -2687,7 +2689,8 @@ fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
 /// on the line, its pin there is the cylinder, and a split point hands the name back verbatim —
 /// restated on the line's own pair with its root kept, it would be the other crossing. Once the
 /// alias table learns the line, every pair's name of a crossing is one point there, and a name
-/// restated on another pair of the pencil is that pair's name of the same crossing.
+/// restated on another pair of the pencil is that pair's name of the same crossing. A round that
+/// ties two pairs' names learns the line from that tie alone.
 #[test]
 fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
     use crate::combinatorics::{EndPin, PointOn, QuadRoot, order_on, pierce_name, pin_for};
@@ -2759,7 +2762,7 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
     let mut table = Aliases::default();
     let mut four = vec![cx, cy, cd, class([0, 0, 1])];
     four.sort_unstable();
-    table.record(&jd, &four);
+    table.record(&jd, &four).expect("no cylinder");
     let mut reversed = false;
     for r in [QuadRoot::Lo, QuadRoot::Hi] {
         let n = NodeId::pierce(cx, cy, 0, r);
@@ -2774,6 +2777,30 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
             };
             reversed |= root(n2) != root(n);
             assert!(table.one_point(n, n2), "{n:?} and {n2:?} are one crossing");
+            // A round that ties the two names records the pencil as a line too — the set is the
+            // three classes of the pencil alone, with no point name among them.
+            // The other crossing, named by this pair: once the table knows the line, its name and
+            // `n` are two points whatever their labels say, and a tie between them is refused.
+            let (pair, ..) = pierce_name(n2).expect("a pierce name");
+            let flip = match root(n2) {
+                QuadRoot::Lo => QuadRoot::Hi,
+                _ => QuadRoot::Lo,
+            };
+            let other = NodeId::pierce(pair[0], pair[1], 0, flip);
+            if root(n2) != QuadRoot::Double {
+                assert_eq!(
+                    table.clone().record_same_point(&jd, &cyls, n, other),
+                    Err(RejectReason::CoincidentNodes),
+                    "{n:?} and {other:?} are the line's two crossings"
+                );
+            }
+            let mut tied = Aliases::default();
+            assert_eq!(tied.record_same_point(&jd, &cyls, n, n2), Ok(()));
+            assert_eq!(
+                tied.canon_wall(cx, cy),
+                tied.canon_wall(cx, cd),
+                "one line on class {cx}"
+            );
             let [lo, hi] = [p.min(q), p.max(q)];
             assert_eq!(
                 crate::combinatorics::restate_pierce(&jd, &cyls, n, lo, hi),
@@ -2799,7 +2826,10 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
 /// cube's corner `(1, 0, 0)` lies on the cylinder `x² + y² = 1` about `z`: its names are the
 /// three-plane one, the tangent pair `x = 1, z = 0`'s double root, and the pair `y = 0, z = 0`'s
 /// root at `x = 1` (not the one at `x = −1`). The pair `x = 1, y = 0` holds a ruling of the
-/// cylinder — its line lies on it — and gives no pierce name.
+/// cylinder — its line lies on it — and gives no pierce name. A round that proves two of those
+/// names one point records the whole set ([`Aliases::record_same_point`]). Against an arc of the
+/// circle `z = 0` the point is one θ: under any of its names it is `At` an end the arc names it by
+/// ([`crate::combinatorics::theta_place`]).
 #[test]
 fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
     use crate::combinatorics::{QuadRoot, names_on_cylinder};
@@ -2882,6 +2912,79 @@ fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
     want.sort_unstable();
     got.sort_unstable();
     assert_eq!(got, want, "the corner's names");
+    // A round that proves the corner and the axis pair's root one point records it, and the point
+    // then wears every name its planes give it there — the tangent pair's `Double` included.
+    let mut table = Aliases::default();
+    let axis_root = NodeId::pierce(lo, hi, 0, root);
+    assert_eq!(
+        table.record_same_point(&jd, &cyls, corner, axis_root),
+        Ok(())
+    );
+    assert!(table.one_point(corner, axis_root));
+    assert!(table.one_point(corner, NodeId::pierce(x1, z0, 0, QuadRoot::Double)));
+    // Two roots of one pair are two points: a tie between them is the arithmetic's defect. Two
+    // cylinders' crossings are where two cylinders meet, which no road names.
+    assert_eq!(
+        Aliases::default().record_same_point(
+            &jd,
+            &cyls,
+            NodeId::pierce(lo, hi, 0, QuadRoot::Lo),
+            NodeId::pierce(lo, hi, 0, QuadRoot::Hi)
+        ),
+        Err(RejectReason::CoincidentNodes)
+    );
+    assert_eq!(
+        Aliases::default().record_same_point(
+            &jd,
+            &cyls,
+            axis_root,
+            NodeId::pierce(lo, hi, 1, root)
+        ),
+        Err(RejectReason::CylinderPairContact)
+    );
+    // The corner's component stands on cylinder 0: another cylinder's name for it is refused
+    // whichever of the component's names is handed in.
+    assert_eq!(
+        table.record_same_point(&jd, &cyls, corner, NodeId::pierce(lo, hi, 1, root)),
+        Err(RejectReason::CylinderPairContact)
+    );
+    // A trace's tie says the same under one name: its decline is raised as its cause.
+    let kind = table
+        .record_same_point_traced(&jd, &cyls, corner, NodeId::pierce(lo, hi, 1, root))
+        .expect_err("two cylinders");
+    assert_eq!(kind, DeclineKind::CylinderPair);
+    assert_eq!(
+        decline_to_reject(kind, None),
+        RejectReason::CylinderPairContact
+    );
+    // One θ order places the point against an arc of `z = 0`: the tangent pair's `Double` is the
+    // axis pair's root at `θ = 0` — `At` that end, on an open arc to `(0, 1, 0)` and on the closed
+    // arc alike — and the root at `x = −1` is outside the arc, `θ = 0` inside the arc from it.
+    use crate::combinatorics::{ThetaPlace, theta_between, theta_place};
+    let y1 = class([0, 1, 0], 1);
+    let top = NodeId::pierce(y1, z0, 0, QuadRoot::Double);
+    let far = NodeId::pierce(
+        lo,
+        hi,
+        0,
+        if root == QuadRoot::Hi {
+            QuadRoot::Lo
+        } else {
+            QuadRoot::Hi
+        },
+    );
+    let double = NodeId::pierce(x1, z0, 0, QuadRoot::Double);
+    let place = |lo, hi, node| theta_place(&jd, 0, &def, lo, hi, node);
+    assert_eq!(place(axis_root, top, double), Some(ThetaPlace::At(0)));
+    assert_eq!(place(top, axis_root, double), Some(ThetaPlace::At(1)));
+    assert_eq!(place(axis_root, axis_root, double), Some(ThetaPlace::At(0)));
+    assert_eq!(
+        theta_between(&jd, 0, &def, axis_root, axis_root, double),
+        Some(false)
+    );
+    assert_eq!(theta_between(&jd, 0, &def, axis_root, top, double), None);
+    assert_eq!(place(axis_root, top, far), Some(ThetaPlace::Outside));
+    assert_eq!(place(far, top, double), Some(ThetaPlace::Inside));
 }
 
 /// **A pencil's restatement asks the name's own pair, not its named planes alone.** The `z` axis

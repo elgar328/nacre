@@ -177,12 +177,11 @@ pub enum RejectReason {
     // Ten questions, ten names. One label over several questions makes a reject name a dead
     // end: it says the engine is unhappy without saying about what, and a census cannot tell two
     // causes apart. Each name below is one question, asked at one kind of place.
-    /// **Two distinct plane triples name the same point.** A vertex is named by the three planes
-    /// meeting there, so two names for one point means a **fourth** plane passes through it — the
-    /// arrangement then holds an edge with no direction.
-    ///
-    /// The same substrate limit [`Self::FourPlane`] names; this is where it surfaces on the
-    /// paths that do not run that check.
+    /// **Two names of one point reach a road that keys points by name.** Three planes name a
+    /// vertex, so two plane names for one point mean a **fourth** plane through it — the arrangement
+    /// then holds an edge with no direction; the same substrate limit [`Self::FourPlane`] names,
+    /// surfacing on the paths that do not run that check. On the settled alias table it is a tie no
+    /// round recorded; in a round, a tie between two roots of one pair, which are two points.
     CoincidentNodes,
     /// A ring's node names do not chain: two consecutive nodes share other than exactly the
     /// class plane and one wall, or a node has no third plane to be named by.
@@ -448,6 +447,10 @@ pub enum RejectReason {
     /// apart along the rulings' cross product; a pin nested crosswise inside a larger cylinder is
     /// apart along no direction at all, its face lying inside the other cylinder. Pairs within one
     /// solid (a plate's two fillets, a slot's two half cylinders) are not asked.
+    ///
+    /// Also raised where the arrangement proves two names to be one point that stands on two
+    /// cylinders' surfaces: a point's names are its surfaces', so that point is where the two
+    /// surfaces meet, though the faces need not reach it.
     CylinderPairContact,
     /// **An operand has an edge where two of its own cylinders meet** — the ruling between two arc
     /// walls of a prism whose profile joins two arcs of different circles. Booleans on such a solid
@@ -915,10 +918,14 @@ pub enum DeclineKind {
     /// substrate limit is the cause and the naming failure only the symptom.
     FourPlane,
     /// Two **different** names order as one point on a line a face is traced onto — a class line
-    /// or a wall's ruling (the line sweep both roads share). One point under two names is an
-    /// identity the alias table did not learn; one name twice at one station is one point (a face
-    /// pinched there) and is read as one station. No trace in the suite or the census raises it.
+    /// or a wall's ruling (the line sweep both roads share) — and the round could not record them as
+    /// one (`Aliases::record_same_point`): two roots of one pair, two points the arithmetic tied. One
+    /// name twice at one station is one point (a face pinched there) and is read as one station. No
+    /// trace in the suite or the census raises it.
     CoincidentFeatures,
+    /// Two names a trace tied at one point are two cylinders' crossings — where two cylinders meet,
+    /// which no road names. Raised as [`RejectReason::CylinderPairContact`], its cause.
+    CylinderPair,
     /// A run of the boundary along the swept line is not one interval: a run ends with none open,
     /// or a crossing or a second run comes while one is open.
     RunSplit,
@@ -1034,6 +1041,7 @@ impl DeclineKind {
             Self::RunName => "run-name",
             Self::FourPlane => "four-plane",
             Self::CoincidentFeatures => "coincident-features",
+            Self::CylinderPair => "cylinder-pair",
             Self::RunSplit => "run-split",
             Self::OddParity => "odd-parity",
             Self::SeatedEdgeNaming => "seated-edge-naming",

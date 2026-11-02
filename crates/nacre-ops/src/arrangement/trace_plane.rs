@@ -262,12 +262,14 @@ fn trace_transversal_face(
                 set.push(wc);
                 set.sort_unstable();
                 set.dedup();
-                out.aliases.record(jd, &set);
                 // A handle has a duty the identity does not: it must **cut** `L` — see
                 // [`combinatorics::pin_on_line`], where that rule and its reason live.
                 // `FourPlane` and not `NoPinOnLine`: this arm has already established that
                 // `wc` is a fourth plane through the point, so the substrate limit is the cause
                 // and a missing pin is its symptom.
+                out.aliases
+                    .record(jd, &set)
+                    .map_err(|_| DeclineKind::CylinderPair)?;
                 combinatorics::pin_on_line(jd, wc, fc, &t)
                     .ok_or(DeclineKind::FourPlane)
                     .map(|r| {
@@ -451,6 +453,21 @@ fn trace_transversal_face(
         out.declined.push((fp, DeclineKind::PierceNode));
         return;
     };
+    // Two names at one station are one point: the order said `0`, which is exact. That is the
+    // fixed-point loop's to know, not this face's to refuse — recorded, and the station read under
+    // the first name ([`Aliases::record_same_point`]); the next round reads one name there.
+    for i in 0..same.len() {
+        if same[i] && stations[i].1.0 != stations[i + 1].1.0 {
+            if let Err(kind) =
+                out.aliases
+                    .record_same_point_traced(jd, cyls, stations[i].1.0, stations[i + 1].1.0)
+            {
+                out.declined.push((fp, kind));
+                return;
+            }
+            stations[i + 1].1 = stations[i].1;
+        }
+    }
     // Phase C — the sweep both line roads share.
     let mat = SegKind::Transversal {
         mat: faces[fp].plane().orient_sign,
@@ -551,7 +568,7 @@ pub(super) fn trace_one(
                 FaceRow::Cylinder(cf) => cf,
                 FaceRow::Plane(_) => unreachable!("ClassIx::Cyl marks a cylinder row"),
             };
-            match circle_on_class(jd, cyls, cf, fl, wc, k) {
+            match circle_on_class(jd, cyls, cf, fl, wc, k, &mut out.aliases) {
                 Ok(spans) if !spans.is_empty() => {
                     out.circles.extend(spans.into_iter().map(|s| CircleTrace {
                         cyl: k,
@@ -570,7 +587,17 @@ pub(super) fn trace_one(
                 // leaves only the lateral's half of a plane-pair line on its tangent ruling; any
                 // other class along or oblique to the axis still leaves nothing, silently — the
                 // population gate names those interactions.
-                Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, cyls, aliases) {
+                Ok(_) => match rulings_on_class(
+                    jd,
+                    cf,
+                    fl,
+                    wc,
+                    k,
+                    which,
+                    cyls,
+                    aliases,
+                    &mut out.aliases,
+                ) {
                     Ok((v, grazes)) => {
                         out.rulings.extend(v);
                         // The lateral's side of a plane-pair line it touches.

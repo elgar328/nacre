@@ -27,6 +27,27 @@ pub(super) fn circle_on_class(
     fl: &combinatorics::FaceLoops,
     wc: usize,
     cyl: usize,
+    found: &mut Aliases,
+) -> Result<Vec<CircleSpan>, DeclineKind> {
+    // Two names the circle puts at one angle are one point — one circle, one angle; an exact proof
+    // the round's table records ([`Aliases::record_same_point`]) whatever this face's answer is.
+    let mut ties: Vec<(NodeId, NodeId)> = Vec::new();
+    let spans = circle_spans(jd, cyls, cf, fl, wc, cyl, &mut ties);
+    for (a, b) in ties {
+        found.record_same_point_traced(jd, cyls, a, b)?;
+    }
+    spans
+}
+
+/// [`circle_on_class`] before the ties its circles found are recorded.
+fn circle_spans(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cf: &crate::planes::CylFaceInfo,
+    fl: &combinatorics::FaceLoops,
+    wc: usize,
+    cyl: usize,
+    ties: &mut Vec<(NodeId, NodeId)>,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
     // A class the gate proved clear of this cylinder carries none of it — the gate's record, not a
     // question this road could ask of a class with no world statement.
@@ -52,7 +73,7 @@ pub(super) fn circle_on_class(
     // cylinder's ellipse on its own arrangement, cut where the face's boundary crosses it
     // ([`section_on_class`]).
     if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
-        return section_on_class(jd, cyls, cf, fl, def, wc, cyl, world, &coeffs);
+        return section_on_class(jd, cyls, cf, fl, def, wc, cyl, world, &coeffs, ties);
     }
     // ⊥ to the axis, decided **totally** (`class_carries_circle` clears denominators and answers
     // in integers, so this cannot decline for want of bits). Any other class carries no circle
@@ -140,7 +161,7 @@ pub(super) fn circle_on_class(
             None => Vec::new(),
         }
     } else {
-        assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)?
+        assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer, ties)?
     };
     Ok(spans)
 }
@@ -193,6 +214,7 @@ fn section_on_class(
     cyl: usize,
     world: &crate::planes::WorldName,
     coeffs: &[Rat; 4],
+    ties: &mut Vec<(NodeId, NodeId)>,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
     let LateralShape {
         range,
@@ -206,7 +228,7 @@ fn section_on_class(
     // The face's shape is read; whatever the section then cannot be drawn from is the oblique
     // coverage's end, one name for every way it ends.
     section_extents(
-        jd, cyls, cf, def, wc, cyl, world, coeffs, range, &rims, &rings,
+        jd, cyls, cf, def, wc, cyl, world, coeffs, range, &rims, &rings, ties,
     )
     .map_err(|_| DeclineKind::ObliqueSection)
 }
@@ -225,6 +247,7 @@ fn section_extents(
     range: [Rat; 2],
     rims: &[(Rat, usize)],
     rings: &[(bool, &combinatorics::NamedRing)],
+    ties: &mut Vec<(NodeId, NodeId)>,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
     use crate::planes::{RimMeet, SectionSpan};
     let n = [coeffs[0], coeffs[1], coeffs[2]];
@@ -281,7 +304,7 @@ fn section_extents(
             Some(SectionSpan::Crosses) | None => Err(DeclineKind::ObliqueSection),
         };
     }
-    assemble_spans(jd, cyl, def, &carved, Some(CylOnClass::Crosses))
+    assemble_spans(jd, cyl, def, &carved, Some(CylOnClass::Crosses), ties)
 }
 
 /// **A lateral face's shape as its cycles state it** — what both lateral roads read of a
@@ -423,14 +446,41 @@ fn assemble_spans(
     def: &nacre_topo::CylinderDef,
     carved: &[Carved],
     outer: Option<CylOnClass>,
+    ties: &mut Vec<(NodeId, NodeId)>,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
-    let mut nodes: Vec<NodeId> = carved.iter().flat_map(|c| c.arc).collect();
-    nodes.sort_unstable();
-    nodes.dedup();
-    let order = combinatorics::circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
+    let mut names: Vec<NodeId> = carved.iter().flat_map(|c| c.arc).collect();
+    names.sort_unstable();
+    names.dedup();
+    // One θ order of the circle's nodes. Names at one angle of this circle are one point: each is
+    // read as its group's first, and the identity goes to the round's table (`ties`).
+    let groups = combinatorics::theta_groups(jd, cyl, def, &names).map_err(|e| match e {
         combinatorics::CircleOrderFail::Undecided => DeclineKind::CylSpan,
         combinatorics::CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
     })?;
+    let mut first: HashMap<NodeId, NodeId> = HashMap::new();
+    for g in &groups {
+        for &i in &g[1..] {
+            ties.push((names[g[0]], names[i]));
+            first.insert(names[i], names[g[0]]);
+        }
+    }
+    let one = |n: NodeId| first.get(&n).copied().unwrap_or(n);
+    let carved: Vec<Carved> = carved
+        .iter()
+        .map(|c| Carved {
+            arc: c.arc.map(one),
+            on: c.on,
+        })
+        .collect();
+    let carved = carved.as_slice();
+    // The points in θ order, and the same points sorted by name with `order` between the two.
+    let in_theta: Vec<NodeId> = groups.iter().map(|g| names[g[0]]).collect();
+    let mut nodes = in_theta.clone();
+    nodes.sort_unstable();
+    let order: Vec<usize> = in_theta
+        .iter()
+        .map(|x| nodes.binary_search(x).expect("a group's first is a point"))
+        .collect();
     let n = order.len();
     // θ position of each node, keyed by its index in the sorted `nodes`.
     let mut at = vec![0usize; n];

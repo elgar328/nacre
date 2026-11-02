@@ -902,7 +902,8 @@ pub(super) fn split_rulings(
             pierce_of(n, rulings[ri].cyl)?;
         }
     }
-    let mut out_rulings = cut_rulings(jd, cyls, rulings, &ruling_ends, on_ruling, &undecided)?;
+    let mut out_rulings =
+        cut_rulings(jd, cyls, rulings, &ruling_ends, on_ruling, &undecided, None)?;
     let out_segs = if folds {
         fold_onto_rulings(jd, cyls, out_segs, &mut out_rulings, &shared_here, aliases)?
     } else {
@@ -923,7 +924,7 @@ pub(super) fn cut_rulings_along_segments(
     wc: usize,
     segs: &[MergedSeg],
     rulings: Vec<MergedRuling>,
-    aliases: &Aliases,
+    aliases: &mut Aliases,
 ) -> Result<Vec<MergedRuling>, BoolError> {
     let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
     if rulings.is_empty() {
@@ -949,17 +950,25 @@ pub(super) fn cut_rulings_along_segments(
             let c = AxisCoord::of(jd, cyls, l.cyl, n).ok_or_else(undecided)?;
             let places = place_on_rulings(jd, def, &c, l.cyl, l.side, &rulings, &ends)
                 .ok_or_else(undecided)?;
-            // Strictly inside cuts. On an end there is nothing to cut, and whether the two names
-            // there are one point is the table's answer, which these rounds are still building —
-            // the ruling split asks it on the settled table (`split_rulings`).
+            // Strictly inside cuts. On an end there is nothing to cut: the two names there are one
+            // point — the axis coordinates are exact where they meet — recorded for the next round
+            // ([`Aliases::record_same_point`]) rather than left for the settled table to refuse.
             for (ri, place) in places {
-                if let OnRuling::Inside = place {
-                    cuts[ri].push(aliases.canon_point(n));
+                match place {
+                    OnRuling::Inside => cuts[ri].push(aliases.canon_point(n)),
+                    OnRuling::End(e) => {
+                        let end = rulings[ri].end[e];
+                        if !aliases.one_point(n, end) {
+                            aliases
+                                .record_same_point(jd, cyls, n, end)
+                                .map_err(reject)?;
+                        }
+                    }
                 }
             }
         }
     }
-    cut_rulings(jd, cyls, &rulings, &ends, cuts, &undecided)
+    cut_rulings(jd, cyls, &rulings, &ends, cuts, &undecided, Some(aliases))
 }
 
 /// Where a point lies on one ruling piece it touches.
@@ -973,8 +982,9 @@ enum OnRuling {
 /// **Where a point at axis coordinate `c` lands on class's ruling pieces of cylinder `cyl`, side
 /// `side`** — every piece it touches, by the closed extent of the axis coordinate; beyond every
 /// piece is the empty list. The one placement both ruling cuts read (pass A's at the ends of the
-/// segments along a line, pass B's at the crossings): the coordinates alone, never the names —
-/// whether a point on an end is that end is the alias table's to say, and pass B asks it. `None`
+/// segments along a line, pass B's at the crossings): the coordinates alone, never the names — a
+/// point on an end is that end by this same comparison, a tie pass A records for the round's table
+/// and pass B asks of the settled one. `None`
 /// is a comparison that could not answer. The upper end is asked only of a point past the lower.
 fn place_on_rulings(
     jd: &Judge<'_, WorkingPlane>,
@@ -1037,6 +1047,7 @@ fn cut_rulings(
     ends: &[[AxisCoord; 2]],
     mut cuts: Vec<Vec<NodeId>>,
     undecided: &impl Fn() -> BoolError,
+    mut round: Option<&mut Aliases>,
 ) -> Result<Vec<MergedRuling>, BoolError> {
     let mut out = Vec::with_capacity(rulings.len());
     for (ri, r) in rulings.iter().cloned().enumerate() {
@@ -1054,11 +1065,34 @@ fn cut_rulings(
         let [lo, hi] = ends[ri].clone();
         keyed.push((lo, r.end[0]));
         keyed.push((hi, r.end[1]));
-        let order = order_distinct(
-            keyed.len(),
-            |i, j| keyed[i].0.cmp(&keyed[j].0, jd, &cyls[r.cyl].def),
-            undecided,
-        )?;
+        let cmp = |i: usize, j: usize| keyed[i].0.cmp(&keyed[j].0, jd, &cyls[r.cyl].def);
+        // In a round of the fixed-point loop (pass A, `round`), two names at one axis coordinate
+        // are one point — the coordinates are exact where they tie — recorded for the next round
+        // and cut once ([`Aliases::record_same_point`]). On the settled table (the ruling split) a
+        // tie no round recorded is refused ([`order_distinct`]).
+        let order = match round.as_deref_mut() {
+            None => order_distinct(keyed.len(), cmp, undecided)?,
+            Some(al) => {
+                let mut order: Vec<usize> = (0..keyed.len()).collect();
+                combinatorics::try_sort_by(&mut order, |&i, &j| cmp(i, j).ok_or(()))
+                    .map_err(|()| undecided())?;
+                let mut kept: Vec<usize> = Vec::with_capacity(order.len());
+                for i in order {
+                    match kept.last() {
+                        Some(&k)
+                            if cmp(k, i).ok_or_else(undecided)? == core::cmp::Ordering::Equal =>
+                        {
+                            if keyed[k].1 != keyed[i].1 {
+                                al.record_same_point(jd, cyls, keyed[k].1, keyed[i].1)
+                                    .map_err(reject)?;
+                            }
+                        }
+                        _ => kept.push(i),
+                    }
+                }
+                kept
+            }
+        };
         // Ascending axis coordinate **is** the stored convention (`end[0] → end[1]` ascends
         // `+m`), so each window is already a well-formed piece.
         for pair in order.windows(2) {

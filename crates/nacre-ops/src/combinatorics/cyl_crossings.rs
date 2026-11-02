@@ -137,15 +137,109 @@ pub(crate) fn circular_order(
     Ok(groups.into_iter().flatten().collect())
 }
 
-/// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — cyclic order about
-/// the axis, by name ([`circular_order`]). For two ends that differ, `None` when the order cannot
-/// be formed or two of the three are one point wearing two names — the caller's population, not
-/// a tie to shrug at.
+/// **Where `node` lies against the counter-clockwise arc from `lo` to `hi`** — one cyclic order of
+/// the three about the axis ([`theta_groups`]), which says at once whether `node` is strictly
+/// inside, outside, or one point with an end (`At(0)` for `lo`, `At(1)` for `hi`; `lo` when it is
+/// both). Points with no exact meet are placed by their interval boxes, which never tie; the exact
+/// points among them are still grouped exactly, so a `node` at an exact end is `At` that end.
+/// `None` when the order cannot be formed, and when the two ends of an arc that is not closed are
+/// one point.
 ///
 /// **`lo == hi` is the closed arc**: one node cuts the circle and the arc runs its whole turn
-/// from that node back to it, so every other point of the circle is inside — and the node itself,
-/// under its own name or another (`Coincident`), is not. Read as the three-point order it would be
-/// two points, and refuse.
+/// from that node back to it, so every other point of the circle is inside.
+pub(crate) fn theta_place(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    lo: NodeId,
+    hi: NodeId,
+    node: NodeId,
+) -> Option<ThetaPlace> {
+    let closed = lo == hi;
+    if node == lo {
+        return Some(ThetaPlace::At(0));
+    }
+    if node == hi {
+        return Some(ThetaPlace::At(1));
+    }
+    let nodes: &[NodeId] = if closed { &[lo, node] } else { &[lo, hi, node] };
+    let ix = nodes.len() - 1;
+    let exact: Vec<usize> = (0..nodes.len())
+        .filter(|&i| !names_a_nameless_plane(jd, nodes[i]))
+        .collect();
+    let between = |inside: bool| {
+        if inside {
+            ThetaPlace::Inside
+        } else {
+            ThetaPlace::Outside
+        }
+    };
+    // A point with no exact meet is placed by its interval box — and only such a point: a named
+    // trio keeps the name road, whose «one point, two names» answer an interval has no twin for.
+    if exact.len() < nodes.len() {
+        if exact.len() > 1 && exact.contains(&ix) {
+            let sub: Vec<NodeId> = exact.iter().map(|&i| nodes[i]).collect();
+            if let Ok(groups) = theta_groups(jd, k, def, &sub) {
+                let g = groups
+                    .iter()
+                    .find(|g| g.contains(&(sub.len() - 1)))
+                    .expect("every point is in a group");
+                if let Some(&e) = g.iter().map(|&j| &exact[j]).find(|&&i| i != ix) {
+                    return Some(ThetaPlace::At(e));
+                }
+            }
+        }
+        return between_on_circle_hp(jd, k, def, lo, hi, node).map(between);
+    }
+    let groups = theta_groups(jd, k, def, nodes).ok()?;
+    let group_of = |i: usize| {
+        groups
+            .iter()
+            .position(|g| g.contains(&i))
+            .expect("every point is in a group")
+    };
+    let (g_lo, g_n) = (group_of(0), group_of(ix));
+    let place = if g_n == g_lo {
+        ThetaPlace::At(0)
+    } else if closed {
+        ThetaPlace::Inside
+    } else {
+        let g_hi = group_of(1);
+        if g_n == g_hi {
+            ThetaPlace::At(1)
+        } else if g_hi == g_lo {
+            return None;
+        } else {
+            between((g_n + 3 - g_lo) % 3 < (g_hi + 3 - g_lo) % 3)
+        }
+    };
+    // The interval reading's turn convention, checked against the name road wherever both answer.
+    debug_assert!(
+        match place {
+            ThetaPlace::Inside => between_on_circle_hp(jd, k, def, lo, hi, node) != Some(false),
+            ThetaPlace::Outside => between_on_circle_hp(jd, k, def, lo, hi, node) != Some(true),
+            ThetaPlace::At(_) => true,
+        },
+        "the interval turn about the axis disagrees with the circular order"
+    );
+    Some(place)
+}
+
+/// Where a point lies against an arc ([`theta_place`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ThetaPlace {
+    /// Strictly inside the arc.
+    Inside,
+    /// Strictly outside it.
+    Outside,
+    /// One point with the arc's end `0` (`lo`) or `1` (`hi`).
+    At(usize),
+}
+
+/// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — [`theta_place`]
+/// read as a yes or no. For two ends that differ, `None` when the order cannot be formed or two of
+/// the three are one point wearing two names — the caller's population, not a tie to shrug at. On
+/// the closed arc (`lo == hi`) the node itself, under its own name or another, is not inside.
 pub(crate) fn theta_between(
     jd: &Judge<'_, WorkingPlane>,
     k: usize,
@@ -154,40 +248,11 @@ pub(crate) fn theta_between(
     hi: NodeId,
     node: NodeId,
 ) -> Option<bool> {
-    let nodes = [lo, hi, node];
-    // A point with no exact meet is placed by its interval box — and only such a point: a named
-    // trio keeps the name road, whose «one point, two names» answer an interval has no twin for.
-    if nodes.iter().any(|&n| names_a_nameless_plane(jd, n)) {
-        return between_on_circle_hp(jd, k, def, lo, hi, node);
+    match theta_place(jd, k, def, lo, hi, node)? {
+        ThetaPlace::Inside => Some(true),
+        ThetaPlace::Outside => Some(false),
+        ThetaPlace::At(_) => (lo == hi).then_some(false),
     }
-    if lo == hi {
-        let inside = node != lo
-            && match circular_order(jd, k, def, &[lo, node]) {
-                Ok(_) => true,
-                Err(CircleOrderFail::Coincident) => false,
-                Err(CircleOrderFail::Undecided) => return None,
-            };
-        debug_assert!(
-            between_on_circle_hp(jd, k, def, lo, hi, node).is_none_or(|b| b == inside),
-            "the interval reading of the closed arc disagrees with the circular order"
-        );
-        return Some(inside);
-    }
-    let order = circular_order(jd, k, def, &nodes).ok()?;
-    let pos = |x: usize| {
-        order
-            .iter()
-            .position(|&i| i == x)
-            .expect("a permutation of the three")
-    };
-    let (p_lo, p_hi, p_n) = (pos(0), pos(1), pos(2));
-    let inside = (p_n + 3 - p_lo) % 3 < (p_hi + 3 - p_lo) % 3;
-    // The interval reading's turn convention, checked against the name road wherever both answer.
-    debug_assert!(
-        between_on_circle_hp(jd, k, def, lo, hi, node).is_none_or(|b| b == inside),
-        "the interval turn about the axis disagrees with the circular order"
-    );
-    Some(inside)
 }
 
 /// **Where the class line `L = wc ∩ fc` crosses an arc strictly inside it** — the pierce nodes

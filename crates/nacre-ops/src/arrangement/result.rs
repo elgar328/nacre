@@ -485,8 +485,6 @@ pub(super) fn trace_result_faces(
                 TRACE_ON,
                 trace_on_class(trace_in, wc, jd, cyls, faces, plane_ix, &snapshot)
             );
-            let mut local = snapshot.clone();
-            local.absorb(jd, &std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
             // which operand face. A class can decline several faces; the first is the one
             // reported, and `try_map_range` picks the lowest-numbered class, which is the one
@@ -497,6 +495,10 @@ pub(super) fn trace_result_faces(
                 // plane row would abort where an honest reject belongs.
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
+            let mut local = snapshot.clone();
+            local
+                .absorb(jd, &std::mem::take(&mut tr.aliases))
+                .map_err(reject)?;
             let skeleton = class_skeleton(jd, cyls, wc, &tr, &mut local)?;
             Ok((skeleton, local))
         })?;
@@ -504,7 +506,7 @@ pub(super) fn trace_result_faces(
         for (split, local) in round {
             splits.push(split);
             // Absorbing the snapshot back is a no-op; only the round's discoveries are new.
-            aliases.absorb(jd, &local);
+            aliases.absorb(jd, &local).map_err(reject)?;
         }
         if aliases.learned() == before {
             break;

@@ -10,10 +10,12 @@ use super::*;
 /// The reject a declined face reports to the caller.
 ///
 /// Most kinds *are* the answer — the tracer says what it could not do, and `face` says where.
-/// Two are exceptions, raised as their cause. [`DeclineKind::FourPlane`]: the naming failure is a
+/// Three are exceptions, raised as their cause. [`DeclineKind::FourPlane`]: the naming failure is a
 /// symptom, and reporting it as one would hide the substrate limit that caused it.
 /// [`DeclineKind::ObliqueSection`]: an oblique section the trace does not read is the oblique
-/// coverage's end, which [`RejectReason::ObliqueCylinderCut`] names wherever else it ends. The face
+/// coverage's end, which [`RejectReason::ObliqueCylinderCut`] names wherever else it ends; so is
+/// [`DeclineKind::CylinderPair`], two cylinders meeting at a point a trace tied, which
+/// [`RejectReason::CylinderPairContact`] names wherever else it is met. The face
 /// handle is dropped there because [`RejectReason::FourPlane`] carries no payload; per-face detail
 /// remains in the class audit, which is where `TraceDeclined`'s own docs put it.
 ///
@@ -23,6 +25,7 @@ pub(super) fn decline_to_reject(kind: DeclineKind, face: Option<Handle<Face>>) -
     match kind {
         DeclineKind::FourPlane => RejectReason::FourPlane,
         DeclineKind::ObliqueSection => RejectReason::ObliqueCylinderCut,
+        DeclineKind::CylinderPair => RejectReason::CylinderPairContact,
         kind => RejectReason::TraceDeclined { kind, face },
     }
 }
@@ -53,7 +56,7 @@ pub(super) fn seed_from_operands(
             for lr in rings {
                 if let Some(nr) = lr.poly() {
                     for s in &nr.concurrencies {
-                        aliases.record(jd, s);
+                        let _ = aliases.record(jd, s);
                     }
                     corners.extend(
                         nr.triples
@@ -79,7 +82,7 @@ pub(super) fn seed_from_operands(
     // and [`Aliases::record_on_cylinder`] joins them. Asked here, once, of the operands' own
     // topology and the class table, so every round and every class trace starts knowing it:
     // asked during a trace instead (where `third_on_l` meets the corner on `wc`), a class traced
-    // in the same round could refuse the coincidence before the round that learnt it — a round
+    // in the same round could decline for want of it before the round that learnt it — a round
     // that declines returns, and there is no next. `side_of` is exact (the quad tower), and the
     // question is corners × classes, both small.
     // **And the dual: a line of two classes lying on a cylinder** — the gate's record, one
@@ -117,7 +120,7 @@ pub(super) fn seed_from_operands(
             if nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2())
                 == nacre_exact::Orient::Zero
             {
-                aliases.record_cylinder_point(jd, cyls, ci, n, &t);
+                let _ = aliases.record_cylinder_point(jd, cyls, ci, n, &t);
             }
         }
     }
@@ -137,9 +140,20 @@ pub(super) fn seed_from_operands(
             )]
             let on_class = combinatorics::side_of(jd, cyls, corner, c) == Some(0);
             if on_class {
-                aliases.record_on_cylinder(jd, cyls, corner, c);
+                let _ = aliases.record_on_cylinder(jd, cyls, corner, c);
             }
         }
+    }
+}
+
+/// **A union the table refuses: the two components stand on two cylinders** — their point is
+/// where two cylinders meet ([`Aliases::join_points`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TwoCylinders;
+
+impl From<TwoCylinders> for RejectReason {
+    fn from(_: TwoCylinders) -> Self {
+        RejectReason::CylinderPairContact
     }
 }
 
@@ -192,11 +206,19 @@ pub(crate) struct Aliases {
 }
 
 impl Aliases {
-    /// Record that every plane in `s` (sorted, deduped) passes through one point.
-    pub(super) fn record(&mut self, jd: &Judge<'_, WorkingPlane>, s: &[usize]) {
-        if s.len() < 4 {
-            return; // three planes meeting at a point is the ordinary case, and names nothing new
+    /// Record that every plane in `s` (sorted, deduped) passes through one point. Every union is
+    /// made; `Err` when one of them is refused ([`Aliases::join_points`]).
+    pub(super) fn record(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        s: &[usize],
+    ) -> Result<(), TwoCylinders> {
+        // Three independent planes meeting at a point is the ordinary case and names nothing new;
+        // three that share a line are a pencil, which is news for the line table.
+        if s.len() < 3 || (s.len() == 3 && jd.plane_pair_dir_sign(s[0], s[1], s[2]) != 0) {
+            return Ok(());
         }
+        let mut out = Ok(());
         // The representative is [`combinatorics::canonical_triple`]'s answer — the one
         // rule every producer of a point's name calls — so a name an operand's ring already gave
         // the point is the representative it folds onto here.
@@ -206,20 +228,28 @@ impl Aliases {
                 for k in (j + 1)..s.len() {
                     let t = [s[i], s[j], s[k]];
                     if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
-                        // Shares a line: names no point, and tells us two walls are one line. The
-                        // set is a point's, so some class of it cuts the line.
-                        if let Some(&cut) = s
+                        // Shares a line: names no point, and tells us two walls are one line. A
+                        // class of the set cuts the line where the set holds an independent three;
+                        // a set that is the pencil alone asks every class.
+                        if let Some(cut) = s
                             .iter()
-                            .find(|&&d| jd.plane_pair_dir_sign(t[0], t[1], d) != 0)
+                            .copied()
+                            .chain(0..jd.planes.len())
+                            .find(|&d| jd.plane_pair_dir_sign(t[0], t[1], d) != 0)
                         {
                             self.learn_line(jd, &t, cut);
                         }
                     } else if let Some(rep) = rep {
-                        self.union_point(rep, NodeId::three_planes(Canon3::three(t)));
+                        if let Err(e) =
+                            self.union_point(rep, NodeId::three_planes(Canon3::three(t)))
+                        {
+                            out = Err(e);
+                        }
                     }
                 }
             }
         }
+        out
     }
 
     /// **A pierce corner found on a further plane class** — the cylinder twin of
@@ -227,30 +257,87 @@ impl Aliases {
     /// point, and so does the cylinder; every name that set produces denotes it — the corner's own,
     /// the three-plane name of `{p0, p1, wc}` (when independent), and each of the corner's planes'
     /// crossing with `wc` at the root on the corner's other plane ([`Aliases::record_cylinder_point`]).
-    /// All of them are folded here, so the ruling sweep and the plane roads — which mint the names
-    /// on their own — never have to decide "same point" themselves.
+    /// All of them are folded here, before any trace, so the ruling sweep and the plane roads —
+    /// which mint the names on their own — find them already one point.
     pub(crate) fn record_on_cylinder(
         &mut self,
         jd: &Judge<'_, WorkingPlane>,
         cyls: &[crate::planes::WorkingCyl],
         corner: NodeId,
         wc: usize,
-    ) {
+    ) -> Result<(), TwoCylinders> {
         let Some((planes, cyl, _)) = combinatorics::pierce_name(corner) else {
-            return;
+            return Ok(());
         };
         let mut s = vec![planes[0], planes[1], wc];
         s.sort_unstable();
         s.dedup();
         if s.len() < 3 {
-            return; // `wc` is one of the corner's own planes: the ordinary corner, nothing to fold
+            return Ok(()); // `wc` is one of the corner's own planes: the ordinary corner
         }
-        self.record_cylinder_point(jd, cyls, cyl, corner, &s);
+        self.record_cylinder_point(jd, cyls, cyl, corner, &s)
+    }
+
+    /// **Two names a round proved one point, recorded** — the record a tie inside the fixed-point
+    /// loop makes instead of a refusal: the tie was an exact proof (an interval never orders two
+    /// names equal), and whether two names are one point is the converged table's question, not a
+    /// round's. Every plane of either name passes through the point, so the set is recorded as a
+    /// concurrency ([`Aliases::record`] — a pencil among them is learnt as a line), a point on a
+    /// cylinder gets every name that set gives it there ([`Aliases::record_cylinder_point`]), and
+    /// the two names are joined. A union the table refuses — the point stands on two cylinders
+    /// ([`Aliases::join_points`]) — is a point where two cylinders meet, which no road names
+    /// (`CylinderPairContact`); two roots of one pair are two points, and a tie between them is the
+    /// arithmetic's defect (`CoincidentNodes`).
+    pub(super) fn record_same_point(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
+        a: NodeId,
+        b: NodeId,
+    ) -> Result<(), RejectReason> {
+        // Read as the table reads them: each name restated onto its line's name.
+        let (a, b) = (self.lines.restate(a), self.lines.restate(b));
+        let (pa, pb) = (combinatorics::pierce_name(a), combinatorics::pierce_name(b));
+        if let (Some((qa, ca, ra)), Some((qb, cb, rb))) = (pa, pb)
+            && qa == qb
+            && ca == cb
+            && ra != rb
+        {
+            return Err(RejectReason::CoincidentNodes);
+        }
+        self.union_point(a, b)?;
+        let mut s: Vec<usize> = combinatorics::name_planes(a);
+        s.extend(combinatorics::name_planes(b));
+        s.sort_unstable();
+        s.dedup();
+        self.record(jd, &s)?;
+        if let Some((_, cyl, _)) = pa.or(pb) {
+            let at = if pa.is_some() { a } else { b };
+            self.record_cylinder_point(jd, cyls, cyl, at, &s)?;
+        }
+        Ok(())
+    }
+
+    /// [`Aliases::record_same_point`] for a trace, whose refusals are declines: two cylinders'
+    /// crossings decline as [`DeclineKind::CylinderPair`], two roots of one pair as
+    /// [`DeclineKind::CoincidentFeatures`].
+    pub(super) fn record_same_point_traced(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
+        a: NodeId,
+        b: NodeId,
+    ) -> Result<(), DeclineKind> {
+        self.record_same_point(jd, cyls, a, b).map_err(|r| match r {
+            RejectReason::CylinderPairContact => DeclineKind::CylinderPair,
+            _ => DeclineKind::CoincidentFeatures,
+        })
     }
 
     /// **Every name of one point on cylinder `cyl`, folded** — `at` is one, `s` the plane classes
     /// through it ([`combinatorics::names_on_cylinder`], the one rule). Every seed of a point on a
-    /// cylinder ends here.
+    /// cylinder ends here. Every union is made; `Err` when one of them is refused — a name already
+    /// standing on another cylinder ([`Aliases::join_points`]).
     fn record_cylinder_point(
         &mut self,
         jd: &Judge<'_, WorkingPlane>,
@@ -258,10 +345,14 @@ impl Aliases {
         cyl: usize,
         at: NodeId,
         s: &[usize],
-    ) {
+    ) -> Result<(), TwoCylinders> {
+        let mut out = Ok(());
         for n in combinatorics::names_on_cylinder(jd, cyls, cyl, at, s) {
-            self.union_point(at, n);
+            if let Err(e) = self.union_point(at, n) {
+                out = Err(e);
+            }
         }
+        out
     }
 
     /// **A plane-pair line lying on a cylinder's lateral face** — the other twin of
@@ -297,7 +388,8 @@ impl Aliases {
                 .into_iter()
                 .find_map(|x| record_root(jd, cyls, cyl, sr, c, x))
                 .unwrap_or(NodeId::three_planes(t));
-            self.record_cylinder_point(jd, cyls, cyl, at, &s);
+            // A seed: a point a refused union leaves on another cylinder keeps its names apart.
+            let _ = self.record_cylinder_point(jd, cyls, cyl, at, &s);
         }
     }
 
@@ -345,7 +437,8 @@ impl Aliases {
                 continue;
             };
             let point = NodeId::three_planes(tri);
-            self.record_cylinder_point(jd, cyls, cyl, point, &s);
+            // A seed: a point a refused union leaves on another cylinder keeps its names apart.
+            let _ = self.record_cylinder_point(jd, cyls, cyl, point, &s);
             debug_assert!(
                 !combinatorics::names_on_cylinder(jd, cyls, cyl, point, &s)
                     .iter()
@@ -400,17 +493,33 @@ impl Aliases {
         (rank, n)
     }
 
-    fn union_point(&mut self, a: NodeId, b: NodeId) {
-        self.join_points(self.lines.restate(a), self.lines.restate(b));
+    fn union_point(&mut self, a: NodeId, b: NodeId) -> Result<(), TwoCylinders> {
+        self.join_points(self.lines.restate(a), self.lines.restate(b))
     }
 
     /// [`Aliases::union_point`] of the names as given — the table's keys are restated names
     /// ([`Lines::restate`]), and this is what puts a key learnt before its line was in the
     /// component of its restatement.
-    fn join_points(&mut self, a: NodeId, b: NodeId) {
+    ///
+    /// **Every union of the table is made here, and here a point on two cylinders is refused.** A
+    /// component holding a pierce name is represented by one (`rep_rank` puts every pierce name
+    /// before every three-plane one), and every pierce name of a component stands on its
+    /// representative's cylinder — this refusal is what keeps it so — so two components stand on
+    /// two cylinders exactly when their representatives do. Such a point is where two cylinders
+    /// meet, which no road names: the union is not made and does not count as learnt, and the caller
+    /// says what that means — a seed keeps the names apart, a road that proved them one point
+    /// refuses the boolean.
+    fn join_points(&mut self, a: NodeId, b: NodeId) -> Result<(), TwoCylinders> {
         let (ra, rb) = (self.find_point(a), self.find_point(b));
         if ra == rb {
-            return;
+            return Ok(());
+        }
+        if let (Some((_, ca, _)), Some((_, cb, _))) = (
+            combinatorics::pierce_name(ra),
+            combinatorics::pierce_name(rb),
+        ) && ca != cb
+        {
+            return Err(TwoCylinders);
         }
         self.joined += 1;
         let (lo, hi) = if self.rep_rank(ra) < self.rep_rank(rb) {
@@ -420,6 +529,7 @@ impl Aliases {
         };
         self.point.insert(hi, lo);
         self.point.entry(lo).or_insert(lo);
+        Ok(())
     }
 
     /// The identity to key a vertex on — itself when nothing was merged with it.
@@ -446,7 +556,13 @@ impl Aliases {
         self.lines.family(class, w)
     }
 
-    pub(super) fn absorb(&mut self, jd: &Judge<'_, WorkingPlane>, other: &Aliases) {
+    /// Learn everything `other` holds. A union refused here is two tables' knowledge putting one
+    /// point on two cylinders, `CylinderPairContact` ([`Aliases::join_points`]).
+    pub(super) fn absorb(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        other: &Aliases,
+    ) -> Result<(), RejectReason> {
         if self.nameless.is_empty() {
             self.nameless.clone_from(&other.nameless);
         }
@@ -454,8 +570,9 @@ impl Aliases {
             self.learn_line(jd, &line.held, line.cut);
         }
         for (&k, &v) in &other.point {
-            self.union_point(k, v);
+            self.union_point(k, v)?;
         }
+        Ok(())
     }
 
     /// Learn that every class in `held` (ascending, three or more) holds one line `cut` cuts. A
@@ -486,7 +603,12 @@ impl Aliases {
             .filter(|&k| self.lines.restate(k) != k)
             .collect();
         for k in stale {
-            self.join_points(self.lines.restate(k), k);
+            // A restatement keeps the name's cylinder, so this union is never refused.
+            let joined = self.join_points(self.lines.restate(k), k);
+            debug_assert!(
+                joined.is_ok(),
+                "a key and its restatement stand on one cylinder"
+            );
         }
     }
 

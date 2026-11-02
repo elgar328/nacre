@@ -313,39 +313,21 @@ pub(super) fn split_at_crossings(
             if sorted.is_err() {
                 return Err(undecided(&pts));
             }
-            // Two DISTINCT points ordering equal are one point wearing two names — a four-plane
-            // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
-            // splitting at both would emit a zero-length piece between them.
-            // **A tie that involves a cylinder-pinned point is one the alias table must
-            // already know.** The plane fold below is a statement about *plane classes* — it
-            // hands `Aliases` a set of them — and a pierce name has none to contribute; nor could
-            // a fold made here be trusted, since the DCEL keys vertices by name and the two
-            // handles would still ship two names. The table *does* know such a point
-            // when it is an operand's corner a class passes through (the seed,
-            // `Aliases::record_on_cylinder`): every handle's name canonicalizes to one
-            // representative, the pieces below are emitted under it (`sorted`), and one handle
-            // is kept as the split point. A tie the table does not know is refused — the honest
-            // floor, as `split_segments_at` and `split_circles` refuse the same shape.
-            // Measured: the refusal is exercised
-            // only with the slab as the first operand, where the corner's own name is not the
-            // representative and the tie is between the three-plane name and the class's root.
+            // Two DISTINCT points ordering equal are one point wearing two names — the order is
+            // exact where it says `0`. Record it, and keep one representative as a split point:
+            // splitting at both would emit a zero-length piece between them. A tie of plane names is
+            // a concurrency `{wc, w, ·, ·}` and records as one; a tie with a cylinder-pinned point
+            // records every name the point has ([`Aliases::record_same_point`]) — this is a round of
+            // the fixed-point loop, and the next round reads the point under one name, which the
+            // pieces below ship (`sorted`). Two pierce names on two cylinders are where two
+            // cylinders meet, a point no road names, and are refused.
             let mut reps: Vec<Split> = Vec::with_capacity(pts.len());
             let mut group: Vec<Split> = Vec::new();
-            let mut tied_pierce = false;
+            let mut refused: Option<RejectReason> = None;
             let flush = |group: &mut Vec<Split>,
                          reps: &mut Vec<Split>,
                          al: &mut Aliases,
-                         tied_pierce: &mut bool| {
-                if group.len() > 1 && group.iter().any(|s| matches!(s, Split::Pierce { .. })) {
-                    let first = group[0].name(wc, w);
-                    if group.iter().all(|g| al.one_point(g.name(wc, w), first)) {
-                        reps.push(group[0]);
-                    } else {
-                        *tied_pierce = true;
-                    }
-                    group.clear();
-                    return;
-                }
+                         refused: &mut Option<RejectReason>| {
                 if let Some(&rep) = group.first() {
                     reps.push(rep);
                 }
@@ -357,7 +339,15 @@ pub(super) fn split_at_crossings(
                     }));
                     set.sort_unstable();
                     set.dedup();
-                    al.record(jd, &set);
+                    if let Err(e) = al.record(jd, &set) {
+                        refused.get_or_insert(e.into());
+                    }
+                    let first = group[0].name(wc, w);
+                    for g in &group[1..] {
+                        if let Err(r) = al.record_same_point(jd, cyls, first, g.name(wc, w)) {
+                            refused.get_or_insert(r);
+                        }
+                    }
                 }
                 group.clear();
             };
@@ -375,13 +365,13 @@ pub(super) fn split_at_crossings(
                     }
                 };
                 if !same {
-                    flush(&mut group, &mut reps, aliases, &mut tied_pierce);
+                    flush(&mut group, &mut reps, aliases, &mut refused);
                 }
                 group.push(r);
             }
-            flush(&mut group, &mut reps, aliases, &mut tied_pierce);
-            if tied_pierce {
-                return Err(reject(RejectReason::CoincidentNodes));
+            flush(&mut group, &mut reps, aliases, &mut refused);
+            if let Some(r) = refused {
+                return Err(reject(r));
             }
             reps
         };
@@ -415,7 +405,7 @@ pub(super) fn split_at_crossings(
                     set.extend(family.iter().copied());
                     set.sort_unstable();
                     set.dedup();
-                    aliases.record(jd, &set);
+                    aliases.record(jd, &set).map_err(|e| reject(e.into()))?;
                 }
             }
         }

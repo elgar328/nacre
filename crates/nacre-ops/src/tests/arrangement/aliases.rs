@@ -8,10 +8,10 @@ use super::*;
 fn joining_two_seated_components_is_learned_without_a_new_key() {
     let name = |k: usize| NodeId::three_planes(Canon3::three([0, 1, k]));
     let mut al = Aliases::default();
-    al.union_point(name(2), name(3));
-    al.union_point(name(4), name(5));
+    al.union_point(name(2), name(3)).expect("one cylinder");
+    al.union_point(name(4), name(5)).expect("one cylinder");
     let (keys, learned) = (al.point.len(), al.learned());
-    al.union_point(name(3), name(5));
+    al.union_point(name(3), name(5)).expect("one cylinder");
     assert_eq!(
         al.point.len(),
         keys,
@@ -19,7 +19,7 @@ fn joining_two_seated_components_is_learned_without_a_new_key() {
     );
     assert_eq!(al.learned(), learned + 1, "the partition changed");
     assert!(al.one_point(name(2), name(4)));
-    al.union_point(name(2), name(5));
+    al.union_point(name(2), name(5)).expect("one cylinder");
     assert_eq!(
         al.learned(),
         learned + 1,
@@ -71,11 +71,11 @@ fn the_representative_does_not_depend_on_what_was_learnt_first() {
             ..Aliases::default()
         };
         if union_first {
-            al.union_point(on_line, off_line);
+            al.union_point(on_line, off_line).expect("one cylinder");
         }
         al.learn_line_by(&[0, 1, 3], 2, named, |_, _, _| 1);
         if !union_first {
-            al.union_point(on_line, off_line);
+            al.union_point(on_line, off_line).expect("one cylinder");
         }
         al.canon_point(off_line)
     };
@@ -103,4 +103,35 @@ fn a_line_is_named_by_its_least_pair_and_walls_follow() {
         1,
         "a class without one by its least partner"
     );
+}
+
+/// **One component stands on one cylinder** — a union whose two components stand on two cylinders
+/// is the one union the table refuses ([`Aliases::join_points`]): not made and not learnt, whichever
+/// name of a component is handed in, and a table absorbing another's knowledge that would make it
+/// raises `CylinderPairContact`.
+#[test]
+fn a_point_on_two_cylinders_is_never_one_component() {
+    let three = |k: usize| NodeId::three_planes(Canon3::three([0, 1, k]));
+    let on = |cyl: usize| NodeId::pierce(0, 1, cyl, crate::combinatorics::QuadRoot::Lo);
+    let mut al = Aliases::default();
+    al.union_point(three(2), on(0)).expect("one cylinder");
+    let learned = al.learned();
+    assert_eq!(al.union_point(three(2), on(1)), Err(TwoCylinders));
+    assert_eq!(al.learned(), learned, "a refused union is not learnt");
+    assert!(!al.one_point(on(0), on(1)));
+    // Another table put a corner of the same point on cylinder 1.
+    let mut other = Aliases::default();
+    other.union_point(three(3), on(1)).expect("one cylinder");
+    other.union_point(three(3), three(2)).expect("one cylinder");
+    let planes: Vec<WorkingPlane> = Vec::new();
+    let jd = crate::planes::test_judge(&planes);
+    assert_eq!(
+        al.clone().absorb(&jd, &other),
+        Err(RejectReason::CylinderPairContact)
+    );
+    // The same knowledge on one cylinder is absorbed.
+    let mut same = Aliases::default();
+    same.union_point(three(3), three(2)).expect("one cylinder");
+    assert_eq!(al.absorb(&jd, &same), Ok(()));
+    assert!(al.one_point(three(3), on(0)));
 }

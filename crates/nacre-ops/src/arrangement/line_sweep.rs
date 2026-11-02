@@ -13,8 +13,9 @@ use super::*;
 /// pinched there — leaves two events under one name at one station: a run's end and a touch, or
 /// two runs meeting end to start. They are one point and are read as one station; refusing them
 /// as two coinciding features refuses every pinched face. Two **different** names at one station
-/// are refused (`CoincidentFeatures`) before the sweep: one point under two names is an identity
-/// the alias table did not learn, and this is no place to decide it.
+/// are one point under two names; the roads record that identity for the round's table and hand
+/// the station one name (`Aliases::record_same_point`), so two names reaching here are refused
+/// (`CoincidentFeatures`) — this is no place to decide it.
 ///
 /// Refused by name, besides: a run's end with no run open, a crossing or a second run inside an
 /// open run (`RunSplit` — the run is not one interval of the boundary), and a face still present

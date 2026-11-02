@@ -26,6 +26,7 @@ pub(super) fn rulings_on_class(
     which: SolidSide,
     cyls: &[crate::planes::WorkingCyl],
     aliases: &Aliases,
+    found: &mut Aliases,
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
     // **The gate's answer, first** — a class touching the cylinder
     // ([`WorkingCyl::touches`](crate::planes::WorkingCyl::touches)) gets the lateral's half of a
@@ -100,7 +101,7 @@ pub(super) fn rulings_on_class(
     let mut grazes = Vec::new();
     for side in [1i8, -1i8] {
         let (pieces, g) = ruling_sweep(
-            jd, cf, def, wc, k, side, &rims, &cycles, mat, which, aliases,
+            jd, cf, def, wc, k, side, &rims, &cycles, mat, which, aliases, cyls, found,
         )?;
         grazes.extend(g);
         #[cfg(test)]
@@ -171,6 +172,8 @@ fn ruling_sweep(
     mat: SegKind,
     which: SolidSide,
     aliases: &Aliases,
+    cyls: &[crate::planes::WorkingCyl],
+    found: &mut Aliases,
 ) -> Result<SweepOut, DeclineKind> {
     use crate::combinatorics::Wall;
     // **The lateral's half of a plane-pair line** on this ruling is stated in the plane
@@ -178,10 +181,13 @@ fn ruling_sweep(
     // this ruling is (`body_side`): the same cycle, the same ruling, the same traversal.
     let mut grazes: Vec<Seg> = Vec::new();
     // **Identity is the table's** — a station made here (`wc`'s crossing with a cap)
-    // and a corner the cycle carries can be one point under two names, and the plane roads have
-    // already told the table so (`Aliases::record_on_cylinder`). Every "same node?" below asks
-    // through it; the sweep never decides coincidence on its own.
-    let same = |x: NodeId, y: NodeId| aliases.one_point(x, y);
+    // and a corner the cycle carries can be one point under two names, and the seeds have
+    // usually told the table so (`Aliases::record_on_cylinder`). Every "same node?" below asks
+    // the round's tables; where the geometry proves two names one point the tables do not hold
+    // yet (one height on this ruling, one angle on an arc's circle), the proof is recorded in
+    // `found` for the next round, not refused.
+    let same =
+        |found: &Aliases, x: NodeId, y: NodeId| aliases.one_point(x, y) || found.one_point(x, y);
     let on_ruling = |c: usize| {
         combinatorics::crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling)
     };
@@ -316,30 +322,65 @@ fn ruling_sweep(
             };
             let node = on_ruling(c)?;
             let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
-            if same(node, a) || same(node, b) {
+            let (lo, hi) = if nu { (a, b) } else { (b, a) };
+            // The crossing's place on the arc is one θ order of the three. An end at the
+            // crossing's angle on the arc's own circle is the crossing: one circle, one angle, one
+            // point — an exact proof the tables may not hold yet, recorded for the next round
+            // ([`Aliases::record_same_point`]).
+            let ends_here = if same(found, node, a) || same(found, node, b) {
+                true
+            } else {
+                match combinatorics::theta_place(jd, k, def, lo, hi, node)
+                    .ok_or(DeclineKind::Ruling)?
+                {
+                    combinatorics::ThetaPlace::At(e) => {
+                        found.record_same_point_traced(jd, cyls, [lo, hi][e], node)?;
+                        true
+                    }
+                    combinatorics::ThetaPlace::Inside => {
+                        let t = crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::Ruling)?;
+                        stations.push((t, LineEvent::Toggle, node));
+                        false
+                    }
+                    combinatorics::ThetaPlace::Outside => false,
+                }
+            };
+            if ends_here {
                 // The arc ends on this ruling: an edge of this cycle must lie there — a run this
                 // sweep states, or a plane-pair line another face states (`quiet_nodes`) — or the
                 // boundary crosses the ruling at a vertex, which is not one to answer "no" to
                 // silently. A rim split into arcs, a corner on the ruling, is read as a rim
                 // (`lateral_shape`) and is not a cycle of this sweep.
+                // A run or line end at the crossing's height on this ruling is the crossing too.
+                let t_node = combinatorics::pierce_axis_param(jd, def, node);
+                for &r in run_nodes.iter().chain(quiet_nodes.iter()) {
+                    if !same(found, r, node)
+                        && t_node.is_some()
+                        && combinatorics::pierce_axis_param(jd, def, r) == t_node
+                    {
+                        found.record_same_point_traced(jd, cyls, r, node)?;
+                    }
+                }
                 if !run_nodes
                     .iter()
                     .chain(quiet_nodes.iter())
-                    .any(|&r| same(r, node))
+                    .any(|&r| same(found, r, node))
                 {
                     return Err(DeclineKind::Ruling);
                 }
-                continue;
-            }
-            let (lo, hi) = if nu { (a, b) } else { (b, a) };
-            if combinatorics::theta_between(jd, k, def, lo, hi, node).ok_or(DeclineKind::Ruling)? {
-                let t = crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::Ruling)?;
-                stations.push((t, LineEvent::Toggle, node));
             }
         }
     }
     stations.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.cmp(&y.1)));
     let same: Vec<bool> = stations.windows(2).map(|w| w[0].0 == w[1].0).collect();
+    // Two names at one height on this ruling are one point — the heights are exact. Recorded for
+    // the next round and read under the first name, as the plane road's sweep does.
+    for i in 0..same.len() {
+        if same[i] && stations[i].2 != stations[i + 1].2 {
+            found.record_same_point_traced(jd, cyls, stations[i].2, stations[i + 1].2)?;
+            stations[i + 1].2 = stations[i].2;
+        }
+    }
     let events: Vec<(LineEvent, NodeId)> = stations.iter().map(|&(_, e, n)| (e, n)).collect();
     let pieces = sweep_line(&events, &same, |n| n, mat)?;
     Ok((pieces, grazes))
