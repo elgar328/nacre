@@ -769,7 +769,7 @@ pub(crate) fn frame_audit(
     // boolean's.
     let mut aliases = Aliases::default();
     loop {
-        let before = aliases.len();
+        let before = aliases.learned();
         for wc in 0..geom.len() {
             let mut tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
             aliases.absorb(&std::mem::take(&mut tr.aliases));
@@ -778,7 +778,7 @@ pub(crate) fn frame_audit(
                 let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
             }
         }
-        if aliases.len() == before {
+        if aliases.learned() == before {
             break;
         }
     }

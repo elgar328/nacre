@@ -149,6 +149,8 @@ pub(crate) struct Aliases {
     /// point another name states exactly ([`Aliases::record_shared_ruling`]) — names only an
     /// interval places.
     interval_only: std::collections::HashSet<NodeId>,
+    /// How many unions joined two components — the fixed-point loop's measure ([`Aliases::learned`]).
+    joined: usize,
 }
 
 impl Aliases {
@@ -403,6 +405,7 @@ impl Aliases {
         if ra == rb {
             return;
         }
+        self.joined += 1;
         let (lo, hi) = if self.rep_rank(ra) < self.rep_rank(rb) {
             (ra, rb)
         } else {
@@ -428,6 +431,7 @@ impl Aliases {
         if ra == rb {
             return;
         }
+        self.joined += 1;
         let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
         self.wall.insert((class, hi), lo);
         self.wall.entry((class, lo)).or_insert(lo);
@@ -483,8 +487,16 @@ impl Aliases {
         }
     }
 
-    /// How much has been learned — the fixed-point loop's measure.
-    pub(super) fn len(&self) -> usize {
-        self.point.len() + self.wall.len()
+    /// **How much has been learned** — the fixed-point loop's measure: the unions that joined two
+    /// components, of names and of walls. Each one changes the partition and nothing else does, so the
+    /// loop has converged exactly when a round adds none. The number of keys is no such measure: a
+    /// union of two components whose roots are both keys already re-points one of them and leaves the
+    /// count where it was.
+    pub(super) fn learned(&self) -> usize {
+        self.joined
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/arrangement/aliases.rs"]
+mod tests;

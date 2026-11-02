@@ -457,7 +457,7 @@ pub(super) fn trace_result_faces(
     #[allow(clippy::type_complexity)]
     let mut splits: Vec<(Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedRuling>)> = Vec::new();
     loop {
-        let before = aliases.len();
+        let before = aliases.learned();
         // **Every class in the round sees the table as it stood when the round began**, and
         // its own discoveries on top — not whatever lower-numbered classes found meanwhile, as
         // a sequential loop would show it. The fixed point is the same, and for
@@ -504,7 +504,7 @@ pub(super) fn trace_result_faces(
             // Absorbing the snapshot back is a no-op; only the round's discoveries are new.
             aliases.absorb(&local);
         }
-        if aliases.len() == before {
+        if aliases.learned() == before {
             break;
         }
     }
