@@ -758,14 +758,15 @@ fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
 }
 
 /// A rotated face's sketch frame is deterministic and right-handed about its own
-/// outward normal — pinned so a change to `any_perpendicular` cannot quietly
+/// outward normal — pinned so a change to the frame convention cannot quietly
 /// rotate every sketch on such a face.
 ///
-/// This face is **not** the discontinuous case: `any_perpendicular` picks the *least*-aligned world
-/// axis, and for a normal of (0.707, 0.707, 0) that is z by a mile. The genuine tie is a normal
-/// whose two **smallest** components are equal, which axis-aligned rotation by a rational angle
-/// cannot even produce here — so it is pinned where the rule lives, in `nacre_math`'s own tests,
-/// not through a face.
+/// The 45° turn is off the quarters, so the face's plane takes its own `Canonical` frame and
+/// carries it out through the chain: the arbitrary-axis frame of its unturned normal (`+u = ẑ × n`,
+/// `ŷ × n` when `n` is vertical — `frame_axes`' rule, stated exactly by
+/// `nacre_exact::plane_frame_default`), not `any_perpendicular`. The carried `+u` equals `ẑ × n̂`
+/// of the world normal only because the turn is about `ẑ`, which it leaves fixed. The convention
+/// breaks only at the two poles, and this face's normal is horizontal.
 #[test]
 fn a_rotated_face_has_a_pinned_sketch_axis() {
     let (mut m, _) = cube_with_top();
@@ -788,7 +789,7 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
         .expect("a rotated cube has a face facing the diagonal");
 
     let plane = nacre_ops::face_plane(&m, face).unwrap();
-    // |n| = (0.707, 0.707, 0) — z is the least-aligned axis, so x = ẑ × n̂.
+    // The turn is about ẑ, so the carried Canonical x is still ẑ × n̂ of the world normal.
     let want = Vector3::from_array([0.0, 0.0, 1.0]).cross(diag);
     assert!(
         (plane.x_axis() - want).norm() < 1e-12,

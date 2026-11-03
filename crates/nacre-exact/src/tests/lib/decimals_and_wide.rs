@@ -782,8 +782,8 @@ fn a_plane_too_wide_for_i128_is_named_wide() {
         "expected the narrow route to overflow"
     );
     let name = plane_name_exact(a, b, c).expect("collinear it is not — it must be named");
-    // Wide carries identity only: the arithmetic shortcuts' door stays shut
-    // (a wide name must NOT open a frame).
+    // A wide name keeps the narrow door shut: the arithmetic shortcuts decline on it, and a
+    // frame on it takes the arbitrary-precision road (`nacre_judge::WideFrame`).
     assert!(
         name.narrow().is_none(),
         "an answer past i128 must be stored Wide"

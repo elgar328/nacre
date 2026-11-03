@@ -37,9 +37,9 @@ fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
 ///
 /// The `Transform` step is not decoration. `Operation::Transform` carries a
 /// `exact::Isometry`, so a facade that forgot to re-export `nacre-exact` would leave
-/// a consumer unable to *name* the value this operation needs — the one leak of a lower
-/// layer into `ops`' public API. Exercising it turns that claim into a compile-time
-/// fact. `bounds` is here for the same reason: the newest query layer must be reachable.
+/// a consumer unable to *name* the value this operation needs — a lower layer's type in
+/// `ops`' public API, as the judge's `Decision`·`Evidence`·`Site` that ops re-exports are.
+/// Exercising it turns that claim into a compile-time fact. `bounds` is here for the same reason: the newest query layer must be reachable.
 #[test]
 fn the_whole_pipeline_runs_through_the_facade_alone() {
     let mut model = Model::new();

@@ -25,6 +25,21 @@
 //! not versioned), a user's own `~/.cargo/config.toml` or `CLIPPY_CONF_DIR` in the environment are
 //! past what a test in the tree can see.
 //!
+//! clippy lints the feature combinations the gate's three clippy lines build: the default build of
+//! the whole workspace (the hook's line), the serial build of `nacre-ops` and `nacre-judge`, and
+//! the `--all-features` build of `nacre-ops`, which reaches the code behind `reject-trace` and
+//! `tangency-trace`. Every other crate is linted in its default build only. A module `expect` of
+//! `clippy::disallowed_methods` covers every path in that module — the lint is one, with no
+//! per-path level. `par.rs`'s is `cfg_attr(feature = "parallel", …)`, so it leaves the disallowed
+//! paths unwatched only in code the parallel build alone compiles: a disallowed call in code both
+//! builds compile still meets the serial clippy line. `realize.rs`'s `expect` is unconditional, so
+//! in that module every disallowed path — rayon and the ring predicates as well as the cache doors
+//! — is unwatched in every build. The kit and the playground are other repositories and outside
+//! this lock.
+//!
+//! The count of `.to_f64()` calls is not locked: a rational's `to_f64` rounds correctly, so it is
+//! itself a realization.
+//!
 //! Textual, like `comparators.rs`: it reads the attribute's spelling, which is fixed, and
 //! [`the_scan_reads_what_it_should`] pins that reading on literal lines.
 

@@ -39,8 +39,10 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
 /// structurally equal (`==`/`Hash`) across representations. That is what makes this the
 /// interning key: identity never depends on which route derived the name.
 ///
-/// `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports, `base_rat`)
-/// read [`PlaneName::narrow`] and decline on `None` — a wide name does not open a frame.
+/// `Wide` carries identity, and a plane it names still hosts a frame. Arithmetic shortcuts
+/// (Shewchuk transports, `base_rat`) read [`PlaneName::narrow`] and decline on `None`; a frame on a
+/// wide name goes through the arbitrary-precision road (`nacre_judge::WideFrame`), as a narrow
+/// name whose frame derivation overflows `i128` does.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PlaneName {
     Narrow([Rat; 4]),

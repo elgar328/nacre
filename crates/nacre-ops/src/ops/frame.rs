@@ -119,6 +119,11 @@ pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
 /// [`face_sketch_frame`] places its profile in**, so a caller can work out where its `(0, 0)` will
 /// land before it builds anything.
 ///
+/// The origin is fixed by the plane and never read off the face — the world origin's projection
+/// where the model states the plane's world equation, otherwise its own `Canonical` frame's
+/// origin carried out by its chain ([`face_sketch_frame`]) — so on a face far from that point
+/// `(0, 0)` lies outside the face: read the face's place from this plane and draw the profile there.
+///
 /// That equality is the contract, not a coincidence: this is [`face_sketch_frame`]'s frame
 /// realized by [`frame_plane`], never a second derivation. A test pins a hand-placed profile
 /// against a boss built in that frame to keep it that way.

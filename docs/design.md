@@ -6,92 +6,74 @@
 
 ## 설계 원칙
 
-이 문서의 모든 결정은 다섯 가지 절대 원칙에서 나온다. **원칙의 유일한 원본은 `docs/overview.md` 의 「절대 원칙」이다** — 여기에 다시 적지 않는다(두 곳에 적으면 한쪽이 상한다). 범위(비목표)의 원본도 같은 문서의 「범위」다. 이 절은 그 원칙들이 이 설계에서 갖는 정확한 경계만 덧붙인다.
-
-**범위가 커널에 요구하는 것은 하나뿐이다.** GD&T/PMI·스타일·색상·레이어·제작 메타데이터·제품 구조는 커널을 쓰는 응용의 영역이고, 커널은 그들을 위해 단 하나만 제공한다 — 영구 유효한 Handle(append-only의 부산물). 응용은 `HashMap<Handle<Face>, 응용데이터>` 사이드카로 무엇이든 매달 수 있다. nacre-step은 커널 모델의 형상만 STEP으로 내보낸다 — 비형상 엔티티는 쓰지 않고, STEP 가져오기는 v1 비목표다.
-
-**「연산 이력을 보존한다」의 보장 범위.** replay는 동일 로그·동일 파라미터에서 동일 모델을 보장하고(undo/redo의 기반), tolerance 변경 재계산은 위상·기하를 불변으로 둔 채 tessellation만 재생성한다(「Tessellation 층」 절). 로그 중간의 파라미터를 수정하는 파라메트릭 편집은 v1 비목표다 — 연산이 원시 Handle을 참조하는 한 상류 수정이 하류 Handle 번호를 밀어내기 때문이다(topological naming 문제). 진화 경로는 「연산 층」 절에 있다.
-
-**「tolerance는 발견된 교차에만 존재한다」를 드는 자리.** 구성 시점에 동일성을 아는 요소에는 tolerance 개념 자체가 없다. 그 구분은 **정점의 실현 캐시**(`PointCache`)가 든다. 캐시에 저장된 tolerance 는 **없다**. 변종 셋은 «캐시가 무엇을 아는가»만 말한다 — 증명된 경계가 있거나(`Realized`), 싼 도로가 멈췄거나(`Ceiling`: 비트 또는 비용, 둘 다 «더 물으면 답이 있다»), 실현이 뒤에 없거나(`Unrealized`). 발견된 점도 증명된 경계만 든다 — seam 표가 정점이 받을 캐시(`SeamVertex.cache`)를 들고 자기접촉 체가 그 경계를 읽는다.
+이 문서의 모든 결정은 다섯 가지 절대 원칙에서 나온다. **원칙과 범위(비목표)의 유일한 원본은 `docs/overview.md` 의 「절대 원칙」·「범위」다** — 여기에 다시 적지 않는다(두 곳에 적으면 한쪽이 상한다). 원칙 4 의 구분을 드는 타입은 정점의 실현 캐시 `PointCache`(`nacre-topo`)이고 변종 셋의 뜻은 그 doc 이다. 파라메트릭 편집이 v1 비목표인 까닭(연산이 원시 Handle 을 참조하면 상류 수정이 하류 번호를 밀어낸다 — topological naming)과 진화 경로 `OpRef` 는 「연산 층」 절.
 
 ## 크레이트 구조
 
-의존 방향은 아래에서 위로만 흐른다. 순환 의존 금지.
+의존 방향은 아래에서 위로만 흐른다. 순환 의존 금지. 크레이트마다 맡는 일의 원본은 그 크레이트의 `//!` doc 이다.
 
 ```
 nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre` 크레이트는 파사드(재수출 전용)
 ├── nacre-store      # typed-index 저장소: Store<T>/Handle<T> (기하·위상 무지, nacre-* 의존 없음)
 ├── nacre-math       # 자체 선형대수: Point<D>·Vector<D> (nacre-* 의존 없음)
 ├── nacre-exact      # 유리수·정수로 정확히 답할 수 있는 모든 것: Rat·Angle·Isometry·PlaneName·CylinderDef·QuadVal·QuadRoot·정확 술어 (nacre-* 의존 없음)
-├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
-├── nacre-judge      # 부호 판정: 정확히 답할 수 없는 회전 좌표를 f64 필터→상승→«증명 또는 미결»로 정한다
-│                    #   kernel(WitnessPoint) + predicate(질의를 정확 경로나 kernel 로 보내는 라우터)
+├── nacre-predicates # f64 입력의 exact 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
+├── nacre-judge      # 정확히 답할 수 없는 회전 좌표의 부호 판정(CIP): f64 필터→상승→«증명 또는 미결»
+│                    #   kernel(WitnessPoint) + predicate(질의를 이름 경로나 kernel 로 보내는 라우터)
 │                    #   + cylinder(두 평면이 원통과 만나는 점 PiercePoint 와 그 질문)
 │                    #   ← exact · predicates · math
-├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect 격리)
+├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect)·호가 낀 링의 정확 술어(mixed)
 │                    #   ← math · predicates · exact(Rat 링 술어 쌍둥이)
-│                    #   곡면의 진실은 topo 의 Surface — 맨이름은 진실, 실현은 nacre_geom::Surface
-├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model   ← store · geom · math · exact
+├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model(진실과 그 캐시)   ← store · geom · math · exact
 ├── nacre-tess       # tessellation: 출처 태그   ← store · topo · geom · math · predicates · props(OBJ 의 면 법선)
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
-├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성   ← topo · store · math · geom · exact
-├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)   ← topo · geom · math · store
+├── nacre-validate   # 불변식 검사: 참조·위상(닫힘·다양체·방향·오일러-푸앵카레)·기하   ← topo · store · math · geom · exact
+├── nacre-props      # 질량 특성과 파생 질의: 부피·면적·중심·상자·면(해석적, tess 무관)   ← topo · geom · math · store
 ├── nacre-ops        # 연산: datum 평면/sketch/extrude/boolean/transform/mirror/copy
+│                    #   불리언 = 평면 클래스당 셀 복합체 하나 — 「연산 층」·「원통 — 밴드·게이트·차트·룰링」 절
 │                    #   불리언은 한 방향이다: boolean(앞문) → arrangement(엔진) → assembly(조립),
-│                    #   셋 다 draft(지어지기 전 면의 어휘)를 읽는다. 관문이 그 방향을 단언한다
+│                    #   셋 다 draft(지어지기 전 면의 어휘)를 읽는다 — module_graph 시험이 단언한다(overview 「관문」)
 │                    #   ← topo · geom · math · store · exact · judge (+ 선택적 rayon)
-│                    #   부울 = 면당 평면 arrangement 엔진
-│                    #   reuse: 상대가 닿을 수 없다고 증명된 평면 클래스는 배열하지 않는다 (「연산 층」 절)
 ├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터   ← exact · topo · geom · math · store (+ brep-to-step)
-├── nacre-oracle     # [dev] OCCT 비교 하네스   ← topo · step · math · store
+├── nacre-oracle     # [dev, publish = false] OCCT 비교 하네스   ← topo · step · math · store
 ├── nacre            # 파사드   ← exact · geom · math · ops · props · step · store · tess · topo · validate
 └── tools/occt-helper/  # 워크스페이스 밖 헬퍼: brew OCCT(1순위) 또는 uv+OCP(폴백) — 「검증·오라클 인프라」 절
                         #   OCCT는 오라클 전용 — 제품 경로에 위임 없음
 ```
 
-제품 경로에서 `nacre-ops` 는 `nacre-tess`·`nacre-validate`·`nacre-props`·`nacre-step` 에 의존하지 않는다(테스트 전용 dev-dependency 로만 쓴다 — 발행되는 라이브러리의 의존 표면이 깨끗하게 남는다). `nacre-exact` 도 `nacre-predicates` 를 dev-dependency 로만 쓴다(정수 부호 술어를 f64 쌍둥이와 차등 시험) — 제품 경로의 방향은 predicates 무의존이다.
+**의존의 규칙.**
+- 제품 경로에서 `nacre-ops` 는 `nacre-tess`·`nacre-validate`·`nacre-props`·`nacre-step` 에, `nacre-exact` 는 `nacre-predicates` 에 의존하지 않는다 — 시험 전용 dev-dependency 로만 쓴다(발행되는 라이브러리의 의존 표면이 깨끗하게 남는다). 형제 사이의 dev-dependency 를 path 로만 적는 까닭은 루트 `Cargo.toml` 의 주석.
+- 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache` 의 팔이 geom 의 `Plane`·`Cylinder` 를, `EdgeCache` 가 `Curve` 를). 진실은 topo 자신의 타입이고 geom 은 그 실현이다.
+- `Store`/`Handle` 은 최하위 `nacre-store` 에 있어 위의 크레이트가 자유롭게 참조한다. 곡면 아레나가 드는 진실(`Handle<MotionNode>` 를 든 topo 타입)을 topo 아래 크레이트는 이름 지을 수 없으므로 **`nacre-geom` 은 `Handle` 을 갖지 않는다.**
+- `nacre-predicates` 는 어떤 `nacre-*` 에도 의존하지 않는다 — 평면 계수·좌표를 평범한 배열로만 받아, nacre 밖으로 떼어 내 단독으로 공개할 수 있게 둔다(「`nacre-predicates` 는 순수 수치층이다」).
+- **외부 의존.** exact 유리수는 손수 짓지 않는다 — 손수 지은 유리수의 버그는 exactness 목표를 훼손한다. `nacre-exact` 는 `num-rational`(+`num-traits`·`num-bigint`·`num-integer`)과 `astro-float` 를 쓴다(MIT/Apache·순수 Rust; 그 매니페스트의 주석).
+- **라이선스.** 커널은 MIT/Apache-2.0 듀얼이다(Manifold(Apache-2.0) 알고리즘 차용과 호환). indirect predicates 의 참고처는 논문(Attene 2020, arXiv 2105.09772; Shewchuk 1997; Lévy PCK)과 `geometry-predicates` 소스로 한정하고, LGPL 인 Attene 참조 구현의 소스는 **작성 중 열람 금지 / 완성 후 실행 대조만 허용**이다(「마일스톤 사다리」의 indirect predicates 문단). 이차곡면 참고처(QI·CGAL Spherical Kernel)는 소스를 열람조차 하지 않는다 — 「참고 논문과 라이선스 규율」. OCCT 는 overview 「OCCT / 외부 코드 규칙」.
 
-`nacre-geom`과 `nacre-topo`의 관계는 한 방향이다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache` 의 팔이 geom 의 `Plane`·`Cylinder` 를, `EdgeCache` 가 `Curve` 를 든다 — 진실은 topo 자신의 타입이고 geom 은 그 실현이다).
+**어느 크레이트에 두나 — 축은 «주제»가 아니라 «정확성»이다.** 「유도된 값 + 그 산술」(유리수·정수로 정확히 답하는 값·이름·술어, 그리고 ℚ 밖이되 정확한 `QuadVal = a + b√c`) → `nacre-exact`, 그 f64 실현 → `nacre-geom`, 「아레나 항목의 진실」 → `nacre-topo`. 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 에는 기하의 이름과 술어(`cylinders_nested`·`SeamOrder`·`PlaneName`·`CylinderDef`)가 든다. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName`·`CylinderDef`·`QuadRoot` 가 topo·ops 가 아니라 exact 에 사는 이유 — topo 는 `CylinderDef` 를 재수출한다).
+- `nacre-exact` 와 `nacre-predicates` 는 입력의 수로 갈린다: 유리수·정수 위의 값과 술어는 exact, f64 좌표 위의 적응 부호 술어는 predicates 다(exact 의 정수 부호 술어는 predicates 의 f64 쌍둥이와 dev 에서 차등 시험된다). 정확히 답할 수 없는 회전 좌표의 부호는 `nacre-judge` — predicates 의 toleranced 쌍둥이다(「CIP — 허용오차 부호 술어」).
+- 견고성이 첨예한 코드는 한 모듈에 있지 않다: f64 닫힌 꼴 교차와 직선 링 술어는 `nacre-geom::intersect`, 호가 낀 링은 `nacre-geom::mixed`, 부호는 위 셋, 셀의 내/외는 `nacre-ops::nesting` 이다. 어디서든 판정(부호)은 좌표가 아니라 정의로 한다(overview 「정밀도 인프라」).
+- 크레이트를 나눌지는 「한쪽만 쓰는 소비자가 있는가」로 잰다.
 
-**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 공개 이름의 **대부분이 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`·`CylinderDef`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-exact`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 과 원통의 진실 `CylinderDef`·관통 근의 이름 `QuadRoot` 가 topo·ops 가 아니라 exact 에 사는 이유 — topo 는 `CylinderDef` 를 재수출한다). 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
+**파사드 `nacre`.** 사용자는 파사드 하나만 의존하고, 약속하는 API 는 파사드뿐이다(`crates/LAYER-README.md`). 스크립트 앱·편의 레이어·디버그 뷰어는 워크스페이스 밖에 둔다.
+- 층을 **모듈로** 재수출하고(`nacre::exact`·`geom`·`math`·`ops`·`props`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude` 에 담는다. **평면(flat) 재수출은 하지 않는다** — 층 분리가 이 설계의 뼈대이고, 같은 맨이름이 층마다 다른 것을 뜻한다(`Surface` 의 두 철자 — 「타입이 사는 자리 — 규칙」).
+- **공개 API 에 나오는 아래 층의 타입은 누군가 재수출한다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }` 가 exact 타입을 싣으므로 파사드가 `nacre-exact` 를 재수출한다 — 없으면 소비자가 그 op 를 만들 수조차 없다(`the_whole_pipeline_runs_through_the_facade_alone` 이 컴파일로 잠근다). `nacre-judge`·`nacre-predicates` 의 이름은 그것을 싣는 층이 스스로 재수출하므로(`nacre_ops::{Decision, Evidence, Site}`, `nacre_geom::intersect::{RayCross, SegCross, orient2d}`) 파사드는 두 크레이트를 모듈로 내보내지 않는다 — 발행은 필요하다(ops·geom 의 하드 의존).
+- **prelude 의 기준은 확인 가능한 성질이다**: «`Operation` 의 모든 변종이 prelude 이름만으로 만들어진다». 내용은 실제 소비자의 import 와, 그 소비자보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)의 합집합이다 — 낡은 소비자만 보면 최신 API 가 빠진다.
+- **문서 예제와 예제는 프로덕션 API 만 쓴다**(`test-util` 이 필요한 예제는 독자가 실행할 수 없다). 예제는 파사드에 둔다 — 층 크레이트의 예제도 crates.io 에 실려 독자가 따라 하는 길이 된다. 검증은 «`nacre::` 경로만으로 끝까지 가기»다: 파사드 doctest, `crates/nacre/tests/facade.rs`, `crates/nacre/examples/plate_with_bore.rs` — 재수출이 빠지면 컴파일이 깨진다.
+- **기능.** `parallel`(기본 on)은 `nacre-ops/parallel` 로 전달되고 judge 의 고정밀 캐시를 `Sync` 로 만드는 스위치이기도 하다; `test-util` 은 topo 의 시험 전용 문과 push 계측을 전달한다 — 전달은 파사드 `Cargo.toml` 의 주석, 그 문과 계측(`WIDE_PLANES`·
+  `SEEDED_HITS`·`surface_derive_counts` — 제품 빌드는 아무것도 세지 않는다)은 `nacre-topo/Cargo.toml` 의 주석. 소비자가 rayon 을 끌 수 있으려면 파사드는 `nacre-ops` 를 **`default-features = false` 로** 매단다; 이 속성은 매니페스트에 살아 시험이 `Cargo.toml` 을 직접 읽는다(`crates/nacre/tests/facade.rs` 의 `the_ops_dependency_stays_default_free_so_consumers_can_drop_rayon`). **순차 조합은 `-p nacre-ops --no-default-features` 로 확인한다** — 워크스페이스를 통째로 지으면 형제 크레이트(`nacre-oracle`·`-props`·`-step`·`-tess`·`-validate`)의 dev-dependency 와 파사드의 기본이 기본 피처를 도로 켜서 아무것도 안 재게 된다. 그 명령이 순차인 것은 **크레이트가 제 자신에 거는 dev-dependency**(통합 시험이 제 `test-util` 을 쓰려고 거는 한 줄 — `nacre-ops`·`nacre-topo`)**가 `default-features = false` 이고 `default`·`parallel` 을 이름으로도 고르지 않기** 때문이다. 기본을 켜 두면 `--no-default-features` 아래에서도 기본이 도로 켜져 순차 빌드 대신 병렬 빌드가 초록으로 돈다. 자기 dev-dependency 를 새로 거는 크레이트도 이렇게 적는다(`crates/nacre-ops/tests/instruments/manifest.rs` 가 모든 매니페스트에 건다).
+- **`Document`(op 로그 + Model + tess 캐시) 번들은 두지 않는다** — 「저장소와 동일성」 절이 이 상위 번들을 지목하지만 의미론을 정하는 새 타입이라, kit 이 무엇을 원하는지 보이기 전에 정하지 않는다(「회전 지원의 확정 결정」 4).
 
-**파사드 `nacre`.** 열 개 층을 **모듈로** 재수출하고(`nacre::exact`·`geom`·`math`·`ops`·`props`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude`에 담는다.
-- **평면(flat) 재수출은 하지 않는다.** **층 분리가 이 설계의 뼈대**여서 이름공간에 남긴다. 같은 맨이름이 층마다 다른 것을 뜻하기도 한다 — `topo::Surface` 는 진실, `geom::Surface` 는 그 f64 실현이다.
-- **`nacre-exact` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 exact 타입을 ops의 공개 API로 새어 보내므로, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-judge`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops·geom 의 하드 의존).
-- **prelude의 기준은 확인 가능한 성질이다**: *"`Operation`의 모든 변이가 prelude 이름만으로 만들어진다."* 내용은 실제 소비자의 import 와, 그 소비자보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)의 합집합이다 — 낡은 소비자만 보면 최신 API가 빠진다.
-- **기능**: `parallel`(기본 on)이 `nacre-ops/parallel`로 전달된다. `nacre-ops`를 **`default-features = false`로** 매달아야 소비자가 끌 수 있고, 그러지 않으면 `--no-default-features`에도 rayon이 들어온다. 이 속성은 매니페스트에 살아 훅이 검사하지 않으므로 **테스트가 `Cargo.toml`을 직접 확인**한다. `parallel`은 **`Sync` 스위치이기도 하다**(judge 의 hp 캐시가 `Arc<OnceLock>`↔`Rc<OnceCell>` — 워커들이 평면표를 *공유*해야 하므로 하중은 공유 참조 쪽이다). `test-util`은 topo의 테스트 전용 문(심기용 push·`reversed_shell`·`plane_name_through`)과 push 계측(`WIDE_PLANES`·`SEEDED_HITS`·`surface_derive_counts`)을 전달한다 — 제품 빌드는 세지 않는다. **순차 조합은 반드시 `-p nacre-ops --no-default-features`로 확인한다** — 워크스페이스를 통째로 지으면 형제 크레이트들(`nacre-oracle`·`-props`·`-step`·`-tess`·`-validate`)의 dev-dependency와 파사드의 기본이 기본 피처를 도로 켜서 아무것도 안 재게 된다. 그 명령이 순차인 것은 ops 의 자기 dev-dependency가 기본 피처를 고르지 않기 때문이다(`tests/instruments/manifest.rs` 가 모든 자기 dev-dependency에 건다).
-- **검증은 "`nacre::` 경로만으로 끝까지 가기"다** — 크레이트 문서의 예제(doctest), `tests/facade.rs`, 그리고 `examples/plate_with_bore.rs`. 재수출이 빠지면 컴파일이 깨진다. 문서 예제와 예제는 **프로덕션 API만** 쓴다(`test-util`이 필요한 예제는 독자가 실행할 수 없다) — 그래서 예제는 파사드에 둔다: 층 크레이트의 예제도 crates.io 에 실려 독자가 따라 하는 길이 되지만, 약속하는 API 는 파사드뿐이다.
-- **`Document`(op 로그 + Model + tess 캐시) 번들은 두지 않는다** — 「저장소와 동일성」 절이 이 층을 지목하지만 의미론을 정하는 새 타입이므로, kit이 무엇을 원하는지 보이기 전에 정하지 않는다(계획).
-
-**편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이다. 스크립트 문법은 `nacre-playground` 가 구현하고, 의미론과 그 이유는 `nacre-kit` 의 코드와 주석에 있다(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다).
+**편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). 경계 규칙은 overview 「범위」의 «설탕 vs 커널 판별 기준»이다. **Rust 로 두는 이유:** 헤드리스 `cargo test` 가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 바꿔도 살아남고, wasm 경계가 함수 하나로 유지된다. 스크립트 문법은 `nacre-playground` 가 구현하고, 의미론과 그 이유는 `nacre-kit` 의 코드와 주석에 있다(여기에 옮겨 적지 않는다).
 
 **공개 표면 — 밖에서 무엇이 되는가.**
-- **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 곡면·모션·위상 아레나·캐시·평면 이름·interning 표가 전부 비공개이고 공개 필드는 없다. 전량 순회 문은 의도적으로 없다 — 아레나는 supersede 된 항목도 들고 있으므로 소비자는 live 면을 걷는다.
-- **위상 순회는 밖에서 된다.** 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개다(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)`).
-- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`tessellate_solids`·`Tessellation::to_obj`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
-- **파생 값과 에러 표면.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 계획.
-  - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(~1e-7).
-  - **`centroid`는 한 장의 발산 정리다.** `q = p − R` 에 대해 `∫_V q dV = ¼∮ q (q·n̂) dA` 이고, 면마다 제 닫힌 꼴로 적분한다. 평면은 `q·n̂` 이 상수라 기준점에서 그 면으로 뻗은 **원뿔**의 몫 — 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이므로 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `¾·Vᵢ·(cᵢ−R)`. 원통 옆면은 부피·넓이와 같은 차트 모멘트(Green 정리로 림 호에서 읽는 선적분)에 `∬z·n̂`·`∬n̂n̂ᵀ` 를 더한 닫힌 꼴이다. 값은 f64 **측정**이다 — 곡면 몸의 중심은 대개 π 가 든 수라 커널의 정확 타입이 담지 못하므로, 구성의 입력으로 되먹이지 않는다(「가지 말 것」 «kit 의 중심 피벗»).
-  - **`face_props.normal`은 `Option`이다.** 원통 면에는 하나의 법선이 없는데, **면 고르기는 모든 면을 훑는 일**이라 실패시키면 필터가 통째로 망가진다. `None`이면 자연스럽게 건너뛴다.
-  - **면 고르기가 위상 명명 문제를 우회한다.** 코드-CAD는 면을 번호가 아니라 `filter(법선≈+Z).max_by(중심.z)`처럼 **생김새로** 고르고 매 실행 다시 고른다 — 저장된 참조가 없으니 상류가 바뀌어도 썩지 않는다.
-
-**면의 스케치 좌표계 — `face_plane`.** 면의 `SketchFrame`(`face_sketch_frame`)을 실현한 것이고, **그 프레임 위의 `Extrude`(pad 의 보스, pocket 의 공구)가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 한 값의 실현 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다). 실현은 도로마다 그 도로의 것이다(`frame_basis`): 세계 도로는 유리수 세계 기저를 한 번 반올림하고(그 도로의 꼭짓점이 그렇게 실현된다), 프레임 노드 도로는 사슬을 재생한다.
-
-**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 면의 프레임을 진실에서 고르는 한 문이다(`face_plane`은 그 실현). **면이 어느 프레임을 갖는가는 면이 어디 있는가로 정하지, 평면이 어떻게 저장됐는가로 정하지 않는다** — 이동을 점에 옮겨 적었는지 노드로 기록했는지는 변환이 정확히 진술할 수 있는 것으로 고르므로, 그것을 읽는 규약은 같은 두 면을 두 프레임에 스케치한다. 세계 방정식이 진술되는 평면(`world_plane_name` — 모션 없음, 또는 접히는 사슬)은 **바깥 법선의 세계 arbitrary-axis 프레임**(`plane_frame_default` — 세계 원점의 투영, `+u = ẑ × n`, 수직이면 `ŷ × n`)을 갖고, 그것을 사슬의 역(`chain_point_rat_inverse`/`chain_dir_rat_inverse` — 접히므로 정확)으로 평면의 진술 좌표계에 옮긴 `Named` 로 적는다 — 같은 `flip` 으로 평면 이름이 유도하는 프레임과 같으면 `Canonical`(정규형). 거울이 든 사슬로 옮긴 프레임은 왼손이다(`û` 는 세계의 것, `v̂` 는 반대, `ŵ` 는 바깥). 그 밖의 평면(프레임 노드·사분각 밖 회전·Wide·이름 없음)은 자기 `Canonical` 프레임을 사슬로 운반해 갖는다. 그래서 모든 평면 면이 철자를 가지며, 계약(실현이 `face_plane` 과 비트 동일)은 `tests/invariants/sketch_frame_contract.rs` 가 여덟 배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `seeded_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
-
-**면 프레임의 원점은 세계 원점의 정사영이다 — 면을 전혀 읽지 않는다.** 꼭짓점 평균은 **직선 도중에 꼭짓점이 하나 늘면 움직이고**, 면적중심은 이산화에는 무관하지만 면의 `f64` 꼭짓점을 읽어 반올림된 캐시가 진실이 된다(같은 footprint 를 두 번 pad 하면 넓이 `2.2e-16` 의 면이 남았다) — 그리고 둘 다 같은 평면 위 다른 외곽선이면 원점이 달라진다. 정사영은 평면만의 성질이다(잠금: `the_sketch_origin_does_not_depend_on_the_outline_at_all`). 대가: 원점에서 먼 면에서는 스케치 좌표 `(0, 0)` 이 면 밖이므로, 호출자는 `face_plane` 으로 면의 자리를 읽어 프로파일을 놓는다(kit 의 «`f.center` 근처에 그려라» 안내).
-
-X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onshape 의 perpendicularVector 와 같은 규칙이다. 가장 작은 두 성분이 **동률일 때 불연속**이고(연속인 선택은 수학적으로 불가능), 그 타이브레이크는 `nacre-math`에서 테스트로 못 박혀 있다.
-
-**남는 한계**: 면의 *모양 자체*가 바뀌면 면적중심도 움직인다(면에 매인 어떤 규칙도 그렇다). 그리고 프레임은 f64다 — 축이 정규화를 거치므로 **유리수 법선에 수직인 단위벡터는 일반적으로 무리수**이고, 면 위 스케치의 정확성은 원점이 아니라 **축**이 벽이다.
-
-**디버그 뷰어는 커널 크레이트가 아니라 워크스페이스 밖 별도 앱이다.** 연산 로그를 입력받아 매 동작을 스텝별로 재생하며(append-only라 "N번째까지 replay"가 공짜), STEP에 안 담기는 nacre **내부 정보**(정점의 정의와 그 실현 캐시·`Handle` 관계·인접 등)까지 시각화하는 인터랙티브 도구. 내부 자료구조에 접근해야 하므로 nacre를 **직접 링크**한다(개발 중 path 의존 → 안정화 후 version 의존, 버전별 디버깅도 자연스러워짐). 뷰어 없이 하는 시각 확인: 정상 결과는 STEP→step-loupe(구조+검증), 중간·깨진 상태는 OBJ 덤프→맥 미리보기.
-
-`Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 크레이트(topo의 아레나들·ops·validate·step·tess·props)가 자유롭게 참조한다. 핸들은 아레나 항목을 이름 짓고, 곡면 아레나는 **진실**(`Handle<MotionNode>`를 든 topo 타입)을 들므로 topo 아래 크레이트는 그 타입을 이름 지을 수 없다 ⇒ geom은 `Handle`을 영구히 갖지 않는다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
-
-`nacre-exact`는 **유리수·정수로 정확히 답할 수 있는 모든 것**을 격리한다 — 값(`Rat`·`Angle`)·이름(`PlaneName`·`MeetPoint`)·정확 술어, 그리고 ℚ 를 벗어나되 여전히 정확한 `QuadVal = a + b√c`. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**이다 — 오버플로는 조용히 감기지 않고 드러나며, 넘친 유도는 임의 정밀도 정수로 다시 한다(`plane_name_exact`; `PlaneName` 은 `Narrow | Wide`). 정점의 정의는 아레나가 불변 보존하고, f64 좌표는 그 실현 캐시다. `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **`nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-exact는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **외부 의존:** `num-rational`(+`num-traits`·`num-bigint`·`num-integer` — 뒤의 둘은 `num-rational` 기본 피처가 이미 끌어오는 것을 명시한 것)과 `astro-float`. 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문이다(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함)은 **`nacre-judge::kernel`** 이 맡는다 — topo 아래의 순수 술어층, predicates의 쌍둥이(「판정」 절).
-
-`nacre-predicates`는 **발견된 교차점의 부호 판정(내/외·orientation)을 좌표가 아니라 implicit point(정의)째로 하는 indirect predicates**를 격리한다(「해석 기하 층」 절의 정밀도 분업). 바닥의 적응 정밀 확장 산술은 `geometry-predicates`(MIT/Apache) 재사용, 그 위 implicit point 표현과 indirect 술어만 자체 구현. Rust 최초의 오픈소스 indirect predicates가 되도록 **nacre 밖으로 떼어낼 수 있게**(MIT/Apache 단독 공개 가능) 설계한다 — 그래서 어떤 `nacre-*` 에도 의존하지 않는다. 라이선스 엄수: 구현 참고처는 논문(Attene 2020, arXiv 2105.09772; Shewchuk 1997; Lévy PCK)과 `geometry-predicates` 소스로 한정하고, LGPL인 Attene 참조 구현 소스는 **작성 중 열람 금지 / 완성 후 실행 대조만 허용**.
+- **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 공개 필드가 없고, 전량 순회 문은 두지 않는다 — 아레나는 supersede 된 항목도 들므로 소비자는 live 면을 걷는다.
+- **위상 순회와 내부 정보는 밖에서 읽힌다.** 위상 셀의 필드는 `pub` 이고 `Model::reachable` 도 공개다. STEP 에 안 담기는 내부 정보 — 정점의 정의 `Vertex` 와 실현 캐시 `Model::vertex_cache`, `Model::motion`(필드가 아니라 좁은 문), 메시의 출처(`Tessellation` 의 `by_face`·`by_edge`, `TessTriangle.face`, `TessOrigin`) — 도 공개 문으로 읽힌다: 커널 내부를 보는 디버그 뷰어는 커널 크레이트가 아니라 nacre 를 직접 링크하는 워크스페이스 밖 앱의 자리이고(연산 로그를 스텝별로 재생한다 — append-only 라 «N번째까지 replay» 가 공짜다), 그것이 읽을 것은 공개 문에 있어야 한다. 뷰어 없이 하는 시각 확인은 「마일스톤 사다리」의 M1.
+- **파생 질의는 값을 돌려주는 읽기 전용이다**(위상 순수성 유지): `nacre-props` 의 `bounds`·`centroid`·`face_props`, `nacre-ops` 의 `face_plane`, `Model::he_start`. 각 질의의 약속 — 곡선을 인지하는 상자, f64 측정이라 구성에 되먹이지 않는 중심, 곡면에서 `None` 인 법선, 생김새로 면을 골라 위상 명명 문제를 비켜 가기 — 은 그 doc 이다.
+- **면의 스케치 프레임**(`face_sketch_frame`)은 면이 어디 있는가로 정하지 평면이 어떻게 저장됐는가(모션을 점에 옮겨 적었나, 노드로 기록했나)로 정하지 않는다. 세계 방정식이 진술된 평면(`Model::world_plane_name` — 모션 없음, 또는 접히는 사슬)은 바깥 법선의 세계 arbitrary-axis 프레임을 갖는다: 원점은 세계 원점의 정사영, `+u = ẑ × n`(법선이 수직이면 `ŷ × n`; `plane_frame_default`). 그 밖의 평면(사슬에 프레임 노드나 사분각 밖 회전이 든 것, 넓은 이름, 이름 없음)은 제 `Canonical` 프레임을 사슬로 나른다. 어느 쪽이든 원점은 평면이 정하고 면(꼭짓점·외곽선)을 읽지 않는다. 버린 두 규약(면에서 읽는 원점, `any_perpendicular` 축)은 「가지 말 것」.
+- **`face_plane` 은 그 프레임 위의 `Extrude` 가 프로파일을 놓는 바로 그 프레임이다** — `face_sketch_frame` 의 프레임을 실현한 것이고 둘째 유도를 짓지 않는다. 갈라지면 앱이 계산한 자리와 보스가 어긋난다(두 축으로 비대칭인 프로파일로 잡는다 — `face_plane_is_the_frame_pad_places_profiles_in`; 실현이 `face_plane` 과 비트 동일하다는
+  계약은 `tests/invariants/sketch_frame_contract.rs`).
+- **`flip` 은 호출자가 진술하지 않는다.** 생성자는 `false` 를 두고, `ŵ` 가 어느 쪽을 보는지는 쓰는 연산이 진실에서 `flip_toward` 한 곳으로 정한다(프레임은 `frame_toward` 로 만든다). 프레임 노드는 `push_frame_node` 로만 push 한다 — 그 문을 extrude 와 offset datum 이 함께 쓴다.
+- **로그는 평면을 핸들로 싣는다**(`Extrude { frame: SketchFrame, .. }`; 평면의 진술을 싣는 변종은 `DatumPlane` 하나). 로그 속 평면 핸들이 가리키는 것은 씨앗(`Model::new` 이 심는 세계 축 평면 셋, `seeded_plane`)·이미 지은 면의 평면·`DatumPlane` 이 넣은 평면뿐이다 — 로그 밖에서 지은 평면을 가리키면 replay 가 그 핸들을 재현하지 못해 로그가 자기완결이 아니다.
 
 ## 제약 — 어떤 답이든 만족해야 하는 것
 
@@ -104,82 +86,86 @@ X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onsha
 | C5 | append-only ⇒ 참조는 과거로만 (DAG) | Through(평면→정점)는 datum 이 정점보다 나중이라 성립; 벽은 값(`Known`)이라 순환 자체가 없다 |
 | C6 | 깊이는 사용자 조작당 1단 | 불리언은 평면을 만들지 않는다 — Frame·Through 재귀가 그래서 유계다 |
 | C7 | 거절은 정직하게, 이름 붙여 | `Decision` 의 `Exhausted`·`Degenerate` → 이름 붙은 거절 |
-| C8 | `Rat` 을 넓히지 않는다 | 넓어진 것은 이름의 **그릇**(동일성 전용)과 중간값뿐 |
+| C8 | `Rat` 을 넓히지 않는다 | 넓어진 것은 이름의 **그릇**(동일성, 그리고 `WideFrame` 으로 서는 프레임)과 중간값뿐 |
 
 ---
 
 ## 숫자 규칙 — 일곱 개
 
-1. **진실은 «유리수»이거나 «핸들»이다.** `Rat`(i128)에 들어가는 값은 적고, 안 들어가는 값
-   (발견된 좌표 160–480비트, 계수 곱)은 저장하지 않고 **가리킨다**. 가리키는 사슬의 끝은
-   언제나 수다(C2·C3 의 동시 만족).
-   **폭은 사용자가 쓴 기하와 그것이 놓인 자리가 정하지 연산 횟수가 정하지 않는다** — 불리언은
-   평면을 새로 만들지 않고 피연산자의 평면을 재사용하며(`a_boolean_mints_no_surface`), 모션은
-   진술로 옮겨 적으면 닿은 자리의 이름(그 자리에 직접 지은 것과 같은 폭)이 되고 기록하면 계수를
-   건드리지 않으며, 오프셋은 법선을 고정한 채 d 만 옮기므로 분모가 곱이 아니라 lcm 으로
-   자란다(`1.1 + 6.6 = 7.7`). `nacre-ops/tests/instruments/point_width.rs`
-   (`a_stacked_name_is_as_wide_as_the_place_it_lands`)가 이것을 잠근다.
-2. **화살표는 한 방향뿐이다.** `Rat → f64`(캐시), `Rat → BigFloat`(판정 상승). `f64 → 진실`은
-   없다 — f64 를 들어올려 진실로 삼는 순간 반올림이 진실에 구워진다. 유일한 입구는
-   `Rat::from_decimal`(들어올리기가 아니라 사용자가 *쓴* 십진수의 결정적 정규형)이다.
+1. **진실은 «유리수»이거나 «핸들»이다.** `Rat`(i128 분수)에 들어가는 값은 적고, 안 들어가는 값(넓은 이름의
+   풀이, 계수 곱)은 저장하지 않고 **가리킨다**. 가리키는 사슬의 끝은 언제나 수다(C2·C3 의 동시 만족).
+   **폭은 사용자가 쓴 기하와 그것이 놓인 자리가 정하지 연산 횟수가 정하지 않는다** — 불리언은 평면을 새로
+   만들지 않고 피연산자의 평면을 재사용하며(`a_boolean_mints_no_surface`), 모션은 진술로 옮겨 적으면 닿은
+   자리에 직접 지은 것과 같은 폭의 이름이 되고 기록하면 계수를 건드리지 않으며, 오프셋은 법선을 고정한 채
+   d 만 옮겨 분모가 곱이 아니라 lcm 으로 자란다. `nacre-ops/tests/instruments/point_width.rs`
+   (`a_stacked_name_is_as_wide_as_the_place_it_lands`)가 잠그고, 발견된 좌표의 폭도 그 파일이 잰다.
+2. **화살표는 한 방향뿐이다.** `Rat → f64`(캐시), `Rat → BigFloat`(판정 상승). `f64 → 진실`은 없다 — f64 를
+   들어올려 진실로 삼는 순간 반올림이 진실에 구워진다(「가지 말 것」). 진실의 입구는 `Rat::from_decimal`
+   하나다(들어올리기가 아니라 사용자가 *쓴* 십진수의 결정적 정규형). `Rat::try_from_f64` 는 `f64` 를 정확히
+   읽어 비교하거나 그림을 나르는 문이지 진실의 입구가 아니다(그 doc).
 3. **무리수는 값이 아니라 정의로 존재한다.** 회전은 `Angle`(유리수 degree), 기울어진 프레임은
-   `Motion::Frame`(법선을 이름으로)이 들고, cos/sin/√ 는 실현 시점에 정확 반올림으로 나온다.
-   **모션은 면이 든다** — 정점·모서리는 면을 가리켜 정의상 따라온다.
+   `Motion::Frame`(법선을 평면 핸들로 가리킨다)이 들고, cos/sin/√ 는 실현 시점에 정확 반올림으로 나온다.
+   **모션은 곡면이 든다**(`Model::surface_motion`) — 정점·모서리는 곡면을 가리켜 정의상 따라온다.
 4. **실현 통로는 하나다.** 정의를 호출자가 고른 정밀도로 실현하는 길(`realize_vertex(model, v, Precision)` —
-   증인점에서는 `WitnessPoint::coord_hp(prec)`)을 f64 캐시(표시·tess), STEP 출력(사다리를 오르며 `round_to_f64` 로
-   정확 반올림), 판정 상승이 전부 탄다. 읽어 내는 규칙도
-   하나다(`Realization::to_f64`): 최근접 f64, 또는 일치 정밀도(`max(1, 점의 최대 |좌표|)·2⁻¹⁸⁰` — 점의 크기는
-   모델 크기를 넘지 않으므로 규칙 5 보다 엄격한 쪽) 안이 증명된 좌표는 `+0.0` — 참값 0 은 반올림으로는 어느
-   정밀도에서도 결정되지 않는다. 반올림보다 먼저 물으므로 어느 단에서 결정해도 답이 같다. 캐시는
-   언제나 **값 + tol 쌍**으로 함께 만들어지고 함께 버려진다. **f64 좌표는 즉석에서 다시 풀지
-   않는다 — 표에서 읽는다**(근거: 판정마다 정의를 다시 만들면 그것이 시간의 77%, 25초 대 0.4초).
-   메시가 곡선 위에 새로 찍는 샘플점은 이 통로 밖이다 — 보기의 수라 libm 으로 짓는다. 최근접 f64 는 STEP 의
-   약속이고, STEP 은 원을 곡선으로 내보내 샘플을 쓰지 않는다.
-5. **판정은 3단이고, 결과는 3갈래다.** 모든 평면에 이름이 있고 무이동이거나 한 모션이면(`cmp_coord` 는 무이동만)
-   이름 정수 도로: f64 필터 → `nacre_exact::int_*`. 그 밖은 커널: 구간 필터 → (직접 `orient3d` 이고 네 점이 한 모션을
-   공유하고 바탕이 `f64` 이며 구간 필터가 못 가르면) 모션 전 좌표의 `nacre_predicates::orient3d` → astro-float 상승. 결과는:
+   증인점에서는 `WitnessPoint::coord_hp(prec)`)을 f64 캐시(표시·tess, 그리고 STEP — 사다리를 오르며
+   `round_to_f64` 로 정확 반올림), 판정 상승이 전부 탄다. 읽어 내는 규칙도 하나다(`Realization::to_f64`):
+   최근접 f64, 또는 0 에서 일치 정밀도 `max(1, 점의 최대 |좌표|)·2⁻¹⁸⁰` 안이 증명된 좌표는 `+0.0` 이다(참값 0 은
+   반올림으로는 어느 정밀도에서도 정해지지 않는다). 문턱의 크기는 점 자신의 것이라 모델 크기를 넘지 않으므로
+   규칙 5 의 모델 크기 문턱보다 엄격한 쪽이다. 반올림보다 먼저 물으므로 어느 단에서 결정해도 답이 같다.
+   캐시는 값과 함께 «무엇이 증명됐나»를 든다 — 정점은 `PointCache`(`Realized` 만 축별
+   경계), 곡면은 `CacheStanding`; 저장된 tol 은 없다(`PointCache` doc). **f64 좌표는 즉석에서 다시 풀지
+   않는다 — 표에서 읽는다**(판정마다 정의를 다시 지으면 회전 불리언 시간의 77% — `plane_def` doc,
+   「가지 말 것」). 메시가 곡선 위에 새로 찍는 샘플점은 이 통로 밖이다 — 보기의 수라 libm 으로 짓는다.
+   최근접 f64 는 STEP 의 약속이고, STEP 은 원을 곡선으로 내보내 샘플을 쓰지 않는다.
+5. **판정은 3단이고, 결과는 3갈래다.** 술어마다 제가 닿는 평면만 보고 정확한 길부터 묻는다. 이름 정수 도로
+   (`name_rows` — 그것을 묻는 술어만)는 모든 평면에 이름이 있고 `is_rotated` 가 모두 거짓이거나 전부 한 모션일 때
+   열린다(`cmp_coord` 는 앞의 것만): f64 필터 → `nacre_exact::int_*`. 몇몇 술어는 제 정확한 길을 따로 둔다(예:
+   `cmp_coord` 의 `cancel_cmp_coord`, `planes_coplanar` 의 세계 이름 비교와 `coplanar_by_composed_rotation`) — 각 술어의
+   doc. 그 밖은 커널: 구간 필터 → (직접 `orient3d` 이고
+   네 점이 한 모션을 공유하고 바탕이 `f64` 이며 구간 필터가 못 가르면) 모션 전 좌표의 `nacre_predicates::orient3d` →
+   astro-float 상승. 커널에 가지 않고, 증명하지 못하면 모른다(`None`)고 답하는 술어도 있다(`planes_parallel`). 결과는:
    - 부호가 **증명되면** → 그 부호(`Sign`).
    - 부호는 못 갈랐지만 **«일치 정밀도보다 가깝다»가 증명되면** → 일치로 처리하되 근거를 실어
      **보고**한다(`Decision::Coincident{within}`, `boolean_with_report`). 일치 정밀도
      (`ProofStandard::coincidence` = 모델 크기 × 2⁻¹⁸⁰ — f64 출력 해상도 2⁻⁵² 보다 두 워드 아래)는
-     **모델에서 유도**되는 값이지 사용자 설정이 아니다 — 낮게 잡으면 비트만 더 쓰고 높게 잡으면
-     진짜로 떨어진 것을 합치는 비대칭이 아래로 밀며, 그 아래의 갈라짐은 어떤 출력에도 살아남지
-     못한다. 전역 tolerance(*"가까우면 붙여라"*)와 방향이 반대(*"가깝다고 **증명되어야** 일치"*)다.
+     **모델에서 유도**되는 값이지 사용자 설정이 아니다(유도와 아래로 미는 비대칭은 `coincidence_for` doc).
+     전역 tolerance(*"가까우면 붙여라"*)와 방향이 반대(*"가깝다고 **증명되어야** 일치"*)다.
    - 둘 다 증명 못 하면 → **이름 붙은 거절**(`JudgeExhausted`·`DegenerateWitness`·
      `PrecisionBudget`). 조용한 0은 없다(C7).
 
    정밀도는 상수가 아니라 모델이 정하고, 필요한 비트를 계산해 **한 번에** 점프한다.
 6. **동일성은 정준 이름의 `==` 다 — 이름의 그릇은 임의정밀이다.** 이름은 하나만 저장한다:
-   `PlaneName = Narrow([Rat;4]) | Wide([BigInt;4])`, i128 에 들어가면 반드시 `Narrow`(정규화
-   불변식). 동일성은 enum 전체의 `==` 이고, 산술·프레임·지름길은 `narrow()` 투영을 빌려 읽는다
-   (`plane_name_exact` 가 중간 계산을 임의정밀로 닫으므로 폭이 이름을 잃게 하지 못한다).
-   좁은 형태(법선·`n·n`)가 없다고 **진실을 거절하지 않는다** — 필요하면 점 셋에서 임의정밀로
-   실현한다. 이 규칙의 «항상 이름을 갖는다»는 유리수 닫힘인 평면에만 적용된다 —
-   세 정점이 한 프레임에서 만나지 않는(혼합 프레임) `Through` 평면은 이름이 없다 — 이름은 한 프레임의 유리수
-   풀이에서 나오는데 그런 프레임이 없다(세계 계수는 대개 무리수지만, `z = 0` 처럼 유리수여도 그렇다). 그런 평면의
-   저장은 **진술 키**(정렬 삼중항+모션, `SurfaceKey::Through`)로 intern 되어 «같은 진술 = 한 핸들»은 지켜지고,
-   같은 평면이 이름 있는 핸들과 이름 없는 핸들 둘이 될 수 있다. 기하 동일성은 술어가 답한다: 클래스 발견이
-   핸들이 다른 평면 쌍마다 `planes_coplanar` 를 물어(정확 0, 또는 일치 정밀도 안이 증명되면 보고와 함께) 한
-   클래스로 합치고, 결과의 기하는 한 핸들일 때와 비트 동일하다 — 느릴 뿐이다(release 로 잰 세 픽스처에서 3–9배;
+   `PlaneName = Narrow([Rat;4]) | Wide([BigInt;4])`, i128 에 들어가면 반드시 `Narrow`(정규화 불변식 —
+   `plane_name_exact` 가 중간 계산을 임의정밀로 닫아 지킨다). 동일성은 enum 전체의 `==` 다. 산술 지름길은
+   `narrow()` 투영을 빌려 읽고 `Wide` 에서 물러서지만, 프레임은 넓은 이름에도 임의정밀 길(`WideFrame`)로 선다.
+   좁은 형태(법선·`n·n`)가 없다고 **진실을 거절하지 않는다** — 필요하면 점 셋에서 임의정밀로 실현한다.
+   «항상 이름을 갖는다»는 유리수 닫힘인 평면에만 적용된다 — 세 정점이 한 프레임에서 만나지 않는(혼합 프레임)
+   `Through` 평면은 이름이 없다(세계 계수가 `z = 0` 처럼 유리수여도). 그런 평면은 **진술 키**
+   (`SurfaceKey::Through` — 정렬 삼중항 + 모션)로 intern 되어 «같은 진술 = 한 핸들»은 지켜지고, 같은 평면이
+   이름 있는 핸들과 이름 없는 핸들 둘이 될 수 있다. 기하 동일성은 술어가 답한다: 클래스 발견이 핸들이 다른
+   평면 쌍마다 `planes_coplanar` 를 물어(정확 0, 또는 일치 정밀도 안이 증명되면 보고와 함께) 한 클래스로 합치고,
+   결과의 기하는 한 핸들일 때와 비트 동일하다 — 느릴 뿐이다(`one_plane_two_handles.rs`,
    `a_plane_stated_twice_booleans_as_it_does_once`).
 7. **`Rat` 을 넓히지 않는다(C8).** 넓어지는 것은 중간값(BigInt 이름 유도·`Expansion` 술어·
-   BigFloat 상승)뿐이다. 규칙 1 의 근거가 그대로 이 규칙의 근거다 — 저장되는 값의 폭은 사용자가
-   쓴 기하가 정하고 연산을 쌓아도 자라지 않으므로, 넓은 그릇이 필요한 자리는 저장이 아니라 계산이다.
+   BigFloat 상승)뿐이다. 근거는 규칙 1 이다 — 저장되는 값의 폭은 사용자가 쓴 기하가 정하고 연산을 쌓아도
+   자라지 않으므로, 넓은 그릇이 필요한 자리는 저장이 아니라 계산이다.
 
 
 ### 수의 이름 — 접미사는 결과가 어떤 수이고 얼마나 믿을 수 있는지를 말한다
 
-같은 값의 다른 숫자 판이 있거나 정확한 값에서 수를 만드는 함수는 이름 끝이 그 결과를 말한다. 숫자 판이 하나뿐인 접근자
-(`SketchPlane::origin()` 등)와 f64 전용 크레이트(`nacre-geom`·`nacre-math`)는 달지 않는다. 판정의 칸은 모두 `_iv` 이상이다 —
-`_approx` 는 진실에 대한 부호를 정하는 산술에 들어가지 않고 대략값·계측·보기, 정밀도 정책의 크기 어림(`standard_from` 의 `scale`),
-그리고 이름 없는 평면 캐시의 향 맞추기(`align_cache_sense` — 캐시의 향이지 진실의 부호가 아니다)에만 쓰인다.
+같은 값의 다른 숫자 판이 있거나 정확한 값에서 수를 만드는 함수는 이름 끝이 그 결과를 말한다. 숫자 판이 하나뿐인
+접근자(`SketchPlane::origin()` 등)와 `nacre-math` 는 달지 않고, `nacre-geom` 은 f64 판을 맨이름으로 두고 `Rat` 쌍둥이에만
+`_rat` 을 단다(`point_in_ring_2d` · `point_in_ring_2d_rat`). 판정의 칸은 모두 `_iv` 이상이다 — `_approx` 는 진실에 대한
+부호를 정하는 산술에 들어가지 않는다(대략값·계측·보기, 정밀도 정책의 크기 어림 `standard_from` 의 `scale`, 이름 없는
+평면 캐시의 향 맞추기 `align_cache_sense` — 캐시의 향이지 진실의 부호가 아니다).
 
 | 철자 | 뜻 | 예 |
 |---|---|---|
 | `_rat` | 정확한 `Rat`. 무리수이거나 넘칠 수 있으면 `Option` | `cos_sin_rat`·`sqrt_rat`·`chain_point_rat` |
 | `_hp` | 호출자의 `prec` 에서의 `HpBounded` — 값과 건전한 반지름 | `cos_sin_hp`·`inv_sqrt_hp`·`quad_hp`·`coord_hp` |
 | `_iv` | f64 구간 `Bounded` — 값과 증명된 반지름 | `orient3d_iv`·`det3_iv`·`coord_iv` |
-| `_f64` | 참값의 최근접 `f64`(규칙 4), 또는 반올림 없이 정확한 `f64`. `nacre-exact` 의 근사 실현(`cos_sin_f64`·`inv_sqrt_f64`·`sqrt_f64`·`unit_vector_f64`)은 사다리(`ladder_f64`)가 정해질 때까지 오르고, 0 이 아닌 값의 최근접 `f64` 가 정상수가 아니면 `NaN` 이다 — 정확 갈래도 같다(ops 의 `Realization::to_f64` 는 정확 팔에서 부분정상수를 그대로, 근사 팔에서는 일치 한계 아래를 `+0.0` 으로 낸다). 앞의 낱말이 약속을 바꾸면 그 낱말이 말한다 — `upper_f64` 는 그 경계 이상인 `f64` | `cos_sin_f64`·`sqrt_f64`·`unit_vector_f64`·`Rat::to_f64`·`Mag::upper_f64` |
+| `_f64` | 참값의 최근접 `f64`(규칙 4), 또는 반올림 없이 정확한 `f64`. `nacre-exact` 의 근사 실현(`cos_sin_f64`·`inv_sqrt_f64`·`sqrt_f64`·`unit_vector_f64`)은 값이 정해질 때까지 사다리(`ladder_f64`)를 오르고, 0 이 아닌 값의 최근접 `f64` 가 정상수가 아니면(정상 범위 밖) `NaN` 이다 — 정확 갈래도 같다(`nearest_normal_f64`). ops 의 `Realization::to_f64` 는 이 규칙 밖이다(정확 갈래는 subnormal 을
+  통과시키고 근사 갈래는 `+0.0` — 그 doc). 앞의 낱말이 약속을 바꾸면 그 낱말이 말한다 — `upper_f64` 는 그 경계 이상인 `f64` | `cos_sin_f64`·`sqrt_f64`·`unit_vector_f64`·`Rat::to_f64`·`Mag::upper_f64` |
 | `_approx` | 약속 없는 `f64` — 여러 번 반올림했거나 캐시·대략값을 `f64` 로 계산했다 | `QuadVal::to_f64_approx`·`Isometry::point_approx`·`coord_approx` |
 | `_big` | 좁은 쌍둥이가 있을 때의 넓은 입력판, 숫자 타입 뒤에 둔다. BigFloat 출력은 `_bigfloat` | `sqrt_rat_big`·`inv_sqrt_hp_big`·`rat_to_bigfloat` |
 | `_uncached` | memo 문 뒤의 본체 | `cos_sin_hp_uncached`·`coord_hp_uncached` |
@@ -187,56 +173,52 @@ X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onsha
 
 정밀도 인자는 exact·judge 에서 `prec`, ops 에서 `bits`, 십진 자릿수는 `places` 다.
 
-**바닥.** 다음 셋은 `f64` 로 읽은 경계를, 0 이 아니면 `f64::MIN_POSITIVE`(가장 작은 정상수) 아래로 내리지 않는다 —
-`Mag::upper_f64`(`Mag` 경계의 위쪽)·`bigfloat_upper_f64`(BigFloat 의 크기 — 삼각·역제곱근 실현의 오차와 판정의 증인 tol 이
-읽는다)·`Bounded::round_off`(반올림 한 번의 반 ulp). 앞의 둘은 `2^e` 읽기 하나(`pow2_upper_f64`)를 나눠 쓰고, 정확한 0 은
-0 으로 읽는다. `round_off` 는 0 도 내지 않는다 — `f64` 하나로는 반올림이 정확했는지 모르므로, 아는 호출자가 0 을 준다.
-f64 로 계산한 값의 여유 `cyl_gate::round_slack` 도 같은 바닥을 더하고, 읽어 낸 좌표의 반 ulp(`Realization::to_f64` 의
-`half_ulp`)와 계측 `audit_rim_centre` 의 반 ulp 도 그 아래로 내리지 않는다. 비정규수 구역의 반올림 오차는 값에 비례하지 않고
-고정된 반 칸(`2⁻¹⁰⁷⁵`)이라 상대 오차로 쓴 식이 거기서 성립하지 않기 때문이다 — `|x|·ε/2` 는 0 이 되고(정확하다는 거짓)
-`× (1 + kε)` 는 대개 값을 키우지 못한다.
+**바닥.** 다음 자리는 `f64` 로 읽은 오차 경계를, 0 이 아니면 `f64::MIN_POSITIVE`(가장 작은 정상수) 아래로 내리지
+않는다: `Mag::upper_f64`·`bigfloat_upper_f64`(둘이 `pow2_upper_f64` 를 나눠 쓰고 정확한 0 은 0 으로 읽는다),
+`Bounded::round_off`(0 도 내지 않는다 — 반올림이 정확했는지 아는 호출자가 0 을 준다), `cyl_gate::round_slack`,
+`Realization::to_f64` 의 `half_ulp`, STEP 불확도의 `half_ulp`, 계측 `audit_rim_centre`. 비정규수 구역의 반올림 오차는
+값에 비례하지 않고 고정된 반 칸(`2⁻¹⁰⁷⁵`)이라 상대 오차로 쓴 식이 거기서 성립하지 않기 때문이다: `|x|·ε/2` 는 0 이
+되고(정확하다는 거짓) `× (1 + kε)` 는 대개 값을 키우지 못한다.
 
-**바닥 없는 식은 정상 범위에 기댄다.** f64 구간 산술 — `Bounded` 의 `add`·`sub`·`mul`(값에 `2ε·|value|`, 반지름의 자기 반올림에 `× (1 + 4ε)` — 연산마다 증명된 한계다;
-증인점의 tol 전파도 이것을 걷고, 정확한 경우의 산술도 `2⁻ᵏ` 배가 정확하다는 사실에 기댄다) — 과 반올림한 `f64` 에 상대 몫을 붙여
-경계를 읽는 `inv_sqrt_error_of` 의 정확한 차는 값이 정상 범위에 머문다는 전제에 기댄다. 정확한 차는 0 이 아닌 `Rat` 이라 크기가
-`2⁻¹²⁷` 위에 있어 전제가 타입으로 서고, 구간 산술의 입력 좌표는 i128 분수라 크기가 대략 `2⁻¹²⁷` 위에 머물며 몇 번의 곱으로는
-정상 범위를 벗어나지 않아 전제가 선다(논증).
+**바닥 없는 식은 정상 범위에 기댄다.** f64 구간 산술 — `Bounded` 의 `add`·`sub`·`mul`(값에 `2ε·|value|`, 반지름의 자기
+반올림에 `× (1 + 4ε)` — 연산마다 증명된 한계다; 증인점의 tol 전파도 이것을 걷는다) — 과 `inv_sqrt_error_of` 의 정확한 차는
+값이 정상 범위에 머문다는 전제에 기댄다. 정확한 차는 0 이 아닌 `Rat` 이라 크기가 `2⁻¹²⁷` 위에 있어 전제가 타입으로 서고,
+구간 산술의 입력 좌표는 i128 분수라 크기가 대략 `2⁻¹²⁷` 위에 머물며 몇 번의 곱으로는 정상 범위를 벗어나지 않아 전제가
+선다(논증).
 
-**동사.** `realize_*` 는 모델 안의 정의(정점·담체 곡면)를 값으로 바꾸는 문이고 정밀도를 늘 명시한다(`Precision`·`bits` —
-기본값 없음). 정밀도 대신 push 의 싼 예산을 묻는 문은 이름이 그렇게 말한다(`realize_vertex_cache`·`realize_surface_cache` —
-계측이 쓰는 문이다). 값(스칼라·quad·계수)과 한 타입의 자기 읽기는 명사 + 접미사로 쓴다(`quad_hp`, `WitnessPoint::coord_hp`).
-깔때기는 `push_*_realized`, 캐시를 더 정확하게 올리는 것은 ops 의 `raise_*`(실현해서 쓴다)와 topo 의 `refine_*_cache`(쓰기 문),
-내보내기 전의 문은 `refine_caches(_of)`, 읽고 대조만 하는 계측은 `audit_*` 다. 예산은 `Budget::{Cheap, Paid}` — push 가 내는
-싼 예산과 refine 문이 내는 유료 예산이다. `_at` 은 이 커널에서 위치의 낱말(`point_at`·`normal_at`·`surface_handle_at`)이라
-정밀도에 쓰지 않는다. 판정은 실현 문을 부르지 않고 자기 어휘(`coord_hp`·`trial_bound`·`precision_for`)를 쓴다.
+**동사.** `realize_*` 는 모델 안의 정의(정점·담체 곡면)를 값으로 바꾸는 문이고 정밀도를 늘 명시한다(`Precision`·`bits`·
+`places` — 기본값 없음). 정밀도 대신 push 의 싼 예산을 묻는 문은 이름이 그렇게 말한다(`realize_vertex_cache`·
+`realize_surface_cache` — 계측이 쓰는 문이다). 값(스칼라·quad·계수)과 한 타입의 자기 읽기는 명사 + 접미사로 쓴다
+(`quad_hp`, `WitnessPoint::coord_hp`). 깔때기는 `push_*_realized`, 캐시를 더 정확하게 올리는 것은 ops 의 `raise_*`(실현해서
+쓴다)와 topo 의 `refine_*_cache`(쓰기 문), 내보내기 전의 문은 `refine_caches(_of)`, 읽고 대조만 하는 계측은 `audit_*` 다.
+예산은 `Budget::{Cheap, Paid}` — push 가 내는 싼 예산과 refine 문이 내는 유료 예산이다. `_at` 은 이 커널에서 위치의
+낱말(`point_at`·`normal_at`·`surface_handle_at`)이라 정밀도에 쓰지 않는다. 판정은 실현 문을 부르지 않고 자기
+어휘(`coord_hp`·`trial_bound`·`precision_for`)를 쓴다.
 
 ---
 
 ## 타입이 사는 자리 — 규칙
 
-- 회귀 관문의 기본은 **위상 정확 일치 + 좌표 ε(모델 크기 상대, `2⁻⁴⁰` — 여유 2000배)**, 비트
-  동일은 보너스 신호다. 합격/불합격이 아니라 **최대 편차 숫자를 찍는다**(누적 드리프트 감시).
-- **비트 동일 관문은 그 안의 population 에 대해서만 보증한다.** 바꾸려는 것이 닿는 population 을
-  대장에 먼저 넣고(17자리 `fw`·기울어진 `tp` 가족이 있다), *"어느 population 인가"* 는 추측하지
-  말고 계측이 이름을 대게 한다. 좌표 관문은 «답은 같은데 더 나쁜 길로 갔다»를 원리적으로 못
-  보므로 **"정확 경로를 탔는가"를 직접 단언하는 테스트**를 함께 둔다.
-- **두 `Surface` 의 철자**: 한 파일이 둘 다 필요하면 **맨이름은 진실**(topo, `Handle<Surface>` 가
-  이름 짓는 것)이고 실현은 `nacre_geom::Surface` 로 적는다. 반대로 하면 같은 파일에서
-  `Handle<Surface>` 는 진실을, 맨 `Surface::Plane(p)` 는 캐시를 뜻해 한 단어가 표지 없이 두 가지가
-  된다. 섞으면 **하드 오류**다(geom 은 tuple 변종, 진실은 struct 변종 ⇒ E0532) — 조용히 틀릴 자리가 0.
-- **타입을 바꾸는 변경은 「타입 구조」 부의 그림을 같은 커밋에서 고친다.**
-- **어느 크레이트에 두나** — 「유도된 값 + 그 산술」은 `nacre-exact`(최하단; `nacre-judge` 가 닿아야
-  하므로), 「아레나 항목의 진실」은 `nacre-topo`. 구조적 강제: **`nacre-judge` 는 `nacre-topo` 에
-  의존하지 않는다** ⇒ 판정이 쓰는 타입은 전부 topo 아래에 있어야 한다(`PlaneName` 이 exact 에 사는
-  이유). 모델에서 판정 표를 짓는 타입(`WorkingPlane`·`WorkingCyl`·`FaceInfo`)은 둘을 다 아는
-  `nacre-ops` 에 산다. 본문은 「크레이트 구조」 절.
+- 두 길이나 두 상태의 기하를 비교하는 회귀 시험은 **위상 정확 일치 + 좌표 ε(모델 크기 상대, `2⁻⁴⁰` — 여유 2000배)** 를
+  단언하고, 합격/불합격이 아니라 **최대 편차 숫자를 찍는다**(누적 드리프트 감시 — `plane_anchor.rs`). 비트 동일은 보너스
+  신호다.
+- **비트 동일 관문은 그 안의 population 에 대해서만 보증한다.** 바꾸려는 것이 닿는 population 을 대장에 먼저 넣고
+  (17자리 `fw`·기울어진 `tp` 가족이 그래서 있다 — `census.rs` doc), *"어느 population 인가"* 는 추측하지 말고 계측이
+  이름을 대게 한다. 좌표 관문은 «답은 같은데 더 나쁜 길로 갔다»를 원리적으로 못 보므로 **"정확 경로를 탔는가"를 직접
+  단언하는 테스트**를 함께 둔다.
+- **두 `Surface` 의 철자**: 한 파일에서 맨 `Surface` 는 한쪽만 뜻하고 다른 쪽은 경로로 적는다. 진실을 다루는 파일은
+  **맨이름이 진실**(topo, `Handle<Surface>` 가 이름 짓는 것)이고 실현을 `nacre_geom::Surface` 로 적는다; 캐시를 읽는
+  `nacre-tess/src/lib.rs` 와 픽스처 `nacre-ops/tests/coverage/features.rs` 는 거꾸로 맨이름이 geom 이고 진실을 `nacre_topo::Surface` 로 적는다.
+  한 파일에서 둘 다 맨이름이면 `Handle<Surface>` 는 진실을, 맨 `Surface::Plane(p)` 는 캐시를 뜻해 한 단어가 표지 없이 두
+  가지가 된다. 섞으면 **하드 오류**다(geom 은 tuple 변종, 진실은 struct 변종 ⇒ E0532) — 조용히 틀릴 자리가 0.
+- 모델에서 판정 표를 짓는 타입(`WorkingPlane`·`WorkingCyl`·`FaceInfo`)은 `nacre-judge` 와 `nacre-topo` 를 둘 다 아는
+  `nacre-ops` 에 산다. 어느 크레이트에 두나는 「크레이트 구조」 절.
 - **병렬 불변식**: 병렬 구간에서 **곡면 push 금지**(재생 결정성). 곡면의 문은 `Model::push_plane`·
-  `push_plane_through`·`push_cylinder`(사설 `push_plane_raw`·`push_cylinder_raw` 로 모인다).
-  워크스페이스의 진짜 병렬은 `nacre-ops/src/par.rs` **한 파일 두 자리**
-  (`(0..n).into_par_iter().map(f)`)뿐이고, 그 클로저는 「인덱스 → 값」이라 **`&mut Model` 을 들 수
-  없다** ⇒ 병렬 구간의 곡면 push 는 구조적으로 불가능하다. 둘 다 `clippy.toml` 이 잠근다: rayon 의
-  병렬 입구는 그 파일에서만 부르고(*"병렬이 두 곳에 살면 조용히 깨진다"*), 곡면의 문은 그 파일이
-  허용 표에 없어 거기서 부를 수 없다(아래 「캐시에 쓰는 문은 깔때기만 부른다」).
+  `push_plane_through`·`push_cylinder`(사설 `push_plane_raw`·`push_cylinder_raw` 로 모인다). 워크스페이스의 진짜 병렬은
+  `nacre-ops/src/par.rs` 한 파일(`(0..n).into_par_iter().map(f)`)에만 살고, 그 클로저는 「인덱스 → 값」(`Fn(usize) -> R`)이라
+  **`&mut Model` 을 들 수 없다** ⇒ 병렬 구간의 곡면 push 는 구조적으로 불가능하다 — 이것이 잠금이다. `clippy.toml` 은
+  rayon 의 병렬 입구를 그 파일에 묶는다(*"병렬이 두 곳에 살면 조용히 깨진다"*;
+  아래 「캐시에 쓰는 문은 깔때기만 부른다」). `par.rs` 의 허용이 그 파일에서 끄는 범위는 `disallowed.rs` doc.
 
 ---
 
@@ -247,75 +229,42 @@ f64 로 계산한 값의 여유 `cyl_gate::round_slack` 도 같은 바닥을 더
 > **`x(h)` 는 «진실»(아레나 항목 그 자체), `x_cache(h)` 는 «캐시»(실현). 실체 이름을 단 맨 메서드가
 > 캐시를 돌려주는 일은 없다.**
 
-```rust
-// ── 진실 — 실체 이름 그대로 ───────────────────────────────────────────
-m.surface(h) -> &Surface      m.vertex(v) -> &Vertex      m.edge(e) -> &Edge
-m.face(f) -> &Face            m.shell(s)  -> &Shell       m.solid(s) -> &Solid
-m.motion(n) -> &MotionNode
-m.surface_motion(h) -> Option<Handle<MotionNode>>            // 진실의 조각(곡면이 진술된 모션)
-m.live_solids() -> &[Handle<Solid>]                        // 루트
-m.seeded_plane(axis) -> Handle<Surface>                     // 심은 세계 평면
+문의 가족(서명은 `nacre-topo/src/model/`):
 
-// ── 개수·핸들 복원 — `x_count()` · `x_handle_at(index) -> Option<Handle<X>>` ──
-m.surface_count() · m.vertex_count() · m.edge_count() · m.face_count() · m.shell_count() · m.solid_count()
-m.surface_handle_at(i) · m.vertex_handle_at(i) · m.edge_handle_at(i) · m.face_handle_at(i) · …
+- **진실** — 실체 이름 그대로: `surface`·`vertex`·`edge`·`face`·`shell`·`solid`·`motion`, 진실의 조각
+  `surface_motion`(곡면이 진술된 모션), 루트 `live_solids`, 심은 세계 평면 `seeded_plane`.
+- **개수·핸들 복원** — `x_count()`·`x_handle_at(index) -> Option<Handle<X>>`.
+- **캐시** — `surface_cache(h) -> &SurfaceCache`(종류마다 팔; 조각은 체이닝 — `.plane()`·`.cylinder()`·`.name()`·
+  `.standing()`·`.to_geom()`), `vertex_cache(v) -> &PointCache`(`Realized | Ceiling | Unrealized`; `.coord()`·`.bound()`).
+  조각의 지름길: `surface_cache_standing`·`surface_name`·`vertex_point`·`edge_curve`·`line_direction_cache`.
+- **세계 진술** — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히: `world_plane_name`·`chain_plane_coeffs`·
+  `chain_point_rat`·`chain_dir_rat`.
+- **쓰기 문** — `push_*`(곡면은 진실을 진술하며 들어온다 — 그림과 그것이 아는 것을 함께; `push_motion` 은 intern),
+  캐시의 둘째 쓰기 문 `refine_vertex_cache`·`refine_surface_cache`(오르기만 한다 — 정점은 `Ceiling` 을 `Realized` 로),
+  통째 재생 `rebuild_edge_cache`·`rebuild_adjacency`.
 
-// ── 캐시 ─────────────────────────────────────────────────────────────
-m.surface_cache(h) -> &SurfaceCache                        // 종류마다 팔 — `match` 로 바로 가른다
-m.surface_cache(h).plane() -> Option<&nacre_geom::Plane>   // 조각은 체이닝 — `.cylinder()`·`.name()`·`.standing()`·`.to_geom()`
-m.surface_cache_standing(h) -> CacheStanding               // = surface_cache(h).standing()
-m.vertex_cache(v)  -> &PointCache                          // 변종(Realized | Ceiling | Unrealized)
-m.vertex_cache(v).coord() -> Point3                        // 세 변종이 모두 드는 좌표
-m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Realized 만 — 실현의 축별 경계
-m.vertex_point(v)  -> Point3                               // = vertex_cache(v).coord() — 어디서나 답한다
-m.edge_curve(e)    -> &Curve                               // 간선 캐시의 조각(곡선)
-m.line_direction_cache([p, q]) -> Option<[f64; 3]>        // 두 평면이 만나는 방향 — 이름에서, 아니면 push 하는 쪽이 실현해 남긴 것
-m.surface_name(h) -> Option<&PlaneName>                   // = surface_cache(h).name() — 원통·이름 없는 평면은 None
+분류·비교·갈래는 진실에 묻고, 표시·tess·경계·측정은 캐시에 묻는다(`Model::surface` doc).
 
-// ── 세계 진술 — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히 ────────
-m.world_plane_name(h) -> Option<PlaneName>                 // 평면의 세계 이름(사슬이 안 접히면 None)
-m.chain_plane_coeffs(leaf, c) · m.chain_point_rat(leaf, p) · m.chain_dir_rat(leaf, d)   // 접은 사슬의 세 얼굴
+**캐시에 쓰는 문은 깔때기만 부른다.** f64 캐시에 쓰는 topo 의 문(`push_vertex`·`refine_vertex_cache`·`push_plane`·
+`push_plane_through`·`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache`)과 픽스처용 셋(`*_unregistered`
+둘·이름을 심는 `plant_surface_name`), 그리고 깔때기가 다 지은 캐시를 받는 `push_vertex_prerealized` 를 워크스페이스 루트의
+`clippy.toml`(`disallowed-methods`)이 막는다 — 크레이트 경계 때문에 `pub` 인 문을 ops 의 깔때기(`realize.rs`) 밖에서 부르면
+clippy 가 거절한다. 그래서 «STEP 이 읽는 `f64` 는 실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 약속이 아니라
+잠금이다. 제품에서 부르는 자리(깔때기 모듈, 빈 모델의 세계 평면 씨앗 — 이름이 캐시를 유도한다, seam 표가 실현한 캐시를
+넘기는 `reconstruct.rs`)는 `#[expect]` 에 이유를 적고, 테스트 빌드는 크레이트마다 허용한다(픽스처는 문으로 짓는다).
+같은 `clippy.toml` 이 rayon 의 병렬 입구를 `par.rs` 에, 링 술어 셋을 제 주인 아래 묶는다 — `point_in_ring` 은
+`nesting::cell_inside` 의 재시도, `side_of` 는 `ring_against_plane` 의 걷기, `point_in_mixed_ring` 은 `rational_ring_side` 의
+원인 순서. 허용은 하나하나 `tests/instruments/disallowed.rs` 의 표에 이유와 함께 오른다. 그 시험이 거절하는 것(표 밖의
+허용, lint 묶음 허용, `clippy.toml` 에서 빠진 경로, 매니페스트·cargo 설정의 lint 수준, 루트 밖의 `clippy.toml`)과 잠금이
+닿지 않는 자리(훅 밖의 커밋·사용자 설정·다른 저장소), clippy 가 보는 기능 조합은 그 doc 이다.
 
-// ── 쓰기 문 ──────────────────────────────────────────────────────────
-m.push_plane(fig, standing, ..) · m.push_plane_through(..) · m.push_cylinder(..)   // 곡면은 진실을 진술하며 들어온다 — 그림과 그것이 아는 것을 함께
-m.push_vertex(def, cache) · m.push_edge(.., given) · m.push_face(..) · m.push_shell(..) · m.push_solid(..)
-m.push_motion(..)                                          // interned
-m.refine_vertex_cache(v, coord, bound)                     // 캐시의 둘째 쓰기 문 — `Ceiling` 만 «올린다»
-m.refine_surface_cache(h, s, standing)                     // 곡면 캐시의 둘째 쓰기 문 — 표지는 오르기만 한다
-m.rebuild_edge_cache(solids, given) · m.rebuild_adjacency() // 통째 재생 — `given` 은 topo 가 못 내는 조각을 묻는다
-```
+**진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에 `plane(h)` 같은 문을 달면
+진실을 줄 것처럼 읽힌다. 캐시를 주는 문은 `_cache`(또는 캐시의 조각 이름 `_point`·`_curve`·`_name`)로 끝나 **「캐시의」라고
+말하고 들어온다**. 조각을 돌려받은 타입의 메서드로 꺼내는 것(`vertex_cache(v).bound()`)은 `nacre_geom::Surface` 가
+`distance()`·`normal_at()` 을 자기 메서드로 갖고 안에서 가르는 것과 같은 관용구다 — 구·원뿔이 와도 `Model` 의 문은 늘지 않는다.
 
-**캐시에 쓰는 문은 깔때기만 부른다.** (같은 `clippy.toml` 이 rayon 의 병렬 입구를 `par.rs` 에, 링 술어 셋 — `point_in_ring` 은
-`nesting::cell_inside` 의 재시도 아래, `side_of` 는 `ring_against_plane` 의 걷기 아래, `point_in_mixed_ring` 은
-`rational_point_in_ring` 의 원인 순서 아래 — 을 제 자리에 묶는다. 허용 장치는 아래 하나다.)
-위 쓰기 문 가운데 f64 캐시에 쓰는 여덟(`push_vertex`·`refine_vertex_cache`·`push_plane`·
-`push_plane_through`·`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache`)과 픽스처용 셋(`*_unregistered` 둘·이름을 심는 `plant_surface_name`), 그리고
-깔때기가 다 지은 캐시를 받는 `push_vertex_prerealized` 를 워크스페이스 루트의 `clippy.toml`(`disallowed-methods`)이 막는다 —
-크레이트 경계 때문에 `pub` 인 문을 ops 의 깔때기(`realize.rs`) 밖에서 부르면 clippy 가 거절한다. 그래서 «STEP 이 읽는 `f64` 는
-실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 약속이 아니라 잠금이다. 제품에서 부르는 자리는 셋이고 셋 다 `#[expect]` 에
-이유를 적는다: 깔때기 모듈, 빈 모델의 세계 평면 씨앗(이름이 캐시를 유도한다), seam 표가 실현한 캐시를 넘기는 `reconstruct.rs`.
-테스트 빌드는 크레이트마다 허용한다(픽스처는 문으로 짓는다).
-
-허용은 하나하나 `tests/instruments/disallowed.rs` 의 표에 이유와 함께 오른다. 그 테스트가 거절하는 것: 표 밖의 허용, lint 묶음
-허용(`clippy::all`·`clippy::style`·`warnings`), `clippy.toml` 에서 빠진 경로, `Cargo.toml`·cargo 설정에서 그 lint 의 수준을 바꾸는
-줄(`[lints]`·`rustflags` — 속성 없이 잠금을 끈다, 잼), 루트 밖의 `clippy.toml`(크레이트에 하나 두면 빈 파일이라도 그 크레이트에서
-루트의 것을 대신한다, 잼). clippy 가 보는 것은 관문의 세 clippy 줄이 짓는 기능 조합이다 — 기본(훅), 순차, 그리고 추적 기능
-(`reject-trace`·`tangency-trace`) 뒤의 코드를 보는 `--all-features`. 잠금은 커밋 훅과 관문이 도는 커밋에 걸린다 — `--no-verify`,
-버전 관리되지 않는 훅의 수정, 사용자 자신의 `~/.cargo/config.toml`·환경의 `CLIPPY_CONF_DIR` 은 저장소 안의 테스트가 볼 수 없다.
-kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` 호출 수는 잠그지 않는다 — 유리수의 `to_f64` 는 정확 반올림이라
-그 자체가 실현이다.
-
-**진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에
-`plane(h)` 같은 문을 달면 진실을 줄 것처럼 읽힌다. 캐시를 주는 문은 `_cache`(또는 캐시의 조각
-이름 `_point`·`_curve`·`_name`)로 끝나 **「캐시의」라고 말하고 들어온다**. 조각을 돌려받은 타입의 메서드로
-꺼내는 것(`vertex_cache(v).bound()`)은 `nacre_geom::Surface` 가 `distance()`·`normal_at()` 을 자기
-메서드로 갖고 안에서 가르는 것과 같은 관용구다 — 구·원뿔이 와도 `Model` 의 문은 늘지 않는다.
-
-정제는 `Ceiling` 을 `Realized` 로 올리는 것뿐이다 — 좌표를 더 정확하게 만들 수만 있다.
-
-성능은 이 명명의 고려사항이 아니다. 어느 철자든 안에서 하는 일은 «디버그 가드 + 배열 색인 하나 +
-판별자 읽기»이고 할당도 복사도 없다(`#[inline]`). 다만 평면의 이름과 실현이 둘 다 필요한 자리는 조회가
-둘(`Vec` 색인 + `HashMap` 해시)이다.
+성능은 이 명명의 고려사항이 아니다. 진실과 캐시의 문은 어느 철자든 «디버그 가드 + 배열 색인 하나 + 판별자 읽기»이고
+할당도 복사도 없다(`#[inline]`) — 평면의 이름도 실현과 같은 캐시 칸에 있다.
 
 # 층과 하위 체계
 
@@ -2661,6 +2610,7 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 링 감김(`loop_winding`)에서 링 평면이 고정하는 축을 사전식 비교에서 건너뛰기 | 링의 모든 노드가 그 평면 위라 그 축의 비교는 늘 0 이지만, 판정자가 공유 평면 항등식을 들면 더 주는 것이 없다 — perf.rs 순차 명령어 항등식만 −10.0%, 항등식 + 건너뛰기 −9.6%, 건너뛰기만 −3.9%. 0 은 묻는 쪽이 아니라 판정자가 안다(링 평면 밖의 공유 벽도 같은 0 을 낸다) | 실험, 되돌림 |
 | `plane_pair_dir_sign` 에 «같은 사슬의 평행한 두 평면»(같은 핀의 마주 보는 두 벽) 항등식 | 참이고 불린다(기울인 핀 24 fold 의 «일치» 782 → 606, perf 에 남은 «일치»의 27%) — 그러나 질문마다 두면 이름 정수 외적이 perf.rs 순차 명령어를 +5.8%(축정렬 fold 80 1.02 → 1.79 s) 늘리고, 상승 직전에만 두면 기준선끼리의 흔들림(0.6%) 안이다. 남은 «일치»는 수는 많아도 시간을 거의 안 쓴다 | 실험, 되돌림 |
 | 상대가 닿을 수 없다고 증명된 클래스의 추적 패스(pass A)까지 건너뛰기 | 순차는 더 빨랐다 — 회전 fold 80 9.66 → 4.78 s(2.02배; pass B 만이면 7.69 s), 허브먼저 ring 80 1.95배, 축정렬 fold 80 1.85배. 그러나 건전하지 않다: pass B 의 `PassThrough` 가 네 평면이 모이는 정점에 이름을 못 붙이면 배열로 물러나는데, 그 배열이 읽는 `splits[wc]` 가 비어 클래스의 면이 사라진다. 상대가 못 닿는 자리에 동시성이 있는 모델이 코퍼스에 없어 차등 검사(`ClassReuse::{Off, Proved}`)도 울릴 수 없었다. 클래스 단위 차등(`flip` 을 뒤집으면 커버리지 4건이 실패했다)은 추적하지 않은 클래스에 비교할 배열이 없어 불리언 전체 차등으로 올라갔다(census 130 행은 두 피처 조합에서 비트 동일). 남은 일이 169 클래스 중 27 에 몰려 병렬은 5% 나빠졌다(pass B 만일 때 1.98 s → 2.09 s, 효율은 pass B 만일 때 약 3.9배에서 2.3배로). pass A 는 모든 클래스에 돈다(`trace_result_faces`) | `059ef1c1`, 되돌림 `496ec741` |
+| 판정마다 평면의 증인 정의를 다시 짓기(회전 증인을 복제하고 축정렬 증인을 다시 만들며 그 tol 을 120비트 astro-float 로 재기) | 회전 지느러미 25개를 허브에 fuse 하고 구멍 둘을 뚫는 불리언에서 실행 시간의 77%였다(백만 번 불렸고, 큰 절반이 tol 측정). 정의는 매번 같으므로 증인이 들고 술어는 빌린다(`plane_def`) — 같은 불리언이 2.16초 → 0.37초(native). 첫 걸음은 축정렬 증인의 tol 0 을 재지 않고 이름 붙이는 생성자 `Pt3::exact`(뒤의 `WitnessPoint::exact`)로 섰고, 그 생성자는 뒤에 은퇴했다(아래 「정밀도·판정」 표의 `WitnessPoint::exact` 행). 같은 작업에서 브라우저는 ~25초 → 0.4초였지만 그 절반 넘게는 디버그 wasm 을 내던 빌드 설정이라 이 레버의 수가 아니다 | `b34b3b41`·`5971a844`·`3622b65e`; 생성자 은퇴 `76449d63` |
 
 ### 정밀도·판정
 
@@ -2717,6 +2667,8 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | `rotated` 플래그를 풀어 회전 클래스를 원통 관문에 들이기 | 그 플래그는 정확 지름길이 평면의 이름을 세계 진술로 읽는 허가다 — 모션 있는 평면의 이름은 모션 전 프레임을 말한다. 풀었을 때는 클래스 병합이 면 꼭짓점 캐시의 삼각형 판정으로 가서 공유 벽이 두 몸으로 갈렸다(그 판정은 은퇴했다 — 병합은 세계 이름을 읽는다) | 되돌림(`planes` 주석) |
 | 접미사만 다른 형제 함수를 «중복»으로 세어 합치기 | 일곱 갈래를 열어 보니 진짜 중복은 0 이었다. `det3`·`orient3d_iv` 계열(정의 12개)·`three_planes_rat`/`_big` 은 층마다 숫자 타입(`Expansion`·`f64`·`Bounded`·`HpBounded`·`BigInt`)이 다른 **정밀도 사다리**이고, 나머지는 트레이트 기본 구현+impl, 인자가 다른 별개 함수, doc 에 사유가 있는 한 줄 편의 문이었다. 세기 전에 **인자 타입**을 먼저 본다 | — |
 | 원통 옆면을 seam 엣지(A — 세로 seam 간선 `[c, c]` 를 두 번 쓰는 한 루프)로 짓기 · 원을 극점에서 단조 조각으로 자르기(CGAL 의 표현) | 각도의 시작점(`ref_dir`)이 위상에 새겨진다: 잘린 림마다 θ = 0 정점과 호 쪼개기(census 154·스위트 1,980), seam 에 걸린 구멍을 잇는 slit 걸음, θ = 0 에서만 보는 집힘 그물, self-pair 담체 규칙이 붙고, 같은 모양이 seam 의 자리에 따라 다른 위상이 된다. 단조 조각도 같은 이유다 — 자르는 극점이 좌표틀에 따라 위상에 새겨진다(이쪽은 잰 것이 아니라 논증이다). 옆면은 림 두 루프로 닫고(「seam 엣지 방식」 B), 닫힌 간선 `[v, v]` 는 한 바퀴로 읽는다 | `e60ab2b9`, `497b54b5`; 단조 조각 `278484eb` |
+| 면의 스케치 원점을 면에서 읽기(외곽 꼭짓점의 평균, 면 영역의 면적중심) | 꼭짓점 평균은 직선 도중에 꼭짓점이 하나 늘면 움직인다 — 면의 모양은 그대로인데 그 위에 pad 한 보스가 다른 자리에 놓인다. 면적중심은 이산화에는 무관하지만 면의 `f64` 꼭짓점으로 계산한 원점을 `Rat::from_decimal` 로 올리므로 반올림된 캐시가 진실이 된다 — 같은 footprint 를 두 번 pad 하면 둘째 프로파일이 한 ulp 옆에 놓여 넓이 `2.2e-16` 의 면이 남았고 `validate` 는 알리지 않았다(반올림을 줄인 고침도 새는 길을 닫지 못했다). 둘 다 같은 평면 위 다른 외곽선이면 원점이 달라진다. 원점은 평면만의 성질로 유도한다: 세계 방정식이 진술된 평면(`Model::world_plane_name`)은 세계 원점의 정사영, 그 밖의 평면은 사슬로 나르는 제 `Canonical` 프레임의 원점(`the_sketch_origin_does_not_depend_on_the_outline_at_all`) | `0615e95a`·`00ec61e`·`c652ef4` |
+| 면의 스케치 축(`+u`)을 `any_perpendicular` 로(법선과 가장 덜 정렬된 세계 축과 외적) | 고르는 축이 법선을 따라 바뀐다 — 상자 뚜껑이 `u = −ŷ, v = +x̂` 로 `SketchPlane::world_xy` 와 90° 어긋나 한 평면이 두 철자를 가졌다. 불연속도 두 극이 아니라 가장 작은 두 성분이 같은 호 전체에 놓인다. 세계 방정식이 진술된 평면(`Model::world_plane_name`)의 축은 arbitrary-axis 규약(`ẑ × n`, 수직이면 `ŷ × n` — `frame_axes`, 정확히는 `plane_frame_default`)이고, 그 밖의 평면은 제 `Canonical` 프레임을 사슬로 나른다. `any_perpendicular` 는 seam·STEP `ref_dir` 처럼 «아무 수직»이면 되는 자리의 것이다 | `20dae82` |
 
 ### 정리
 

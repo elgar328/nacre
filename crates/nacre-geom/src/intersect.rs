@@ -1,12 +1,13 @@
 //! Closed-form intersections among analytic surfaces.
 //!
-//! Robustness-sensitive intersection and classification code is isolated in this one module,
-//! kept as `pub mod` so callers write `intersect::plane_plane(..)` and the isolation stays
-//! visible. Everything here is the **construction (coordinate)** side of the
-//! precision split: the returned `Line`/`Point3` are f64 *caches* —
-//! the defining surfaces are the truth. So near-degenerate inputs are gated by a
-//! conditioning threshold (there is no exact answer to cache), whereas exact
-//! **sign** decisions live in `nacre-predicates`.
+//! This module holds the closed-form intersections and the ring predicates over straight steps,
+//! kept as `pub mod` so callers write `intersect::plane_plane(..)`. It is not the one home of
+//! robustness-sensitive code: rings with arcs are [`crate::mixed`]'s. The intersections are the
+//! **construction (coordinate)** side of the precision split: the returned `Line`/`Point3` are f64
+//! *caches* — the defining surfaces are the truth. So near-degenerate inputs are gated by a
+//! conditioning threshold (there is no exact answer to cache). The **sign** decisions here are
+//! exact: the f64 crossings and ring predicates take theirs from `nacre-predicates`, the `_rat`
+//! twins from `nacre_exact::orient2d_rat`.
 
 use crate::{Line, Plane};
 use nacre_math::{Point2, Point3, Vector3};

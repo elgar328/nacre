@@ -7,6 +7,8 @@
 //! proved within the coincidence precision and reported in `BoolReport::merges`), so the two
 //! faces land in one plane class. What that leaves to measure is whether the result is the one
 //! the single-handle model gets, and that is what these fixtures assert.
+//! The two-handle model costs time only: measured in release on these scenes, 3–9× the
+//! single-handle model's.
 //!
 //! **Geometry, not model contents.** A result face takes its class representative's surface —
 //! the lowest face row, which is the first operand's side — so where the first operand sits on

@@ -72,8 +72,9 @@ fn any_perpendicular_values() {
 /// The rule is "cross with the axis of the **smallest** component", which is
 /// the same one Onshape's `perpendicularVector` uses — and it is *discontinuous*
 /// where two smallest components tie. No continuous choice exists (hairy ball),
-/// so the tie-break is pinned instead: consumers place sketch frames with this,
-/// and a change here would silently rotate every one of them by 90°.
+/// so the tie-break is pinned instead: `nacre-step`'s planar `ref_dir` and the tests'
+/// cylinder seams read it, and a change here would move them. Sketch frames do not
+/// use it — they take the arbitrary-axis convention (`nacre-ops`' `frame_axes`).
 #[test]
 fn any_perpendicular_breaks_ties_towards_the_earlier_axis() {
     let unit = |v: Vector<3>| v.normalize().unwrap();
