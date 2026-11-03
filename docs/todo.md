@@ -468,7 +468,7 @@ tess 는 원통 옆면(띠)을 구멍을 0 또는 2 번 지나는 한 생성선�
 ### `SeamAlias` 는 두 원인을 한 딱지로 거절한다
 
 seam 표의 `SeamAlias`(`SuspectedDefect`)는 한 점이 두 이름을 받은 결함과 f64 한 칸 안의 서로 다른 두 참점(결함 아님)을 가르지
-않는다(`RejectReason::SeamAlias` doc). 정확 판정(`combinatorics::side_of` 로 한 이름의 점이 다른 이름의 셋째 평면 위인가)이 둘을
+않는다(`RejectReason::SeamAlias` 위의 주석). 정확 판정(`combinatorics::side_of` 로 한 이름의 점이 다른 이름의 셋째 평면 위인가)이 둘을
 가른다. 인구는 스위트·census 모두 0 이다.
 
 ### 결과 면이 클래스 대표의 핸들을 물려받는다

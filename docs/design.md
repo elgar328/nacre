@@ -1676,7 +1676,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 
 **결과 계약: 표면이 자기와 닿는 솔리드는 만들지 않는다.** 명제(모서리가 꼭짓점 아닌 점에서, 또는 꼭짓점이, 같은 솔리드의 자기가
 경계하지 않는 면의 닫힌 영역에 닿는가)와 단위(출력 솔리드)는 `assembly::self_touch::self_touch_reject` 의 doc 이고, 이런 몸체가 모든 위상
-계수와 `validate` 를 통과하는 까닭은 `SelfTouchingResult` doc 이다. 방향은 Parasolid 를 따르고 OCCT 는 받는다; 대가는 쐐기 포켓의
+계수와 `validate` 를 통과하는 까닭은 `SelfTouchingResult` 위의 주석이다. 방향은 Parasolid 를 따르고 OCCT 는 받는다; 대가는 쐐기 포켓의
 끝이 마침 반대 벽에 닿는 모델링이 막히는 것 — `tests/probes/self_touch.rs` 모듈 doc. 거절은 «무엇이 잘못됐는지»만 말하고 사람이
 읽을 문장은 앱이 `RejectClass` 로 갈라 쓴다(`BoolReport`·`RejectClass`·`SelfTouchingResult` 의 doc).
 
@@ -1812,7 +1812,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   `CylRecord::Cuts` · `CylRecord::Touches`)이고, 기록 집합은 증명 캐시라 배열의 독자는 전제를 `debug_assert` 로 든다.
   **접선을 절단으로 기록하지 않는다** — 절단의 명제(「평면이 반지름 안쪽을 지난다」)가 거짓이 된다(`class_meet` 본문,
   `Tangency` doc). 면이 닿지 않아도 클래스가 옆면을 자르면 기록하는 까닭은 `class_meet` 본문. 캡이 상대 재료 안에 앉는
-  변형은 짓는다(`RejectReason::RulingBoundNotYet` doc).
+  변형은 짓는다(`RejectReason::RulingBoundNotYet` 위의 주석).
 - **«두 클래스의 교선이 옆면 면 위에 있다»도 게이트가 한 번 기록한다**(`SharedRuling`, `WorkingCyl::shared`). 짝은 생성기가
   이미 답한 것에서만 나오고, 선은 무한 곡면이 아니라 옆면 **면** 위여야 한다(`line_apart`). 씨앗·룰링 분할의 접기·차트의
   station·접선 판정·결과의 간선 분할이 이 기록을 읽고 스스로 판정하지 않는다 — 짝과 독자, 기록이 드는 점(`at`·`holds`·
@@ -1831,7 +1831,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   `arc_extent` — 원통 옆면과 한 벌, 끝 순서는 담체 축에 대해 CCW)·관통 코너(`X + Y√c`, `rank` 라 재진술이 없다)를
   `corner_of` 한 함수가 읽고, 실패는 `CornerFail` 이 원인별로 이름 짓는다. 못 읽은 면은 «무죄»가 아니라 «모름»이다.
 - **피연산자가 굽은 이름을 나를 수 있다 — 연쇄의 규칙.** 결과가 다음 불리언의 피연산자가 되면 게이트의 그물
-  `CurvedOperandBoundary` 가 트레이서(`loop_triples`)와 같은 물음을 담체로 묻는다(그 이름의 doc). 게이트를 여는 것은 도로를
+  `CurvedOperandBoundary` 가 트레이서(`loop_triples`)와 같은 물음을 담체로 묻는다(그 이름 위의 주석). 게이트를 여는 것은 도로를
   짓는 작업의 마지막 걸음이다 — 「그물이 덮는 만큼만 연다」는 등식은 예외를 만난다(`OnSeam` 디스크 면 · subdivision 의
   직진 정점 · 담체 등가의 동일 surface).
 
