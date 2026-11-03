@@ -302,6 +302,13 @@ pub(crate) fn reconstruct(
         // contains) have exactly two uses; any other count is on its way to the shell guard's
         // reject, and the fallback — this face's wall and its own surface — only keeps
         // construction deterministic until then.
+        //
+        // `(C, C)` is true of no face — a cylinder has no seam edge. Between two different panels
+        // it would be a leftover inner boundary, and this scan, holding surfaces only, cannot tell
+        // the two apart; measured population 0 over the suite, the census, the ignored sweep and
+        // `reject_census`. Carriers derived from the plane the two end names share (above) are
+        // refused by the assembly's self-check as `EdgeCarrierMismatch` — `validate`'s rule is
+        // that the stated carriers are the surfaces of the two faces using the edge.
         let pair = unordered(va.index() as usize, vb.index() as usize);
         let key = EdgeKey::Line(pair);
         if let Some(&e) = edge_of.get(&key) {

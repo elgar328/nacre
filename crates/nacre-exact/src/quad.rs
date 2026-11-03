@@ -753,6 +753,10 @@ impl QuadRoot {
 /// the cylinder within its radius does so in two rulings, symmetric about that plane, so the sign
 /// tells them apart; a wall tangent to the cylinder touches it in one ruling, on that plane — `0`.
 ///
+/// **Asked of the point, never read off a pierce name's root.** The root says which crossing along
+/// the name's own pair's line the point is, and that is a ruling of `w` only when the name pairs
+/// `w` — read off a name of any other pair it is wrong.
+///
 /// `None` is checked-`Rat` overflow only.
 pub fn ruling_side_signed(
     w: &[Rat; 4],

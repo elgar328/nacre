@@ -273,6 +273,11 @@ pub(super) fn split_circles(
 /// cylinder pins passes both splits or neither, rather than one road being taught and the other
 /// forgotten.
 ///
+/// **A cut point keeps the name it arrived under.** On a pencil a point is solved by its own
+/// name's pair and compared as a coordinate on the line, so the order is the same whichever pair's
+/// direction labels its root; re-minting it by the line's own pair names another crossing unless
+/// the root is restated with it.
+///
 /// `on_seg[si]` is drained: a segment nobody crossed is passed through untouched, and the common
 /// case copies nothing.
 pub(super) fn split_segments_at(

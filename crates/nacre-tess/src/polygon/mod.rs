@@ -316,6 +316,9 @@ fn splice(
 /// outside it. That visit's twin slides toward itself — a displacement of zero. Two sectors that
 /// are neither (two straight half-planes) have their rays lying on each other, a touch:
 /// [`TessError::SelfTouchingBoundary`].
+///
+/// Sliding the sector that is not convex as well refuses valid input as
+/// [`TessError::DegenerateRing`] (measured on random figure-eight holes).
 fn pinch(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Twins, TessError> {
     let n = ring.len();
     let visit = |k: usize| (ring[(k + n - 1) % n], ring[k], ring[(k + 1) % n]);

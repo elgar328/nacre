@@ -575,6 +575,15 @@ pub(crate) enum Silence {
     /// sectioned class among them. A pierce point or an arc another record puts on the cylinder has no
     /// recorded side of this class: a road that asks one reads it on the interval road
     /// ([`crate::combinatorics::PiercePoint`]), as it does of a [`Silence::Sectioned`] class.
+    ///
+    /// Measured over the suite and the kit: of the sites that read such a point on the interval
+    /// road, the two asking a pierce point's side (`PierceAt::side`, the pierce arm of
+    /// [`crate::combinatorics::side_of`]) and the vertex-witness arm of `nesting`'s ring-box question
+    /// answer 0 times, and the coordinate-witness arm (`outside_ring_box`) 28 times — all 28 from
+    /// the shape where a filled reading and a true one stand on one cylinder (a bored plate with an
+    /// oblique cube fused on, and a box whose wall runs through the bore —
+    /// `a_plane_along_the_axis_sections_a_cylinder_with_a_whole_rim`). A class that reads one
+    /// cylinder filled and another truly is not built.
     Apart,
     /// The class's plane runs along the axis and cuts the lateral in two rulings, and every face on
     /// it stands apart from every lateral face's box. On that class's own arrangement the solid is

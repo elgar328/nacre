@@ -667,6 +667,11 @@ fn record_root(
 /// table learnt before its line can never be a component's representative, and the representative
 /// does not depend on the order the unions and the lines were learnt in. A named pair keeps the
 /// names exact wherever the line has one.
+///
+/// **A pair, not a rank about the cylinder.** A pair holding a class with no world statement
+/// knows its point by an interval only, and an interval cannot tell a root on the seam's
+/// generator at 0° from one at 359.99°. The sign between two pairs' directions is the sign of two
+/// parallel vectors, so it is always decided.
 #[derive(Default, Debug, Clone)]
 struct Lines {
     /// Every pair of classes of a learnt line → that line's index in `lines`, and which way the

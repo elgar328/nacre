@@ -184,6 +184,8 @@ pub(crate) fn cylinder_gate(
     // ([`hinge_ruling`]) and recorded here, or refused. The hinge is the one world-rational line a
     // class with no world statement can be shown to hold exactly: a turn off the quarters fixes
     // only its own axis line, and an interval proves two points apart, never one.
+    // Two walls whose corner line lies on a fillet's quarter are refused here although their faces
+    // stand apart; past the gate the split refuses the same shape by the same name.
     //
     // An apart class's line with another record is not asked off the lateral: its arrangement
     // draws none of the cylinder's rulings ([`WorkingCyl::draws_rulings`]), and that includes a
@@ -192,6 +194,7 @@ pub(crate) fn cylinder_gate(
     // runs along the axis is apart only where neither the intervals nor the exact reading before
     // its turn part it from the radius ([`class_meet`]); none has been built, so that such a
     // plane's line with another record is safe on a lateral face is a risk, not a proof.
+    // Such a plane has population 0 in the suite, the census, the ignored sweep and the kit.
     let mut hinged: Vec<(usize, SharedRuling)> = Vec::new();
     let mut grazed: Vec<(usize, GrazeLine)> = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
@@ -228,6 +231,15 @@ pub(crate) fn cylinder_gate(
         // sectioned class, which draws that ruling — shown to be it before their common turn
         // ([`graze_ruling`]) and recorded, or refused. A named plane can hold the tangent line too
         // (a turn of 45° puts its points on `x − y = c`), so every record is asked.
+        // A named partner has no record to take: turned back by an angle off the quarters, a named
+        // wall is not rational, so no proof before the turn stands, and the pair is refused. That
+        // refusal is wider than the defect it guards — the defect is a wall face reaching the line,
+        // which makes one point with two names at a ruling's end, while the question is whether the
+        // line lies on a lateral face. Measured: an `x = y` prism across a half cylinder, with the
+        // wall of a box turned 45° tangent at that ruling, puts no face on the line, and with the
+        // refusal off it builds in both orders by derived volume. The narrowed question cannot be
+        // measured yet: a shape whose face does run through the line is refused first, at a corner
+        // where a named face calls a nameless class (`corners.rs`).
         for g in meeting(ci, ClassMeet::Silent(Silence::Grazes)) {
             let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
             let others = meeting(ci, ClassMeet::Cuts)

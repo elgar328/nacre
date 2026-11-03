@@ -370,6 +370,9 @@ pub(crate) fn rim_crossings(
 /// ([`crate::planes::Silence::Grazes`]) lies on one side but for that line — so neither crosses, and
 /// a class with no world statement is not asked. What [`ClassLine`] counts and names an arc's
 /// crossings by.
+///
+/// The record answers where the intervals cannot: a nameless plane's line grazing an arc is a
+/// double root, which the interval road never counts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn arc_crossings_of(
     jd: &Judge<'_, WorkingPlane>,

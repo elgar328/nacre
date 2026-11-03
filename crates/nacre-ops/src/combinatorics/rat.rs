@@ -266,6 +266,10 @@ pub(crate) fn rim_arc_of(
 /// whose box is not a bound on this one. `wc` is the ring's class — an arc's circle centre is where its
 /// axis meets that plane. `None` for a point the precision could not separate, or a class or
 /// circle with no exact description.
+///
+/// Read backwards on a plate whose arc bulges past its corners' hull, the box proves a ray clear
+/// of a face it passes through; `a_pin_under_a_bulging_arc_is_inside_its_box_and_the_ray_down_answers`
+/// locks the reading.
 pub(crate) fn ring_box_points_hp(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

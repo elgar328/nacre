@@ -154,6 +154,10 @@ pub struct TessTriangle {
 /// closing step itself; `edge.vertices[0] == edge.vertices[1]` is the fact to branch on — the
 /// very test `sample_edge` uses. Written here because a consumer that does not know it draws
 /// every uncut rim with a gap in it (measured in the playground's viewport).
+///
+/// A violation planted here can go unseen twice over: a "no degree-1 vertex" check is
+/// structurally blind to a spurious closing step — an extra segment raises a degree and never
+/// leaves a 1 — and a fixture with no arc edge never exercises the closure at all.
 #[derive(Debug, Default)]
 pub struct Tessellation {
     pub vertices: Store<TessVertex>,

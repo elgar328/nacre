@@ -90,6 +90,9 @@ impl WorkingPlane {
     /// sign for the same point is that of `(v − t₂)·((t₀ − t₂) × (t₁ − t₂))`, the same
     /// determinant with `v` carried from the last row to the first — a 4-cycle, odd — so the two
     /// are opposite and the filter's sign is turned here, the one place a side is minted.
+    /// Minted with the filter's own sign, a ring that mixes pierce corners with three-plane corners
+    /// (a plate with one fillet) reads the flipped side as a crossing that is not there and comes
+    /// apart into several pieces.
     pub(crate) fn misses(&self, q: &[WitnessPoint]) -> Option<i8> {
         use nacre_exact::Orient;
         let t = &self.tri_pt3;

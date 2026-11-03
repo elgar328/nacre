@@ -190,6 +190,9 @@ fn circle_spans(
 ///
 /// **A corner of the boundary on the section** is read by the walk's flanks: the ring crosses the
 /// section there, a cut at the corner's own name, or touches it ([`cycle_on_class`]).
+/// The names of that point — the corner's pierce name, its three-plane name, and the pierce names
+/// of the cap and of the class — are one point in the alias table already: the operand
+/// pierce-corner seed binds them (`aliases::seed_from_operands`).
 ///
 /// **No crossing at all** leaves the section wholly in the face or wholly out of it. The section
 /// meets every angle about the axis, so a face whose angles leave one bare
@@ -557,6 +560,8 @@ fn assemble_spans(
 /// **hole** in the opposite θ direction ([`cycle_on_class`], [`corner_on_section`]), and the ∥
 /// road, where a ruling edge lying on the class puts the **face** to one side of the wall — and
 /// they must not spell it twice.
+///
+/// Flipping this sign turns the ⊥ road's lock and the ∥ road's lock red together.
 pub(super) fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
     -(orient_sign * travel_up)
 }
@@ -636,6 +641,10 @@ pub(crate) fn plus_theta_is_above(
 /// ring's direction of travel* — the same sentence `trace_plane::run_body_above` states for a
 /// planar face's on-line run, and it holds for an outer ring, a hole ring, a notch and a reflex
 /// corner alike.
+///
+/// Not "the side opposite the carrier's outward normal": the ring's winding needs no opposite
+/// face, no `edge → face` table and no adjacency cache, and the same walk covers a stepped hole
+/// and a U-shaped one.
 ///
 /// **Derivation.** Write `r̂` for the cylinder's outward radial direction, `m̂` for its axis and `θ̂`
 /// for increasing θ (counter-clockwise about `m̂`, which is what

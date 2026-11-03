@@ -427,6 +427,9 @@ pub(crate) fn node_ruling_side(
 /// `body_side`); on a tangent one it leaves along `wc` itself and bends to the axis on both sides
 /// of the line, so its side is the axis side ([`axis_above`] — second order, a boss's and a
 /// bore's alike).
+///
+/// The two orders are the ladder CGAL's conic arrangement climbs to order two curves that touch:
+/// by the first derivative, then the second.
 #[allow(clippy::too_many_arguments)]
 fn lateral_half_of_plane_pair_lines(
     jd: &Judge<'_, WorkingPlane>,

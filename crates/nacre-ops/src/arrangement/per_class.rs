@@ -45,6 +45,10 @@ pub(super) fn per_class(
     // emits borders one of those curves: a face that did would have no lateral partner, and an
     // edge on an ellipse no curve to carry it. The section's labels still go to the lateral's
     // chart, whose line it is.
+    // Wherever the section closes on this arrangement, it changes no label of the class's faces —
+    // the filled section's argument. Measured in a build without the debug cross-check of the turn on the
+    // circle (which here stops that plant first): closing the section with the opposite ruling
+    // leaves the volume bit-identical.
     // Checked here, where the stage can refuse; every bound is read, a whole circle included,
     // which the polygon rings leave out.
     let along = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections_along(wc));
@@ -433,6 +437,8 @@ impl<'a> ClassEdges<'a> {
             Cow<'a, [MergedCircle]>,
             Vec<(usize, CutRim)>,
         );
+        // **Circles first, then rulings — one step per curve kind, in this order.** The step that
+        // refuses first names the boolean, so which name a refused input carries rests on it.
         let (segs2, arcs, circles2, cut_rims): AfterCircles<'a> =
             match split_circles(jd, cyls, wc, segs, circles, aliases)? {
                 Some((s, c, a, r)) => {
