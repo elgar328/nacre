@@ -64,7 +64,6 @@
 //!
 //! // Union them. Both operands are consumed; the result is the new live solid.
 //! let joined = boolean(&mut model, BoolKind::Fuse, plate, post).unwrap();
-//! model.rebuild_adjacency();
 //!
 //! // The result is a valid closed b-rep, and its volume is the plate plus the part of
 //! // the post standing above it: 4*4*1 + 2*2*2.

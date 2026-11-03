@@ -324,7 +324,7 @@ census·kit 에서 손으로 지은 단위 시험(`an_arc_ends_unaliased_second_
 kit 은 값을 소비하기 전에 늘 복사하고 그 복사를 값의 새 묶음으로 둔다 — 앞부분 안정성 때문이다(`nacre-kit` `build.rs` 모듈
 doc). 그래서 스크립트의 모든 중간값이 끝까지 살아 있고, 살아 있는 솔리드 수는 프로그램 길이에 비례한다(상자를 300 번 옮기면
 살아 있는 것 302, 보이는 것 1). 잰 값(native release): 커널 이동 300 — 90° 11 → 26 ms, 7° 1.24 → 1.54 s(+25%); 판에 컷 60 —
-388 → 478 ms(+23%, 복사와 인접 재구성). 불리언 하나는 살아 있는 수와 무관하다(마지막 컷 13.6 ms 대 12.4 ms). 메시와 내보내기
+388 → 478 ms(+23%, 불리언마다 인접을 다시 짓던 kit 으로 잰 값). 불리언 하나는 살아 있는 수와 무관하다(마지막 컷 13.6 ms 대 12.4 ms). 메시와 내보내기
 정밀화는 범위를 받는다(`tessellate_solids`·`refine_caches_of`; playground 는 값마다 메시를 짓는다).
 
 남은 길은 참조를 **값 기준 번호**(값·몸체·면)로 적는 것이다 — 복사가 끼어들어도 참조가 밀리지 않으므로 마지막 빌드가 «뒤에서
@@ -413,13 +413,6 @@ census 1,084 → 1,169 에 `c` 행 동일·벽시계 잡음 안.
 그 **증명된 경계**로 `misses` 의 필터만 물으면 된다(`orient3d_filter` 의 정확 길 `shared_base` 는 첫 점의 사슬이 비면 서지
 않는다). 정의가 없는 점을 `WitnessPoint`(`base` 가 정의다)에 넣지 않고, 증명된 경계를 `Bounded` 행으로 지어 `det3_iv` 를 부른다
 (`orient3d_iv` 가 `WitnessPoint` 로 하는 일).
-
-### `Model::adj` 는 읽는 쪽이 없다
-
-`Model::rebuild_adjacency` 가 인접 캐시(`Model::adj`)를 다시 짓지만, 그 필드를 읽는 쪽은 topo 자기 단위 테스트
-(`src/tests/adjacency.rs`)뿐이다 — `validate` 는 캐시를 믿지 않고 `Adjacency::rebuild` 로 따로 짓는다. kit 은
-`rebuild_adjacency` 를 일곱 번, ops 는 `apply` 에서 한 번 부른다. 읽는 소비자가 생기면 남기고, 끝내 없으면 필드와 문을
-지운다 — 그때 overview 절대 원칙 5 의 «인접 = 위상 store(진실) + Adjacency(캐시)» 도 고쳐 쓴다.
 
 ### 림 표는 몸체를 가리지 않는다
 

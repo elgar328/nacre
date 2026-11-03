@@ -6,10 +6,10 @@ use crate::topology::{Edge, Face};
 use nacre_store::Handle;
 use std::collections::HashMap;
 
-/// Reverse index over the topology stores — a **cache, not truth**. Rebuilt from scratch by
-/// scanning the stores; discard
-/// and regenerate any time. Validation ("every edge used by exactly two faces
-/// in opposite directions") and adjacency queries read this.
+/// Reverse index over the topology stores — derived, not truth. Built from scratch by scanning the
+/// stores, by the consumer that needs it: validation, for "every edge used by exactly two faces in
+/// opposite directions". The boolean's result check and tess keep their own edge tables, and the
+/// model holds none.
 ///
 /// Uses plain `Vec` rather than the design's `SmallVec<[_; 2]>` / `[_; 4]`: one fewer dependency,
 /// and the inline-storage win is left for a profile to ask for.
@@ -27,9 +27,8 @@ impl Adjacency {
     /// outer + inner loops → half-edges → edges (recording `forward`), and every
     /// bounded edge → its two endpoint vertices. From scratch — cheap, always correct.
     ///
-    /// **Rebuild is the whole story.** There is no incremental path, and nothing needs one:
-    /// [`Model::rebuild_adjacency`] replaces the index wholesale and callers run it once after a
-    /// batch. Build it when a profile asks for it, not before.
+    /// **Rebuild is the whole story.** There is no incremental path, and nothing needs one: each
+    /// consumer builds the index wholesale when it asks.
     pub fn rebuild(model: &Model) -> Adjacency {
         // Only the live model is indexed: superseded cells left in
         // the arena must not pollute edge use-counts. Iterate the stores in

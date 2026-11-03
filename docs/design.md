@@ -241,7 +241,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
   `chain_point_rat`·`chain_dir_rat`.
 - **쓰기 문** — `push_*`(곡면은 진실을 진술하며 들어온다 — 그림과 그것이 아는 것을 함께; `push_motion` 은 intern),
   캐시의 둘째 쓰기 문 `refine_vertex_cache`·`refine_surface_cache`(오르기만 한다 — 정점은 `Ceiling` 을 `Realized` 로),
-  통째 재생 `rebuild_edge_cache`·`rebuild_adjacency`.
+  통째 재생 `rebuild_edge_cache`.
 
 분류·비교·갈래는 진실에 묻고, 표시·tess·경계·측정은 캐시에 묻는다(`Model::surface` doc).
 
@@ -361,7 +361,7 @@ live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋
 
 **상용과 의도적으로 다른 선택 — 근거.** Parasolid·ACIS·OCCT 등 상용 커널은 40년간 "기하 불변 + **위상 가변**(Euler operator로 in-place 편집)"이 정설이다. nacre는 "기하 불변 + **위상도 불변**(append-only supersede)"으로 간다. 가변 위상은 dangling 참조·transient topology numbering·persistent naming 문제를 낳고 그걸 길들이는 데 40년 케이스워크가 필요한데 우리에겐 그 경험이 없다. 불변 위상은 그 버그 부류를 **구조적으로 제거**해 경험 없이도 안전하고, undo·결정론·fuzzing이 공짜이며, Rust 소유권 모델과도 정합적이다(가변 위상 그래프는 borrow checker와 싸워야 해 악명 높게 어렵다). 대가는 메모리인데 2020년대엔 작다. 즉 "상용을 이기는 방식"이 아니라 **"우리 제약(경험 없는 개인+AI 프로젝트·Rust·결정론 중시)에 최적화된 방식"**이다.
 
-**성능·전제 (구현은 프로파일링 후).** 매 순회의 도달가능성 계산이 병목이면 generation/epoch 태그나 reference counting을 **파생 캐시**로 도입할 수 있다(진실=도달가능성, 이건 캐시 — Adjacency가 "진실=위상store, 캐시=역인덱스"인 것과 같은 층 분리). ref-counting은 하향 참조가 acyclic이면 죽음 판정에 바로 쓸 수 있다. **전제**: 도달가능성·ref-counting 둘 다 "Solid→Shell→Face→Loop→Edge→Vertex 부모→자식 단방향, 순환 없음"을 요구한다 — 「위상 층」 절의 위상 참조가 이를 만족하고(모든 셀이 하향 Handle만 보유), 유일한 역방향 인덱스 `Adjacency`는 진실이 아니라 캐시라 무관하다.
+**성능·전제 (구현은 프로파일링 후).** 매 순회의 도달가능성 계산이 병목이면 generation/epoch 태그나 reference counting을 **파생 캐시**로 도입할 수 있다(진실=도달가능성, 이건 캐시 — Adjacency가 "진실=위상store, 파생=역인덱스"인 것과 같은 층 분리). ref-counting은 하향 참조가 acyclic이면 죽음 판정에 바로 쓸 수 있다. **전제**: 도달가능성·ref-counting 둘 다 "Solid→Shell→Face→Loop→Edge→Vertex 부모→자식 단방향, 순환 없음"을 요구한다 — 「위상 층」 절의 위상 참조가 이를 만족하고(모든 셀이 하향 Handle만 보유), 역방향 인덱스 `Adjacency`는 진실이 아니라 모델 밖의 파생 인덱스라 무관하다.
 
 **계획(v2) — 세션 중 메모리 관리: compact보다 재구축(rebuild-from-log) 우선.** 저장·세션·undo 형식을 설계할 때의 방향이며, 그 전에는 구현·상세 확정을 하지 않는다("경계는 지금, 내용은 그때"). 로그가 진실인 설계에선 compact가 주력일 필요가 없다. 배경: append-only라 편집·브랜치를 반복하면 도달불가(dead) 셀이 누적된다.
 - **정리는 compact보다 재구축이 낫다.** compact(dead 셀 물리 제거 + 인덱스 재배치)는 "현재 브랜치의 과거 단계 셀"도 도달불가라 함께 지워 **undo를 죽인다**. 재구축(현재 live 브랜치의 로그를 0부터 재생해 새 조밀 아레나 생성)은 로그에 모든 과거 단계가 있어 **undo 히스토리째로 되살아난다**. 로그가 진실이라 결정론적으로 동일 결과 보장. "dead를 골라 지우기"보다 "live를 로그로 새로 짓기"가 더 단순·안전하며 undo까지 지킨다.
@@ -440,7 +440,7 @@ leaf 에서 이어진다」가 그 노드 위에 선다.
 
 **`Model` 은 진실과 진실에서 유도되는 것을 든다**: 정확 기하의 진실(`surfaces`·`motions`), 위상 store 다섯
 (`vertices`·`edges`·`faces`·`shells`·`solids`)과 `live_solids`, 그리고 진실에서 유도되는 곁표들
-— 인덱스 병렬 캐시 셋(`surface_cache`·`edge_cache`·`vertex_cache`), 역방향 인덱스 `adj`, interning 표,
+— 인덱스 병렬 캐시 셋(`surface_cache`·`edge_cache`·`vertex_cache`), interning 표,
 가속기 `prefix_hp`. tess 와 ops 는 들지 않는다.
 
 **정확 기하는 정점만이 아니라 «면»에도 적용된다.** 비-90° 회전은 평면의 계수를 **무리수로** 만든다 — f64 로 저장된 `Plane{origin, normal, raw}` 은 그 순간 진실이 아니라 **반올림된 상**이고, 그 사실을 적을 곳이 없으면 커널은 기본값으로 "정확하다"고 답하게 된다. 그래서 **곡면의 진실이 자기 `motion` 을 든다**: 유리수 진술은 `motion` 이 이름 짓는 틀에서 말하고, 모션 이력이 그것을 세계로 나른다(`None` = 세계).
@@ -560,7 +560,7 @@ pub struct Adjacency {
 (`Adjacency` 의 값은 평범한 `Vec` 이다 — 다양체 케이스를 힙 없이 담는 `SmallVec<[_; 2]>`/`[_; 4]` 는 의존성 하나를 아끼려 쓰지 않았고, 인라인 저장 이득이 프로파일링으로 정당화되면 도입한다. 정확성과 무관한 최적화다.)
 
 **`validate` 가 지키는 위상 불변.** 참조 무결성이 먼저 돌고(댕글링 핸들이 있으면 거기서 멈춘다), 그
-뒤는 전부 **live 도달가능 셀** 위에서, `model.adj` 를 믿지 않고 **새로 지은** `Adjacency` 로 돈다:
+뒤는 전부 **live 도달가능 셀** 위에서, 스스로 지은 `Adjacency` 로 돈다:
 
 - **루프 닫힘** — 각 루프의 half-edge 가 끝→시작으로 이어진다(`OpenLoop`).
 - **다양체** — 모든 간선은 정확히 두 번, 반대 방향으로 쓰인다(`NonManifoldEdge`·`NonOpposedEdge`);
@@ -578,7 +578,7 @@ pub struct Adjacency {
   (`EulerParity`)와 **G = S − χ/2 ≥ 0** 인지(`NegativeGenus`)를 본다. 뚫린 솔리드는 genus 1 이라 χ = 0
   이고, 커널이 실제로 그것을 만든다. rim 이 `[v, v]` 인 것은 이 셈이 맞게 하기 위해서다.
 
-`Adjacency`는 진실이 아니라 캐시라는 점이 중요하다 — 위상 store들이 진실이고, 인덱스는 **버리고 재생**한다. `adj` 에 쓰는 자리는 `Model::rebuild_adjacency` **하나**이고 그것은 통째 교체다(`edge_uses`/`vertex_edges` 를 증분으로 건드리는 코드 0줄). 소비자가 **일괄 추가 뒤 손으로 한 번** 부른다(*"the cache is otherwise stale"*). 증분 갱신은 **필요가 증명될 때** 짓는다.
+`Adjacency`는 진실이 아니라 파생 인덱스다 — 위상 store들이 진실이고, 인덱스는 쓰는 쪽이 필요할 때 **통째로** 짓는다 — `validate` 가 이 `Adjacency` 를 짓고, 불리언의 결과 검사와 tess 는 제 간선 표를 든다(`edge_uses`/`vertex_edges` 를 증분으로 건드리는 코드 0줄). 모델은 인덱스를 들지 않는다(「가지 말 것」). 증분 갱신은 **필요가 증명될 때** 짓는다.
 
 **Adjacency는 store 전체가 아니라 live 도달가능 셀만 인덱싱한다(supersede 의미론).** `rebuild`는 `model.faces`/`model.edges` 전체가 아니라 `live_solids`에서 도달 가능한 면·엣지만 순회한다 — 그래야 supersede된 옛 면의 엣지가 `edge_uses`를 오염시켜 manifold 검사(엣지 정확히 2회)를 깨뜨리지 않는다. 위상 참조가 하향 단방향·비순환이라 도달가능성 순회는 유한·안전하다. `Adjacency`는 **위상 셀의** 역방향 인덱스이고 캐시이므로 도달가능성 진실을 침해하지 않는다. interning 표 넷(`motion_ids`·`interned` — 키 → `Handle`)은 «값으로 핸들을 찾는» 표라 성격이 다르고, **`Adjacency` 와 달리 도달가능성으로 걸러지지 않는다.** 어느 것도 순회하지 않는다(`HashMap` 의 순서가 결과에 닿으면 안 된다).
 
@@ -645,7 +645,7 @@ pub struct Tessellation {
 순서 짓는다(`polygon::sos`). `by_edge` 가 공유 구조라 이웃 면도 같은 정점을 보므로 crack-free 가 유지된다
 (면이 혼자 경계를 바꾸는 것이 아니라 **간선의 폴리라인**이 바뀐다). 접촉은 어떤 폴리라인도 바꾸기 전에
 **모든** live 면에서 먼저 모으고, 한 간선의 삽입은 뒤 위치부터 한다; 패스는 멱등이다. 간선→면 표는
-모델의 adjacency 가 아니라 live 집합에서 여기서 짓는다(불리언 안에서는 adjacency 가 낡아 있다).
+live 집합에서 여기서 짓는다.
 **한 링이 한 메시 정점을 두 번 지나는 면**(원판에 판 홈의 끝이 테두리에 닿은 캡, 구멍과 보스 자국이 한 꼭짓점에서
 만난 판의 윗면)은 이을 것이 없다 — 두 방문이 이미 한 링의 쌍둥이이고(`polygon::Revisit::Pinch`; 다리가 이어 붙인
 고리의 두 방문도 같은 규칙이 이름 짓는다), 꼬집힌 점이 여럿이면 점마다 한 쌍이다. 각 방문이 상대의 반직선을 하나도
@@ -1149,7 +1149,6 @@ pub struct Model {
     surface_cache: Vec<SurfaceCache>,         // 실현. 아레나가 진실을 든다
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
     given_by_pair: HashMap<[Handle<Surface>; 2], EdgeGiven>, // 담체 쌍 → push 하는 쪽이 실현한 조각
-    adj: Adjacency,                           // 요청 시 재구축(`rebuild_adjacency`)
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
     chain_affines: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
 
@@ -2486,7 +2485,7 @@ nacre 는 solid-first 이며 always-closed(모든 결과가 닫힌 솔리드)를
 pub fn validate(model: &Model) -> Vec<Violation>;   // 빈 벡터 = 유효
 ```
 
-`validate` 는 순수 함수이고 위반을 **전부** 모아 돌려준다. 인접 캐시는 안에서 새로 짓으므로 호출자가 `Model::rebuild_adjacency` 를 먼저 부를 필요가 없다. `nacre-ops` 는 이 크레이트를 dev-의존으로만 갖는다 — 연산이 스스로 부르지 않고, 테스트·속성 테스트·오라클이 연산 직후마다 부른다. 검사하는 것은 `Violation` 의 변종 그대로다:
+`validate` 는 순수 함수이고 위반을 **전부** 모아 돌려준다. 인접 인덱스는 안에서 짓는다. `nacre-ops` 는 이 크레이트를 dev-의존으로만 갖는다 — 연산이 스스로 부르지 않고, 테스트·속성 테스트·오라클이 연산 직후마다 부른다. 검사하는 것은 `Violation` 의 변종 그대로다:
 
 | 변종 | 불변식 |
 |---|---|
@@ -2645,6 +2644,7 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 
 | 하지 말 것 | 이유 | 커밋 |
 |---|---|---|
+| 모델이 인접 인덱스를 캐시로 들기(`Model::adj` + `rebuild_adjacency`) | 읽는 쪽이 topo 자기 시험뿐이었다 — `validate` 는 제 `Adjacency` 를, 조립과 tess 는 제 간선 표를 지었다. 시험과 kit 의 재건 호출 1,500여 곳이 시간만 썼다 | `dcb966bc` |
 | `Vertex` 를 세 평면 단일형으로 | 원통 seam 정점은 «원통 ∩ 캡» 원 위의 한 점이라 세 평면이 없다. 슬롯을 중복으로 채우면 판정의 `D=0` 이 조용한 0 이 된다 — 변종별 enum | — |
 | 향을 든 진실을 interning 열쇠로(`Verbatim(Surface)` — `Surface`·`PlanePoints` 에 `Eq, Hash` 를 붙여 진술 그대로를 열쇠로) | 평면의 진실은 향(`sense`)을 들고 평면의 정체에는 방향이 없다 — 같은 진술이 반대 향으로 오면 한 핸들 + `flipped` 여야 하는데 두 핸들이 된다(스위트에서 이름 없는 `Through` 적중 4 중 1). 열쇠는 향을 뺀 진술이다(`SurfaceKey`) | — |
 | 정점에 정확성 태그(`Constructed`/`Discovered`)를 달기 | 그 태그는 정확성을 뜻한 적이 없다 — 정확 경로로 만든 정점의 좌표도 반올림이다. 구분은 실현 캐시가 든다 | `76a07b2` |

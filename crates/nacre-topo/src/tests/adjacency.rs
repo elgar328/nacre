@@ -1,4 +1,4 @@
-use super::nonmanifold_vertices;
+use super::{Adjacency, nonmanifold_vertices};
 use crate::topology::{Edge, Face, HalfEdge, Loop};
 use crate::{Handle, Model, Orientation, PointCache, Shell, Solid, Vertex};
 use nacre_geom::Plane;
@@ -194,15 +194,15 @@ fn rebuild_indexes_a_shared_edge() {
         outer: shell,
         cavities: vec![],
     });
-    m.rebuild_adjacency();
+    let adj = Adjacency::rebuild(&m);
 
     // shared edge: two uses, opposite flags.
-    let shared = &m.adj.edge_uses[&e_shared];
+    let shared = &adj.edge_uses[&e_shared];
     assert_eq!(shared.len(), 2);
     assert_ne!(shared[0].1, shared[1].1);
     // a private edge: one use.
-    assert_eq!(m.adj.edge_uses[&ea1].len(), 1);
+    assert_eq!(adj.edge_uses[&ea1].len(), 1);
     // v0 is incident to e_shared, ea2, eb2.
-    assert_eq!(m.adj.vertex_edges[&v0].len(), 3);
-    assert_eq!(m.adj.vertex_edges[&v2].len(), 2);
+    assert_eq!(adj.vertex_edges[&v0].len(), 3);
+    assert_eq!(adj.vertex_edges[&v2].len(), 2);
 }

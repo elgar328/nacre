@@ -277,8 +277,7 @@ pub const CYL_TRUTH_EPS: f64 = 8.0 * f64::EPSILON;
 /// Reference integrity runs first and short-circuits: it uses only `.index()` /
 /// `.len()` (never `Store::get`), so it is safe on a corrupt model; the later
 /// checks dereference handles via `get`, which would panic on a dangling one.
-/// The adjacency cache is rebuilt fresh here, so callers need not have called
-/// [`Model::rebuild_adjacency`].
+/// The adjacency index is built here; the model holds none.
 pub fn validate(model: &Model) -> Vec<Violation> {
     let mut out = Vec::new();
 
@@ -292,7 +291,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     // pollute manifold use-counts. Reference integrity ran first (and would have
     // short-circuited on a dangling handle), so this traversal is in-bounds.
     let reach = model.reachable();
-    let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
+    let adj = Adjacency::rebuild(model);
     check_vertex_def_carriers(model, &mut out);
     check_vertex_carriers_at_its_faces(model, &adj, &reach, &mut out);
     check_vertex_names_a_point(model, &mut out);

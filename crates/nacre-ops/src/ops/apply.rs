@@ -1,6 +1,5 @@
 use super::*;
-/// Apply one operation to `model`, returning the handles it created. Does not
-/// rebuild the adjacency cache (do that once after a batch — see [`replay`]).
+/// Apply one operation to `model`, returning the handles it created.
 pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
     match op {
         Operation::DatumPlane { def } => {
@@ -71,7 +70,6 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError> {
         let op = rebind(&model, op)?;
         apply(&mut model, &op)?;
     }
-    model.rebuild_adjacency();
     Ok(model)
 }
 

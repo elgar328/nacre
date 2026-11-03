@@ -581,9 +581,8 @@ pub struct BridgeReport {
 /// touch as `AtEnd`; and insertions on one edge go later-position-first, so earlier positions
 /// stay valid. The pass is idempotent: a polyline that already holds the vertex is left alone.
 ///
-/// **Edge → faces is built here, from the live set**, not read from the model's adjacency —
-/// inside a boolean the adjacency is stale (its callers rebuild it afterwards), and this pass
-/// runs on the model as handed to it.
+/// **Edge → faces is built here, from the live set** — the model holds no reverse index, and this
+/// pass runs on the model as handed to it.
 ///
 /// What it declines, it counts (see [`Declined`]); the population it was measured on is four
 /// planar caps, every touch `Interior` and `Tangent` on a straight edge shared by two planes.

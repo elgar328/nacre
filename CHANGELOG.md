@@ -77,6 +77,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Removed
 
+- **Breaking:** `topo::Model::rebuild_adjacency` and the index it filled, which nothing read: `validate` builds its own `topo::Adjacency`, and the boolean and `tess` keep their own edge tables. Delete the call.
 - **Breaking:** `topo::QuadRoot`: no vertex names a point by it any more.
 - **Breaking:** `ops::OpError::ArcsMeetAtVertex`: the corner it refused now builds.
 - **Breaking:** `judge::WitnessPoint::at_nearest` and `judge::WitnessPoint::at_with_tol`. `at` gives what the first did, axis by axis: a coordinate that is an `f64` has tol `0` whatever the other two are. Nothing in the kernel called the second.

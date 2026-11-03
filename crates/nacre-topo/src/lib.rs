@@ -3,9 +3,9 @@
 //! The cells (`Vertex`/`Edge`/`Face`/`Loop`/`HalfEdge`/`Shell`/`Solid`) refer to each other
 //! and to their surfaces by `Handle`. A [`Model`] holds the **truth** — each surface's exact
 //! statement, each vertex's definition, the motion history, the topology — and what derives
-//! from it: each surface's, edge's and vertex's `f64` realization, the [`Adjacency`] index and
-//! the interning tables. It holds no mesh and no operation log; the model is what replaying a
-//! log builds.
+//! from it: each surface's, edge's and vertex's `f64` realization and the interning tables. It
+//! holds no mesh, no operation log and no reverse index — a consumer that walks adjacency builds an
+//! [`Adjacency`] when it needs one. The model is what replaying a log builds.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 // Test fixtures build models through the cache write doors directly; product code is linted
@@ -541,7 +541,7 @@ pub enum PlanePoints {
 pub use nacre_exact::CylinderDef;
 
 /// The truth and what derives from it: exact geometry and topology stores, each surface's, edge's
-/// and vertex's realization, the adjacency and the interning tables. No mesh, no operation log.
+/// and vertex's realization and the interning tables. No mesh, no operation log.
 #[derive(Debug)]
 pub struct Model {
     // exact geometry (truth)
@@ -642,8 +642,6 @@ pub struct Model {
     /// through [`Model::push_solid`]; `validate`/`Adjacency`/`nacre-step`
     /// traverse [`Model::reachable`], not the whole store.
     live_solids: Vec<Handle<Solid>>,
-    // derived cache (rebuilt on demand)
-    adj: Adjacency,
     /// **A pure accelerator — the one thing here that is neither truth nor cache.**
     ///
     /// A vertex's coordinate is realized by folding its motion chain from its rational base, so a
