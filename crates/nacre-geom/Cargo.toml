@@ -10,16 +10,15 @@ readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-math = { workspace = true }
-# Exact indirect predicates for three-plane vertex sign decisions.
-# A pure numeric layer with no kernel-crate deps, so this edge is acyclic.
-nacre-predicates = { workspace = true }
-# Exact rational scalars, for the Rat twins of the 2-D ring predicates: the design isolates
-# robustness-sharp classification in geom::intersect, and the profile's truth is rational,
-# so the predicates over that truth live here too. nacre-exact sits at the
+# Exact rational scalars, for the 2-D ring predicates: the design isolates robustness-sharp
+# classification in geom::intersect, and the profile's truth is rational, so the predicates
+# over that truth live here too. nacre-exact sits at the
 # bottom of the dependency graph (no nacre-* deps), so this edge is acyclic.
 nacre-exact = { workspace = true }
 
 [dev-dependencies]
 proptest.workspace = true
+# The f64 orientation the rational one is differentially checked against (test-only).
+nacre-predicates = { path = "../nacre-predicates" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

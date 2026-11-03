@@ -1,5 +1,6 @@
 use super::*;
 use nacre_math::Vector3;
+use nacre_predicates::orient2d;
 use proptest::prelude::*;
 
 /// The half-open rule's whole table: a step straddles iff exactly one end is strictly
@@ -60,86 +61,10 @@ fn plane(origin: [f64; 3], normal: [f64; 3]) -> Plane {
     Plane::from_point_normal(Point3::from_array(origin), Vector3::from_array(normal)).unwrap()
 }
 
-// --- golden ---
-
-#[test]
-fn plane_plane_axis_planes_give_z_axis() {
-    // x = 0 (normal +x) ∩ y = 0 (normal +y) = the z-axis.
-    let line = plane_plane(
-        &plane([0.0; 3], [1.0, 0.0, 0.0]),
-        &plane([0.0; 3], [0.0, 1.0, 0.0]),
-    )
-    .unwrap();
-    let dir = line.direction().as_array();
-    assert!(dir[0].abs() < 1e-15 && dir[1].abs() < 1e-15 && dir[2].abs() > 1.0 - 1e-15);
-    let o = line.origin().as_array();
-    assert!(o[0].abs() < 1e-15 && o[1].abs() < 1e-15);
-}
-
-#[test]
-fn plane_plane_parallel_is_none() {
-    // Same normal, different offset — parallel, never meet.
-    assert!(
-        plane_plane(
-            &plane([0.0; 3], [0.0, 0.0, 1.0]),
-            &plane([0.0, 0.0, 3.0], [0.0, 0.0, 1.0])
-        )
-        .is_none()
-    );
-    // Anti-parallel normals are parallel too.
-    assert!(
-        plane_plane(
-            &plane([0.0; 3], [0.0, 0.0, 1.0]),
-            &plane([0.0, 0.0, 3.0], [0.0, 0.0, -1.0])
-        )
-        .is_none()
-    );
-}
-
 // --- proptest ---
-
-fn coord() -> impl Strategy<Value = f64> {
-    -100.0f64..100.0
-}
 
 fn vec3() -> impl Strategy<Value = Vector3> {
     prop::array::uniform3(-1.0f64..1.0).prop_map(Vector3::from_array)
-}
-
-/// Two planes whose normals are well-separated (so their line is
-/// well-conditioned).
-fn two_planes() -> impl Strategy<Value = (Plane, Plane)> {
-    (
-        prop::array::uniform3(coord()),
-        vec3(),
-        prop::array::uniform3(coord()),
-        vec3(),
-    )
-        .prop_filter_map("zero/near-parallel normals", |(o1, n1, o2, n2)| {
-            let a = Plane::from_point_normal(Point3::from_array(o1), n1)?;
-            let b = Plane::from_point_normal(Point3::from_array(o2), n2)?;
-            (a.normal().cross(b.normal()).norm() >= 0.1).then_some((a, b))
-        })
-}
-
-proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
-        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
-    ))]
-    /// The returned line lies on both planes and runs perpendicular to both
-    /// normals.
-    #[test]
-    fn plane_plane_line_lies_on_both((a, b) in two_planes(), t in -100.0f64..100.0) {
-        let line = plane_plane(&a, &b).unwrap();
-        let dir = line.direction();
-        prop_assert!(a.normal().dot(dir).abs() <= 1e-9);
-        prop_assert!(b.normal().dot(dir).abs() <= 1e-9);
-        let p = line.point_at(t);
-        let mag = p.as_array().iter().map(|v| v.abs()).fold(0.0, f64::max);
-        let scale = 1e-9 * (mag + 1.0);
-        prop_assert!(a.distance(p) <= scale);
-        prop_assert!(b.distance(p) <= scale);
-    }
 }
 
 // --- three_planes ---
@@ -209,47 +134,16 @@ proptest! {
 
 }
 
-#[test]
-fn ray_and_segment_face_cross_handoff() {
-    // CCW triangle in z = 0, right-hand normal +z.
-    let tri = [
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([0.0, 1.0, 0.0]),
-    ];
-    // Ray from below, straight up through the interior ⇒ forward Cross(+1).
-    assert_eq!(
-        ray_face_cross(
-            Point3::from_array([0.25, 0.25, -1.0]),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            tri,
-        ),
-        RayCross::Cross(1)
-    );
-    // Ray pointing away from the triangle ⇒ Miss.
-    assert_eq!(
-        ray_face_cross(
-            Point3::from_array([0.25, 0.25, 1.0]),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            tri,
-        ),
-        RayCross::Miss
-    );
-    // Segment straddling the plane through the interior ⇒ Cross(+1).
-    assert_eq!(
-        segment_face_cross(
-            Point3::from_array([0.25, 0.25, -1.0]),
-            Point3::from_array([0.25, 0.25, 1.0]),
-            tri,
-        ),
-        SegCross::Cross(1)
-    );
+// --- ring_self_intersection_rat ---
+
+/// Lift literal coordinates into the truth the predicates judge. `unwrap` is fine here: every
+/// fixture coordinate is a short decimal, comfortably inside the window.
+fn ring(pts: &[[f64; 2]]) -> Vec<[Rat; 2]> {
+    pts.iter().map(|p| [d(p[0]), d(p[1])]).collect()
 }
 
-// --- ring_self_intersection ---
-
-fn ring(pts: &[[f64; 2]]) -> Vec<Point2> {
-    pts.iter().map(|p| Point2::from_array(*p)).collect()
+fn d(x: f64) -> Rat {
+    Rat::from_decimal(x).unwrap()
 }
 
 /// The net that catches the likeliest way to get this wrong: edges `0` and `n-1` share a point
@@ -258,9 +152,9 @@ fn ring(pts: &[[f64; 2]]) -> Vec<Point2> {
 #[test]
 fn simple_polygons_have_no_self_intersection() {
     let square = ring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
-    assert_eq!(ring_self_intersection(&square), None);
+    assert_eq!(ring_self_intersection_rat(&square), None);
     let triangle = ring(&[[0.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
-    assert_eq!(ring_self_intersection(&triangle), None);
+    assert_eq!(ring_self_intersection_rat(&triangle), None);
     // Reflex corner (an L).
     let l = ring(&[
         [0.0, 0.0],
@@ -270,17 +164,17 @@ fn simple_polygons_have_no_self_intersection() {
         [2.0, 4.0],
         [0.0, 4.0],
     ]);
-    assert_eq!(ring_self_intersection(&l), None);
+    assert_eq!(ring_self_intersection_rat(&l), None);
     // A flat corner: `(2,0)` sits mid-run on a straight edge. Collinear but not overlapping.
     let flat = ring(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
-    assert_eq!(ring_self_intersection(&flat), None);
+    assert_eq!(ring_self_intersection_rat(&flat), None);
 }
 
 #[test]
 fn a_bowtie_crosses_itself() {
     let bowtie = ring(&[[0.0, 0.0], [4.0, 4.0], [4.0, 0.0], [0.0, 4.0]]);
     // Edges 0 (`(0,0)→(4,4)`) and 2 (`(4,0)→(0,4)`) are the crossing pair.
-    assert_eq!(ring_self_intersection(&bowtie), Some((0, 2)));
+    assert_eq!(ring_self_intersection_rat(&bowtie), Some((0, 2)));
 }
 
 /// A touch is as fatal as a crossing: the ring has no strict inside at the pinch point.
@@ -294,7 +188,7 @@ fn a_pinch_touching_without_crossing_is_rejected() {
         [2.0, 2.0],
         [0.0, 4.0],
     ]);
-    assert!(ring_self_intersection(&pinch).is_some());
+    assert!(ring_self_intersection_rat(&pinch).is_some());
 }
 
 /// A spike shorter than the edge it retraces, and one longer. Neither *isolates* the two-sided
@@ -304,18 +198,18 @@ fn a_pinch_touching_without_crossing_is_rejected() {
 #[test]
 fn a_spike_doubling_back_is_rejected_either_length() {
     let short = ring(&[[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 4.0]]);
-    assert!(ring_self_intersection(&short).is_some());
+    assert!(ring_self_intersection_rat(&short).is_some());
     let long = ring(&[[0.0, 0.0], [4.0, 0.0], [-2.0, 0.0], [0.0, 4.0]]);
-    assert!(ring_self_intersection(&long).is_some());
+    assert!(ring_self_intersection_rat(&long).is_some());
 }
 
 #[test]
 fn a_repeated_consecutive_point_is_a_zero_length_edge() {
     let dup = ring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
-    assert_eq!(ring_self_intersection(&dup), Some((1, 1)));
+    assert_eq!(ring_self_intersection_rat(&dup), Some((1, 1)));
     // Also across the wrap: the last point repeats the first.
     let closed = ring(&[[0.0, 0.0], [4.0, 0.0], [0.0, 4.0], [0.0, 0.0]]);
-    assert_eq!(ring_self_intersection(&closed), Some((3, 3)));
+    assert_eq!(ring_self_intersection_rat(&closed), Some((3, 3)));
 }
 
 /// A ring of collinear points encloses nothing, and a signed area cannot orient it. It falls
@@ -328,20 +222,10 @@ fn a_repeated_consecutive_point_is_a_zero_length_edge() {
 #[test]
 fn a_zero_area_ring_is_rejected() {
     let flat = ring(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]);
-    assert!(ring_self_intersection(&flat).is_some());
+    assert!(ring_self_intersection_rat(&flat).is_some());
 }
 
-// --- the rational twins ---
-
-/// Lift literal coordinates into the truth the twins judge. `unwrap` is fine here: every
-/// fixture coordinate is a short decimal, comfortably inside the window.
-fn rring(pts: &[[f64; 2]]) -> Vec<[Rat; 2]> {
-    pts.iter().map(|p| [d(p[0]), d(p[1])]).collect()
-}
-
-fn d(x: f64) -> Rat {
-    Rat::from_decimal(x).unwrap()
-}
+// --- the rational sign ---
 
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
@@ -359,45 +243,10 @@ proptest! {
         let sign = (sign > 0.0) as i8 - (sign < 0.0) as i8;
         prop_assert_eq!(sign, orient2d_rat(r(0), r(1), r(2)));
     }
-
-    /// The twins are the same walkers. On exact (integer) coordinates every branch condition
-    /// evaluates identically in f64 and in `Rat`, so all three must return the very same
-    /// values — indices included — on any input, simple or not.
-    #[test]
-    fn the_rational_walkers_answer_what_the_f64_walkers_do(
-        pts in prop::collection::vec(prop::array::uniform2(-8i32..8), 3..7),
-        probe in prop::array::uniform2(-8i32..8),
-    ) {
-        let f: Vec<Point2> = pts.iter().map(|p| Point2::from_array([p[0] as f64, p[1] as f64])).collect();
-        let r: Vec<[Rat; 2]> = pts.iter().map(|p| [Rat::from_int(p[0] as i128), Rat::from_int(p[1] as i128)]).collect();
-        prop_assert_eq!(ring_self_intersection(&f), ring_self_intersection_rat(&r));
-        let (fa, fb) = f.split_at(f.len() / 2);
-        let (ra, rb) = r.split_at(r.len() / 2);
-        prop_assert_eq!(rings_cross(fa, fb), rings_cross_rat(ra, rb));
-        let fp = Point2::from_array([probe[0] as f64, probe[1] as f64]);
-        let rp = [Rat::from_int(probe[0] as i128), Rat::from_int(probe[1] as i128)];
-        prop_assert_eq!(point_in_ring_2d(fp, &f), point_in_ring_2d_rat(rp, &r));
-    }
 }
 
-/// The fixture gallery above, re-judged on the truth — same verdicts, same indices.
-#[test]
-fn the_rational_self_intersection_matches_the_gallery() {
-    let flat = rring(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
-    assert_eq!(
-        ring_self_intersection_rat(&flat),
-        None,
-        "a flat corner is legal"
-    );
-    let bowtie = rring(&[[0.0, 0.0], [4.0, 4.0], [4.0, 0.0], [0.0, 4.0]]);
-    assert_eq!(ring_self_intersection_rat(&bowtie), Some((0, 2)));
-    let dup = rring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
-    assert_eq!(ring_self_intersection_rat(&dup), Some((1, 1)));
-    let spike = rring(&[[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 4.0]]);
-    assert!(ring_self_intersection_rat(&spike).is_some());
-}
-
-/// **The twins exist because the two worlds disagree — here is the disagreement.**
+/// **The ring predicates judge the rational truth because the two worlds disagree — here is the
+/// disagreement.**
 ///
 /// `(0, 0.1) → (0.1, 0.2) → (0.2, 0.3)` is collinear in the decimals the author wrote
 /// (slope one), but not in the binary values the f64s hold: `0.2` is exactly `2·0.1bin`,

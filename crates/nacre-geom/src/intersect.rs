@@ -1,58 +1,18 @@
 //! Closed-form intersections among analytic surfaces.
 //!
 //! This module holds the closed-form intersections and the ring predicates over straight steps,
-//! kept as `pub mod` so callers write `intersect::plane_plane(..)`. It is not the one home of
+//! kept as `pub mod` so callers write `intersect::three_planes(..)`. It is not the one home of
 //! robustness-sensitive code: rings with arcs are [`crate::mixed`]'s. The intersections are the
-//! **construction (coordinate)** side of the precision split: the returned `Line`/`Point3` are f64
-//! *caches* — the defining surfaces are the truth. So near-degenerate inputs are gated by a
-//! conditioning threshold (there is no exact answer to cache). The **sign** decisions here are
-//! exact: the f64 crossings and ring predicates take theirs from `nacre-predicates`, the `_rat`
-//! twins from `nacre_exact::orient2d_rat`.
+//! **construction (coordinate)** side of the precision split: the returned `Point3` is an f64
+//! *cache* — the defining surfaces are the truth. So near-degenerate inputs are gated by a
+//! conditioning threshold (there is no exact answer to cache). The ring predicates decide on the
+//! rational truth, by `nacre_exact::orient2d_rat`'s exact signs.
 
 use crate::{Line, Plane};
-use nacre_math::{Point2, Point3, Vector3};
+use nacre_math::Point3;
 
-/// The exact ray/segment vs triangle crossing outcomes, re-exported so callers
-/// (`nacre-ops`) reach them through geom without depending on `nacre-predicates`
-/// directly (the same `topo → geom → predicates` layering as the surface
-/// handoffs).
-pub use nacre_predicates::{RayCross, SegCross, orient2d};
-// Re-exported for the same reason: `nacre-ops` consumes the rational ring predicates below and
-// states their coordinates in `Rat` without needing its own view of the sign primitive.
+// The types and the sign the rational ring predicates below are stated in.
 pub use nacre_exact::{Orient, Rat, orient2d_rat};
-
-/// `sin²θ` below which two plane normals count as parallel. Unit normals make
-/// `‖n1 × n2‖² = sin²θ ∈ [0, 1]`, so this absolute cutoff is scale-free.
-const PARALLEL_EPS: f64 = 1e-16;
-
-/// The line where two planes meet, or `None` if they are parallel (or
-/// coincident).
-///
-/// Closed form — no SSI march or spline cache. Direction is
-/// `n1 × n2`; the base point is the point of the line closest to the origin.
-/// Returns a bare [`Line`] (the closed form), not a marched approximation — the
-/// shape for those is an open question this crate cannot spell (see the crate doc).
-///
-/// The base point is `p0 = (h1·(n2×d) + h2·(d×n1)) / (d·d)` with `d = n1×n2` and
-/// `hi = ni·originᵢ`; one verifies `n1·p0 = h1` and `n2·p0 = h2` (using
-/// `n1·(n2×d) = ‖d‖²` and `n1·(d×n1) = 0`), so `p0` lies on both planes, and
-/// `p0 ⟂ d` makes it the closest to the origin.
-pub fn plane_plane(a: &Plane, b: &Plane) -> Option<Line> {
-    let n1 = a.normal();
-    let n2 = b.normal();
-    let d = n1.cross(n2);
-    let dd = d.norm_squared();
-    if dd <= PARALLEL_EPS {
-        return None; // parallel or coincident — no unique line
-    }
-    // Plane i is `nᵢ·X = hᵢ` with `hᵢ = nᵢ·originᵢ`.
-    let h1 = n1.dot(a.origin() - Point3::origin());
-    let h2 = n2.dot(b.origin() - Point3::origin());
-    let base = Point3::origin() + (h1 * n2.cross(d) + h2 * d.cross(n1)) / dd;
-    // `dd > 0` guarantees `d` is nonzero, so this is always `Some`; keep the
-    // `Option` rather than unwrapping (defensive).
-    Line::from_point_direction(base, d)
-}
 
 /// The point where a line crosses a plane — `p = l(t)` with
 /// `t = n·(o_p − o_l) / (n·d)`. `None` when `n·d` is exactly zero (the line runs in or
@@ -111,32 +71,6 @@ pub fn three_planes(a: &Plane, b: &Plane, c: &Plane) -> Option<Point3> {
     Some(Point3::origin() + num / det)
 }
 
-/// Exact forward-ray/triangle crossing for kernel types — the geom→predicates
-/// handoff for [`nacre_predicates::ray_triangle_cross`] (the
-/// point-in-polyhedron test). `d` is the ray direction; `tri` is a single triangle
-/// (a caller triangulates a face into these). See [`RayCross`] for the outcome.
-pub fn ray_face_cross(p: Point3, d: Vector3, tri: [Point3; 3]) -> RayCross {
-    nacre_predicates::ray_triangle_cross(
-        p.as_array(),
-        d.as_array(),
-        tri[0].as_array(),
-        tri[1].as_array(),
-        tri[2].as_array(),
-    )
-}
-
-/// Exact segment/triangle crossing for kernel types — the handoff for
-/// [`nacre_predicates::segment_triangle_cross`]. See [`SegCross`].
-pub fn segment_face_cross(a: Point3, b: Point3, tri: [Point3; 3]) -> SegCross {
-    nacre_predicates::segment_triangle_cross(
-        a.as_array(),
-        b.as_array(),
-        tri[0].as_array(),
-        tri[1].as_array(),
-        tri[2].as_array(),
-    )
-}
-
 /// Where a point sits relative to a closed 2-D ring.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RingSide {
@@ -146,59 +80,8 @@ pub enum RingSide {
     OnBoundary,
 }
 
-/// Whether `p` is inside `ring`, decided by **exact** signs only (`orient2d`), never by a
-/// tolerance.
-///
-/// Crossing parity along a ray: an edge that straddles `p`'s horizontal line contributes a
-/// crossing when `p` lies on the correct side of it, which `orient2d` answers exactly. The
-/// half-open straddle test (`>` on one end, `<=` on the other) is what keeps a vertex exactly on
-/// the ray from being counted twice.
-///
-/// The ring is assumed **simple** (no self-intersections); for such a ring parity and winding
-/// agree, so this needs no fill rule. A self-intersecting ring is out of contract and nothing here
-/// checks it — run [`ring_self_intersection`] first. This is the `f64` twin of
-/// [`point_in_ring_2d_rat`], held to the same answers on integer coordinates by
-/// `the_rational_walkers_answer_what_the_f64_walkers_do`; a sketch or profile is judged on its
-/// rational truth instead ([`crate::mixed::point_in_mixed_ring`]).
-pub fn point_in_ring_2d(p: Point2, ring: &[Point2]) -> RingSide {
-    let n = ring.len();
-    if n < 3 {
-        return RingSide::Outside;
-    }
-    let pa = p.as_array();
-    let sgn = |v: f64, at: f64| {
-        if v > at {
-            Orient::Positive
-        } else if v < at {
-            Orient::Negative
-        } else {
-            Orient::Zero
-        }
-    };
-    let mut inside = false;
-    for i in 0..n {
-        let (a, b) = (ring[i].as_array(), ring[(i + 1) % n].as_array());
-        let side = orient2d(a, b, pa);
-        if side == 0.0 && on_segment_2d(a, b, pa) {
-            return RingSide::OnBoundary;
-        }
-        match ray_step_crossing(sgn(a[1], pa[1]), sgn(b[1], pa[1]), sgn(side, 0.0)) {
-            Some(true) => inside = !inside,
-            Some(false) => {}
-            // A straddling step through the probe is on the segment — already answered above;
-            // the rule's own word for it is the same.
-            None => return RingSide::OnBoundary,
-        }
-    }
-    if inside {
-        RingSide::Inside
-    } else {
-        RingSide::Outside
-    }
-}
-
-/// **The rightward ray's crossing rule, spelled once** — for [`point_in_ring_2d`],
-/// [`point_in_ring_2d_rat`], and the kernel's mixed (arc-bearing) ring parity above this crate,
+/// **The rightward ray's crossing rule, spelled once** — for [`point_in_ring_2d_rat`] and the
+/// kernel's mixed (arc-bearing) ring parity above this crate,
 /// which reads it lazily through [`ray_straddle`].
 ///
 /// A ring step `a → b` against the probe's ray `{y = p.y, x > p.x}`: `ya` and `yb` are the signs
@@ -232,134 +115,28 @@ pub fn ray_step_crossing(ya: Orient, yb: Orient, side: Orient) -> Option<bool> {
     }
 }
 
-/// Whether two closed rings meet at all — a proper crossing or a mere touch. Exact.
-///
-/// A profile's rings must be disjoint (a hole lies strictly inside the outer ring and strictly
-/// outside its siblings), so "touching" is a failure just as much as "crossing"; the two are not
-/// worth distinguishing here. `O(n·m)`, which is the right complexity for sketch-sized rings.
-pub fn rings_cross(a: &[Point2], b: &[Point2]) -> bool {
-    let (n, m) = (a.len(), b.len());
-    if n < 2 || m < 2 {
-        return false;
-    }
-    for i in 0..n {
-        let (p1, p2) = (a[i].as_array(), a[(i + 1) % n].as_array());
-        for j in 0..m {
-            let (q1, q2) = (b[j].as_array(), b[(j + 1) % m].as_array());
-            if segments_meet_2d(p1, p2, q1, q2) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// The first pair of edge indices where a closed ring meets itself, or `None` if the ring is a
-/// **simple polygon**. Exact — every decision is an `orient2d` sign.
-///
-/// [`rings_cross`] cannot answer this for a ring against itself: consecutive edges share an
-/// endpoint, so it would report every ring. The two cases are therefore split here.
-///
-/// - **Non-adjacent edges**: any contact at all is a self-intersection. A mere touch counts —
-///   a ring that pinches through a point has no strict inside there, so even-odd is not the
-///   author's meaning of it.
-/// - **Adjacent edges** share one endpoint legitimately. They fail only when *collinear and
-///   overlapping* — a spike that doubles back. Both directions must be tested: the doubling-back
-///   edge may be longer than the one it retraces, in which case it is the *first* edge's far
-///   endpoint that lies inside the second.
-/// - A **zero-length edge** (a repeated consecutive point) is a failure of its own, reported as
-///   `(i, i)`. It leaves a degenerate edge in the topology, and it breaks the adjacency rule's
-///   premise that neighbours share exactly one point.
-///
-/// A merely *collinear* vertex (a flat corner in the middle of a straight run) is **not** an
-/// error: the neighbours are collinear but do not overlap.
-///
-/// A ring that passes is a simple polygon, and a simple polygon has nonzero area — which is the
-/// unstated precondition of every winding decision taken from a signed area.
-///
-/// `O(n²)`, the right complexity for sketch-sized rings.
-pub fn ring_self_intersection(ring: &[Point2]) -> Option<(usize, usize)> {
-    let n = ring.len();
-    if n < 3 {
-        return None;
-    }
-    let pt = |i: usize| ring[i % n].as_array();
-    for i in 0..n {
-        if pt(i) == pt(i + 1) {
-            return Some((i, i));
-        }
-    }
-    // Adjacency is cyclic: edge `n-1` ends where edge `0` begins, so that pair shares a point too.
-    // Missing this would report every ring as self-intersecting.
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let hit = if j == i + 1 {
-                spike(pt(i), pt(i + 1), pt(i + 2))
-            } else if i == 0 && j == n - 1 {
-                spike(pt(1), pt(0), pt(n - 1))
-            } else {
-                segments_meet_2d(pt(i), pt(i + 1), pt(j), pt(j + 1))
-            };
-            if hit {
-                return Some((i, j));
-            }
-        }
-    }
-    None
-}
-
-/// Whether the edges `[u, s]` and `[s, v]`, which share `s`, double back over one another.
-fn spike(u: [f64; 2], s: [f64; 2], v: [f64; 2]) -> bool {
-    orient2d(u, s, v) == 0.0 && (on_segment_2d(u, s, v) || on_segment_2d(s, v, u))
-}
-
-/// Exact segment/segment test: `true` for a proper crossing **or** any touching contact.
-fn segments_meet_2d(p1: [f64; 2], p2: [f64; 2], q1: [f64; 2], q2: [f64; 2]) -> bool {
-    let d1 = orient2d(q1, q2, p1);
-    let d2 = orient2d(q1, q2, p2);
-    let d3 = orient2d(p1, p2, q1);
-    let d4 = orient2d(p1, p2, q2);
-    // Proper crossing: each segment separates the other's endpoints.
-    if ((d1 > 0.0) != (d2 > 0.0))
-        && ((d3 > 0.0) != (d4 > 0.0))
-        && d1 != 0.0
-        && d2 != 0.0
-        && d3 != 0.0
-        && d4 != 0.0
-    {
-        return true;
-    }
-    // Collinear or endpoint contact.
-    (d1 == 0.0 && on_segment_2d(q1, q2, p1))
-        || (d2 == 0.0 && on_segment_2d(q1, q2, p2))
-        || (d3 == 0.0 && on_segment_2d(p1, p2, q1))
-        || (d4 == 0.0 && on_segment_2d(p1, p2, q2))
-}
-
-/// Whether the **collinear** point `p` lies within segment `ab`'s extent (callers check
-/// collinearity with `orient2d` first, so this is a bounding-box question only).
-fn on_segment_2d(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> bool {
-    p[0] >= a[0].min(b[0])
-        && p[0] <= a[0].max(b[0])
-        && p[1] >= a[1].min(b[1])
-        && p[1] <= a[1].max(b[1])
-}
-
 // ---------------------------------------------------------------------------
-// Rational twins of the ring predicates.
+// The ring predicates, on the rational truth.
 //
 // A profile's truth is the rational the author's decimal spelled (`Rat::from_decimal`), and the
 // f64 realization can carry a *different sign*: three points collinear in decimal land a hair off
 // the line in binary. `Profile2d::check` and `sketch::from_rings` therefore judge the truth, through
-// `mixed`'s arc-bearing ports of these; the twins serve `combinatorics::in_faces` and are what
-// `mixed` is held to — verbatim ports of the f64 versions above (which stay
-// as the side the integer-lattice proptest compares these against), with `orient2d` swapped for the
-// total `nacre_exact::orient2d_rat` and f64 comparisons for `Rat`'s exact `Ord`. Everything
-// else in the originals is comparison, min/max, and array equality, so nothing changes meaning.
+// `mixed`'s arc-bearing ports of these. `point_in_ring_2d_rat` serves `combinatorics::in_faces`;
+// all three are what `mixed` is held to (`tests/mixed.rs`). Every sign is the total
+// `nacre_exact::orient2d_rat` and every comparison `Rat`'s exact `Ord`.
 // ---------------------------------------------------------------------------
 
-/// [`point_in_ring_2d`] over the ring's rational truth. Same crossing-parity contract, including
-/// the assumption that the ring is simple.
+/// Whether `p` is inside `ring`, decided by **exact** signs only, never by a tolerance.
+///
+/// Crossing parity along a ray: an edge that straddles `p`'s horizontal line contributes a
+/// crossing when `p` lies on the correct side of it, which `orient2d_rat` answers exactly. The
+/// half-open straddle test ([`ray_straddle`]) is what keeps a vertex exactly on the ray from being
+/// counted twice.
+///
+/// The ring is assumed **simple** (no self-intersections); for such a ring parity and winding
+/// agree, so this needs no fill rule. A self-intersecting ring is out of contract and nothing here
+/// checks it — run [`ring_self_intersection_rat`] first. A sketch or profile is judged through
+/// [`crate::mixed::point_in_mixed_ring`], which carries arcs.
 pub fn point_in_ring_2d_rat(p: [Rat; 2], ring: &[[Rat; 2]]) -> RingSide {
     let n = ring.len();
     if n < 3 {
@@ -394,7 +171,11 @@ pub fn point_in_ring_2d_rat(p: [Rat; 2], ring: &[[Rat; 2]]) -> RingSide {
     }
 }
 
-/// [`rings_cross`] over the rings' rational truth — any contact at all, proper or touching.
+/// Whether two closed rings meet at all — a proper crossing or a mere touch. Exact.
+///
+/// A profile's rings must be disjoint (a hole lies strictly inside the outer ring and strictly
+/// outside its siblings), so "touching" is a failure just as much as "crossing"; the two are not
+/// worth distinguishing here. `O(n·m)`, which is the right complexity for sketch-sized rings.
 pub fn rings_cross_rat(a: &[[Rat; 2]], b: &[[Rat; 2]]) -> bool {
     let (n, m) = (a.len(), b.len());
     if n < 2 || m < 2 {
@@ -411,9 +192,30 @@ pub fn rings_cross_rat(a: &[[Rat; 2]], b: &[[Rat; 2]]) -> bool {
     false
 }
 
-/// [`ring_self_intersection`] over the ring's rational truth — same case split (zero-length
-/// edge first, then cyclic-adjacent spikes, then any contact between non-adjacent edges), same
-/// "a flat corner is not an error" stance.
+/// The first pair of edge indices where a closed ring meets itself, or `None` if the ring is a
+/// **simple polygon**. Exact — every decision is an `orient2d_rat` sign.
+///
+/// [`rings_cross_rat`] cannot answer this for a ring against itself: consecutive edges share an
+/// endpoint, so it would report every ring. The cases are therefore split here, in this order:
+///
+/// - A **zero-length edge** (a repeated consecutive point) is a failure of its own, reported as
+///   `(i, i)`. It leaves a degenerate edge in the topology, and it breaks the adjacency rule's
+///   premise that neighbours share exactly one point.
+/// - **Adjacent edges** share one endpoint legitimately. They fail only when *collinear and
+///   overlapping* — a spike that doubles back. Both directions must be tested: the doubling-back
+///   edge may be longer than the one it retraces, in which case it is the *first* edge's far
+///   endpoint that lies inside the second.
+/// - **Non-adjacent edges**: any contact at all is a self-intersection. A mere touch counts —
+///   a ring that pinches through a point has no strict inside there, so even-odd is not the
+///   author's meaning of it.
+///
+/// A merely *collinear* vertex (a flat corner in the middle of a straight run) is **not** an
+/// error: the neighbours are collinear but do not overlap.
+///
+/// A ring that passes is a simple polygon, and a simple polygon has nonzero area — which is the
+/// unstated precondition of every winding decision taken from a signed area.
+///
+/// `O(n²)`, the right complexity for sketch-sized rings.
 pub fn ring_self_intersection_rat(ring: &[[Rat; 2]]) -> Option<(usize, usize)> {
     let n = ring.len();
     if n < 3 {
@@ -458,12 +260,12 @@ pub fn flat_corner(prev: [Rat; 2], p: [Rat; 2], next: [Rat; 2]) -> bool {
     p != prev && p != next && orient2d_rat(prev, p, next) == 0 && on_segment_2d_rat(prev, next, p)
 }
 
-/// [`spike`]'s rational twin.
+/// Whether the edges `[u, s]` and `[s, v]`, which share `s`, double back over one another.
 pub(crate) fn spike_rat(u: [Rat; 2], s: [Rat; 2], v: [Rat; 2]) -> bool {
     orient2d_rat(u, s, v) == 0 && (on_segment_2d_rat(u, s, v) || on_segment_2d_rat(s, v, u))
 }
 
-/// [`segments_meet_2d`]'s rational twin: proper crossing or any touching contact.
+/// Exact segment/segment test: `true` for a proper crossing **or** any touching contact.
 pub(crate) fn segments_meet_2d_rat(p1: [Rat; 2], p2: [Rat; 2], q1: [Rat; 2], q2: [Rat; 2]) -> bool {
     let d1 = orient2d_rat(q1, q2, p1);
     let d2 = orient2d_rat(q1, q2, p2);
@@ -479,7 +281,8 @@ pub(crate) fn segments_meet_2d_rat(p1: [Rat; 2], p2: [Rat; 2], q1: [Rat; 2], q2:
         || (d4 == 0 && on_segment_2d_rat(p1, p2, q2))
 }
 
-/// [`on_segment_2d`]'s rational twin — the **collinear** point `p` within `ab`'s box.
+/// Whether the **collinear** point `p` lies within segment `ab`'s extent (callers check
+/// collinearity with `orient2d_rat` first, so this is a bounding-box question only).
 pub(crate) fn on_segment_2d_rat(a: [Rat; 2], b: [Rat; 2], p: [Rat; 2]) -> bool {
     p[0] >= a[0].min(b[0])
         && p[0] <= a[0].max(b[0])

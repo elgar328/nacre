@@ -23,7 +23,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 │                    #   + cylinder(두 평면이 원통과 만나는 점 PiercePoint 와 그 질문)
 │                    #   ← exact · predicates · math
 ├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect)·호가 낀 링의 정확 술어(mixed)
-│                    #   ← math · predicates · exact(Rat 링 술어 쌍둥이)
+│                    #   ← math · exact(유리수 링 술어)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model(진실과 그 캐시)   ← store · geom · math · exact
 ├── nacre-tess       # tessellation: 출처 태그   ← store · topo · geom · math · predicates · props(OBJ 의 면 법선)
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
@@ -56,7 +56,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **파사드 `nacre`.** 사용자는 파사드 하나만 의존하고, 약속하는 API 는 파사드뿐이다(`crates/LAYER-README.md`). 스크립트 앱·편의 레이어·디버그 뷰어는 워크스페이스 밖에 둔다.
 - 층을 **모듈로** 재수출하고(`nacre::exact`·`geom`·`math`·`ops`·`props`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude` 에 담는다. **평면(flat) 재수출은 하지 않는다** — 층 분리가 이 설계의 뼈대이고, 같은 맨이름이 층마다 다른 것을 뜻한다(`Surface` 의 두 철자 — 「타입이 사는 자리 — 규칙」).
-- **공개 API 에 나오는 아래 층의 타입은 누군가 재수출한다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }` 가 exact 타입을 싣으므로 파사드가 `nacre-exact` 를 재수출한다 — 없으면 소비자가 그 op 를 만들 수조차 없다(`the_whole_pipeline_runs_through_the_facade_alone` 이 컴파일로 잠근다). `nacre-judge`·`nacre-predicates` 의 이름은 그것을 싣는 층이 스스로 재수출하므로(`nacre_ops::{Decision, Evidence, Site}`, `nacre_geom::intersect::{RayCross, SegCross, orient2d}`) 파사드는 두 크레이트를 모듈로 내보내지 않는다 — 발행은 필요하다(ops·geom 의 하드 의존).
+- **공개 API 에 나오는 아래 층의 타입은 누군가 재수출한다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }` 가 exact 타입을 싣으므로 파사드가 `nacre-exact` 를 재수출한다 — 없으면 소비자가 그 op 를 만들 수조차 없다(`the_whole_pipeline_runs_through_the_facade_alone` 이 컴파일로 잠근다). `nacre-judge` 의 이름은 그것을 싣는 ops 가 재수출하고(`nacre_ops::{Decision, Evidence, Site}`) `nacre-predicates` 의 타입은 공개 API 에 나오지 않으므로, 파사드는 두 크레이트를 모듈로 내보내지 않는다 — 발행은 필요하다(judge 는 ops 의, predicates 는 judge·tess 의 하드 의존).
 - **prelude 의 기준은 확인 가능한 성질이다**: «`Operation` 의 모든 변종이 prelude 이름만으로 만들어진다». 내용은 실제 소비자의 import 와, 그 소비자보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)의 합집합이다 — 낡은 소비자만 보면 최신 API 가 빠진다.
 - **문서 예제와 예제는 프로덕션 API 만 쓴다**(`test-util` 이 필요한 예제는 독자가 실행할 수 없다). 예제는 파사드에 둔다 — 층 크레이트의 예제도 crates.io 에 실려 독자가 따라 하는 길이 된다. 검증은 «`nacre::` 경로만으로 끝까지 가기»다: 파사드 doctest, `crates/nacre/tests/facade.rs`, `crates/nacre/examples/plate_with_bore.rs` — 재수출이 빠지면 컴파일이 깨진다.
 - **기능.** `parallel`(기본 on)은 `nacre-ops/parallel` 로 전달되고 judge 의 고정밀 캐시를 `Sync` 로 만드는 스위치이기도 하다; `test-util` 은 topo 의 시험 전용 문과 push 계측을 전달한다 — 전달은 파사드 `Cargo.toml` 의 주석, 그 문과 계측(`WIDE_PLANES`·
@@ -154,8 +154,8 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 ### 수의 이름 — 접미사는 결과가 어떤 수이고 얼마나 믿을 수 있는지를 말한다
 
 같은 값의 다른 숫자 판이 있거나 정확한 값에서 수를 만드는 함수는 이름 끝이 그 결과를 말한다. 숫자 판이 하나뿐인
-접근자(`SketchPlane::origin()` 등)와 `nacre-math` 는 달지 않고, `nacre-geom` 은 f64 판을 맨이름으로 두고 `Rat` 쌍둥이에만
-`_rat` 을 단다(`point_in_ring_2d` · `point_in_ring_2d_rat`). 판정의 칸은 모두 `_iv` 이상이다 — `_approx` 는 진실에 대한
+접근자(`SketchPlane::origin()` 등)와 `nacre-math` 는 달지 않고, `nacre-geom` 은 f64 판을 맨이름으로 두고 `Rat` 판에
+`_rat` 을 단다(`three_planes` · `point_in_ring_2d_rat`). 판정의 칸은 모두 `_iv` 이상이다 — `_approx` 는 진실에 대한
 부호를 정하는 산술에 들어가지 않는다(대략값·계측·보기, 정밀도 정책의 크기 어림 `standard_from` 의 `scale`, 이름 없는
 평면 캐시의 향 맞추기 `align_cache_sense` — 캐시의 향이지 진실의 부호가 아니다).
 
