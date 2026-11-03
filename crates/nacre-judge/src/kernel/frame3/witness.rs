@@ -1,5 +1,5 @@
 use super::*;
-/// A rational base point carried through a chain of axis rotations (a rotation history). `base` +
+/// A rational base point carried through a chain of motions ([`MoveNode`]). `base` +
 /// `chain` are the exact **definition** (never lost); `coord_iv` is the f64 coordinate (a cache)
 /// with, per axis, the bound on its error — a **direction-wise xyz vector** held beside the value
 /// it bounds, so the two cannot drift apart. [`coord_hp`](Self::coord_hp) realizes the chain at
@@ -13,12 +13,12 @@ pub struct WitnessPoint {
     pub coord_iv: [Bounded; 3],
     /// Memoized `coord_hp` at the boolean's chosen precision — the astro-float realization
     /// once per definition and shared across clones (`Rc`). A judge escalates the *same*
-    /// definition-point dozens of times per boolean (`plane_def` clones `tri_pt3` per call);
+    /// definition-point dozens of times per boolean;
     /// without this each escalation replays the rotation's cos/sin at 200 bits, which dominates
-    /// the rotated-boolean cost. `base`/`chain` never change after construction except through
-    /// [`Self::rotate_about`], which resets this cell, so the cached value always matches the
-    /// definition (a pure, path-independent function). See [`HpCell`] for the
-    /// `Arc<OnceLock>` (parallel) vs `Rc<OnceCell>` (serial) choice.
+    /// the rotated-boolean cost. `base`/`chain` change after construction only where the
+    /// definition is extended (`remember`, `apply_chain`), and that resets this cell, so the
+    /// cached value always matches the definition (a pure, path-independent function). See
+    /// [`HpCell`] for the `Arc<OnceLock>` (parallel) vs `Rc<OnceCell>` (serial) choice.
     hp: HpCell,
 }
 
@@ -45,6 +45,8 @@ impl Eq for WitnessPoint {}
 // leave no model at tol `0` — a quadrantal turn about the origin, a reflection in a plane through
 // it, an axis-aligned frame — and tol `0` is what keeps such a model on the exact predicate path.
 // So these three ask first; the facts hold in `f64`'s normal range, the premise `Bounded` rests on.
+// The value is still the `f64` operation's where the radius passes through — `0.0 + x` turns `−0.0`
+// into `+0.0` — because that value flows into the model's vertices, which the census hashes by bit.
 //
 // **Here, not inside `Bounded`'s own operations.** The judge's interval filters meet the same
 // cases often — 42–51% of their additions have an exact-zero operand and 31–40% of their products
@@ -180,6 +182,10 @@ impl WitnessPoint {
         // of the angle**, so it bounds the number this kernel stores, whatever route produced it.
         let (c, s) = angle.cos_sin_f64();
         let (dc, ds) = angle.cos_sin_error_of(c, s);
+        // No soundness test sees `dc`/`ds` go — measured, dropping them turns neither the chain
+        // nor the frame lock red: `cos_sin_f64` is correctly rounded (at most half an ulp), and
+        // `|u|·dc` lies inside the slack of `Bounded`'s `2ε·|value|` charge, four times one
+        // rounding's half-ulp. The terms stay because the proof needs them.
         let (c, s) = (Bounded::new(c, dc), Bounded::new(s, ds));
         let (pi, pj) = (Bounded::of_rat(point[i]), Bounded::of_rat(point[j]));
         // About the pivot and back: `(p + u·c) − v·s`, `(q + u·s) + v·c`. About the origin the

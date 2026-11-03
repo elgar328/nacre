@@ -321,8 +321,9 @@ pub(crate) struct FaceInfo {
     /// it because the narrow consumers (the composed-rotation route, the restatement mirror) read
     /// `[Rat; 4]` directly.
     pub(crate) name: Option<nacre_exact::PlaneName>,
-    /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
-    /// the surface's own truth (`Model::surface`).
+    /// Whether this face's witness does not state its plane in the world (`plane_witness`'s
+    /// `world_exact`, negated) — the predicate-routing signal, read from the surface's own truth
+    /// (`Model::surface`).
     ///
     /// **Set together with `tri_pt3`, and only here.** The surface answers for itself, not its
     /// solid's vertices, and one solid can hold both kinds at once (fuse an axis-aligned hub with

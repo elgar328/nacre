@@ -9,8 +9,8 @@ use super::*;
 // **intervals** (value ± tol) — a dynamic filter: interval
 // arithmetic is a sound worst-case bound by construction, so no per-predicate bound
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
-// point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path; the boolean
-// reaches it through `Judge::orient3d`, whose rotated arm hands the seam's planes over as
+// point definitions, exactly as [`orient3d_judge`]. The boolean reaches it through
+// `Judge::orient3d` for a question its planes' names cannot answer, which hands the planes over as
 // `WitnessPoint`s. Soundness is tested by `plane_coefficient_tol_soundness` and
 // `indirect_orient3d_soundness`. What still straddles zero at the escalation's precision is turned
 // into a distance and held to the model's coincidence limit, as [`orient3d_judge`]'s is — there is
@@ -101,6 +101,8 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// `None` when any `D_i`'s sign is undecided — then it is not even known whether those three
 /// planes meet in a point, so there is nothing to normalize against and the caller must climb.
 /// Degree 9 in the nine input coefficients.
+/// The affine route — clear the denominators (`E_i = D0·Dvec_i − D_i·Dvec0`), then `N = E1 × E2` —
+/// is degree 15; the interval's width and the precision a decision needs grow with the degree.
 ///
 /// (It has no f64/`Bounded` filter twin: the judging table needs no interval-coefficient route
 /// at all. The lock lives in the Pure-vs-Meet differential, which pins this

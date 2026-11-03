@@ -48,9 +48,10 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
             p[k] = c.add(&c, prec).sub(&p[k], prec);
         }
         // The same derivation as [`WitnessPoint::frame`], in the domain that carries its own
-        // error: two `1/√` intervals, two scaled basis vectors, their cross product, and
-        // the combination. Nothing is charged by hand — every rounding is inside an
-        // `HpBounded`, which is the point of realizing here rather than trusting the f64 tol.
+        // error: two `1/√` intervals, the scaled basis vectors — `v̂` by a third `1/√` where
+        // `frame.v` is stated, else their cross product — and the combination. Nothing is charged
+        // by hand — every rounding is inside an `HpBounded`, which is the point of realizing here
+        // rather than trusting the f64 tol.
         //
         // A degenerate frame cannot arise here: `WitnessPoint::frame` is the only producer of this
         // node and it refuses a non-positive squared length, so the chain never holds one.

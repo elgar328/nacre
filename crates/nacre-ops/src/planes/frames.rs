@@ -39,8 +39,8 @@ pub(crate) struct WorkingPlane {
     pub(crate) surf: Handle<Surface>,
     /// The witness as exact `WitnessPoint` definitions (the root face's), borrowed by every predicate.
     pub(crate) tri_pt3: [WitnessPoint; 3],
-    /// Whether the root face's solid is rotated — copied from it together with `tri_pt3` so the
-    /// pair cannot disagree. See [`FaceInfo::rotated`].
+    /// Whether the root face's witness does not state its plane in the world — copied from it
+    /// together with `tri_pt3` so the pair cannot disagree. See [`FaceInfo::rotated`].
     pub(crate) rotated: bool,
     /// `+1` when the plane's stored normal agrees with the root face's outward normal, `-1` when
     /// they oppose. This *is* the label frame: `[A_above, A_below, …]` is defined about the class

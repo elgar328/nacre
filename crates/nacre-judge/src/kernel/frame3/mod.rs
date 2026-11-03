@@ -2,8 +2,9 @@
 //!
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
 //! realization carries a **direction-wise xyz tol** that soundly bounds
-//! the error, accumulated as the definition is turned through a chain of
-//! axis-aligned rotations (`new tol = |R|·old + mix`). [`orient3d_judge`]
+//! the error, accumulated step by step as the definition is carried through a
+//! chain of motions ([`MoveNode`]) — each step's tol is [`Bounded`]'s for its own
+//! arithmetic. [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
 //! ([`orient3d_iv`]) decides the easy cases, the ambiguous ones **escalate**
 //! to astro-float from the point definitions, and one whose interval still straddles zero is
@@ -11,8 +12,11 @@
 //! limit ([`ProofStandard`]): below it the coincidence is proved, above it the judgement climbs to
 //! the precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only** — wired into the boolean (`nacre-ops`' `tolerant`
-//! module is the seam), and it is the *tol > 0* path: a tol-0 config is faster/exact via
-//! `nacre-predicates` (Shewchuk), routed by a higher layer, not here.
+//! module is the seam). The plane-arrangement predicates are routed in [`crate::predicate`] by name
+//! and motion, not tol: what the planes' names answer exactly is answered there; the rest comes
+//! here, tol-0 points included. A direct `orient3d` the interval filter leaves open, whose four
+//! points share one motion and whose bases are `f64`s, is answered exactly on the pre-motion
+//! coordinates (`shared_base`, `nacre_predicates::orient3d`).
 //!
 //! Soundness is tested against astro-float ground truth over random heterogeneous-rotation
 //! configs — `orient3d_iv_soundness` (the determinant interval) and
@@ -58,7 +62,7 @@ pub use witness::*;
 type HpCell = HpRc<HpOnce<(usize, [HpBounded; 3])>>;
 
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
-/// rational pivot `point`) by the rational `angle` — `point = [0,0,0]` is the origin-pivot case.
+/// rational `pivot`) by the rational `angle` — `pivot = [0,0,0]` is the origin-pivot case.
 /// Motions do not commute, so the chain's **order is the definition**.
 /// **`Frame` is the large variant and it is boxed nowhere.** It holds four rational vectors and
 /// three rational lengths against `Rotate`'s one vector — but a `MoveNode` lives in a shared
@@ -94,15 +98,16 @@ pub enum MoveNode {
     /// length.** `u_raw` is `ẑ × n` (or `ŷ × n`), which is *already in the plane* — the cross
     /// product is perpendicular to both its arguments, so the projection a general `ref_dir`
     /// would need is not here, and `u_raw` need not be a unit vector for the frame to be exact.
-    /// So the whole realization is **two `1/√(rational)` scalars**
-    /// ([`nacre_exact::inv_sqrt_f64`]), which is why this can be judged at all.
+    /// So the whole realization is **two `1/√(rational)` scalars** — three where `v̂` fits, see
+    /// below — ([`nacre_exact::inv_sqrt_f64`]), which is why this can be judged at all.
     ///
-    /// **`v̂` is exact too, and that matters.** Realizing it as `ŵ × û` in f64 costs two
+    /// **`v̂` is exact where it fits, and that matters.** Realizing it as `ŵ × û` in f64 costs two
     /// roundings that do not cancel — a wall whose `v` is exactly `ẑ` came out three ulps short,
     /// which is a frame that is not quite orthonormal. `n ⊥ u_raw` by construction, so
     /// `|v_raw|² = |n|²·|u_raw|²` exactly, and one inverse square root of a rational lands it on
-    /// the nose. [`nacre_exact::plane_frame`] checks that product fits `i128` before handing the
-    /// frame out, so the overflow is refused at the source rather than handled here.
+    /// the nose — where that product fits `i128`. Where it does not, [`nacre_exact::PlaneFrame`]'s
+    /// `v` is `None` and the realization takes `v̂ = ŵ × û`: two roundings, sound, a step down in
+    /// accuracy rather than a refusal.
     ///
     /// **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
     Frame { frame: nacre_exact::PlaneFrame },

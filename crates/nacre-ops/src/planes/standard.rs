@@ -42,6 +42,16 @@ impl Watch {
         }
     }
 }
+/// The plane data of a row, `None` for a cylinder — the kind filter the plane-only sweeps
+/// share.
+#[inline]
+pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
+    match r {
+        FaceRow::Plane(p) => Some(p),
+        FaceRow::Cylinder(_) => None,
+    }
+}
+
 /// **How precisely this operation's rotated definitions must be realized.**
 ///
 /// The judges' error radius is `C · 2⁻ᵖʳᵉᶜ`, and `C` belongs to the model — it grows about one
@@ -67,16 +77,6 @@ impl Watch {
 /// precision, the cap, the headroom — is derived from it and from the model, because a bit count
 /// means a different physical thing in every model ("256 bits" is `1e-76` for a solid turned once
 /// and `1e+15` for one turned three hundred times).
-/// The plane data of a row, `None` for a cylinder — the kind filter the plane-only sweeps
-/// share.
-#[inline]
-pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
-    match r {
-        FaceRow::Plane(p) => Some(p),
-        FaceRow::Cylinder(_) => None,
-    }
-}
-
 // A cylinder row contributes no witness points to the standard — structurally right, not an
 // omission: an axis-aligned-grade rational cylinder is the `rotated == false` case (its exact
 // def needs no high-precision realization); the rotated-cylinder story is CIP's.

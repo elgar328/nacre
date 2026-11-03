@@ -176,6 +176,11 @@ impl Angle {
     /// every angle a model has held — and the ladder climbs only for a value closer than that. How
     /// far it may climb is a cost alarm, not a proof (`TRIG_LADDER_CAP`): a cosine has no
     /// separation bound to give.
+    ///
+    /// **The first rung is also the judge's.** 128 bits is the precision `nacre_judge`'s
+    /// `trial_bound` realizes at (`TRIAL_PREC`), so a model that goes on to be judged reads this
+    /// angle's realization from [`TRIG`] rather than computing it twice. Nothing ties the two
+    /// constants together.
     fn cos_sin_f64_uncached(self) -> (f64, f64) {
         let [c, s] = ladder_f64(TRIG_LADDER_CAP, |prec| {
             let (c, s) = self.cos_sin_hp(prec);

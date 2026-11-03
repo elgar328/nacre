@@ -1150,14 +1150,14 @@ fn tol_bounds_error_over_random_chains() {
     assert!(worst_ratio < 1.0, "the error met its bound exactly");
 }
 
-/// A 90°-family chain about the origin stays exactly tol 0 (Niven exact realization).
 /// **Why the tol is a coordinate *mixing* term and not a tangential one.**
 ///
 /// A tangential directional tol — `tol_x = da·|y|`, `tol_y = da·|x|`, on the reasoning that
 /// rotation moves a point along its circle — is **not sound**: `cos`
 /// and `sin` round independently, which puts a *radial* component into the error, and near an
-/// axis the tangential prediction goes to zero while the real error does not. The adopted
-/// `(|bx|+|by|)·da` per component covers both.
+/// axis the tangential prediction goes to zero while the real error does not. The adopted tol —
+/// `rotate_about`'s `Bounded` arithmetic, where `u` meets `cos`'s error on one axis and `sin`'s on
+/// the other — covers both.
 ///
 /// This is the standing guard on that shape, on a rotation about Z — the 2D case with `z` carried
 /// along — because the *invariant* is about the tol formula, which 3D uses verbatim.
@@ -1573,6 +1573,7 @@ fn a_frame_does_not_flip_the_chain_parity() {
     );
 }
 
+/// A 90°-family chain about the origin stays exactly tol 0 (Niven exact realization).
 #[test]
 fn quadrantal_origin_chain_is_tol_zero() {
     let p = WitnessPoint::at([ri(3, 1), ri(5, 1), ri(7, 1)])

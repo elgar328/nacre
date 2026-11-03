@@ -147,8 +147,8 @@ pub trait Witness {
     /// answering two questions could not be filled in advance without changing which predicate
     /// path runs. [`Witness::is_rotated`] is that second question.
     fn tri_pt3(&self) -> &[WitnessPoint; 3];
-    /// Whether this plane came from a rotated solid — the predicate-routing signal, and a
-    /// **different fact** from "does the definition carry a rotation chain". Neither
+    /// Whether this plane's witness does not state it in the world — the predicate-routing
+    /// signal, and a **different fact** from "does the definition carry a rotation chain". Neither
     /// `chain.is_empty()` nor `tol == 0` is equivalent to it (a rotated solid's face may witness
     /// its plane through points with no chain, and a 90°-family rotation has tol exactly 0), so
     /// the answer is carried, not derived.
@@ -450,6 +450,12 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// Winding-invariant. A query plane `j` equal to one of `p, q, r` means the point lies on `j`,
     /// so the sign is exactly `0` (a combinatorial identity) — decided before either numeric
     /// branch, exact and cheap for both.
+    ///
+    /// Sent on, such a zero would pass no filter: the name-integer road would take it to the
+    /// integer twin, and the certified route, on rotated points, can only bound it — never prove
+    /// it — so at best it comes back `Coincident`, recorded as an assumption about a sign that was
+    /// never in doubt. [`Judge::cmp_coord`] and [`Judge::plane_pair_dir_sign`] ask their identities
+    /// first for the same reason.
     pub fn orient3d(&self, p: usize, q: usize, r: usize, j: usize) -> i8 {
         match self.orient3d_cheap(p, q, r, j) {
             Some(o) => o,

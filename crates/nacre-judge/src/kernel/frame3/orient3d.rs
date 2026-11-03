@@ -38,8 +38,8 @@ pub fn orient3d_filter(
 /// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
 /// astro-float at the operation's precision; a determinant that still straddles zero there is
 /// turned into a distance and answered by [`escalate`]. Path-independent (a
-/// function of the four point definitions). This is the *tol > 0* path — a tol-0
-/// config is exact/faster via `nacre-predicates` (Shewchuk), routed above this crate.
+/// function of the four point definitions). Which questions come here is routed in
+/// [`crate::predicate`], by name and motion, not by tol.
 pub fn orient3d_judge(
     pa: &WitnessPoint,
     pb: &WitnessPoint,

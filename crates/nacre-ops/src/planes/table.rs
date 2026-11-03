@@ -146,8 +146,8 @@ pub(crate) fn collect_planes(
             // **The plane's exact definition comes from its truth** — the witness triangle
             // (`rotated_vertex::plane_witness`, the one spelling the realization roads read too),
             // wound to this face's outward by the sign its turn runs against the plane times this
-            // face's `orientation`. `rotated` is the routing signal "no exact world description",
-            // which makes every exact shortcut decline.
+            // face's `orientation`. `rotated` is the routing signal "the witness does not state the
+            // plane in the world", which makes every exact shortcut decline.
             let (tri_pt3, rotated, motion) = match model.surface(face.surface) {
                 nacre_topo::Surface::Plane { points, motion, .. } => {
                     let motion = *motion;
