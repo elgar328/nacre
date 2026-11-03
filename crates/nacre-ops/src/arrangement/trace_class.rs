@@ -31,7 +31,6 @@ pub(super) fn trace_on_class(
 /// spot. Production derives it once per boolean (`trace_result_faces`) because it is the same for
 /// every class; a test that traces a single class should not have to say so.
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(super) fn trace_on_class_of(
     model: &Model,
     a: Handle<Solid>,
@@ -39,22 +38,26 @@ pub(super) fn trace_on_class_of(
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    faces: &[FaceRow],
-    surf_ix: &HashMap<Handle<Face>, usize>,
-    inc_a: &combinatorics::EdgeFaces,
-    inc_b: &combinatorics::EdgeFaces,
-    plane_ix: &[ClassIx],
+    setup: &PlaneSetup,
 ) -> Trace {
     let input = combinatorics::trace_input(
         model,
-        [(a, inc_a), (b, inc_b)],
-        surf_ix,
-        faces.len(),
+        [(a, &setup.inc_a), (b, &setup.inc_b)],
+        &setup.surf_ix,
+        setup.planes.len(),
         jd,
-        plane_ix,
+        &setup.plane_ix,
         &[],
     );
-    trace_on_class(&input, wc, jd, cyls, faces, plane_ix, &Aliases::default())
+    trace_on_class(
+        &input,
+        wc,
+        jd,
+        cyls,
+        &setup.planes,
+        &setup.plane_ix,
+        &Aliases::default(),
+    )
 }
 
 /// One solid only — the second operand slot is filled with the same solid, whose loops are

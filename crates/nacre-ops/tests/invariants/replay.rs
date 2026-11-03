@@ -272,7 +272,6 @@ fn pad_log() -> (Vec<Operation>, Model) {
         b: boss,
     };
     apply(&mut m, &fuse).expect("pad on the live model");
-    m.rebuild_adjacency();
     (vec![ex, tool, fuse], m)
 }
 
@@ -292,7 +291,6 @@ fn boolean_log() -> (Vec<Operation>, Model) {
         b,
     };
     apply(&mut m, &bo).expect("fuse on the live model");
-    m.rebuild_adjacency();
     (vec![e1, e2, bo], m)
 }
 
@@ -308,7 +306,6 @@ fn transform_log() -> (Vec<Operation>, Model) {
         isometry: Isometry::translation([Rat::from_int(5), Rat::from_int(0), Rat::from_int(0)]),
     };
     apply(&mut m, &xf).expect("translate on the live model");
-    m.rebuild_adjacency();
     (vec![ex, xf], m)
 }
 
@@ -380,7 +377,6 @@ fn deep_transform_log() -> (Vec<Operation>, Model) {
         log.push(xf);
         solid = next;
     }
-    m.rebuild_adjacency();
     (log, m)
 }
 
@@ -495,7 +491,6 @@ fn refined_mid_log(refine: bool) -> Model {
     .expect("the box moves") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     // A datum through three corners of the moved box's top (the transform keeps face order,
     // and an extrude's second face is its far cap).
     let top = m.shell(m.solid(b).outer).faces[1];
@@ -522,7 +517,6 @@ fn refined_mid_log(refine: bool) -> Model {
     .expect("the deep prism and the box fuse") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert_eq!(solids.len(), 1, "the box overlaps the prism: one body");
     let face = solids
         .iter()
@@ -543,7 +537,6 @@ fn refined_mid_log(refine: bool) -> Model {
         0.5,
     )
     .expect("a pad on the fused top");
-    m.rebuild_adjacency();
     m
 }
 
@@ -694,7 +687,6 @@ fn the_comparator_agrees_on_a_value_only_log() {
     for op in &log {
         apply(&mut scratch, op).expect("apply");
     }
-    scratch.rebuild_adjacency();
 
     let a = replay(&log).expect("value-only logs replay today");
     let b = replay(&log).expect("value-only logs replay today");
@@ -1072,7 +1064,6 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
     // is for the report.
     st.handle_carrying += 1;
 
-    model.rebuild_adjacency();
     (log, model, st)
 }
 
@@ -1197,7 +1188,6 @@ fn a_leaf_moved_twice_replays() {
         log.push(op);
         solid = moved;
     }
-    m.rebuild_adjacency();
     let corners = (0..m.vertex_count() as u32)
         .filter_map(|i| m.vertex_handle_at(i))
         .filter(|&v| matches!(m.vertex(v), Vertex::CylinderPair { .. }))
@@ -1346,7 +1336,6 @@ fn every_variant_log() -> (Vec<Operation>, Model) {
         unreachable!()
     };
     // Three corners of the result's top cap name a plane — the variant whose handles are vertices.
-    m.rebuild_adjacency();
     let top = *faces_of(&m, solids[0])
         .iter()
         .max_by(|&&x, &&y| corners(&m, x)[0][2].total_cmp(&corners(&m, y)[0][2]))
@@ -1364,7 +1353,6 @@ fn every_variant_log() -> (Vec<Operation>, Model) {
             def: nacre_ops::DatumDef::ThroughVertices([vs[0], vs[1], vs[2]]),
         },
     );
-    m.rebuild_adjacency();
 
     let mut kinds: Vec<&str> = log.iter().map(variant).collect();
     kinds.sort_unstable();
@@ -1499,16 +1487,8 @@ fn a_late_reject_is_not_index_neutral() {
     // does to the model in front of it.
     let boolean_setup = || {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            nacre_math::Point3::from_array([0.0; 3]),
-            nacre_math::Point3::from_array([2.0; 3]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            nacre_math::Point3::from_array([1.0; 3]),
-            nacre_math::Point3::from_array([3.0; 3]),
-        );
+        let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+        let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
         let OpOutput::Boolean { solids } = apply(
             &mut m,
             &Operation::Boolean {
@@ -1521,11 +1501,7 @@ fn a_late_reject_is_not_index_neutral() {
             unreachable!()
         };
         // C's + corner is R's concave corner: three shared planes meet there.
-        let c = nacre_ops::fixtures::cuboid(
-            &mut m,
-            nacre_math::Point3::from_array([-1.0; 3]),
-            nacre_math::Point3::from_array([1.0; 3]),
-        );
+        let c = nacre_ops::fixtures::cuboid(&mut m, [-1.0; 3], [1.0; 3]);
         (
             m,
             Operation::Boolean {
@@ -1643,7 +1619,6 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     };
     apply(&mut m, &mv).expect("move the copy");
     log.push(mv);
-    m.rebuild_adjacency();
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| replay(&log)));
     match outcome {

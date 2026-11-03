@@ -179,11 +179,7 @@ fn derived_curves_match_stored() {
 
     // ① Construction, including a tilted (irrational-normalization) cylinder axis.
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 1.0]),
-    );
+    nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [4.0, 4.0, 1.0]);
     nacre_ops::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([10.0, 0.0, 0.0]),
@@ -200,7 +196,6 @@ fn derived_curves_match_stored() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "construction", &mut st);
 
     // ② A tilted extrude and a boolean (arrangement-made edges).
@@ -248,7 +243,6 @@ fn derived_curves_match_stored() {
         },
     )
     .expect("cut");
-    m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "extrude+cut", &mut st);
 
     // ③ Moved cylinders: «derive from moved caches» against the stored circle.
@@ -282,7 +276,6 @@ fn derived_curves_match_stored() {
         },
     )
     .expect("rotate cylinder");
-    m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "moved cylinders", &mut st);
 
     println!(
@@ -295,11 +288,7 @@ fn derived_curves_match_stored() {
 fn edge_carriers_agree_with_adjacency() {
     // ① Plain construction: cuboid + cylinder.
     let mut m = Model::new();
-    let base = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 1.0]),
-    );
+    let base = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [4.0, 4.0, 1.0]);
     nacre_ops::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([10.0, 0.0, 0.0]),
@@ -308,7 +297,6 @@ fn edge_carriers_agree_with_adjacency() {
         1.5,
         2.0,
     );
-    m.rebuild_adjacency();
     assert_carriers_agree(&m, "construction");
 
     // ② A tilted extrude (the frame road) — walls/caps carriers from `sweep_ring`.
@@ -327,7 +315,6 @@ fn edge_carriers_agree_with_adjacency() {
         },
     )
     .expect("tilted extrude");
-    m.rebuild_adjacency();
     assert_carriers_agree(&m, "tilted extrude");
 
     // ③ Booleans, including populations the cleaning pass actually rewrites:
@@ -361,7 +348,6 @@ fn edge_carriers_agree_with_adjacency() {
         };
         solids[0]
     };
-    m.rebuild_adjacency();
     assert_carriers_agree(&m, "coplanar fuse (cleaned)");
 
     let cutter = {
@@ -388,16 +374,11 @@ fn edge_carriers_agree_with_adjacency() {
         },
     )
     .expect("cut");
-    m.rebuild_adjacency();
     assert_carriers_agree(&m, "cut");
 
     // ④ Motions: a rotated copy (surf_map re-pointing) — cuboid family and cylinder family.
     let mut m2 = Model::new();
-    let box2 = nacre_ops::fixtures::cuboid(
-        &mut m2,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 2.0, 3.0]),
-    );
+    let box2 = nacre_ops::fixtures::cuboid(&mut m2, [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]);
     nacre_ops::fixtures::cylinder_with_seam(
         &mut m2,
         Point3::from_array([5.0, 0.0, 0.0]),
@@ -406,7 +387,6 @@ fn edge_carriers_agree_with_adjacency() {
         1.0,
         2.0,
     );
-    m2.rebuild_adjacency();
     apply(
         &mut m2,
         &Operation::Transform {
@@ -419,6 +399,5 @@ fn edge_carriers_agree_with_adjacency() {
         },
     )
     .expect("rotate");
-    m2.rebuild_adjacency();
     assert_carriers_agree(&m2, "transform");
 }

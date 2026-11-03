@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 fn cube(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
+    nacre_ops::fixtures::cuboid(&mut m, min, max);
     m
 }
 
@@ -557,14 +557,8 @@ fn a_band_cut_at_both_rims_meshes_as_its_surface() {
             };
             let mut want = 2.0 * pi * 4.0 - 2.0 * bite * 0.5;
             if holed {
-                let window = fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([0.8, -0.2, 1.5]),
-                    Point3::from_array([1.2, 0.2, 2.5]),
-                );
-                m.rebuild_adjacency();
+                let window = fixtures::cuboid(&mut m, [0.8, -0.2, 1.5], [1.2, 0.2, 2.5]);
                 band = boolean(&mut m, BoolKind::Cut, band, window).expect("the window")[0];
-                m.rebuild_adjacency();
                 want -= 2.0 * 0.2f64.asin();
             }
             let lateral = m
@@ -703,11 +697,7 @@ fn a_bore_is_cut_at_its_rims_vertices() {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let pi = std::f64::consts::PI;
     let mut m = Model::new();
-    let plate = fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, -2.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
+    let plate = fixtures::cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 1.0]);
     let pin = fixtures::cylinder(
         &mut m,
         Point3::from_array([0.0, 0.0, -1.0]),
@@ -716,9 +706,7 @@ fn a_bore_is_cut_at_its_rims_vertices() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let solid = boolean(&mut m, BoolKind::Cut, plate, pin).expect("the bore")[0];
-    m.rebuild_adjacency();
     let [bore] = laterals(&m, solid)[..] else {
         panic!("one lateral");
     };
@@ -865,14 +853,8 @@ fn a_seamless_lateral_with_a_chain_rim_on_the_seam_is_cut_off_its_corner() {
         4.0,
     )
     .solid;
-    let plate = fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let plate = fixtures::cuboid(&mut m, [-2.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
     let fused = boolean(&mut m, BoolKind::Fuse, boss, plate).expect("the boss on the edge")[0];
-    m.rebuild_adjacency();
     let [new] = laterals(&m, fused)[..] else {
         panic!("one lateral");
     };
@@ -930,12 +912,10 @@ fn windows_round_a_boss(m: &mut Model) -> Handle<nacre_topo::Solid> {
         ([-0.8, -2.0, 2.9], [0.8, -0.5, 3.4]),
     ];
     for (lo, hi) in windows {
-        let w = fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-        m.rebuild_adjacency();
+        let w = fixtures::cuboid(m, lo, hi);
         let out = boolean(m, BoolKind::Cut, s, w).expect("a window");
         assert_eq!(out.len(), 1, "a window leaves one body");
         s = out[0];
-        m.rebuild_adjacency();
     }
     s
 }
@@ -1025,12 +1005,10 @@ fn a_seamless_lateral_cut_through_two_windows_splices_both() {
         ([-2.0, -2.0, 2.9], [2.0, 0.0, 3.4]),
     ];
     for (lo, hi) in windows {
-        let w = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-        m.rebuild_adjacency();
+        let w = fixtures::cuboid(&mut m, lo, hi);
         let out = boolean(&mut m, BoolKind::Cut, s, w).expect("a window");
         assert_eq!(out.len(), 1, "a window leaves one body");
         s = out[0];
-        m.rebuild_adjacency();
     }
     let [new] = laterals(&m, s)[..] else {
         panic!("one lateral");
@@ -1067,11 +1045,7 @@ fn a_reversed_lateral_is_cut_through_a_window_and_spliced() {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let pi = std::f64::consts::PI;
     let mut m = Model::new();
-    let plate = fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, -2.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 4.0]),
-    );
+    let plate = fixtures::cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 4.0]);
     let pin = fixtures::cylinder(
         &mut m,
         Point3::from_array([0.0, 0.0, -1.0]),
@@ -1080,9 +1054,7 @@ fn a_reversed_lateral_is_cut_through_a_window_and_spliced() {
         6.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let mut s = boolean(&mut m, BoolKind::Cut, plate, pin).expect("the bore")[0];
-    m.rebuild_adjacency();
     let slots: [([f64; 3], [f64; 3]); 4] = [
         ([0.5, -0.8, 0.5], [3.0, 0.8, 1.0]),
         ([-0.8, 0.5, 1.3], [0.8, 3.0, 1.8]),
@@ -1090,12 +1062,10 @@ fn a_reversed_lateral_is_cut_through_a_window_and_spliced() {
         ([-0.8, -3.0, 2.9], [0.8, -0.5, 3.4]),
     ];
     for (lo, hi) in slots {
-        let w = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-        m.rebuild_adjacency();
+        let w = fixtures::cuboid(&mut m, lo, hi);
         let out = boolean(&mut m, BoolKind::Cut, s, w).expect("a slot");
         assert_eq!(out.len(), 1, "a slot leaves one body");
         s = out[0];
-        m.rebuild_adjacency();
     }
     let [bore] = laterals(&m, s)[..] else {
         panic!("one lateral");
@@ -1253,11 +1223,7 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
 #[test]
 fn a_mesh_of_chosen_solids_holds_theirs_as_the_whole_mesh_does() {
     let mut m = Model::new();
-    let boxed = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([5.0; 3]),
-        Point3::from_array([6.0; 3]),
-    );
+    let boxed = nacre_ops::fixtures::cuboid(&mut m, [5.0; 3], [6.0; 3]);
     let cyl = nacre_ops::fixtures::cylinder(
         &mut m,
         Point3::from_array([0.0; 3]),
@@ -1266,7 +1232,6 @@ fn a_mesh_of_chosen_solids_holds_theirs_as_the_whole_mesh_does() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let cfg = TessConfig::default();
     let whole = tessellate(&m, &cfg).unwrap();
     let alone = tessellate_solids(&m, &[cyl], &cfg).unwrap();
@@ -1322,11 +1287,7 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let boss = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
     let mut plate = Model::new();
-    let block = fixtures::cuboid(
-        &mut plate,
-        Point3::from_array([-2.0, -2.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
+    let block = fixtures::cuboid(&mut plate, [-2.0, -2.0, 0.0], [2.0, 2.0, 2.0]);
     let pin = fixtures::cylinder(
         &mut plate,
         Point3::from_array([0.0, 0.0, -1.0]),
@@ -1335,9 +1296,7 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
         4.0,
     )
     .solid;
-    plate.rebuild_adjacency();
     boolean(&mut plate, BoolKind::Cut, block, pin).expect("the bore");
-    plate.rebuild_adjacency();
 
     for (model, outward) in [(&boss, 1.0), (&plate, -1.0)] {
         let t = tessellate(model, &TessConfig::default()).unwrap();
@@ -1430,36 +1389,18 @@ fn a_ruling_broken_part_way_lays_a_row_at_its_vertex() {
             let z = Vector3::from_array([0.0, 0.0, 1.0]);
             let seam = Vector3::from_array([-1.0, 0.0, 0.0]);
             let c = fixtures::cylinder_with_seam(&mut m, Point3::origin(), z, seam, 1.0, 2.0).solid;
-            let flat = fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.5, -3.0, -1.0]),
-                Point3::from_array([3.0, 3.0, 3.0]),
-            );
-            m.rebuild_adjacency();
+            let flat = fixtures::cuboid(&mut m, [0.5, -3.0, -1.0], [3.0, 3.0, 3.0]);
             let mut d = boolean(&mut m, BoolKind::Cut, c, flat).expect("the D")[0];
-            m.rebuild_adjacency();
             if notched {
-                let notch = fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([-3.0, -3.0, 1.0]),
-                    Point3::from_array([-0.5, 3.0, 3.0]),
-                );
-                m.rebuild_adjacency();
+                let notch = fixtures::cuboid(&mut m, [-3.0, -3.0, 1.0], [-0.5, 3.0, 3.0]);
                 d = boolean(&mut m, BoolKind::Cut, d, notch).expect("the notch")[0];
-                m.rebuild_adjacency();
             }
-            let b = fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.5, y_min, -1.0]),
-                Point3::from_array([3.0, 2.0, 1.0]),
-            );
-            m.rebuild_adjacency();
+            let b = fixtures::cuboid(&mut m, [0.5, y_min, -1.0], [3.0, 2.0, 1.0]);
             let mut s = boolean(&mut m, BoolKind::Fuse, d, b).expect("the fuse")[0];
             if tilted {
                 s = rotate_solid(&mut m, s, Axis::X, 37);
                 s = rotate_solid(&mut m, s, Axis::Y, 23);
             }
-            m.rebuild_adjacency();
             let t =
                 tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{name} tilted={tilted}: {e:?}"));
             let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
@@ -1566,13 +1507,11 @@ fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
     for (name, build) in shapes {
         let mut m = Model::new();
         build(&mut m);
-        m.rebuild_adjacency();
         let untilted = lateral_mesh(&m, name);
         let mut m = Model::new();
         let s = build(&mut m);
         let s = rotate_solid(&mut m, s, Axis::X, 37);
         rotate_solid(&mut m, s, Axis::Y, 23);
-        m.rebuild_adjacency();
         assert_eq!(
             lateral_mesh(&m, name),
             untilted,
@@ -1591,19 +1530,11 @@ fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
             ([0.5, -2.0, -1.0], [3.0, 2.0, 0.5]),
             ([0.5, -2.0, 3.5], [3.0, 2.0, 5.0]),
         ] {
-            let bite = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
+            let bite = fixtures::cuboid(&mut m, lo, hi);
             band = boolean(&mut m, built, band, bite).expect("a bite")[0];
-            m.rebuild_adjacency();
         }
-        let slab = fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.5, -2.0, 1.5]),
-            Point3::from_array([3.0, 2.0, 2.5]),
-        );
-        m.rebuild_adjacency();
+        let slab = fixtures::cuboid(&mut m, [-0.5, -2.0, 1.5], [3.0, 2.0, 2.5]);
         boolean(&mut m, BoolKind::Fuse, band, slab).expect("the slab fuses");
-        m.rebuild_adjacency();
         lateral_mesh(&m, "the census's bothrims slab");
     }
 }
@@ -1703,9 +1634,7 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         boolean(&mut m, kind, disk, column).expect("the column's boolean");
-        m.rebuild_adjacency();
         m
     };
     let wedge = |triangle: [[f64; 2]; 3]| -> Model {
@@ -1768,9 +1697,7 @@ fn near_contact_past_the_finest_sampling_is_refused_by_name() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         boolean(&mut m, BoolKind::Cut, disk, bore).expect("the bore cuts");
-        m.rebuild_adjacency();
         m
     };
     drawn_right(&bored([0.0000006, 0.0000008], 0.999998), "a gap of 1e-6");

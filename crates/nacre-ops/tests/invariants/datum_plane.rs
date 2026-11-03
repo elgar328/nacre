@@ -386,7 +386,6 @@ fn a_log_with_a_datum_replays_and_validates() {
     for op in &log {
         apply(&mut scratch, op).expect("each step is legal");
     }
-    scratch.rebuild_adjacency();
 
     let replayed = replay(&log).expect("a datum log replays");
     assert_eq!(replayed.surface_count(), scratch.surface_count());
@@ -647,7 +646,6 @@ fn an_offset_log_replays_and_a_stale_handle_is_rejected_by_name() {
     let frame = box_top_frame(&mut m);
     let up = offset(frame, 1.0);
     apply(&mut m, &up).expect("offset");
-    m.rebuild_adjacency();
 
     let log = vec![
         Operation::Extrude {
@@ -1000,7 +998,6 @@ fn tilted_prism_with_pocket() -> Model {
     .expect("the base prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let wall = *m
         .shell(m.solid(solid).outer)
         .faces
@@ -1028,7 +1025,6 @@ fn tilted_prism_with_pocket() -> Model {
         0.4,
     )
     .expect("the pocket");
-    m.rebuild_adjacency();
     m
 }
 
@@ -1188,12 +1184,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
         1.0,
         2.0,
     );
-    nacre_ops::fixtures::cuboid(
-        &mut cy,
-        Point3::from_array([4.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 1.0, 1.0]),
-    );
-    cy.rebuild_adjacency();
+    nacre_ops::fixtures::cuboid(&mut cy, [4.0, 0.0, 0.0], [5.0, 1.0, 1.0]);
     let seam = live_vertices(&cy)
         .into_iter()
         .find(|v| matches!(*cy.vertex(*v), nacre_topo::Vertex::OnSeam(_)))
@@ -1210,17 +1201,8 @@ fn a_datum_through_vertices_refuses_by_cause() {
     // Two boxes stacked share a vertical line, so three of their corners are collinear — the
     // one shape in this vocabulary that puts three vertices on a line.
     let mut st = Model::new();
-    nacre_ops::fixtures::cuboid(
-        &mut st,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    nacre_ops::fixtures::cuboid(
-        &mut st,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    st.rebuild_adjacency();
+    nacre_ops::fixtures::cuboid(&mut st, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    nacre_ops::fixtures::cuboid(&mut st, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
     let on_axis: Vec<_> = live_vertices(&st)
         .into_iter()
         .filter(|v| {
@@ -1254,17 +1236,8 @@ fn a_datum_through_vertices_refuses_by_cause() {
         Ok(OpOutput::Transform { solid }) => solid,
         other => panic!("a turn: {other:?}"),
     };
-    let a = nacre_ops::fixtures::cuboid(
-        &mut dp,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut dp,
-        Point3::from_array([1.0, 1.0, 1.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    dp.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut dp, [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut dp, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
     let a = moved(&mut dp, a, Axis::Z, 37);
     let b = moved(&mut dp, b, Axis::X, 20);
     let Ok(OpOutput::Boolean { solids }) = apply(
@@ -1277,7 +1250,6 @@ fn a_datum_through_vertices_refuses_by_cause() {
     ) else {
         panic!("the fuse")
     };
-    dp.rebuild_adjacency();
     let carriers_named = |m: &Model, v| match m.vertex(v) {
         nacre_topo::Vertex::ThreePlane(t) => t.iter().all(|h| m.surface_name(*h).is_some()),
         _ => false,
@@ -1289,12 +1261,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
         .filter(|&v| carriers_named(&dp, v) && dp.vertex_meet(v).is_none())
         .min_by_key(|v| v.index())
         .expect("a fused corner straddles");
-    let still = nacre_ops::fixtures::cuboid(
-        &mut dp,
-        Point3::from_array([10.0, 0.0, 0.0]),
-        Point3::from_array([11.0, 1.0, 1.0]),
-    );
-    dp.rebuild_adjacency();
+    let still = nacre_ops::fixtures::cuboid(&mut dp, [10.0, 0.0, 0.0], [11.0, 1.0, 1.0]);
     let top = dp.shell(dp.solid(still).outer).faces[1];
     let sc: Vec<_> = (0..3)
         .map(|k| dp.he_start(dp.face(top).outer.half_edges[k]))
@@ -1320,7 +1287,6 @@ fn a_datum_through_vertices_refuses_by_cause() {
     .expect("a prism on the nameless datum") else {
         unreachable!()
     };
-    dp.rebuild_adjacency();
     let on_nameless = dp
         .reachable_from(&[prism])
         .vertices
@@ -1366,17 +1332,8 @@ fn a_datum_through_vertices_refuses_by_cause() {
 #[test]
 fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     let mut mx = Model::new();
-    let fixed = nacre_ops::fixtures::cuboid(
-        &mut mx,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let spun = nacre_ops::fixtures::cuboid(
-        &mut mx,
-        Point3::from_array([4.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 1.0, 1.0]),
-    );
-    mx.rebuild_adjacency();
+    let fixed = nacre_ops::fixtures::cuboid(&mut mx, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    let spun = nacre_ops::fixtures::cuboid(&mut mx, [4.0, 0.0, 0.0], [5.0, 1.0, 1.0]);
     let OpOutput::Transform { solid: spun } = apply(
         &mut mx,
         &Operation::Transform {
@@ -1391,7 +1348,6 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     .expect("turn") else {
         unreachable!()
     };
-    mx.rebuild_adjacency();
     let of = |m: &Model, s| {
         let mut out = Vec::new();
         for &fh in &m.shell(m.solid(s).outer).faces {
@@ -1455,7 +1411,6 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     .expect("a sketch on the judged frame") else {
         unreachable!()
     };
-    mx.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&mx).is_empty(),
         "the prism on a nameless datum must be a valid closed b-rep"
@@ -1466,17 +1421,8 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     // the cross-store guard, and rightly — that is the guard working); determinism is asserted
     // on the indices and the arena count.
     let mut scratch = Model::new();
-    let f2 = nacre_ops::fixtures::cuboid(
-        &mut scratch,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let s2 = nacre_ops::fixtures::cuboid(
-        &mut scratch,
-        Point3::from_array([4.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 1.0, 1.0]),
-    );
-    scratch.rebuild_adjacency();
+    let f2 = nacre_ops::fixtures::cuboid(&mut scratch, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    let s2 = nacre_ops::fixtures::cuboid(&mut scratch, [4.0, 0.0, 0.0], [5.0, 1.0, 1.0]);
     let OpOutput::Transform { solid: s2 } = apply(
         &mut scratch,
         &Operation::Transform {
@@ -1491,7 +1437,6 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     .expect("turn") else {
         unreachable!()
     };
-    scratch.rebuild_adjacency();
     let (still2, turned2) = (of(&scratch, f2), of(&scratch, s2));
     let vs2 = [still2[0], still2[1], turned2[0]];
     assert_eq!(
@@ -1548,17 +1493,8 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
 #[test]
 fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     let mut m = Model::new();
-    let fixed = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let spun = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([4.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let fixed = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    let spun = nacre_ops::fixtures::cuboid(&mut m, [4.0, 0.0, 0.0], [5.0, 1.0, 1.0]);
     let OpOutput::Transform { solid: spun } = apply(
         &mut m,
         &Operation::Transform {
@@ -1573,7 +1509,6 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     .expect("turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let corners = |m: &Model, s| {
         let mut out = Vec::new();
         for &fh in &m.shell(m.solid(s).outer).faces {
@@ -1607,18 +1542,11 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     .expect("prism on the judged frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     // A box that swallows the prism wherever the judged frame put it.
-    let block = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-12.0, -12.0, -12.0]),
-        Point3::from_array([12.0, 12.0, 12.0]),
-    );
-    m.rebuild_adjacency();
+    let block = nacre_ops::fixtures::cuboid(&mut m, [-12.0, -12.0, -12.0], [12.0, 12.0, 12.0]);
     let out = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Common, block, prism)
         .expect("the boolean over a nameless class must answer, not panic");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 1, "block ∩ prism is the prism");
     assert!(
         nacre_validate::validate(&m).is_empty(),
@@ -1651,16 +1579,8 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     use nacre_topo::Vertex;
 
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([3.3, 3.3, -1.0]),
-        Point3::from_array([7.7, 7.7, 11.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     let OpOutput::Transform { solid: b } = apply(
         &mut m,
         &Operation::Transform {
@@ -1675,9 +1595,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     .expect("turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let cut = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, a, b).expect("cut");
-    m.rebuild_adjacency();
     // **The boolean's own result** — the whole point is that the straddling is something the
     // *kernel* produced, not something a caller reached across two solids to make. (The untouched
     // second cuboid is still live; walking every live solid would readmit exactly the caller-error
@@ -1802,7 +1720,6 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     .expect("a sketch on the meet-judged frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "the prism on a straddle datum must be a valid closed b-rep"
@@ -1813,15 +1730,9 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // exact on-plane definitions the escalation realizes at any precision. `Common` against a
     // swallowing box is the same crisp oracle the pure-mixed e2e uses: the result is the prism,
     // volume exactly as the sketch stated it.
-    let block = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-30.0, -30.0, -30.0]),
-        Point3::from_array([30.0, 30.0, 30.0]),
-    );
-    m.rebuild_adjacency();
+    let block = nacre_ops::fixtures::cuboid(&mut m, [-30.0, -30.0, -30.0], [30.0, 30.0, 30.0]);
     let out = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Common, block, prism)
         .expect("a boolean over the straddle-datum class must answer");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 1, "block ∩ prism is the prism");
     assert!(
         nacre_validate::validate(&m).is_empty(),
@@ -1838,16 +1749,8 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // Deterministic rebuild: the same construction accepts the same statements into the same
     // arena slots — the meet road is judged once at a fixed rung, so replay holds.
     let mut scratch = Model::new();
-    let a2 = nacre_ops::fixtures::cuboid(
-        &mut scratch,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
-    let b2 = nacre_ops::fixtures::cuboid(
-        &mut scratch,
-        Point3::from_array([3.3, 3.3, -1.0]),
-        Point3::from_array([7.7, 7.7, 11.0]),
-    );
+    let a2 = nacre_ops::fixtures::cuboid(&mut scratch, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+    let b2 = nacre_ops::fixtures::cuboid(&mut scratch, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     let OpOutput::Transform { solid: b2 } = apply(
         &mut scratch,
         &Operation::Transform {
@@ -1862,9 +1765,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     .expect("turn") else {
         unreachable!()
     };
-    scratch.rebuild_adjacency();
     nacre_ops::boolean(&mut scratch, nacre_ops::BoolKind::Cut, a2, b2).expect("cut");
-    scratch.rebuild_adjacency();
     let swapped2 = swapped.map(|v| {
         scratch
             .vertex_handle_at(v.index())
@@ -1926,7 +1827,6 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
     .expect("a prism raised on the vertex-named datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     let base_before = nacre_ops::face_plane(&m, base_cap(&m, solid, plane)).expect("planar");
     let shift = [7.0, 11.0, 13.0]; // far from the origin, so 0× and 2× are distinguishable
@@ -1942,7 +1842,6 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
     .expect("moving a solid built on a vertex-named datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     let cap = m
         .shell(m.solid(moved).outer)
@@ -2043,7 +1942,6 @@ fn a_solid_on_a_vertex_named_datum_can_be_copied() {
     .expect("prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let out = apply(&mut m, &Operation::Copy { solid });
     assert!(
         matches!(out, Ok(OpOutput::Copy { .. })),
@@ -2144,15 +2042,9 @@ fn frame_local_far_cap() -> (
     .expect("a prism on the tilted frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     // The world plane `z = dist`, as an ordinary box's top face.
-    let boxy = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 10.0, 0.0]),
-        Point3::from_array([11.0, 11.0, dist]),
-    );
-    m.rebuild_adjacency();
+    let boxy = nacre_ops::fixtures::cuboid(&mut m, [10.0, 10.0, 0.0], [11.0, 11.0, dist]);
     let box_top = m
         .shell(m.solid(boxy).outer)
         .faces
@@ -2315,7 +2207,6 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
     .expect("a box") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let turned = crate::fixtures::xf(&mut m, solid, crate::fixtures::rot_iso(Axis::Z, 30));
     // Corners by where the turn put them: (0,0,0) stays, (1,0,2) goes to (c,s,2), (0,1,2) to
     // (−s,c,2) — one on the bottom, two on the top, and no face holds all three.
@@ -2378,7 +2269,6 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
     .expect("a prism on the datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let moved = crate::fixtures::xf(&mut m, pad, crate::fixtures::rot_iso(Axis::X, 30));
     let through: Vec<_> = m
         .shell(m.solid(moved).outer)
@@ -2594,13 +2484,7 @@ fn a_datum_through_wide_meets_keeps_its_name() {
     .expect("the wide-meet datum hosts a sketch") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
-    let cub = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, -2.0, -2.0]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let cub = nacre_ops::fixtures::cuboid(&mut m, [-2.0, -2.0, -2.0], [2.0, 2.0, 2.0]);
     let OpOutput::Boolean { solids } = apply(
         &mut m,
         &Operation::Boolean {
@@ -2613,7 +2497,6 @@ fn a_datum_through_wide_meets_keeps_its_name() {
         unreachable!()
     };
     assert!(!solids.is_empty(), "the cut leaves material");
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
@@ -2783,11 +2666,7 @@ fn a_frame_says_where_it_is() {
 #[test]
 fn a_turn_does_not_cost_a_solid_its_named_datum() {
     let mut m = Model::new();
-    let block = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
+    let block = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
     let turn = |deg: i128| Operation::Transform {
         solid: block,
         isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
@@ -2799,7 +2678,6 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     let OpOutput::Transform { solid: turned } = apply(&mut m, &turn(37)).expect("turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     // **Fixture validity first**: the turn must actually have left a cap world-stated beside
     // moved walls, or this measures the easy case. Without that mismatch the rescue is never
@@ -2866,7 +2744,6 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     .expect("turning a solid that carries a named datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 }
 
 /// **An offset of a mirrored face lands on the side the caller asked for.**
@@ -3068,7 +2945,6 @@ fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
             .expect("the extrude") else {
                 unreachable!()
             };
-            m.rebuild_adjacency();
             let far = m.face(faces[1]).surface;
             assert!(
                 m.surface_motion(far).is_none(),

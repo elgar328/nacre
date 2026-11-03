@@ -13,19 +13,12 @@
 //! from its cause (measured).
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
-use nacre_math::Point3;
 use nacre_ops::{BoolKind, Operation, apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
 fn corner_box(m: &mut Model) -> Handle<Solid> {
-    let s = nacre_ops::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
-    m.rebuild_adjacency();
-    s
+    nacre_ops::fixtures::cuboid(m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0])
 }
 
 fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Handle<Solid> {
@@ -43,7 +36,6 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Handle<Solid> {
     .expect("rotate") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -58,7 +50,6 @@ fn translate(m: &mut Model, s: Handle<Solid>, d: [i128; 3]) -> Handle<Solid> {
     .expect("translate") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -132,7 +123,6 @@ fn prism(m: &mut Model, x: f64, y: f64) -> Handle<Solid> {
     let nacre_ops::OpOutput::Extrude { solid, .. } = out else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -142,12 +132,7 @@ fn prism(m: &mut Model, x: f64, y: f64) -> Handle<Solid> {
 #[test]
 fn axis_aligned_knife_edge_fuses_to_two_bodies() {
     let mut m = Model::new();
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-30.0, -20.0, 0.0]),
-        Point3::from_array([-20.0, 20.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let b = nacre_ops::fixtures::cuboid(&mut m, [-30.0, -20.0, 0.0], [-20.0, 20.0, 10.0]);
     // In the plane x = −20, 80 above the face's y-extent: no contact of any kind.
     let w = prism(&mut m, -20.0, 100.0);
     let out =
@@ -167,15 +152,9 @@ fn axis_aligned_knife_edge_fuses_to_two_bodies() {
 #[test]
 fn edge_only_contact_separates_into_two_bodies() {
     let mut m = Model::new();
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-30.0, -20.0, 0.0]),
-        Point3::from_array([-20.0, 20.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let b = nacre_ops::fixtures::cuboid(&mut m, [-30.0, -20.0, 0.0], [-20.0, 20.0, 10.0]);
     let w = prism(&mut m, -20.0, 0.0); // the sharp edge lies inside the wall's face
     let out = boolean(&mut m, BoolKind::Fuse, w, b).expect("a line contact separates");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2, "a contact along a line is two bodies");
     let total: f64 = out
         .iter()
@@ -197,18 +176,8 @@ fn edge_only_contact_separates_into_two_bodies() {
 #[test]
 fn centred_rotated_copy_fuses() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-5.0, -5.0, -5.0]),
-        Point3::from_array([5.0, 5.0, 5.0]),
-    );
-    m.rebuild_adjacency();
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-5.0, -5.0, -5.0]),
-        Point3::from_array([5.0, 5.0, 5.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
     let b = rot_z(&mut m, b, 40);
     let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("the centred pair fuses");
     let v: f64 = fused

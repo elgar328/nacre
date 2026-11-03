@@ -184,7 +184,6 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
     ) else {
         panic!("the prism")
     };
-    m.rebuild_adjacency();
     let faces = crate::planes::collect_planes(&m, solid).expect("the face table");
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
     let (mut planes, _, _) = crate::planes::dense_planes(&faces, &canon);
@@ -355,15 +354,9 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
 #[test]
 fn a_nodes_interval_holds_it_for_either_kind_of_name() {
     use crate::arrangement::{PlaneSetup, plane_index_setup};
-    use nacre_math::Point3;
     let mut m = Model::new();
     let plate = crate::tests::plate_with_bore(&mut m);
-    let wall = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([9.0, 0.0, 5.0]),
-        Point3::from_array([11.0, 40.0, 15.0]),
-    );
-    m.rebuild_adjacency();
+    let wall = crate::fixtures::cuboid(&mut m, [9.0, 0.0, 5.0], [11.0, 40.0, 15.0]);
     let setup = plane_index_setup(&m, plate, wall).expect("the gate passes");
     let PlaneSetup {
         planes: faces_tab,
@@ -459,12 +452,7 @@ fn nameless_walls_through_a_cylinder() -> (
         12.0,
     )
     .solid;
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.5, -2.5, 0.0]),
-        Point3::from_array([2.5, 2.5, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let block = crate::fixtures::cuboid(&mut m, [-2.5, -2.5, 0.0], [2.5, 2.5, 10.0]);
     let block = crate::transform::transform(
         &mut m,
         block,
@@ -475,7 +463,6 @@ fn nameless_walls_through_a_cylinder() -> (
         }),
     )
     .expect("the block turns");
-    m.rebuild_adjacency();
     let (setup, cyl_surfs) = plane_index_setup_inner(&m, cyl, block).expect("the table builds");
     let nacre_topo::Surface::Cylinder { def, .. } = m.surface(cyl_surfs[0]) else {
         panic!("the cylinder's surface");
@@ -844,7 +831,6 @@ fn a_pierce_points_height_is_its_caps_not_an_oblique_planes() {
     ) else {
         panic!("the prism")
     };
-    m.rebuild_adjacency();
     let faces = crate::planes::collect_planes(&m, solid).expect("the face table");
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
     let (planes, _, _) = crate::planes::dense_planes(&faces, &canon);
@@ -937,17 +923,8 @@ fn a_witness_list_runs_out_by_its_strongest_cause() {
 fn a_straight_ring_of_two_edges_is_refused_and_a_square_is_read() {
     use nacre_math::Point3;
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([5.0, 5.0, 5.0]),
-        Point3::from_array([15.0, 15.0, 15.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+    let b = crate::fixtures::cuboid(&mut m, [5.0, 5.0, 5.0], [15.0, 15.0, 15.0]);
     let setup = crate::arrangement::plane_index_setup(&m, a, b).expect("the gate passes");
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let class = |p: [[f64; 3]; 3]| {
@@ -1044,11 +1021,7 @@ fn a_segment_meets_a_cap_disk_across_its_chord_or_at_its_tangent_point() {
         (1.0, 3.0, 2.0, [true, false]),
     ] {
         let mut m = Model::new();
-        let block = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([x0, -2.0, 1.0]),
-            Point3::from_array([x1, y1, 3.0]),
-        );
+        let block = crate::fixtures::cuboid(&mut m, [x0, -2.0, 1.0], [x1, y1, 3.0]);
         let rows = crate::planes::collect_planes(&m, block).expect("the block's face table");
         let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
         let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
@@ -1127,18 +1100,9 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
         boxes: Vec::new(),
     }];
     let mut m = Model::new();
-    let low = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, -2.0, 1.0]),
-        Point3::from_array([3.0, 2.0, 2.0]),
-    );
-    let high = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0, -2.0, 1.0]),
-        Point3::from_array([3.0, 2.0, 3.0]),
-    );
+    let low = crate::fixtures::cuboid(&mut m, [0.5, -2.0, 1.0], [3.0, 2.0, 2.0]);
+    let high = crate::fixtures::cuboid(&mut m, [2.0, -2.0, 1.0], [3.0, 2.0, 3.0]);
     let ell = crate::boolean(&mut m, crate::BoolKind::Fuse, low, high).expect("the L")[0];
-    m.rebuild_adjacency();
     // The slab: a box standing on the plane `0.8x + 0.6z = 2.2`, stated through `(0.5, −3, 3)` —
     // its floor cap lies on the plane whatever frame the datum settles on.
     let slab = {
@@ -1172,7 +1136,6 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
             other => panic!("the slab: {other:?}"),
         }
     };
-    m.rebuild_adjacency();
     let mut rows = crate::planes::collect_planes(&m, ell).expect("the L's face table");
     rows.extend(crate::planes::collect_planes(&m, slab).expect("the slab's face table"));
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));

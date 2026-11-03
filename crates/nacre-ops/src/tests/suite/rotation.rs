@@ -1,6 +1,7 @@
 //! Booleans on rotated operands: witness invariance, reuse of a rotated result, rotation stress.
 
 use super::*;
+use crate::fixtures::cuboid;
 
 // A boolean commutes with a rigid motion, so rotating both operands by the same irrational-angle
 // isometry must give the rigid image of the unrotated result — identical volume, solid count, and
@@ -27,29 +28,14 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
     // path).
     let run = |rotate: bool| {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0; 3]),
-        );
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0; 3]),
-            Point3::from_array([3.0; 3]),
-        );
+        let a = cuboid(&mut m, [0.0; 3], [2.0; 3]);
+        let b = cuboid(&mut m, [1.0; 3], [3.0; 3]);
         let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         // C's +corner is (1,1,1) = R's concave corner → three shared planes meet there.
-        let c = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-1.0, -1.0, -1.0]),
-            Point3::from_array([1.0; 3]),
-        );
-        m.rebuild_adjacency();
+        let c = cuboid(&mut m, [-1.0, -1.0, -1.0], [1.0; 3]);
         let (r, c) = if rotate {
             let r = transform(&mut m, r, &iso).unwrap();
-            m.rebuild_adjacency();
             let c = transform(&mut m, c, &iso).unwrap();
-            m.rebuild_adjacency();
             (r, c)
         } else {
             (r, c)
@@ -77,20 +63,10 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
 #[test]
 fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("a point contact separates");
     assert_eq!(out.len(), 2);
-    m.rebuild_adjacency();
     assert_eq!(nacre_validate::validate(&m), Vec::new());
 }
 
@@ -106,22 +82,14 @@ fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
 #[test]
 fn validate_reports_the_non_manifold_pinch() {
     let mut m = Model::new();
-    let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        let s = crate::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-        m.rebuild_adjacency();
-        s
-    };
-    let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let g1 = cub(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
-    let g2 = cub(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
-    let b = cub(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let g1 = cuboid(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
+    let g2 = cuboid(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
+    let b = cuboid(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
     let t1 = boolean(&mut m, BoolKind::Fuse, a, g1).expect("a and g1 overlap");
-    m.rebuild_adjacency();
     let t2 = boolean(&mut m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
-    m.rebuild_adjacency();
     crate::arrangement::boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap();
 
-    m.rebuild_adjacency();
     let issues = nacre_validate::validate(&m);
     assert!(
         issues
@@ -143,18 +111,9 @@ fn rotated_result_witness_predicates_are_invariant() {
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
+    let a = cuboid(&mut m, [0.0; 3], [2.0; 3]);
+    let b = cuboid(&mut m, [1.0; 3], [3.0; 3]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     let table = |m: &Model, s: Handle<Solid>| {
         let f = collect_planes(m, s).unwrap();
         let c = plane_classes(&crate::planes::test_judge(&f));
@@ -162,7 +121,6 @@ fn rotated_result_witness_predicates_are_invariant() {
     };
     let pu = table(&m, r);
     let r2 = transform(&mut m, r, &iso).unwrap();
-    m.rebuild_adjacency();
     let pr = table(&m, r2);
     assert_eq!(pu.len(), pr.len(), "rotation preserves the plane count");
     let n = pu.len();
@@ -212,32 +170,18 @@ fn a_rotated_boolean_result_can_be_cut_again() {
     });
     // Chain: R = Cut(A, B) removes a far-corner octant; then Cut(R, C) removes a near one.
     let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
-        let a = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0; 3]),
-        );
-        let b = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([1.0; 3]),
-            Point3::from_array([3.0; 3]),
-        );
+        let a = cuboid(m, [0.0; 3], [2.0; 3]);
+        let b = cuboid(m, [1.0; 3], [3.0; 3]);
         let r = boolean_one(m, BoolKind::Cut, a, b).unwrap();
         // A clean slab that severs R at x = 0.5 — no plane of C coincides with any of R's
         // (avoids the separate rotated-coplanar-contact gap; isolates the witness).
-        let c = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([-1.0, -1.0, -1.0]),
-            Point3::from_array([0.5, 4.0, 4.0]),
-        );
+        let c = cuboid(m, [-1.0, -1.0, -1.0], [0.5, 4.0, 4.0]);
         (r, c)
     };
     // Unrotated reference (reuse already works when nothing is rotated).
     let mut m0 = Model::new();
     let (r0, c0) = build(&mut m0);
-    m0.rebuild_adjacency();
     let ref_out = boolean(&mut m0, BoolKind::Cut, r0, c0).unwrap();
-    m0.rebuild_adjacency();
     let ref_vol: f64 = ref_out
         .iter()
         .map(|&s| nacre_props::mass_props(&m0, s).unwrap().volume)
@@ -245,13 +189,9 @@ fn a_rotated_boolean_result_can_be_cut_again() {
     // Rotated: turn the *result* R (and C) by the same isometry, then reuse R.
     let mut m = Model::new();
     let (r, c) = build(&mut m);
-    m.rebuild_adjacency();
     let r = transform(&mut m, r, &iso).unwrap();
-    m.rebuild_adjacency();
     let c = transform(&mut m, c, &iso).unwrap();
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Cut, r, c).unwrap();
-    m.rebuild_adjacency();
     let issues = nacre_validate::validate(&m);
     assert!(
         issues.is_empty(),
@@ -301,9 +241,6 @@ fn rotated_result_reuse_stress() {
     };
     // (first kind, second kind, |m| -> (a, b, c)). R = kind1(a, b); out = kind2(R, c).
     type Build = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>, Handle<Solid>)>;
-    let cuboid = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        crate::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
-    };
     let fixtures: Vec<(&str, BoolKind, BoolKind, Build)> = vec![
         (
             "corner_then_slab",
@@ -350,23 +287,18 @@ fn rotated_result_reuse_stress() {
     let run = |k1: BoolKind, k2: BoolKind, build: &Build, isos: &[Isometry]| -> Out {
         let mut m = Model::new();
         let (a, b, c) = build(&mut m);
-        m.rebuild_adjacency();
         let Ok(r) = boolean(&mut m, k1, a, b) else {
             return Out::Rej;
         };
         assert_eq!(r.len(), 1, "first boolean is a single solid");
         let mut r = r[0];
         let mut c = c;
-        m.rebuild_adjacency();
         for iso in isos {
             r = transform(&mut m, r, iso).unwrap();
-            m.rebuild_adjacency();
             c = transform(&mut m, c, iso).unwrap();
-            m.rebuild_adjacency();
         }
         match boolean(&mut m, k2, r, c) {
             Ok(solids) => {
-                m.rebuild_adjacency();
                 assert!(
                     nacre_validate::validate(&m).is_empty(),
                     "INVALID rotated reuse result"
@@ -446,13 +378,10 @@ fn rotation_invariance_stress() {
         let (mut m, mut a, mut b) = build();
         for iso in isos {
             a = transform(&mut m, a, iso).unwrap();
-            m.rebuild_adjacency();
             b = transform(&mut m, b, iso).unwrap();
-            m.rebuild_adjacency();
         }
         match boolean(&mut m, kind, a, b) {
             Ok(solids) => {
-                m.rebuild_adjacency();
                 assert!(
                     nacre_validate::validate(&m).is_empty(),
                     "INVALID rotated result"
@@ -477,12 +406,8 @@ fn rotation_invariance_stress() {
     let cube = |lo: [f64; 3], hi: [f64; 3]| {
         move || {
             let mut m = Model::new();
-            let a = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([1.0; 3]),
-            );
-            let b = crate::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+            let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+            let b = cuboid(&mut m, lo, hi);
             (m, a, b)
         }
     };

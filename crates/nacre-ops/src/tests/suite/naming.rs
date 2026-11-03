@@ -23,7 +23,6 @@ use super::*;
 fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
     let (mut m, l, stub) = l_and_dimple();
     let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-    m.rebuild_adjacency();
 
     let mut seen = std::collections::HashSet::new();
     let mut holed = 0;
@@ -61,34 +60,20 @@ fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
 #[test]
 fn severed_with_cavity_assigns_the_void_to_its_piece() {
     let mut m = Model::new();
-    let big = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
+    let big = crate::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
     // Void near the x-low side (1×2×2 = 4), clear of the x=2 cut.
-    let inner = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 0.5]),
-        Point3::from_array([1.5, 2.5, 2.5]),
-    );
+    let inner = crate::fixtures::cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 2.5, 2.5]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
     // A slab spanning full y,z, thin in x at x∈[2,2.2] — severs into x<2 (holds the void, vol
     // 2·3·3 − 4 = 14) and x>2 (solid, vol 0.8·3·3 = 7.2).
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0, -1.0, -1.0]),
-        Point3::from_array([2.2, 4.0, 4.0]),
-    );
+    let slab = crate::fixtures::cuboid(&mut m, [2.0, -1.0, -1.0], [2.2, 4.0, 4.0]);
     let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
     assert_eq!(
         solids.len(),
         2,
         "the slab severs the hollow box into two pieces"
     );
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     // Exactly one piece owns the void; volumes match the hand calculation.
     let with_cav: Vec<_> = solids
@@ -117,28 +102,14 @@ fn severed_with_cavity_assigns_the_void_to_its_piece() {
 #[test]
 fn a_cut_through_the_void_leaves_no_cavity() {
     let mut m = Model::new();
-    let big = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    ); // void 1³
+    let big = crate::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = crate::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]); // void 1³
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
     // Slab x∈[1.4,1.6] passes through the void (x∈[1,2]) → severs AND opens the void.
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.4, -1.0, -1.0]),
-        Point3::from_array([1.6, 4.0, 4.0]),
-    );
+    let slab = crate::fixtures::cuboid(&mut m, [1.4, -1.0, -1.0], [1.6, 4.0, 4.0]);
     let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
     assert_eq!(solids.len(), 2);
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     // The void is opened, so neither piece keeps a cavity; material = 26 − (1.8 − 0.2) = 24.4.
     let total_cavities: usize = solids.iter().map(|&s| m.solid(s).cavities.len()).sum();
@@ -161,33 +132,14 @@ fn a_cut_through_the_void_leaves_no_cavity() {
 #[test]
 fn a_void_nested_in_a_floating_island_goes_to_the_inner_solid() {
     let mut m = Model::new();
-    let big = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([6.0; 3]),
-    );
-    let void = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([5.0; 3]),
-    );
+    let big = crate::fixtures::cuboid(&mut m, [0.0; 3], [6.0; 3]);
+    let void = crate::fixtures::cuboid(&mut m, [1.0; 3], [5.0; 3]);
     let a = boolean_one(&mut m, BoolKind::Cut, big, void).unwrap();
-    m.rebuild_adjacency();
-    let bbig = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0; 3]),
-        Point3::from_array([4.0; 3]),
-    );
-    let bvoid = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.5; 3]),
-        Point3::from_array([3.5; 3]),
-    );
+    let bbig = crate::fixtures::cuboid(&mut m, [2.0; 3], [4.0; 3]);
+    let bvoid = crate::fixtures::cuboid(&mut m, [2.5; 3], [3.5; 3]);
     let b = boolean_one(&mut m, BoolKind::Cut, bbig, bvoid).unwrap();
-    m.rebuild_adjacency();
     let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
     assert_eq!(solids.len(), 2);
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     // Each solid keeps exactly one void — B's void was assigned to B (innermost), not A.
     let vol = |s| nacre_props::mass_props(&m, s).unwrap().volume;
@@ -264,29 +216,15 @@ fn two_extrudes_make_two_solids() {
 #[test]
 fn a_boss_fused_then_cut_through() {
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.25, 0.25, 1.0]),
-        Point3::from_array([0.75, 0.75, 2.0]),
-    );
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let boss = crate::fixtures::cuboid(&mut m, [0.25, 0.25, 1.0], [0.75, 0.75, 2.0]);
     let bossed = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-    m.rebuild_adjacency();
     assert!(
         (nacre_props::mass_props(&m, bossed).unwrap().volume - 1.25).abs() < 1e-12,
         "the fused boss itself"
     );
-    let cutter = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.4, 0.4, 0.5]),
-        Point3::from_array([0.6, 0.6, 2.5]),
-    );
+    let cutter = crate::fixtures::cuboid(&mut m, [0.4, 0.4, 0.5], [0.6, 0.6, 2.5]);
     let r = boolean_one(&mut m, BoolKind::Cut, bossed, cutter).expect("the chained cut");
-    m.rebuild_adjacency();
     assert!(
         (nacre_props::mass_props(&m, r).unwrap().volume - 1.19).abs() < 1e-12,
         "base + boss less the drilled column: {}",
@@ -359,18 +297,8 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
     // recomputes every vertex it emits, so the only row present is the tautological one. A plain
     // box keeps its constructed corners; a turned box keeps them under its faces' motion.
     let mut m = Model::new();
-    let plain = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let to_turn = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let plain = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+    let to_turn = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     let OpOutput::Transform { solid: turned } = apply(
         &mut m,
         &Operation::Transform {
@@ -385,20 +313,9 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
     .expect("turn") else {
         unreachable!("transform yields Transform output")
     };
-    m.rebuild_adjacency();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 0.0, 0.0]),
-        Point3::from_array([12.0, 3.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([11.0, 1.0, 0.5]),
-        Point3::from_array([14.0, 2.0, 2.5]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [10.0, 0.0, 0.0], [12.0, 3.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [11.0, 1.0, 0.5], [14.0, 2.0, 2.5]);
     let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse")[0];
-    m.rebuild_adjacency();
 
     // Rows by **producer family**: a plainly built box, a rotated one, a boolean result.
     let mut counts = [(0usize, 0usize); 3]; // (with a three-plane definition, total)
@@ -477,11 +394,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
 #[test]
 fn a_wrong_plane_in_a_definition_is_caught() {
     let mut m = Model::new();
-    let s = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
+    let s = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
     let shell = m.solid(s).outer;
     let surfaces: Vec<_> = m
         .shell(shell)
@@ -666,7 +579,6 @@ fn two_separated_collinear_walls_intern_to_one_surface() {
     .expect("extrude") else {
         unreachable!("extrude yields Extrude output")
     };
-    m.rebuild_adjacency();
     let shell = m.solid(solid).outer;
     let surfaces: Vec<_> = m
         .shell(shell)
@@ -698,23 +610,10 @@ fn two_separated_collinear_walls_intern_to_one_surface() {
 #[test]
 fn a_vertex_is_named_by_the_planes_that_touch_it() {
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.25, 1.0]),
-        Point3::from_array([1.5, 0.75, 2.0]),
-    );
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let boss = crate::fixtures::cuboid(&mut m, [0.5, 0.25, 1.0], [1.5, 0.75, 2.0]);
     let overhung = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-    m.rebuild_adjacency();
-    let cutter = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.1, 0.35, 0.5]),
-        Point3::from_array([1.4, 0.65, 2.5]),
-    );
+    let cutter = crate::fixtures::cuboid(&mut m, [1.1, 0.35, 0.5], [1.4, 0.65, 2.5]);
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,
@@ -769,25 +668,12 @@ fn a_vertex_is_named_by_the_planes_that_touch_it() {
 #[test]
 fn dense_plane_ids_are_monotone_in_canon() {
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     // An overhanging boss splits `z = 1` between two faces, so classes really do merge and the
     // ranking really does compress — without that the map is the identity and proves nothing.
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.25, 1.0]),
-        Point3::from_array([1.5, 0.75, 2.0]),
-    );
+    let boss = crate::fixtures::cuboid(&mut m, [0.5, 0.25, 1.0], [1.5, 0.75, 2.0]);
     let chained = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-    m.rebuild_adjacency();
-    let probe = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.4, 0.4, 0.5]),
-        Point3::from_array([0.6, 0.6, 2.5]),
-    );
+    let probe = crate::fixtures::cuboid(&mut m, [0.4, 0.4, 0.5], [0.6, 0.6, 2.5]);
     // Rebuild the pieces `dense_planes` consumes, so this locks its contract without needing
     // `canon` to escape `plane_index_setup`. `plane_classes` is the same union-find the setup
     // runs; `dense_planes` the same ranking.
@@ -825,26 +711,13 @@ fn dense_plane_ids_are_monotone_in_canon() {
 #[test]
 fn plane_triples_are_always_canon() {
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     // An *overhanging* boss splits `z = 1` between two faces with opposite normals (the base's
     // exposed top and the boss underside) — the shape that makes "face index" and "plane index"
     // differ at all. A boss sitting wholly inside the top merges into one holed face instead.
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.25, 1.0]),
-        Point3::from_array([1.5, 0.75, 2.0]),
-    );
+    let boss = crate::fixtures::cuboid(&mut m, [0.5, 0.25, 1.0], [1.5, 0.75, 2.0]);
     let chained = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-    m.rebuild_adjacency();
-    let probe = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.4, 0.4, 0.5]),
-        Point3::from_array([0.6, 0.6, 2.5]),
-    );
+    let probe = crate::fixtures::cuboid(&mut m, [0.4, 0.4, 0.5], [0.6, 0.6, 2.5]);
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,
@@ -908,23 +781,10 @@ fn plane_triples_are_always_canon() {
 #[test]
 fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.25, 1.0]),
-        Point3::from_array([1.5, 0.75, 2.0]),
-    );
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let boss = crate::fixtures::cuboid(&mut m, [0.5, 0.25, 1.0], [1.5, 0.75, 2.0]);
     let chained = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-    m.rebuild_adjacency();
-    let probe = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.1, 0.35, 0.5]),
-        Point3::from_array([1.4, 0.65, 2.5]),
-    );
+    let probe = crate::fixtures::cuboid(&mut m, [1.1, 0.35, 0.5], [1.4, 0.65, 2.5]);
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,
@@ -984,12 +844,7 @@ fn a_pinched_caps_twice_passed_corner_has_one_name() {
     let mut m = Model::new();
     let w =
         crate::fixtures::wedge_on_a_rim(&mut m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
-    let apart = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([5.0, 5.0, 0.0]),
-        Point3::from_array([6.0, 6.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let apart = crate::fixtures::cuboid(&mut m, [5.0, 5.0, 0.0], [6.0, 6.0, 1.0]);
     let PlaneSetup {
         geom: planes,
         surf_ix,

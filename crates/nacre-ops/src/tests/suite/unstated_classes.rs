@@ -11,6 +11,7 @@
 //! moved to `(cx, cy)`. The 37° turn is what makes a class nameless; 90° keeps every name (the first family).
 
 use super::*;
+use crate::fixtures::cuboid;
 use nacre_exact::{Angle, Isometry, Rat, Rotation};
 
 fn rat(x: i128) -> Rat {
@@ -18,7 +19,7 @@ fn rat(x: i128) -> Rat {
 }
 
 fn turn(m: &mut Model, s: Handle<Solid>, axis: Axis, deg: i128, pivot: [i128; 3]) -> Handle<Solid> {
-    let out = transform(
+    transform(
         m,
         s,
         &Isometry::rotation(Rotation {
@@ -27,26 +28,16 @@ fn turn(m: &mut Model, s: Handle<Solid>, axis: Axis, deg: i128, pivot: [i128; 3]
             angle: Angle::from_deg(rat(deg)).expect("an angle"),
         }),
     )
-    .expect("the solid turns");
-    m.rebuild_adjacency();
-    out
+    .expect("the solid turns")
 }
 
 fn shift(m: &mut Model, s: Handle<Solid>, v: [i128; 3]) -> Handle<Solid> {
-    let out = transform(m, s, &Isometry::translation(v.map(rat))).expect("the solid moves");
-    m.rebuild_adjacency();
-    out
-}
-
-fn cuboid(m: &mut Model, min: [f64; 3], max: [f64; 3]) -> Handle<Solid> {
-    let s = crate::fixtures::cuboid(m, Point3::from_array(min), Point3::from_array(max));
-    m.rebuild_adjacency();
-    s
+    transform(m, s, &Isometry::translation(v.map(rat))).expect("the solid moves")
 }
 
 /// A `z` cylinder of radius `r` standing on `(x, y, z0)` with height `h`.
 fn z_cylinder(m: &mut Model, at: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
-    let s = crate::fixtures::cylinder_with_seam(
+    crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array(at),
         Vector3::from_array([0.0, 0.0, 1.0]),
@@ -54,15 +45,11 @@ fn z_cylinder(m: &mut Model, at: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
         r,
         h,
     )
-    .solid;
-    m.rebuild_adjacency();
-    s
+    .solid
 }
 
 fn op(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
-    let out = boolean(m, kind, a, b).expect("the fixture's boolean builds")[0];
-    m.rebuild_adjacency();
-    out
+    boolean(m, kind, a, b).expect("the fixture's boolean builds")[0]
 }
 
 /// A `5×5` box over `z0..z0+h`, turned `deg` about `z` around its own centre, centred on
@@ -101,7 +88,6 @@ fn slotted_plate(m: &mut Model) -> Handle<Solid> {
     .expect("the slotted plate extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -733,7 +719,6 @@ fn score(fams: &[Family], swapped: bool) {
                         "{} {kind:?} (swapped: {swapped}): solids",
                         f.name
                     );
-                    m.rebuild_adjacency();
                     let issues = nacre_validate::validate(&m);
                     assert!(
                         issues.is_empty(),
@@ -1392,7 +1377,6 @@ fn a_witness_naming_a_silent_class_is_asked_after_the_road_declines() {
             let rib = cuboid(&mut m, [9.0, 30.0, 5.0], [11.0, 40.0, 15.0]);
             let a = op(&mut m, BoolKind::Fuse, p, rib);
             let b = turned_box(&mut m, 37, [10, 25], 5.0, 10.0);
-            m.rebuild_adjacency();
             crate::boolean(&mut m, kind, a, b).expect("the turned box meets the ribbed plate");
         }
         crate::nesting::nesting_probe::DECLINES.mine()
@@ -1532,7 +1516,6 @@ fn prism_on_the_diagonal(m: &mut Model, z: [f64; 2]) -> Handle<Solid> {
     ) else {
         panic!("the triangle extrudes")
     };
-    m.rebuild_adjacency();
     shift(m, solid, [0, 0, z[0] as i128])
 }
 

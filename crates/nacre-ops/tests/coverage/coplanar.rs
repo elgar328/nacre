@@ -18,13 +18,8 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 fn containment_boolean_keeps_a_pocket() {
     for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
         let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
-        let bx = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.05, 0.05, 0.05]),
-            Point3::from_array([0.15, 0.15, 0.15]),
-        );
+        let bx = nacre_ops::fixtures::cuboid(&mut m, [0.05, 0.05, 0.05], [0.15, 0.15, 0.15]);
         let r = boolean_one(&mut m, kind, pc, bx).unwrap();
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} {vs:?}");
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -39,26 +34,12 @@ fn cut_with_a_hollow_operand_far_from_the_void() {
     // (dropping it would read as convex and return vol 26.875, cavities 0 — measured):
     // 25.875 (27 − 1 void − 0.125 corner) with the cavity intact.
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
-    m.rebuild_adjacency();
-    let cutter = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.5; 3]),
-        Point3::from_array([3.5; 3]),
-    );
+    let cutter = nacre_ops::fixtures::cuboid(&mut m, [2.5; 3], [3.5; 3]);
     let r = boolean_one(&mut m, BoolKind::Cut, hollow, cutter).unwrap();
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.875).abs() < 1e-9, "volume {vol}");
@@ -71,26 +52,12 @@ fn a_slab_splits_a_hollow_box_into_two() {
     // The slab spans the full cross-section, so it opens the void — both pieces are
     // cavity-free.
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
-    let slab = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5, 1.4, -0.5]),
-        Point3::from_array([3.5, 1.6, 3.5]),
-    );
+    let slab = nacre_ops::fixtures::cuboid(&mut m, [-0.5, 1.4, -0.5], [3.5, 1.6, 3.5]);
     let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
     assert_eq!(solids.len(), 2);
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     for &s in &solids {
@@ -112,27 +79,12 @@ fn a_slab_splits_a_hollow_box_into_two() {
 #[test]
 fn a_hollow_part_takes_a_coplanar_boss() {
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
     // Top-flush boss on z=3: a genuine coplanar contact, clear of the void's planes.
-    let boss = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 3.0]),
-        Point3::from_array([0.75, 0.75, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, 3.0], [0.75, 0.75, 4.0]);
     let r = boolean_one(&mut m, BoolKind::Fuse, hollow, boss).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     // 27 − 1 void + 0.25·0.25·1 boss.
@@ -146,26 +98,11 @@ fn a_hollow_part_takes_a_coplanar_pocket() {
     // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Emitting outer
     // shells only would lose the void here too (26.96875 — measured).
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
-    let tool = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 2.5]),
-        Point3::from_array([0.75, 0.75, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let tool = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, 2.5], [0.75, 0.75, 3.0]);
     let r = boolean_one(&mut m, BoolKind::Cut, hollow, tool).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     // 27 − 1 void − 0.25·0.25·0.5 pocket.
@@ -182,26 +119,11 @@ fn a_coplanar_boss_over_a_void_plane_is_solved() {
     // 26 (hollow) + 0.04 (boss); area 60 + 0.8 (boss sides) + 0.04 (its top) − 0.04 (its footprint);
     // void intact.
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
-    let boss = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.9, 0.9, 3.0]),
-        Point3::from_array([1.1, 1.1, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = nacre_ops::fixtures::cuboid(&mut m, [0.9, 0.9, 3.0], [1.1, 1.1, 4.0]);
     let r = boolean_one(&mut m, BoolKind::Fuse, hollow, boss).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let props = nacre_props::mass_props(&m, r).unwrap();
@@ -220,25 +142,11 @@ fn a_hollow_part_takes_a_second_far_cut() {
     // opposite the void — the void survives, and the result is fed back as an
     // operand (chaining past the first cavity-producing op).
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
-    let bore = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5; 3]),
-        Point3::from_array([0.5; 3]),
-    );
+    let bore = nacre_ops::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
     let r = boolean_one(&mut m, BoolKind::Cut, hollow, bore).unwrap();
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.875).abs() < 1e-9, "volume {vol}");
@@ -277,7 +185,6 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
     .unwrap();
     let boss = nacre_ops::fixtures::pad(&mut m, top, l_over, 1.0).expect("the cantilevered L pad");
     let (solid, top_face) = (boss.solid(), boss.cap_face(&m));
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let p = nacre_props::mass_props(&m, solid).unwrap();
@@ -318,13 +225,8 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
     .unwrap();
     let mut m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
     let lsolid = *m.live_solids().first().unwrap();
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.5, 1.5, 0.5]),
-    );
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.5, 1.5, 0.5]);
     let r = boolean_one(&mut m, BoolKind::Common, lsolid, b).expect("corner-flush Common");
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let p = nacre_props::mass_props(&m, r).unwrap();
@@ -342,16 +244,8 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
 fn edge_contact_common_is_empty_in_both_orders() {
     let build = || {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([4.0, 2.0, 1.0]),
-            Point3::from_array([5.0, 3.0, 3.0]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([2.0, 0.0, 2.0]),
-            Point3::from_array([4.0, 2.0, 3.0]),
-        );
+        let a = nacre_ops::fixtures::cuboid(&mut m, [4.0, 2.0, 1.0], [5.0, 3.0, 3.0]);
+        let b = nacre_ops::fixtures::cuboid(&mut m, [2.0, 0.0, 2.0], [4.0, 2.0, 3.0]);
         (m, a, b)
     };
     for (label, swap) in [("a,b", false), ("b,a", true)] {
@@ -365,7 +259,6 @@ fn edge_contact_common_is_empty_in_both_orders() {
             "edge-contact Common ({label}) should be empty, got {} solid(s)",
             out.len()
         );
-        m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
     }
 }
@@ -415,11 +308,7 @@ fn round_pin(m: &mut Model) -> Handle<Solid> {
 
 /// An 8 × 8 plate from `z = −1` to `z = 1` with a bore of radius 2 through it about the `z` axis.
 fn bored_plate(m: &mut Model) -> Handle<Solid> {
-    let plate = nacre_ops::fixtures::cuboid(
-        m,
-        Point3::from_array([-4.0, -4.0, -1.0]),
-        Point3::from_array([4.0, 4.0, 1.0]),
-    );
+    let plate = nacre_ops::fixtures::cuboid(m, [-4.0, -4.0, -1.0], [4.0, 4.0, 1.0]);
     let drill = nacre_ops::fixtures::cylinder(
         m,
         Point3::from_array([0.0, 0.0, -2.0]),
@@ -428,7 +317,6 @@ fn bored_plate(m: &mut Model) -> Handle<Solid> {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     boolean_one(m, BoolKind::Cut, plate, drill).expect("the plate is bored")
 }
 
@@ -534,17 +422,11 @@ fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
                 let at = format!("{name}: {kind:?}, swapped {swapped}");
                 let mut m = Model::new();
                 let a = build(&mut m);
-                let b = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array(lo),
-                    Point3::from_array(hi),
-                );
-                m.rebuild_adjacency();
+                let b = nacre_ops::fixtures::cuboid(&mut m, lo, hi);
                 let (va, vb) = (volume(&m, a), volume(&m, b));
                 let (bits_a, faces_a) = (vertex_bits(&m, a), face_count(&m, a));
                 let (x, y) = if swapped { (b, a) } else { (a, b) };
                 let out = boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
-                m.rebuild_adjacency();
                 assert!(nacre_validate::validate(&m).is_empty(), "{at}: validate");
                 match (kind, swapped) {
                     (BoolKind::Common, _) => assert!(out.is_empty(), "{at}: {out:?}"),

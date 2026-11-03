@@ -13,11 +13,7 @@ use super::*;
 /// A plate bored to `hole_h` deep, ready to be operated on again.
 fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, 0.0]),
@@ -27,19 +23,13 @@ fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
         hole_h,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore");
     (m, out[0])
 }
 
 /// A boss well clear of the bore (walls 4+ from the axis, r = 3), fused onto the plate.
 fn fuse_a_clear_boss(m: &mut Model, s: Handle<Solid>, z0: f64) -> Vec<Handle<Solid>> {
-    let boss = crate::fixtures::cuboid(
-        m,
-        Point3::from_array([4.0, 4.0, z0]),
-        Point3::from_array([12.0, 6.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = crate::fixtures::cuboid(m, [4.0, 4.0, z0], [12.0, 6.0, 8.0]);
     crate::boolean(m, BoolKind::Fuse, s, boss).expect("the boss")
 }
 
@@ -69,12 +59,7 @@ fn a_blind_bore_can_be_fused_onto_afterwards() {
 #[test]
 fn a_blind_bore_can_be_cut_afterwards() {
     let (mut m, s) = plate_with_a_bore(3.0);
-    let tool = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([4.0, 4.0, 3.0]),
-        Point3::from_array([12.0, 6.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let tool = crate::fixtures::cuboid(&mut m, [4.0, 4.0, 3.0], [12.0, 6.0, 8.0]);
     let out = crate::boolean(&mut m, BoolKind::Cut, s, tool).expect("the cut");
     assert_eq!(out.len(), 1);
     assert!(
@@ -102,7 +87,6 @@ fn a_blind_bore_can_be_drilled_beside() {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, s, second).expect("the second hole");
     assert_eq!(out.len(), 1);
     assert!(
@@ -152,11 +136,7 @@ fn a_through_bore_is_unaffected() {
 #[test]
 fn an_enclosed_cylindrical_void_is_a_cavity() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0; 3]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0; 3]);
     let void = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 1.0]),
@@ -166,7 +146,6 @@ fn an_enclosed_cylindrical_void_is_a_cavity() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, a, void).expect("a void inside a box");
     assert_eq!(out.len(), 1, "one body, hollow — not two");
     assert!(
@@ -200,11 +179,7 @@ fn an_enclosed_cylindrical_void_is_a_cavity() {
 #[test]
 fn a_bore_and_a_sealed_void_live_in_one_body() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([8.0, 4.0, 4.0]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [8.0, 4.0, 4.0]);
     let bore = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, -1.0]),
@@ -214,7 +189,6 @@ fn a_bore_and_a_sealed_void_live_in_one_body() {
         6.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, a, bore).expect("the bore");
     let void = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -225,7 +199,6 @@ fn a_bore_and_a_sealed_void_live_in_one_body() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, bored[0], void).expect("the sealed void");
     assert_eq!(out.len(), 1, "one body");
     assert!(
@@ -251,11 +224,7 @@ fn a_bore_and_a_sealed_void_live_in_one_body() {
 #[test]
 fn a_cavity_with_no_vertex_still_finds_its_owner() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0; 3]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0; 3]);
     let void = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 1.0]),
@@ -265,14 +234,8 @@ fn a_cavity_with_no_vertex_still_finds_its_owner() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let hollow = crate::boolean(&mut m, BoolKind::Cut, a, void).expect("a void inside a box");
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 10.0, 10.0]),
-        Point3::from_array([14.0, 14.0, 14.0]),
-    );
-    m.rebuild_adjacency();
+    let b = crate::fixtures::cuboid(&mut m, [10.0, 10.0, 10.0], [14.0, 14.0, 14.0]);
     let out = crate::boolean(&mut m, BoolKind::Fuse, hollow[0], b).expect("two bodies apart");
     assert_eq!(out.len(), 2, "the void is a cavity, not a third body");
     assert!(
@@ -308,11 +271,7 @@ fn a_cavity_with_no_vertex_still_finds_its_owner() {
 fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
     let (mut m, a, b) = {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0; 3]),
-        );
+        let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
         let b = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([10.0, 10.0, 0.5]),
@@ -322,7 +281,6 @@ fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, a, b)
     };
     let cut = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("a cut that misses");
@@ -340,11 +298,7 @@ fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
     // is `8`, and a radius-`0.5`, height-`1` cylinder is `π/4`. Two separate bodies, each a
     // sphere topologically (`χ = 2`), and `validate` clean.
     let mut m2 = Model::new();
-    let a2 = crate::fixtures::cuboid(
-        &mut m2,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a2 = crate::fixtures::cuboid(&mut m2, [0.0; 3], [2.0; 3]);
     let b2 = crate::fixtures::cylinder_with_seam(
         &mut m2,
         Point3::from_array([10.0, 10.0, 0.5]),
@@ -354,7 +308,6 @@ fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
         1.0,
     )
     .solid;
-    m2.rebuild_adjacency();
     let out = crate::boolean(&mut m2, BoolKind::Fuse, a2, b2).expect("two bodies apart");
     assert_eq!(out.len(), 2, "a fuse of two disjoint bodies is two bodies");
     assert!(
@@ -426,7 +379,6 @@ fn a_cylinder_in_the_notch_keeps_no_band() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let (out, _) = bands(&m, a, b, BoolKind::Cut);
     assert!(
         out.is_empty(),

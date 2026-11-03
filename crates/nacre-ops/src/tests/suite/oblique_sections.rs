@@ -37,7 +37,7 @@ fn cylinder(
     r: f64,
     h: f64,
 ) -> Handle<Solid> {
-    let s = crate::fixtures::cylinder_with_seam(
+    crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array(at),
         Vector3::from_array(axis),
@@ -45,9 +45,7 @@ fn cylinder(
         r,
         h,
     )
-    .solid;
-    m.rebuild_adjacency();
-    s
+    .solid
 }
 
 fn z_cylinder(m: &mut Model, at: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
@@ -85,7 +83,6 @@ fn filleted_hole_plate(m: &mut Model) -> Handle<Solid> {
     .expect("the plate extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -119,14 +116,11 @@ fn block_over(m: &mut Model, pts: &[(f64, f64)], z0: f64, h: f64) -> Handle<Soli
     .expect("the block moves") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
 fn op(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
-    let out = boolean(m, kind, a, b).expect("the fixture's boolean builds")[0];
-    m.rebuild_adjacency();
-    out
+    boolean(m, kind, a, b).expect("the fixture's boolean builds")[0]
 }
 
 /// A triangle in the `yz` plane, `(y, z)` corners counter-clockwise, extruded over
@@ -162,7 +156,6 @@ pub(crate) fn gusset(m: &mut Model, tri: Sketch, x0: f64) -> Handle<Solid> {
     .expect("the gusset moves") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -199,7 +192,6 @@ fn gusset_zx(m: &mut Model, tri: Sketch, y0: f64) -> Handle<Solid> {
     .expect("the gusset moves") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -439,11 +431,7 @@ fn a_gusset_whose_plane_touches_a_bores_rim_is_refused() {
 #[test]
 fn a_gusset_whose_other_faces_cut_a_bore_along_x() {
     let build = |m: &mut Model| {
-        let plate = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0, 0.0, 0.0]),
-            Point3::from_array([10.0, 40.0, 40.0]),
-        );
+        let plate = crate::fixtures::cuboid(m, [0.0, 0.0, 0.0], [10.0, 40.0, 40.0]);
         let bore = cylinder(
             m,
             [-1.0, 10.0, 10.0],
@@ -454,12 +442,7 @@ fn a_gusset_whose_other_faces_cut_a_bore_along_x() {
         );
         let plate = op(m, BoolKind::Cut, plate, bore);
         let g = gusset_zx(m, SUNK, 30.0);
-        let block = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([4.0, 11.0, 9.0]),
-            Point3::from_array([6.5, 31.0, 15.0]),
-        );
-        m.rebuild_adjacency();
+        let block = crate::fixtures::cuboid(m, [4.0, 11.0, 9.0], [6.5, 31.0, 15.0]);
         (plate, op(m, BoolKind::Fuse, g, block))
     };
     gate(build, Ok(1));
@@ -633,12 +616,7 @@ fn a_gusset_whose_plane_runs_through_a_bores_seam_vertex() {
 /// is filled by a block — a D-shaped hole, its lateral bounded by two rulings at `(13, 6)` and
 /// `(13, 14)` where the flat wall cuts it. Volume `16000 − 10(25π − 25·acos(3/5) + 12)`.
 fn d_hole_plate(m: &mut Model) -> Handle<Solid> {
-    let plate = crate::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let plate = crate::fixtures::cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
     let bore = cylinder(
         m,
         [10.0, 10.0, -1.0],
@@ -731,12 +709,7 @@ fn a_gusset_sunk_into_a_plate_with_a_filleted_hole() {
 fn a_gusset_whose_other_faces_cut_the_bore() {
     let build = |m: &mut Model| {
         let g = gusset(m, SUNK, 30.0);
-        let block = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([11.0, 9.0, 4.0]),
-            Point3::from_array([31.0, 15.0, 6.5]),
-        );
-        m.rebuild_adjacency();
+        let block = crate::fixtures::cuboid(m, [11.0, 9.0, 4.0], [31.0, 15.0, 6.5]);
         (plate_with_bore(m), op(m, BoolKind::Fuse, g, block))
     };
     gate(build, Ok(1));

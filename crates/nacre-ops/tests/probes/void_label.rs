@@ -12,7 +12,7 @@
 //! already uses one dimension down.
 
 use nacre_exact::{Axis, Isometry, Rat};
-use nacre_math::{Point2, Point3};
+use nacre_math::Point2;
 use nacre_ops::{BoolKind, Operation, Profile2d, SketchFrame, apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
@@ -31,7 +31,6 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     .expect("extrude") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -52,7 +51,6 @@ fn lift(m: &mut Model, s: Handle<Solid>, num: i128, den: i128) -> Handle<Solid> 
     .expect("translate") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -60,7 +58,6 @@ fn lift(m: &mut Model, s: Handle<Solid>, num: i128, den: i128) -> Handle<Solid> 
 /// last one is the proposition a normal-reading label breaks: it would return the cavity as a
 /// second "solid" whose volume is negative, and every other check would be happy with that.
 fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) {
-    m.rebuild_adjacency();
     assert_eq!(got.len(), 1, "one body, not the operand plus its own void");
     let s = m.solid(got[0]);
     assert_eq!(s.cavities.len(), 1, "the void is this solid's cavity");
@@ -79,12 +76,7 @@ fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) 
 #[test]
 fn a_slanted_void_is_a_cavity_not_a_second_body() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     let b = prism(&mut m, &[[0.8, 0.5], [0.2, 0.2], [0.2, 0.8]], 0.6);
     let b = lift(&mut m, b, 2, 10);
     let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the cut builds");
@@ -96,17 +88,8 @@ fn a_slanted_void_is_a_cavity_not_a_second_body() {
 #[test]
 fn an_axis_aligned_void_is_one_solid_with_a_cavity() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.2, 0.2, 0.2]),
-        Point3::from_array([0.8, 0.8, 0.8]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.2, 0.2, 0.2], [0.8, 0.8, 0.8]);
     let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the cut builds");
     one_solid_with_a_cavity(&mut m, got, 1.0 - 0.6 * 0.6 * 0.6);
 }
@@ -121,12 +104,7 @@ fn an_axis_aligned_void_is_one_solid_with_a_cavity() {
 #[test]
 fn a_wedge_whose_tip_nearly_reaches_the_wall_is_still_one_body() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     let b = prism(&mut m, &[[0.999, 0.5], [0.1, 0.1], [0.1, 0.9]], 0.6);
     let b = lift(&mut m, b, 2, 10);
     let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the cut builds");

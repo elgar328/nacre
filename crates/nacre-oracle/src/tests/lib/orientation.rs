@@ -58,16 +58,8 @@ fn step_of(m: &Model, s: Handle<Solid>) -> String {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn a_wrong_orientation_reads_as_faulty() {
     let mut m = Model::new();
-    let cube = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let tool = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5; 3]),
-        Point3::from_array([1.5; 3]),
-    );
+    let cube = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let tool = nacre_ops::fixtures::cuboid(&mut m, [0.5; 3], [1.5; 3]);
     let cube_step = step_of(&m, cube);
     let tool_step = step_of(&m, tool);
 

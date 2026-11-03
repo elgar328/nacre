@@ -26,11 +26,7 @@ use nacre_topo::Model;
 #[test]
 fn the_chart_census_is_running() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let drill = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, -1.0]),
@@ -40,7 +36,6 @@ fn the_chart_census_is_running() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::ledger::owned(|| {
         crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore")
     });
@@ -96,11 +91,7 @@ fn the_chart_census_is_running() {
 #[test]
 fn the_charts_vertical_answers_close() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 0.0, -1.0]),
@@ -110,7 +101,6 @@ fn the_charts_vertical_answers_close() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::ledger::owned(|| {
         crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
     });
@@ -187,11 +177,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             ([2.0, 2.0, 2.0], 1.0),
         ] {
             let mut m = Model::new();
-            let plate = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
+            let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
             let boss = crate::fixtures::cylinder_with_seam(
                 &mut m,
                 Point3::from_array(base),
@@ -201,7 +187,6 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
                 h,
             )
             .solid;
-            m.rebuild_adjacency();
             crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
         }
         // A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
@@ -210,11 +195,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
         // **Cut** is the kind this test builds through it.
         {
             let mut m = Model::new();
-            let plate = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
+            let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
             let boss = crate::fixtures::cylinder_with_seam(
                 &mut m,
                 Point3::from_array([2.0, 0.0, -1.0]),
@@ -224,15 +205,8 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
                 4.0,
             )
             .solid;
-            m.rebuild_adjacency();
             let out = crate::boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
-            m.rebuild_adjacency();
-            let wall = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([2.0, -3.0, -2.0]),
-                Point3::from_array([5.0, 3.0, 6.0]),
-            );
-            m.rebuild_adjacency();
+            let wall = crate::fixtures::cuboid(&mut m, [2.0, -3.0, -2.0], [5.0, 3.0, 6.0]);
             crate::boolean(&mut m, BoolKind::Cut, out[0], wall)
                 .expect("the through-axis wall cuts");
         }
@@ -397,7 +371,6 @@ fn the_chart_stands_on_a_tilted_axis() {
             3.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let out = crate::ledger::owned(|| {
             crate::boolean(&mut m, BoolKind::Cut, solid, cyl)
                 .unwrap_or_else(|e| panic!("{name}: {e:?}"))

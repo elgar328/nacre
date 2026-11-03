@@ -179,7 +179,6 @@ pub fn a_solid_and_a_placed_prism(
         ) else {
             panic!("extrude on the fixture's frame")
         };
-        m.rebuild_adjacency();
         solid
     };
     let a = extrude(&mut m, frame, a, 2.0);
@@ -204,12 +203,7 @@ pub fn a_solid_and_a_placed_prism(
 
 /// The plate `[0,40]²×[0,10]` with a through bore of radius 2 at `(10, 10)` — volume `16000 − 40π`.
 pub fn plate_with_bore(m: &mut Model) -> Handle<Solid> {
-    let plate = nacre_ops::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let plate = nacre_ops::fixtures::cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
     let bore = nacre_ops::fixtures::cylinder_with_seam(
         m,
         Point3::from_array([10.0, 10.0, -1.0]),
@@ -219,22 +213,14 @@ pub fn plate_with_bore(m: &mut Model) -> Handle<Solid> {
         12.0,
     )
     .solid;
-    m.rebuild_adjacency();
-    let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bored plate")[0];
-    m.rebuild_adjacency();
-    out
+    boolean(m, BoolKind::Cut, plate, bore).expect("the bored plate")[0]
 }
 
 /// The plate `[0,40]²×[0,10]` with a `z` pin of radius `r` and height `h` standing at `at` fused
 /// on — volume `16000 + πr²h` wherever the pin stands on the top (`at[2] = 10`) or under the bottom
 /// (`at[2] = −h`), inside the plate's outline or over its edge.
 pub fn plate_with_pin(m: &mut Model, at: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
-    let plate = nacre_ops::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let plate = nacre_ops::fixtures::cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
     let pin = nacre_ops::fixtures::cylinder_with_seam(
         m,
         Point3::from_array(at),
@@ -244,25 +230,15 @@ pub fn plate_with_pin(m: &mut Model, at: [f64; 3], r: f64, h: f64) -> Handle<Sol
         h,
     )
     .solid;
-    m.rebuild_adjacency();
-    let out = boolean(m, BoolKind::Fuse, plate, pin).expect("the pinned plate")[0];
-    m.rebuild_adjacency();
-    out
+    boolean(m, BoolKind::Fuse, plate, pin).expect("the pinned plate")[0]
 }
 
 /// The bored plate with the wall `[9,11]×[0,40]×[5,15]` fused on — its plane `x = 9` runs within
 /// the bore's radius, and its face across the bore.
 pub fn walled_bore(m: &mut Model) -> Handle<Solid> {
     let p = plate_with_bore(m);
-    let wall = nacre_ops::fixtures::cuboid(
-        m,
-        Point3::from_array([9.0, 0.0, 5.0]),
-        Point3::from_array([11.0, 40.0, 15.0]),
-    );
-    m.rebuild_adjacency();
-    let out = boolean(m, BoolKind::Fuse, p, wall).expect("the walled plate")[0];
-    m.rebuild_adjacency();
-    out
+    let wall = nacre_ops::fixtures::cuboid(m, [9.0, 0.0, 5.0], [11.0, 40.0, 15.0]);
+    boolean(m, BoolKind::Fuse, p, wall).expect("the walled plate")[0]
 }
 
 /// [`walled_bore`]'s volume. The wall's upper half stands clear, and its lower half is inside the
@@ -353,7 +329,6 @@ pub fn decimal_coincidence(xs: f64, ys: f64, k: f64) -> (Model, Handle<Solid>, H
         let Ok(OpOutput::Extrude { solid, .. }) = apply(m, &op) else {
             panic!("extrude along {axis:?}")
         };
-        m.rebuild_adjacency();
         solid
     }
     let rect = |lo: [f64; 2], hi: [f64; 2]| {
@@ -371,7 +346,6 @@ pub fn decimal_coincidence(xs: f64, ys: f64, k: f64) -> (Model, Handle<Solid>, H
     // `y ∈ [0, ys]`: the ZX frame (`u = ẑ`, `v = x̂`) swept along `+ŷ`.
     let b = extrude(&mut m, Axis::Y, rect([-1.0, -1.0], [2.0, 2.0]), ys);
     let bx = boolean_one(&mut m, BoolKind::Common, a, b).expect("two slabs cross in a box");
-    m.rebuild_adjacency();
     let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, k)]).unwrap();
     let prism = extrude(&mut m, Axis::Z, tri, 1.0);
     (m, bx, prism)
@@ -388,7 +362,6 @@ fn prism_z(m: &mut Model, pts: &[[f64; 2]]) -> Handle<Solid> {
     let Ok(OpOutput::Extrude { solid, .. }) = apply(m, &op) else {
         panic!("extrude along z")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -425,7 +398,6 @@ pub fn rounded_corner_walls() -> (Model, Handle<Solid>, Handle<Solid>) {
         &[[0.2, -10.0], [0.4, -10.0], [0.4, 10.0], [0.2, 10.0]],
     );
     let cc = boolean_one(&mut m, BoolKind::Common, full, slab).expect("a slab of the prism");
-    m.rebuild_adjacency();
     (m, b, cc)
 }
 
@@ -477,16 +449,8 @@ pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3
 /// Two unit boxes overlapping in a corner: A = [0,1]³, B = [0.5,1.5]³.
 pub fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 0.5]),
-        Point3::from_array([1.5, 1.5, 1.5]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]);
     (m, a, b)
 }
 
@@ -494,23 +458,15 @@ pub fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// not overlapping volume): A = [0,1]³ below, B = z∈[1,2] above.
 pub fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
     (m, a, b)
 }
 
 // ---- rigid transforms (public: apply(Operation::Transform)) ----
 
 /// Apply a rigid transform to `s` via the public `apply(Transform)` path and
-/// return the image, rebuilding adjacency (as every call site does).
+/// return the image.
 pub fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     let OpOutput::Transform { solid } = apply(
         m,
@@ -522,7 +478,6 @@ pub fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     .unwrap() else {
         panic!("expected Transform output");
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -562,7 +517,6 @@ pub fn mirrored_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat)
     .expect("a mirror") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -593,7 +547,6 @@ pub fn through_block(m: &mut Model, height: f64) -> Handle<Solid> {
     else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let corner = |m: &Model, at: [f64; 3]| {
         m.shell(m.solid(helper).outer)
             .faces
@@ -641,7 +594,6 @@ pub fn through_block(m: &mut Model, height: f64) -> Handle<Solid> {
     .expect("a prism on the datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert!(
         m.shell(m.solid(solid).outer)
             .faces
@@ -686,7 +638,6 @@ pub fn through_mirrored_block(m: &mut Model, height: f64, lift: nacre_exact::Rat
     .expect("a mirror") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let top = top_surface(m, solid);
     assert!(
         m.surface_motion(top).is_some() && m.world_plane_name(top).is_some(),
@@ -706,7 +657,6 @@ pub fn through_mirrored_block(m: &mut Model, height: f64, lift: nacre_exact::Rat
 pub fn through_notched(m: &mut Model, solid: Handle<Solid>, height: f64) -> Handle<Solid> {
     let notch = through_block(m, height);
     let out = boolean(m, BoolKind::Cut, solid, notch).expect("the notch cuts")[0];
-    m.rebuild_adjacency();
     assert!(
         m.shell(m.solid(out).outer).faces.iter().any(|&f| matches!(
             m.surface(m.face(f).surface),
@@ -800,31 +750,19 @@ pub fn rotated_l_prism() -> (Model, Handle<Solid>) {
 
 pub fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.3, -0.3, 0.2]),
-        Point3::from_array([2.4, 0.4, 1.4]),
-    );
+    let bx = nacre_ops::fixtures::cuboid(&mut m, [1.3, -0.3, 0.2], [2.4, 0.4, 1.4]);
     (m, l, bx)
 }
 
 pub fn l_and_rod() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let rod = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, -0.5]),
-        Point3::from_array([0.5, 0.6, 1.5]),
-    );
+    let rod = nacre_ops::fixtures::cuboid(&mut m, [0.3, 0.3, -0.5], [0.5, 0.6, 1.5]);
     (m, l, rod)
 }
 
 pub fn l_and_inner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.1; 3]),
-        Point3::from_array([0.9; 3]),
-    );
+    let bx = nacre_ops::fixtures::cuboid(&mut m, [0.1; 3], [0.9; 3]);
     (m, l, bx)
 }
 
@@ -852,11 +790,7 @@ pub fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
 /// hull, outside the L), where a convex half-space test would misclassify it.
 pub fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.6, 0.6, 0.2]),
-        Point3::from_array([1.6, 1.6, 1.4]),
-    );
+    let bx = nacre_ops::fixtures::cuboid(&mut m, [0.6, 0.6, 0.2], [1.6, 1.6, 1.4]);
     (m, l, bx)
 }
 
@@ -882,11 +816,7 @@ pub fn u_prism() -> (Model, Handle<Solid>) {
 
 pub fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, u) = u_prism();
-    let slab = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5, 1.5, -0.5]),
-        Point3::from_array([3.5, 2.5, 1.5]),
-    );
+    let slab = nacre_ops::fixtures::cuboid(&mut m, [-0.5, 1.5, -0.5], [3.5, 2.5, 1.5]);
     (m, u, slab)
 }
 
@@ -967,7 +897,6 @@ pub fn cube_and_spun_bar_x(
     ])
     .unwrap();
     let bar = extrude_at_z(&mut m, bar, 1.0 - half_z, 2.0 * half_z);
-    m.rebuild_adjacency();
     let bar = xf(
         &mut m,
         bar,
@@ -1062,61 +991,33 @@ pub fn cube_with_top() -> (Model, Handle<Face>) {
 
 pub fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([10.0; 3]),
-    );
-    let y = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([3.0, -1.0, -1.0]),
-        Point3::from_array([7.0, 1.4, 1.2]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [10.0; 3]);
+    let y = nacre_ops::fixtures::cuboid(&mut m, [3.0, -1.0, -1.0], [7.0, 1.4, 1.2]);
     (m, a, y)
 }
 
 pub fn nested_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     (m, a, b)
 }
 
 pub fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 0.2]),
-        Point3::from_array([2.5, 1.5, 1.2]),
-    );
+    let bx = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, 0.2], [2.5, 1.5, 1.2]);
     (m, l, bx)
 }
 
 pub fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let stub = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, 0.5]),
-        Point3::from_array([0.7, 0.7, 1.5]),
-    );
+    let stub = nacre_ops::fixtures::cuboid(&mut m, [0.3, 0.3, 0.5], [0.7, 0.7, 1.5]);
     (m, l, stub)
 }
 
 pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
-    let slab = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.2, -0.25, z0]),
-        Point3::from_array([1.3, 1.2, 1.5]),
-    );
+    let slab = nacre_ops::fixtures::cuboid(&mut m, [-0.2, -0.25, z0], [1.3, 1.2, 1.5]);
     (m, slab, pc)
 }
 

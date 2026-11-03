@@ -96,11 +96,7 @@ fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
 #[test]
 fn a_segment_tangent_to_the_rim_builds() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
@@ -110,14 +106,8 @@ fn a_segment_tangent_to_the_rim_builds() {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([11.0, 8.0, 5.0]),
-        Point3::from_array([15.0, 12.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = crate::fixtures::cuboid(&mut m, [11.0, 8.0, 5.0], [15.0, 12.0, 8.0]);
     let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a tangent edge");
     assert_eq!(out.len(), 1, "the boss sits on material");
     assert!(
@@ -142,7 +132,6 @@ fn a_segment_tangent_to_the_rim_builds() {
     // χ odd — what `check_result_topology` reads — but a tangency mints no vertex at all
     // (below), so an even χ is compatible with a pinch and with none: it decides nothing
     // here. Deleting this assertion would lose the genus, not the manifold claim.
-    m.rebuild_adjacency();
     the_touch_is_a_slit(&m, out[0], [11.0, 10.0, 5.0]);
     // **And the solid meshes — across a bridge.** The boss's footprint
     // touches the bore's rim at exactly one point, so the plate's top face has two inner
@@ -150,10 +139,6 @@ fn a_segment_tangent_to_the_rim_builds() {
     // a statement about the *tessellator* (`validate` is clean above and the volume is
     // exact). Instead the touching sample is put into the straight edge it lies on, the two
     // holes are spliced into one at that point, and the sweep orders the twins symbolically.
-    // Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
-    // census that only agreed with itself would be measuring when it looks rather than what
-    // came out. Both spellings say the same thing here.
-    m.rebuild_adjacency();
     crate::tests::mesh_covers_faces("segment tangent to the rim", &m, &out);
 }
 
@@ -171,11 +156,7 @@ fn a_segment_tangent_to_the_rim_builds() {
 #[test]
 fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
@@ -185,14 +166,8 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([8.0, 13.0, 5.0]),
-        Point3::from_array([12.0, 17.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = crate::fixtures::cuboid(&mut m, [8.0, 13.0, 5.0], [12.0, 17.0, 8.0]);
     let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("corner on rim");
     // **One point, several names — folded; then a pinched ring, read where it is extreme.**
     // `(8,13,5)` is the boss's corner, a three-plane vertex; the rim crossings name the same point
@@ -203,7 +178,6 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     // bore's rim and the boss's footprint are two holes meeting at that corner — one ring pinched
     // there — and `loop_winding` reads its winding where the rim bulges past every node.
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
@@ -235,11 +209,7 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
 #[test]
 fn a_turned_boss_tangent_to_the_plate_top_builds() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([4.0, 2.0, 1.5]),
@@ -249,7 +219,6 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("a turned boss");
     assert_eq!(
         out.len(),
@@ -274,17 +243,12 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
         "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
     );
     // The genus's lock, not the tangency's — see the note in the fixture above.
-    m.rebuild_adjacency();
     the_touch_is_a_slit(&m, out[0], [4.0, 2.0, 2.0]);
     // **And the solid meshes — the same pinch, spelled inner-to-outer.** The boss's
     // base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the `x = 4` face's
     // hole touches its own outer ring at one point and the face's interior is pinched there.
     // `validate` is clean above and the volume is exact; the touch is bridged
     // and the face's triangles are held to its exact area.
-    // Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
-    // census that only agreed with itself would be measuring when it looks rather than what
-    // came out. Both spellings say the same thing here.
-    m.rebuild_adjacency();
     crate::tests::mesh_covers_faces("turned boss tangent to the plate top", &m, &out);
 }
 
@@ -299,11 +263,7 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
 #[test]
 fn a_turned_boss_over_the_plates_corner_builds() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([4.0, 0.25, 2.0]),
@@ -313,10 +273,8 @@ fn a_turned_boss_over_the_plates_corner_builds() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
     assert_eq!(out.len(), 1, "one fused solid");
-    m.rebuild_adjacency();
     let issues = nacre_validate::validate(&m);
     assert!(issues.is_empty(), "{issues:?}");
     let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
@@ -411,11 +369,7 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
         // arena residue, so each gets its own build of the same fixture.
         let build = || {
             let mut m = Model::new();
-            let plate = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
+            let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
             let boss = crate::fixtures::cylinder_with_seam(
                 &mut m,
                 Point3::from_array(origin),
@@ -427,7 +381,6 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
                 1.0,
             )
             .solid;
-            m.rebuild_adjacency();
             (m, plate, boss)
         };
         let (mut m, plate, boss) = build();
@@ -536,11 +489,7 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -552,7 +501,6 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let setup = plane_index_setup(&m, plate, boss).unwrap();
         let PlaneSetup {
             planes: faces_tab,
@@ -651,11 +599,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], true),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -667,7 +611,6 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let setup = plane_index_setup(&m, plate, boss).unwrap();
         let PlaneSetup {
             planes: faces_tab,
@@ -797,11 +740,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -813,7 +752,6 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let setup = plane_index_setup(&m, plate, boss).unwrap();
         let PlaneSetup {
             planes: faces_tab,
@@ -931,11 +869,7 @@ fn a_pierce_vertex_is_minted_and_measured() {
         ),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -947,7 +881,6 @@ fn a_pierce_vertex_is_minted_and_measured() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let before = m.live_solids().to_vec();
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
             .expect("the cut-rim boolean builds");
@@ -1018,11 +951,7 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
         ),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -1034,7 +963,6 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
             height,
         )
         .solid;
-        m.rebuild_adjacency();
         let minted_from = m.edge_count();
         let vertices_from = m.vertex_count();
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
@@ -1152,11 +1080,7 @@ fn the_bands_loop_is_one_continuous_cycle() {
         ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0], 3usize),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -1168,7 +1092,6 @@ fn the_bands_loop_is_one_continuous_cycle() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let faces_from = m.face_count();
         let before = m.live_solids().to_vec();
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
@@ -1245,11 +1168,7 @@ fn the_grouping_joins_across_a_cut_rim() {
         ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -1261,7 +1180,6 @@ fn the_grouping_joins_across_a_cut_rim() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let setup = plane_index_setup(&m, plate, boss).unwrap();
         let PlaneSetup {
             planes: faces_tab,
@@ -1347,11 +1265,7 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
         ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(origin),
@@ -1363,7 +1277,6 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let (faces_from, solids_from) = (m.face_count(), m.solid_count());
         let before = m.live_solids().to_vec();
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
@@ -1440,11 +1353,7 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
 #[ignore = "scratch OBJ dump for eyeballing — run on demand"]
 fn measure_dump_straddling_boss_obj() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([4.0, 2.0, 2.0]),
@@ -1454,9 +1363,7 @@ fn measure_dump_straddling_boss_obj() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("builds");
-    m.rebuild_adjacency();
     let obj = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
         .expect("tessellates")
         .to_obj(&m);
@@ -1478,11 +1385,7 @@ fn measure_dump_straddling_boss_obj() {
 /// answers in ℚ(√c).
 fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 20.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
     let bore = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([12.0, 12.0, 0.0]),
@@ -1492,7 +1395,6 @@ fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
         20.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -1503,10 +1405,8 @@ fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
         10.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, bored, boss).expect("the boss fuses");
     assert_eq!(out.len(), 1, "one solid");
-    m.rebuild_adjacency();
     assert_eq!(
         m.live_solids().to_vec(),
         out,
@@ -1557,11 +1457,7 @@ fn a_bored_plate_hangs_a_straddling_boss() {
 #[test]
 fn a_chained_contact_cut_builds_clean() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 20.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
     let bore = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([12.0, 12.0, 0.0]),
@@ -1571,7 +1467,6 @@ fn a_chained_contact_cut_builds_clean() {
         20.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -1582,10 +1477,8 @@ fn a_chained_contact_cut_builds_clean() {
         10.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, bored, boss).expect("the contact cut");
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     let issues = nacre_validate::validate(&m);
     assert!(issues.is_empty(), "{issues:?}");
     let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
@@ -1621,7 +1514,6 @@ fn two_cylinders_with_coplanar_caps_fuse_apart() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, a, b).expect("two curved bodies");
     assert_eq!(out.len(), 2, "they do not touch");
     assert!(

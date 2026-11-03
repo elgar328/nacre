@@ -2,6 +2,7 @@ use super::*;
 use crate::to_step_solids;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::{Edge2d, OpOutput, Operation, Ring2d, SketchFrame};
 use num_bigint::BigInt;
 
@@ -22,12 +23,7 @@ fn moved(m: &mut Model, solid: Handle<Solid>, isometry: Isometry) -> Handle<Soli
     else {
         panic!("the motion applies")
     };
-    m.rebuild_adjacency();
     solid
-}
-
-fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
 }
 
 fn cylinder(m: &mut Model, base: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
@@ -57,7 +53,6 @@ fn prism(m: &mut Model, ring: Ring2d, h: f64) -> Handle<Solid> {
     ) else {
         panic!("the prism extrudes")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -65,7 +60,6 @@ fn prism(m: &mut Model, ring: Ring2d, h: f64) -> Handle<Solid> {
 /// `x` 300 times.
 fn deep_box(m: &mut Model) -> Handle<Solid> {
     let mut s = cuboid(m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     s = turn(m, s, Axis::Z, 7);
     for _ in 0..300 {
         let step = Isometry::translation([
@@ -85,7 +79,6 @@ fn fixtures() -> Vec<(&'static str, Model, Handle<Solid>)> {
     let mut build = |name: &'static str, f: &dyn Fn(&mut Model) -> Handle<Solid>| {
         let mut m = Model::new();
         let s = f(&mut m);
-        m.rebuild_adjacency();
         out.push((name, m, s));
     };
     build("integer box", &|m| cuboid(m, [0.0; 3], [2.0, 3.0, 4.0]));
@@ -142,7 +135,6 @@ fn fixtures() -> Vec<(&'static str, Model, Handle<Solid>)> {
             cavities: vec![void],
         });
         m.restore_live(vec![hollow]);
-        m.rebuild_adjacency();
         turn(m, hollow, Axis::X, 23)
     });
     // The cavity holds the larger gaps: an exact box around the unrefined deep box's shell,
@@ -371,7 +363,6 @@ fn the_file_states_the_uncertainty_it_proves() {
 fn an_unrefined_model_states_what_its_figures_hold() {
     let mut m = Model::new();
     let s = deep_box(&mut m);
-    m.rebuild_adjacency();
     let before = proven(&m, s);
     let bad = vertex_gaps_beyond(&m, s, before);
     assert!(bad.is_empty(), "{bad:#?}");
@@ -387,7 +378,6 @@ fn an_unrefined_model_states_what_its_figures_hold() {
 fn an_exact_model_states_its_coordinate_spacing() {
     let mut m = Model::new();
     let s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     assert_eq!(measure(&m, &[s]).expect("measured").max, 0.0);
     assert_eq!(
         proven(&m, s),

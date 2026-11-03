@@ -9,7 +9,7 @@ const STAMP: &str = "2026-10-05T00:00:00Z";
 
 fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
+    nacre_ops::fixtures::cuboid(&mut m, min, max);
     m
 }
 
@@ -71,16 +71,8 @@ fn asymmetric_box_round_trips() {
 #[test]
 fn single_solid_export_isolates_one_solid() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 1.0, 1.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [2.0, 0.0, 0.0], [3.0, 1.0, 1.0]);
 
     // The whole live model exports both solids.
     let both = to_step(&m, STAMP).expect("export both");
@@ -145,21 +137,9 @@ fn the_time_stamp_is_the_callers_and_the_file_repeats() {
 #[test]
 fn superseding_a_solid_leaves_the_export_order_alone() {
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([111.0; 3]),
-        Point3::from_array([112.0; 3]),
-    );
-    let middle = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([777.0; 3]),
-        Point3::from_array([778.0; 3]),
-    );
-    nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([333.0; 3]),
-        Point3::from_array([334.0; 3]),
-    );
+    nacre_ops::fixtures::cuboid(&mut m, [111.0; 3], [112.0; 3]);
+    let middle = nacre_ops::fixtures::cuboid(&mut m, [777.0; 3], [778.0; 3]);
+    nacre_ops::fixtures::cuboid(&mut m, [333.0; 3], [334.0; 3]);
 
     m.supersede_live(&[middle]);
     let text = to_step(&m, STAMP).expect("export the two survivors");
@@ -183,16 +163,8 @@ fn superseding_a_solid_leaves_the_export_order_alone() {
 #[test]
 fn a_superseded_solid_named_to_the_export_is_written_whole() {
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([111.0; 3]),
-        Point3::from_array([112.0; 3]),
-    );
-    let gone = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([777.0; 3]),
-        Point3::from_array([778.0; 3]),
-    );
+    nacre_ops::fixtures::cuboid(&mut m, [111.0; 3], [112.0; 3]);
+    let gone = nacre_ops::fixtures::cuboid(&mut m, [777.0; 3], [778.0; 3]);
     m.supersede_live(&[gone]);
 
     let text = to_step_solids(&m, &[gone], STAMP).expect("export the superseded box");
@@ -215,16 +187,8 @@ fn hollow_solid_round_trips_as_brep_with_voids() {
     // producer's primitive (`reversed_shell`): the inner shell reversed
     // inward. Exports as a BREP_WITH_VOIDS and reads back with one cavity.
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [4.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
     let b_outer = m.solid(b).outer;
     let void = m.reversed_shell(b_outer);
     let a_outer = m.solid(a).outer;
@@ -361,11 +325,7 @@ fn a_straight_edges_direction_reaches_the_file_as_its_cache() {
     let mut endpoints_differ = 0;
     for (name, axis, deg) in [("37° about y", Axis::Y, 37), ("23° about x", Axis::X, 23)] {
         let mut m = Model::new();
-        let s = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.1, 0.7, 0.3]),
-            Point3::from_array([1.2, 1.5, 2.4]),
-        );
+        let s = nacre_ops::fixtures::cuboid(&mut m, [0.1, 0.7, 0.3], [1.2, 1.5, 2.4]);
         let turn = Isometry::rotation(Rotation {
             axis,
             pivot: [Rat::from_int(0); 3],
@@ -380,7 +340,6 @@ fn a_straight_edges_direction_reaches_the_file_as_its_cache() {
         ) else {
             panic!("{name}: the turn applies")
         };
-        m.rebuild_adjacency();
         let reach = m.reachable();
         let mut want: Vec<[u64; 3]> = Vec::new();
         for e in (0..m.edge_count() as u32).filter_map(|i| m.edge_handle_at(i)) {
@@ -581,11 +540,7 @@ fn write_step_streams_the_file_in_pieces() {
     let mut m = Model::new();
     for i in 0..30 {
         let x = f64::from(2 * i);
-        nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([x, 0.0, 0.0]),
-            Point3::from_array([x + 1.0, 1.0, 1.0]),
-        );
+        nacre_ops::fixtures::cuboid(&mut m, [x, 0.0, 0.0], [x + 1.0, 1.0, 1.0]);
     }
     let out = Recording {
         bytes: Vec::new(),
@@ -639,16 +594,8 @@ fn a_failing_output_is_an_io_error() {
 #[test]
 fn parts_are_numbered_and_the_header_names_the_kernel() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 1.0, 1.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [2.0, 0.0, 0.0], [3.0, 1.0, 1.0]);
 
     let both = to_step(&m, STAMP).expect("export both");
     let first = both

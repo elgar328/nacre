@@ -81,7 +81,6 @@ fn every_six_on(f: &Family, frames: &[Frame]) -> Vec<(String, f64, Six)> {
                     let (x, y) = if swapped { (b, a) } else { (a, b) };
                     six.push(match boolean(&mut m, kind, x, y) {
                         Ok(solids) => {
-                            m.rebuild_adjacency();
                             let vs = nacre_validate::validate(&m);
                             assert!(vs.is_empty(), "{label}: {kind:?} {swapped}: {vs:?}");
                             Ok((solids.len(), solids.iter().map(|&s| volume(&m, s)).sum()))

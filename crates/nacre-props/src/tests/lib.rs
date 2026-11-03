@@ -14,11 +14,7 @@ fn close(got: f64, expected: f64) -> bool {
 #[test]
 fn cube_mass_matches_analytic() {
     let mut m = Model::new();
-    let s = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
+    let s = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
     let props = mass_props(&m, s).unwrap();
     assert!(close(props.volume, 24.0), "volume {}", props.volume); // 2·3·4
     assert!(close(props.area, 52.0), "area {}", props.area); // 2(6+8+12)
@@ -48,12 +44,7 @@ fn cylinder_mass_matches_analytic() {
 #[test]
 fn the_two_normal_doors_agree_on_a_plane() {
     let mut m = Model::new();
-    let s = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let s = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
     let shell = m.solid(s).outer;
     for &fh in &m.shell(shell).faces {
         let whole = face_props(&m, fh)
@@ -83,7 +74,6 @@ fn a_free_cylinders_wall_faces_away_from_its_axis() {
         5.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let shell = m.solid(s).outer;
     let wall = *m
         .shell(shell)
@@ -210,11 +200,7 @@ fn bounds_follow_the_curve_not_the_vertices() {
 #[test]
 fn bounds_of_a_box_are_its_corners() {
     let mut m = Model::new();
-    let s = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, 2.0, 0.5]),
-        Point3::from_array([3.0, 4.0, 9.0]),
-    );
+    let s = nacre_ops::fixtures::cuboid(&mut m, [-1.0, 2.0, 0.5], [3.0, 4.0, 9.0]);
     let (lo, hi) = bounds(&m, s).unwrap();
     assert!(
         close(lo[0], -1.0) && close(lo[1], 2.0) && close(lo[2], 0.5),
@@ -230,11 +216,7 @@ fn bounds_of_a_box_are_its_corners() {
 #[test]
 fn faces_can_be_picked_by_their_geometry() {
     let mut m = Model::new();
-    let s = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::origin(),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
+    let s = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let top = m
         .shell(m.solid(s).outer)
@@ -312,15 +294,9 @@ fn centroid_of_an_l_prism_is_not_its_bounding_centre() {
 #[test]
 fn an_off_centre_void_pushes_the_centroid_away() {
     let mut m = Model::new();
-    let outer =
-        nacre_ops::fixtures::cuboid(&mut m, Point3::origin(), Point3::from_array([10.0; 3]));
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
+    let outer = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [10.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0, 3.0, 3.0]);
     let r = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, outer, inner).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(r.len(), 1);
     let c = centroid(&m, r[0]).unwrap();
     // (1000·5 − 8·2)/992 on every axis: the void at (2,2,2) drags the rest up.
@@ -373,7 +349,6 @@ fn prism(m: &mut Model, r: nacre_ops::Ring2d, dist: f64) -> Handle<Solid> {
     let OpOutput::Extrude { solid, .. } = apply(m, &op).unwrap() else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -429,11 +404,7 @@ fn a_half_disk_prisms_centroid_stands_off_its_chord() {
 #[test]
 fn a_bore_off_centre_pulls_the_centroid_away() {
     let mut m = Model::new();
-    let plate = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::origin(),
-        Point3::from_array([10.0, 10.0, 2.0]),
-    );
+    let plate = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [10.0, 10.0, 2.0]);
     let bore = nacre_ops::fixtures::cylinder(
         &mut m,
         Point3::from_array([3.0, 4.0, -1.0]),
@@ -443,7 +414,6 @@ fn a_bore_off_centre_pulls_the_centroid_away() {
     )
     .solid;
     let r = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, plate, bore).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(r.len(), 1);
     let (vp, vb) = (200.0, 2.0 * PI);
     let off = |p: f64, b: f64| (vp * p - vb * b) / (vp - vb);
@@ -464,11 +434,7 @@ fn a_rounded_corners_centroid_counts_the_quarter_disk() {
 #[test]
 fn a_corner_cut_by_a_cylinder_loses_the_quarter_disk() {
     let mut m = Model::new();
-    let plate = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::origin(),
-        Point3::from_array([10.0, 10.0, 2.0]),
-    );
+    let plate = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [10.0, 10.0, 2.0]);
     let tool = nacre_ops::fixtures::cylinder(
         &mut m,
         Point3::from_array([0.0, 0.0, -1.0]),
@@ -478,7 +444,6 @@ fn a_corner_cut_by_a_cylinder_loses_the_quarter_disk() {
     )
     .solid;
     let r = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, plate, tool).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(r.len(), 1);
     let quarter = 9.0 * PI / 4.0;
     let xy = (100.0 * 5.0 - quarter * (4.0 / PI)) / (100.0 - quarter);
@@ -505,7 +470,6 @@ fn a_turned_curved_solids_centroid_turns_with_it() {
     ) else {
         panic!("the turn")
     };
-    m.rebuild_adjacency();
     let [x, y, z] = rounded_corner_centroid();
     let (sn, cs) = 37f64.to_radians().sin_cos();
     let (dx, dy) = (x - 1.0, y - 2.0);

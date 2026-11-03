@@ -229,7 +229,6 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     .expect("the block") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let OpOutput::Transform { solid } = apply(
         &mut m,
         &Operation::Transform {
@@ -244,13 +243,11 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     .expect("the turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     // A pad covering part of the face: the walls around it inherit the split edge.
     let face = m.shell(m.solid(solid).outer).faces[0];
     let solid = crate::fixtures::pad(&mut m, face, rect(0.25, 0.25, 1.25, 1.25), 1.0)
         .expect("the pad")
         .solid();
-    m.rebuild_adjacency();
 
     let faces = collect_planes(&m, solid).expect("the planes of a padded block");
     // The population has to be present, or this asserts over nothing.
@@ -417,20 +414,11 @@ fn a_faces_facing_reads_no_plane_cache() {
             angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
         })
     };
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 2.0, 2.0]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [3.0, 2.0, 2.0]);
     let a = crate::transform::transform(&mut m, a, &turn(30)).expect("a turn");
     let b = crate::transform::transform(&mut m, b, &turn(10)).expect("a turn");
     let b = crate::transform::transform(&mut m, b, &turn(20)).expect("a turn");
-    m.rebuild_adjacency();
     let mut faces = collect_planes(&m, a).expect("a's faces");
     faces.extend(collect_planes(&m, b).expect("b's faces"));
     let canon = plane_classes(&test_judge(&faces));
@@ -498,17 +486,8 @@ fn a_faces_facing_reads_no_plane_cache() {
 fn a_proved_side_is_the_judges_side() {
     use nacre_exact::{Isometry, Rotation};
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let boxed = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.5, -2.5, 0.0]),
-        Point3::from_array([2.5, 2.5, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let boxed = crate::fixtures::cuboid(&mut m, [-2.5, -2.5, 0.0], [2.5, 2.5, 1.0]);
     let turned = crate::transform::transform(
         &mut m,
         boxed,
@@ -525,7 +504,6 @@ fn a_proved_side_is_the_judges_side() {
         &Isometry::translation([Rat::from_int(10), Rat::from_int(10), Rat::from_int(0)]),
     )
     .unwrap();
-    m.rebuild_adjacency();
     let setup =
         crate::arrangement::plane_index_setup(&m, cube, moved).expect("no cylinder, no gate");
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);

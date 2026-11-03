@@ -31,11 +31,7 @@ use nacre_topo::{Model, Solid};
 
 fn cuboid() -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let s = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
+    let s = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     (m, s)
 }
 
@@ -59,7 +55,6 @@ fn rotated_by(m: &mut Model, s: Handle<Solid>, deg: i128) -> Handle<Solid> {
         },
     )
     .unwrap();
-    m.rebuild_adjacency();
     match out {
         crate::OpOutput::Transform { solid } => solid,
         _ => panic!("expected Transform"),
@@ -340,13 +335,7 @@ fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
 fn planes_parallel_is_a_proof_through_one_axis_chains() {
     let (mut m, s) = cuboid();
     // A transform consumes its solid, so each turned body starts from a cuboid of its own.
-    let fresh = |m: &mut Model| {
-        crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 3.0, 4.0]),
-        )
-    };
+    let fresh = |m: &mut Model| crate::fixtures::cuboid(m, [0.0; 3], [2.0, 3.0, 4.0]);
     let c = fresh(&mut m);
     let z30 = rotated_by(&mut m, c, 30);
     let c = fresh(&mut m);
@@ -383,7 +372,6 @@ fn planes_parallel_is_a_proof_through_one_axis_chains() {
         crate::OpOutput::Transform { solid } => solid,
         _ => panic!("expected Transform"),
     };
-    m.rebuild_adjacency();
     let truth =
         |a: &WorkingPlane, b: &WorkingPlane| a.plane.normal().cross(b.plane.normal()).norm() < 1e-9;
     // `(answered, parallel)` over the cross pairs of `x` and `y`, every answer checked against the
@@ -509,16 +497,8 @@ fn cmp_coord_unrotated_agrees_with_the_input() {
 #[test]
 fn mixed_rotation_handled() {
     let mut m = Model::new();
-    let a0 = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 10.0, 10.0]),
-        Point3::from_array([12.0, 13.0, 14.0]),
-    );
+    let a0 = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    let b = crate::fixtures::cuboid(&mut m, [10.0, 10.0, 10.0], [12.0, 13.0, 14.0]);
     let a = rotated(&mut m, a0);
     let mut planes = plane_table(&m, a);
     let na = planes.len();
@@ -572,16 +552,8 @@ fn a_vertical_edge_holds_x_and_y_across_two_turned_boxes() {
     use nacre_judge::ProofStandard;
     use nacre_judge::predicate::{Judge, Notes};
     let mut m = Model::new();
-    let a0 = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
-    let b0 = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 10.0, 10.0]),
-        Point3::from_array([12.0, 13.0, 14.0]),
-    );
+    let a0 = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    let b0 = crate::fixtures::cuboid(&mut m, [10.0, 10.0, 10.0], [12.0, 13.0, 14.0]);
     let a = rotated_by(&mut m, a0, 30);
     let b = rotated_by(&mut m, b0, 37);
     let mut planes = plane_table(&m, a);
@@ -1021,12 +993,7 @@ fn two_caps_on_a_tilted_face(
     use nacre_math::Vector3;
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
-    let mut s = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let mut s = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [4.0, 4.0, 2.0]);
     // Two turns, so the face's normal is off every world axis and its frame is not exact.
     for (axis, deg) in [(Axis::Y, 53i128), (Axis::Z, 17)] {
         let OpOutput::Transform { solid } = apply(
@@ -1043,7 +1010,6 @@ fn two_caps_on_a_tilted_face(
         .expect("turn") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         s = solid;
     }
     let (sy, cy) = (53f64).to_radians().sin_cos();
@@ -1085,7 +1051,6 @@ fn two_caps_on_a_tilted_face(
         let feat = crate::fixtures::pad(m, f, profile, dist)
             .unwrap_or_else(|e| panic!("pad dist={dist} on {f:?}: {e:?}"));
         let (solid, top_face) = (feat.solid(), feat.cap_face(m));
-        m.rebuild_adjacency();
         (solid, top_face)
     };
     // One column, raised either in one pad or in two.
@@ -1249,7 +1214,6 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
     let solid = crate::fixtures::pad(&mut m, cap, profile, 0.5)
         .unwrap_or_else(|e| panic!("{recipe:?} span={span}: the plate must build, got {e:?}"))
         .solid();
-    m.rebuild_adjacency();
     let after = nacre_props::mass_props(&m, solid).unwrap().volume;
     let volume_ok = (after - before - (0.4 - lo) * 0.4 * 0.5).abs() < 1e-9;
     let valid = nacre_validate::validate(&m).is_empty();
@@ -1535,12 +1499,7 @@ fn a_boolean_mints_no_surface() {
         // land inside the window.
         // The turns pivot on the origin, so the base cuboid's corner there does not move —
         // a box straddling it bites the solid whatever the tilt.
-        let tool = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.5, -0.5, -0.5]),
-            Point3::from_array([0.6, 0.6, 0.6]),
-        );
-        m.rebuild_adjacency();
+        let tool = crate::fixtures::cuboid(&mut m, [-0.5, -0.5, -0.5], [0.6, 0.6, 0.6]);
         let vol_before = nacre_props::mass_props(&m, s).unwrap().volume;
         let before = m.surface_count();
         let out = crate::boolean(&mut m, BoolKind::Cut, s, tool);
@@ -1555,7 +1514,6 @@ fn a_boolean_mints_no_surface() {
         );
         // And the cut actually cut: a boolean that missed would keep the arena still for
         // the wrong reason.
-        m.rebuild_adjacency();
         let vol_after: f64 = bodies
             .iter()
             .map(|&b| nacre_props::mass_props(&m, b).unwrap().volume)
@@ -1687,7 +1645,6 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
         let OpOutput::Extrude { solid: s, .. } = out else {
             panic!("{name}: extrude returned no solid")
         };
-        m.rebuild_adjacency();
 
         let faces = collect_planes(&m, s).unwrap();
         let (mut exact, mut f64_only) = (0usize, 0usize);
@@ -1837,7 +1794,6 @@ mod name_integer_road {
         .expect("the wf base prism") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         let wall = *m
             .shell(m.solid(solid).outer)
             .faces
@@ -1878,7 +1834,6 @@ mod name_integer_road {
             0.4,
         )
         .expect("the wf pocket");
-        m.rebuild_adjacency();
         m
     }
 
@@ -1944,7 +1899,6 @@ mod name_integer_road {
                             dist,
                         },
                     ) {
-                        m.rebuild_adjacency();
                         return Some(solid);
                     }
                 }
@@ -1959,14 +1913,9 @@ mod name_integer_road {
     /// names) plus the wide cap (the discovered-vertex world name).
     fn cuboid_sliced_by_the_wide_plane(m: &mut Model) -> Handle<Solid> {
         let tool = wide_datum_tool(m, 50.0, 50.0).expect("a wide-named datum carries a slab tool");
-        let cub = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([-1.0, -1.0, -1.0]),
-            Point3::from_array([5.0, 5.0, 4.0]),
-        );
+        let cub = crate::fixtures::cuboid(m, [-1.0, -1.0, -1.0], [5.0, 5.0, 4.0]);
         let out = crate::boolean(m, crate::BoolKind::Cut, cub, tool)
             .expect("the wide slab slices the cuboid");
-        m.rebuild_adjacency();
         *out.first().expect("the slice leaves material")
     }
 
@@ -2032,11 +1981,7 @@ mod name_integer_road {
             let mut m = wf_pocket_model();
             let named: Vec<WorkingPlane> = if arm == "world" {
                 let tool = wide_datum_tool(&mut m, 0.4, 1.2).expect("a wide datum carries a tool");
-                let cub = crate::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([-1.0, -1.0, -1.0]),
-                    Point3::from_array([5.0, 5.0, 4.0]),
-                );
+                let cub = crate::fixtures::cuboid(&mut m, [-1.0, -1.0, -1.0], [5.0, 5.0, 4.0]);
                 let faces: Vec<crate::planes::FaceRow> = collect_planes(&m, cub)
                     .unwrap()
                     .into_iter()
@@ -2059,7 +2004,6 @@ mod name_integer_road {
                     ) else {
                         panic!("mirror applies");
                     };
-                    m.rebuild_adjacency();
                     solid
                 };
                 plane_table(&m, moved)

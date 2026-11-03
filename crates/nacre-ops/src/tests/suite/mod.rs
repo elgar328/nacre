@@ -172,7 +172,6 @@ fn holed_face_rings_of(
     stub: Handle<Solid>,
 ) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
     let r = boolean_one(&mut m, BoolKind::Cut, l, stub).expect("the cut");
-    m.rebuild_adjacency();
     let faces_tab = collect_planes(&m, r).unwrap();
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in faces_tab.iter().enumerate() {
@@ -288,25 +287,10 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::construct::Swept {
 fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Solid>) {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let block = crate::fixtures::cuboid(&mut m, [0.5, 0.0, 1.0], [1.0, 1.0, 2.0]);
     let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
-    m.rebuild_adjacency();
-    let bar = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, -0.5, 1.0 - half_z]),
-        Point3::from_array([0.7, 1.5, 1.0 + half_z]),
-    );
-    m.rebuild_adjacency();
+    let bar = crate::fixtures::cuboid(&mut m, [0.3, -0.5, 1.0 - half_z], [0.7, 1.5, 1.0 + half_z]);
     let bar = transform(
         &mut m,
         bar,
@@ -317,7 +301,6 @@ fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Sol
         }),
     )
     .unwrap();
-    m.rebuild_adjacency();
     (m, target, bar)
 }
 
@@ -423,11 +406,7 @@ pub(crate) fn chained(
     second: ([f64; 3], f64, BoolKind),
 ) -> (Model, Result<Vec<Handle<Solid>>, BoolError>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let a = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -438,10 +417,8 @@ pub(crate) fn chained(
         first.1,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = boolean(&mut m, first.2, plate, a).expect("the first op builds");
     assert_eq!(out.len(), 1, "the first op is one solid");
-    m.rebuild_adjacency();
     let b = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array(second.0),
@@ -451,18 +428,13 @@ pub(crate) fn chained(
         second.1,
     )
     .solid;
-    m.rebuild_adjacency();
     let r = boolean(&mut m, second.2, out[0], b);
     (m, r)
 }
 
 fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array(at),
@@ -474,9 +446,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = boolean(&mut m, kind, plate, boss).expect("the boss builds");
-    m.rebuild_adjacency();
     let r = out[0];
     let faces_tab = collect_planes(&m, r).expect("the result's face table");
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
@@ -654,7 +624,6 @@ fn prism_with_a_slanted_wall() -> (Model, Handle<Face>) {
     .expect("extrude") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let wall = *m
         .shell(m.solid(solid).outer)
         .faces
@@ -726,14 +695,10 @@ const BOSS_FAMILIES: [(&str, [f64; 3], f64); 17] = [
     ("offset-irr", [4.2, 2.0, -1.0], 4.0),
 ];
 
-/// The plate and boss of a [`BOSS_FAMILIES`] row, adjacency rebuilt.
+/// The plate and boss of a [`BOSS_FAMILIES`] row.
 fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array(base),
@@ -743,7 +708,6 @@ fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) 
         h,
     )
     .solid;
-    m.rebuild_adjacency();
     (m, plate, boss)
 }
 
@@ -973,9 +937,7 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
     };
     let g1 = gusset(&mut m, x1);
     let g2 = gusset(&mut m, x2);
-    m.rebuild_adjacency();
     let wg = boolean(&mut m, BoolKind::Fuse, w, g1).expect("wall + gusset")[0];
-    m.rebuild_adjacency();
     (m, wg, g2)
 }
 
@@ -1055,7 +1017,6 @@ fn every_kind(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>), want
         {
             let mut m = Model::new();
             let (a, b) = build(&mut m);
-            m.rebuild_adjacency();
             let (x, y) = if swap { (b, a) } else { (a, b) };
             let out = boolean(&mut m, kind, x, y);
             let (got, volume) = match (cell, out) {
@@ -1070,7 +1031,6 @@ fn every_kind(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>), want
                     panic!("{kind:?} swap={swap}: want {name:?}, got {out:?}")
                 }
                 (Want::Built(n, v), Ok(out)) => {
-                    m.rebuild_adjacency();
                     assert_eq!(out.len(), n, "{kind:?} swap={swap}: bodies");
                     let got: f64 = out
                         .iter()

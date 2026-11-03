@@ -64,12 +64,7 @@ fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
         ] {
             let mut m = Model::new();
             let plate = rounded_plate(&mut m, 4, 4);
-            let boss = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([10.0, -20.0, 12.0]),
-                Point3::from_array([25.0, 20.0, 62.0]),
-            );
-            m.rebuild_adjacency();
+            let boss = crate::fixtures::cuboid(&mut m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]);
             let (a, b) = if swapped {
                 (boss, plate)
             } else {
@@ -77,7 +72,6 @@ fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
             };
             let out = boolean(&mut m, kind, a, b)
                 .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             assert!(
                 nacre_validate::validate(&m).is_empty(),
                 "{kind:?} swapped {swapped}: {:?}",
@@ -110,13 +104,10 @@ fn the_users_rib_plate_fuses() {
     let mut m = Model::new();
     let plate = rounded_plate(&mut m, 4, 4);
     let r1 = user_rib(&mut m, 17.5);
-    m.rebuild_adjacency();
     let ab = boolean(&mut m, BoolKind::Fuse, plate, r1).expect("plate + rib")[0];
     let r2 = user_rib(&mut m, -17.5);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, ab, r2).expect("+ the second rib");
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -152,18 +143,12 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
         for (mn, iso, _) in motion_group() {
             let mut m = Model::new();
             let plate = rounded_plate(&mut m, 4, bores);
-            let boss = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([10.0, -20.0, 12.0]),
-                Point3::from_array([25.0, 20.0, 62.0]),
-            );
+            let boss = crate::fixtures::cuboid(&mut m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]);
             let a = transform(&mut m, plate, &iso).expect("the plate moves");
             let b = transform(&mut m, boss, &iso).expect("the box moves");
-            m.rebuild_adjacency();
             match boolean(&mut m, BoolKind::Fuse, a, b) {
                 Ok(o) => {
                     assert_eq!(o.len(), 1, "{mn}: one body");
-                    m.rebuild_adjacency();
                     assert!(
                         nacre_validate::validate(&m).is_empty(),
                         "{mn}: {:?}",
@@ -207,13 +192,10 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
 fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     let plate = rounded_plate(m, 4, 4);
     let r1 = user_rib(m, 17.5);
-    m.rebuild_adjacency();
     let ab = boolean(m, BoolKind::Fuse, plate, r1).expect("plate + rib")[0];
     let r2 = user_rib(m, -17.5);
-    m.rebuild_adjacency();
     let abc = boolean(m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
     let tool = turned_cylinder(m, 10.0, 90.0, [-45.0, 0.0, 47.0]);
-    m.rebuild_adjacency();
     (abc, tool)
 }
 
@@ -235,7 +217,6 @@ fn the_users_script_builds() {
     let (abc, tool) = users_model(&mut m);
     let out = boolean(&mut m, BoolKind::Cut, abc, tool).expect("the bore across the ribs");
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -275,10 +256,8 @@ fn the_users_script_builds_the_same_body_after_a_motion() {
     let iso = nacre_exact::Isometry::translation([d(7.5), d(-13.0), d(4.25)]);
     let abc = transform(&mut m, abc, &iso).expect("the body moves");
     let tool = transform(&mut m, tool, &iso).expect("the tool moves");
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Cut, abc, tool).expect("the moved bore");
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",

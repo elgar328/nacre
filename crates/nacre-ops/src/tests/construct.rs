@@ -119,7 +119,6 @@ fn a_pad_on_a_mirrored_tilted_face_stands_up() {
             let solid = out
                 .unwrap_or_else(|e| panic!("mirror {mirror} pocket {pocket}: {e:?}"))
                 .solid();
-            m.rebuild_adjacency();
             assert!(
                 nacre_validate::validate(&m).is_empty(),
                 "mirror {mirror} pocket {pocket}: {:?}",
@@ -162,7 +161,6 @@ fn a_circle_on_a_mirrored_tilted_face_stands_up() {
         .unwrap_or_else(|e| panic!("mirror {mirror}: {e:?}")) else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "mirror {mirror}: {vs:?}");
         let v = nacre_props::mass_props(&m, solid).unwrap().volume;

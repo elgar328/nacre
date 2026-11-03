@@ -13,11 +13,7 @@ use super::*;
 fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool, want: f64) {
     use nacre_ops::BoolKind;
     let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
-    let bx = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array(boxes[0]),
-        Point3::from_array(boxes[1]),
-    );
+    let bx = nacre_ops::fixtures::cuboid(&mut m, boxes[0], boxes[1]);
     let (x, y) = if swap { (bx, pc) } else { (pc, bx) };
     let occt = occt_boolean_of(&m, kind, x, y).unwrap();
     let bk = match kind {
@@ -249,11 +245,7 @@ fn l_and_rod_fuse_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn non_convex_overhang_cut_matches_occt() {
     let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
-    let slot = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.75, 0.25, -0.25]),
-        Point3::from_array([1.0, 0.75, 0.5]),
-    );
+    let slot = nacre_ops::fixtures::cuboid(&mut m, [0.75, 0.25, -0.25], [1.0, 0.75, 0.5]);
     // OCCT ground truth from the inputs, before nacre supersedes them.
     let occt = occt_boolean_of(&m, OcctBool::Cut, pc, slot).unwrap();
     let solids = boolean(&mut m, BoolKind::Cut, pc, slot).unwrap();
@@ -325,14 +317,8 @@ fn the_four_plane_cut_matches_occt() {
         0.0,
         1.0,
     );
-    let block = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let block = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.0, 1.0], [1.0, 1.0, 2.0]);
     let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
-    m.rebuild_adjacency();
 
     // A square-section bar (half-height 0.2) spun 45° about Y through (0.5, ·, 1): the corner
     // travels 0.2·√2 sideways and lands back on z = 1.
@@ -342,7 +328,6 @@ fn the_four_plane_cut_matches_occt() {
         0.8,
         0.4,
     );
-    m.rebuild_adjacency();
     let nacre_ops::OpOutput::Transform { solid: bar } = apply(
         &mut m,
         &Operation::Transform {
@@ -357,12 +342,10 @@ fn the_four_plane_cut_matches_occt() {
     .expect("transform") else {
         unreachable!("transform yields Transform output")
     };
-    m.rebuild_adjacency();
 
     // OCCT scores the same cut from the same operands — before nacre consumes them.
     let occt = occt_boolean_of(&m, OcctBool::Cut, target, bar).expect("occt cut");
     let r = boolean(&mut m, BoolKind::Cut, target, bar).expect("the four-plane cut builds");
-    m.rebuild_adjacency();
     assert_eq!(r.len(), 1, "one solid");
     let ours = nacre_props::mass_props(&m, r[0]).expect("props");
     // **The fixture is reproduced by hand here, so pin it to the figure the coverage suite
@@ -414,7 +397,6 @@ fn placement_matches_occt() {
         .expect("translate") else {
             unreachable!("transform yields Transform output")
         };
-        m.rebuild_adjacency();
         solid
     };
 
@@ -430,22 +412,12 @@ fn placement_matches_occt() {
         (3, 1),
     ] {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
-        m.rebuild_adjacency();
+        let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
         let a = shift(&mut m, a, Rat::new(n, d).expect("offset"));
         let b = shift(&mut m, b, Rat::new(n + d, d).expect("offset"));
         let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuse");
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
-        m.rebuild_adjacency();
         assert_eq!(out.len(), 1, "{n}/{d}: one body");
         let ours = nacre_props::mass_props(&m, out[0]).expect("props");
         assert!(
@@ -469,17 +441,8 @@ fn placement_matches_occt() {
     for deg in [7i128, 17, 30, 45, 63] {
         for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
             let mut m = Model::new();
-            let base = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 0.0]),
-                Point3::from_array([2.0, 2.0, 1.0]),
-            );
-            let tool = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-0.5, -0.5, -1.0]),
-                Point3::from_array([0.5, 0.5, 2.0]),
-            );
-            m.rebuild_adjacency();
+            let base = nacre_ops::fixtures::cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 1.0]);
+            let tool = nacre_ops::fixtures::cuboid(&mut m, [-0.5, -0.5, -1.0], [0.5, 0.5, 2.0]);
             let turn = |m: &mut Model, s, iso| {
                 let OpOutput::Transform { solid } = apply(
                     m,
@@ -491,7 +454,6 @@ fn placement_matches_occt() {
                 .expect("transform") else {
                     unreachable!("transform yields Transform output")
                 };
-                m.rebuild_adjacency();
                 solid
             };
             let tool = turn(
@@ -508,7 +470,6 @@ fn placement_matches_occt() {
             let base = turn(&mut m, base, place);
             let occt = occt_boolean_of(&m, OcctBool::Cut, base, tool).expect("occt cut");
             let out = boolean(&mut m, BoolKind::Cut, base, tool).expect("cut");
-            m.rebuild_adjacency();
             let ours = nacre_props::mass_props(&m, out[0]).expect("props");
             assert!(
                 approx(ours.volume, occt.volume),
@@ -558,7 +519,6 @@ fn reflection_matches_occt() {
         .expect("mirror") else {
             unreachable!("mirror yields Mirror output")
         };
-        m.rebuild_adjacency();
         solid
     };
     let shift = |m: &mut Model, s, x: Rat| {
@@ -572,7 +532,6 @@ fn reflection_matches_occt() {
         .expect("translate") else {
             unreachable!("transform yields Transform output")
         };
-        m.rebuild_adjacency();
         solid
     };
     let score = |m: &Model,
@@ -608,22 +567,12 @@ fn reflection_matches_occt() {
             .and_then(|q| q.checked_sub(Rat::from_int(1)))
             .expect("2p − 1");
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 0.0, 0.0]),
-            Point3::from_array([2.0, 1.0, 1.0]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
-        m.rebuild_adjacency();
+        let a = nacre_ops::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+        let b = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
         let a = flip(&mut m, a, p);
         let b = shift(&mut m, b, t);
         let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuse");
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
-        m.rebuild_adjacency();
         score(&m, &format!("crossing {n}/{d} fuse"), &out, &occt);
     }
 
@@ -643,22 +592,12 @@ fn reflection_matches_occt() {
             (BoolKind::Common, OcctBool::Common, "common"),
         ] {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([1.0, 0.0, 0.0]),
-                Point3::from_array([2.0, 1.0, 1.0]),
-            );
-            let b = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([1.0; 3]),
-            );
-            m.rebuild_adjacency();
+            let a = nacre_ops::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+            let b = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
             let a = flip(&mut m, a, p);
             let b = shift(&mut m, b, t);
             let occt = occt_boolean_of(&m, ok, a, b).expect("occt boolean");
             let out = boolean(&mut m, kind, a, b).expect("boolean");
-            m.rebuild_adjacency();
             score(&m, &format!("overlap {n}/{d} {name}"), &out, &occt);
         }
     }
@@ -670,17 +609,8 @@ fn reflection_matches_occt() {
     for deg in [7i128, 30, 45, 63] {
         for (n, d) in [(1i128, 3i128), (5, 7)] {
             let mut m = Model::new();
-            let base = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 0.0]),
-                Point3::from_array([2.0, 2.0, 1.0]),
-            );
-            let tool = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-0.5, -0.5, -1.0]),
-                Point3::from_array([0.5, 0.5, 2.0]),
-            );
-            m.rebuild_adjacency();
+            let base = nacre_ops::fixtures::cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 1.0]);
+            let tool = nacre_ops::fixtures::cuboid(&mut m, [-0.5, -0.5, -1.0], [0.5, 0.5, 2.0]);
             let OpOutput::Transform { solid: tool } = apply(
                 &mut m,
                 &Operation::Transform {
@@ -695,11 +625,9 @@ fn reflection_matches_occt() {
             .expect("rotate") else {
                 unreachable!("transform yields Transform output")
             };
-            m.rebuild_adjacency();
             let tool = flip(&mut m, tool, Rat::new(n, d).expect("mirror plane"));
             let occt = occt_boolean_of(&m, OcctBool::Cut, base, tool).expect("occt cut");
             let out = boolean(&mut m, BoolKind::Cut, base, tool).expect("cut");
-            m.rebuild_adjacency();
             score(
                 &m,
                 &format!("turned {deg}° mirrored {n}/{d} cut"),
@@ -729,19 +657,9 @@ fn the_fin_array_matches_occt() {
     // StraightAngle, LabelConflict ×3, TraceDeclined.
     for theta in [16.0f64, 20.0, 23.0, 46.0, 50.0, 54.0, 59.0, 62.0] {
         let mut m = Model::new();
-        let mut part = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-1.0, -1.0, 0.0]),
-            Point3::from_array([1.0, 1.0, 3.0]),
-        );
-        m.rebuild_adjacency();
+        let mut part = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [1.0, 1.0, 3.0]);
         for deg in [theta, theta + 180.0, theta + 198.0] {
-            let fin = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.5, -0.2, 1.0]),
-                Point3::from_array([4.0, 0.2, 3.0]),
-            );
-            m.rebuild_adjacency();
+            let fin = nacre_ops::fixtures::cuboid(&mut m, [0.5, -0.2, 1.0], [4.0, 0.2, 3.0]);
             let nacre_ops::OpOutput::Transform { solid: fin } = apply(
                 &mut m,
                 &Operation::Transform {
@@ -759,11 +677,9 @@ fn the_fin_array_matches_occt() {
             .expect("transform") else {
                 unreachable!("transform yields Transform output")
             };
-            m.rebuild_adjacency();
             // OCCT scores this fuse from the same operands, before nacre consumes them.
             let occt = occt_boolean_of(&m, OcctBool::Fuse, part, fin).expect("occt fuse");
             part = boolean(&mut m, BoolKind::Fuse, part, fin).expect("the fin fuses on")[0];
-            m.rebuild_adjacency();
             let ours = nacre_props::mass_props(&m, part).expect("props");
             assert!(
                 approx(ours.volume, occt.volume),
@@ -826,7 +742,6 @@ fn sweep_matches_occt(step: usize) {
         .expect("extrude") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         solid
     };
     let mut m = Model::new();
@@ -852,7 +767,6 @@ fn sweep_matches_occt(step: usize) {
         25.0,
     );
     let unit = boolean(&mut m, BoolKind::Fuse, plate, bar).expect("the part fuses")[0];
-    m.rebuild_adjacency();
 
     // The template must stay live to be copied again, so the accumulator starts as a copy.
     let copy = |m: &mut Model, s| {
@@ -860,7 +774,6 @@ fn sweep_matches_occt(step: usize) {
         else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         solid
     };
     let mut part = copy(&mut m, unit);
@@ -880,10 +793,8 @@ fn sweep_matches_occt(step: usize) {
         .expect("rotate a copy") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, part, c).expect("occt fuse");
         part = boolean(&mut m, BoolKind::Fuse, part, c).expect("the copy fuses on")[0];
-        m.rebuild_adjacency();
         let ours = nacre_props::mass_props(&m, part).expect("props");
         assert!(
             approx(ours.volume, occt.volume),

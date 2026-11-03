@@ -6,7 +6,6 @@
 //! that a vertex's exact definition survives the duplication.
 
 use crate::common::*;
-use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpError, OpOutput, Operation, apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Vertex};
@@ -16,16 +15,11 @@ fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     let OpOutput::Copy { solid } = apply(m, &Operation::Copy { solid: s }).unwrap() else {
         unreachable!("Copy yields a Copy output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
 fn unit_cube(m: &mut Model) -> Handle<Solid> {
-    nacre_ops::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    )
+    nacre_ops::fixtures::cuboid(m, [0.0; 3], [1.0; 3])
 }
 
 /// Vertices the kernel vouches for — realized from their definition (`Realized`) or measured —
@@ -51,7 +45,6 @@ fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
 fn a_copy_leaves_the_original_live() {
     let mut m = Model::new();
     let a = unit_cube(&mut m);
-    m.rebuild_adjacency();
 
     let b = copy_solid(&mut m, a);
 
@@ -73,17 +66,10 @@ fn a_copy_leaves_the_original_live() {
 fn cutting_the_copy_leaves_the_original_untouched() {
     let mut m = Model::new();
     let a = unit_cube(&mut m);
-    m.rebuild_adjacency();
     let b = copy_solid(&mut m, a);
 
-    let knife = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, -0.5, -0.5]),
-        Point3::from_array([1.5, 1.5, 1.5]),
-    );
-    m.rebuild_adjacency();
+    let knife = nacre_ops::fixtures::cuboid(&mut m, [0.5, -0.5, -0.5], [1.5, 1.5, 1.5]);
     let cut = boolean_one(&mut m, BoolKind::Cut, b, knife).unwrap();
-    m.rebuild_adjacency();
 
     assert!(
         (volume(&m, cut) - 0.5).abs() < 1e-12,
@@ -98,26 +84,12 @@ fn cutting_the_copy_leaves_the_original_untouched() {
 #[test]
 fn one_tool_cuts_two_parts() {
     let mut m = Model::new();
-    let part1 = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    let part2 = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([5.0, 0.0, 0.0]),
-        Point3::from_array([7.0, 2.0, 2.0]),
-    );
-    let tool = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5, -0.5, 1.5]),
-        Point3::from_array([2.5, 2.5, 2.5]),
-    );
-    m.rebuild_adjacency();
+    let part1 = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+    let part2 = nacre_ops::fixtures::cuboid(&mut m, [5.0, 0.0, 0.0], [7.0, 2.0, 2.0]);
+    let tool = nacre_ops::fixtures::cuboid(&mut m, [-0.5, -0.5, 1.5], [2.5, 2.5, 2.5]);
 
     let tool2 = copy_solid(&mut m, tool);
     let r1 = boolean_one(&mut m, BoolKind::Cut, part1, tool).unwrap();
-    m.rebuild_adjacency();
     // The copy is placed over part2 and cuts it the same way.
     let shift = nacre_exact::Isometry::translation([
         nacre_exact::Rat::from_int(5),
@@ -126,7 +98,6 @@ fn one_tool_cuts_two_parts() {
     ]);
     let tool2 = xf(&mut m, tool2, shift);
     let r2 = boolean_one(&mut m, BoolKind::Cut, part2, tool2).unwrap();
-    m.rebuild_adjacency();
 
     assert!((volume(&m, r1) - 6.0).abs() < 1e-12, "{}", volume(&m, r1));
     assert!((volume(&m, r2) - 6.0).abs() < 1e-12, "{}", volume(&m, r2));
@@ -140,9 +111,7 @@ fn one_tool_cuts_two_parts() {
 #[test]
 fn a_boolean_result_copies_with_its_discovered_vertices() {
     let (mut m, a, b) = two_boxes();
-    m.rebuild_adjacency();
     let fused = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-    m.rebuild_adjacency();
     let before = discovered_count(&m, fused);
     assert!(before > 0, "a fuse produces realized corners");
 
@@ -153,14 +122,8 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
     assert!(nacre_validate::validate(&m).is_empty());
 
     // Reusable: the twin still behaves as an operand.
-    let knife = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 1.2]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let knife = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 1.2], [3.0, 3.0, 3.0]);
     let r = boolean_one(&mut m, BoolKind::Cut, twin, knife).unwrap();
-    m.rebuild_adjacency();
     assert!(volume(&m, r) > 0.0);
     assert!(nacre_validate::validate(&m).is_empty());
 }
@@ -172,9 +135,7 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
 fn a_rotated_solid_copies_with_its_rotation_origin() {
     let mut m = Model::new();
     let c = unit_cube(&mut m);
-    m.rebuild_adjacency();
     let r = xf(&mut m, c, rot30());
-    m.rebuild_adjacency();
 
     let twin = copy_solid(&mut m, r);
 
@@ -214,11 +175,8 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
 #[test]
 fn a_rotated_boolean_result_copies_and_stays_usable() {
     let (mut m, a, b) = two_boxes();
-    m.rebuild_adjacency();
     let fused = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-    m.rebuild_adjacency();
     let turned = xf(&mut m, fused, rot30());
-    m.rebuild_adjacency();
 
     let twin = copy_solid(&mut m, turned);
 
@@ -230,19 +188,9 @@ fn a_rotated_boolean_result_copies_and_stays_usable() {
 #[test]
 fn a_hollow_solid_copies_with_its_cavity() {
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
 
     let twin = copy_solid(&mut m, hollow);
@@ -263,13 +211,11 @@ fn a_hollow_solid_copies_with_its_cavity() {
 fn fusing_a_solid_with_its_own_copy() {
     let mut m = Model::new();
     let a = unit_cube(&mut m);
-    m.rebuild_adjacency();
     let twin = copy_solid(&mut m, a);
 
     match boolean(&mut m, BoolKind::Fuse, a, twin) {
         Ok(solids) => {
             assert_eq!(solids.len(), 1, "one body");
-            m.rebuild_adjacency();
             assert!(
                 (volume(&m, solids[0]) - 1.0).abs() < 1e-12,
                 "A ∪ A = A, got {}",
@@ -286,9 +232,7 @@ fn fusing_a_solid_with_its_own_copy() {
 #[test]
 fn copying_a_consumed_solid_is_rejected() {
     let (mut m, a, b) = two_boxes();
-    m.rebuild_adjacency();
     let _ = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-    m.rebuild_adjacency();
 
     let err = apply(&mut m, &Operation::Copy { solid: a }).unwrap_err();
     assert!(matches!(err, OpError::SolidNotLive), "{err:?}");

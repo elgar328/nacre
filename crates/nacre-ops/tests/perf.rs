@@ -41,7 +41,7 @@
 //! one concludes that parallelism is slow.
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
-use nacre_math::{Point2, Point3};
+use nacre_math::Point2;
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, Operation, Profile2d, apply, boolean};
 use nacre_store::Handle;
@@ -64,7 +64,6 @@ fn extrude(m: &mut Model, ring: Vec<Point2>, dist: f64) -> Handle<Solid> {
         },
     )
     .expect("extrude");
-    m.rebuild_adjacency();
     match out {
         nacre_ops::OpOutput::Extrude { solid, .. } => solid,
         o => panic!("{o:?}"),
@@ -95,7 +94,6 @@ fn tooth_fold(n: i128) -> std::time::Duration {
         let t = std::time::Instant::now();
         acc = boolean(&mut m, BoolKind::Fuse, acc, tooth).expect("fuse")[0];
         spent += t.elapsed();
-        m.rebuild_adjacency();
     }
     spent
 }
@@ -113,7 +111,6 @@ fn turn(m: &mut Model, s: Handle<Solid>, deg: Rat) -> Handle<Solid> {
         },
     )
     .expect("rotate");
-    m.rebuild_adjacency();
     match out {
         nacre_ops::OpOutput::Transform { solid } => solid,
         o => panic!("{o:?}"),
@@ -148,7 +145,6 @@ fn fin_fold_full(n: i128) -> (std::time::Duration, usize, f64) {
         let t = std::time::Instant::now();
         acc = boolean(&mut m, BoolKind::Fuse, acc, fin).expect("fuse")[0];
         spent += t.elapsed();
-        m.rebuild_adjacency();
     }
     let faces = m.shell(m.solid(acc).outer).faces.len();
     let volume = nacre_props::mass_props(&m, acc).expect("props").volume;
@@ -181,7 +177,6 @@ fn fin_ring(n: i128, hub_first: bool) -> (std::time::Duration, usize, f64) {
         let t = std::time::Instant::now();
         acc = boolean(&mut m, BoolKind::Fuse, acc, fin).expect("fuse")[0];
         spent += t.elapsed();
-        m.rebuild_adjacency();
     }
     let faces = m.shell(m.solid(acc).outer).faces.len();
     let volume = nacre_props::mass_props(&m, acc).expect("props").volume;
@@ -194,17 +189,8 @@ fn small_booleans(reps: usize) -> std::time::Duration {
     let mut spent = std::time::Duration::ZERO;
     for _ in 0..reps {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0; 3]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0; 3]),
-            Point3::from_array([3.0; 3]),
-        );
-        m.rebuild_adjacency();
+        let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+        let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
         let t = std::time::Instant::now();
         boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
         spent += t.elapsed();
@@ -253,7 +239,6 @@ fn long_decimal_boxes(pairs: usize) -> std::time::Duration {
                 bmin[2],
                 bmax[2] - bmin[2],
             );
-            m.rebuild_adjacency();
             let t = std::time::Instant::now();
             boolean(&mut m, kind, a, b).expect("a long-decimal box boolean");
             spent += t.elapsed();
@@ -270,12 +255,7 @@ fn long_decimal_boxes(pairs: usize) -> std::time::Duration {
 fn recorded_quarter_turns(n: usize) -> (std::time::Duration, std::time::Duration) {
     let mut m = Model::new();
     let a = fixtures::through_block(&mut m, 1.0);
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 2.5, 0.5]),
-        Point3::from_array([2.0, 3.5, 1.5]),
-    );
-    m.rebuild_adjacency();
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0, 2.5, 0.5], [2.0, 3.5, 1.5]);
     let xf = |m: &mut Model, s: Handle<Solid>, isometry: Isometry| -> Handle<Solid> {
         match apply(m, &Operation::Transform { solid: s, isometry }).expect("a transform") {
             nacre_ops::OpOutput::Transform { solid } => solid,
@@ -297,7 +277,6 @@ fn recorded_quarter_turns(n: usize) -> (std::time::Duration, std::time::Duration
         a = xf(&mut m, a, quarter);
     }
     let built = t.elapsed();
-    m.rebuild_adjacency();
     let t = std::time::Instant::now();
     boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
     (built, t.elapsed())

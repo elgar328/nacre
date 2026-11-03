@@ -560,7 +560,6 @@ fn a_holes_winding_is_checked_too() {
         cavities: vec![],
     });
     m.restore_live(vec![replaced]);
-    m.rebuild_adjacency();
 
     let vs = nacre_validate::validate(&m);
     let cosines: Vec<f64> = vs
@@ -605,7 +604,6 @@ fn a_polygonal_holes_winding_is_checked_too() {
     let OpOutput::Extrude { solid, .. } = apply(&mut m, &extrude).expect("a ring prism") else {
         panic!("an extrude answers with an extrude");
     };
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "the ring prism is clean to begin with: {:?}",
@@ -639,7 +637,6 @@ fn a_polygonal_holes_winding_is_checked_too() {
         cavities: vec![],
     });
     m.restore_live(vec![replaced]);
-    m.rebuild_adjacency();
 
     let vs = nacre_validate::validate(&m);
     let cosines: Vec<f64> = vs
@@ -762,11 +759,7 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
 fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
     let build = |x: f64| -> (Model, Handle<Solid>, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-10.0, -10.0, -1.5]),
-            Point3::from_array([10.0, 10.0, 1.5]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [-10.0, -10.0, -1.5], [10.0, 10.0, 1.5]);
         let bore = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([0.0, 0.0, -10.0]),
@@ -785,14 +778,12 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
             50.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, plate, bore, tunnel)
     };
 
     // Six apart: the two cuts go through, and the volume is the plate minus both voids.
     let (mut m, plate, bore, tunnel) = build(-6.0);
     let drilled = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-    m.rebuild_adjacency();
     let both = boolean(&mut m, BoolKind::Cut, drilled, tunnel).expect("the tunnel cuts too")[0];
     let vol = nacre_props::mass_props(&m, both).expect("props").volume;
     let want = 20.0 * 20.0 * 3.0 - std::f64::consts::PI * 9.0 * 3.0 - std::f64::consts::PI * 20.0;
@@ -800,7 +791,6 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
         (vol - want).abs() < 1e-9,
         "plate minus a bore and a tunnel: {vol} vs {want}"
     );
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -810,7 +800,6 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
     // Straight through the bore: refused, by a name that states a fact.
     let (mut m, plate, bore, tunnel) = build(0.0);
     let drilled = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-    m.rebuild_adjacency();
     assert!(
         matches!(
             boolean(&mut m, BoolKind::Cut, drilled, tunnel),
@@ -838,11 +827,7 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 #[test]
 fn the_mesh_census_is_running() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let drill = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, -1.0]),
@@ -852,7 +837,6 @@ fn the_mesh_census_is_running() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore"));
     // One boolean, one solid, one census entry.
     let seen = crate::assembly::tess_census::MESHED.mine();
@@ -887,11 +871,7 @@ fn the_mesh_census_is_running() {
 #[test]
 fn a_ruling_labels_the_cell_inside_the_cylinder() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let seam = Vector3::from_array([0.0, -1.0, 0.0]);
     let a = crate::fixtures::cylinder_with_seam(
@@ -903,7 +883,6 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::ledger::owned(|| {
         boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")
     });
@@ -972,17 +951,15 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 #[test]
 fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
-        let s = transform(
+        transform(
             m,
             s,
             &nacre_exact::Isometry::translation(v.map(|x| Rat::try_from_f64(x).unwrap())),
         )
-        .unwrap();
-        m.rebuild_adjacency();
-        s
+        .unwrap()
     }
     fn plate(m: &mut Model, hi: [f64; 3]) -> Handle<Solid> {
-        crate::fixtures::cuboid(m, Point3::from_array([0.0; 3]), Point3::from_array(hi))
+        crate::fixtures::cuboid(m, [0.0; 3], hi)
     }
     fn cyl(m: &mut Model, base: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
         crate::fixtures::cylinder_with_seam(
@@ -997,27 +974,14 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     }
     /// A `20 × 20 × 10` cell at `x0`, optionally pocketed, then bored (`ct2`).
     fn ct2cell(m: &mut Model, x0: f64, pocket: bool) -> Handle<Solid> {
-        let plate = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([x0, 0.0, 0.0]),
-            Point3::from_array([x0 + 20.0, 20.0, 10.0]),
-        );
-        m.rebuild_adjacency();
+        let plate = crate::fixtures::cuboid(m, [x0, 0.0, 0.0], [x0 + 20.0, 20.0, 10.0]);
         let mut out = plate;
         if pocket {
-            let p = crate::fixtures::cuboid(
-                m,
-                Point3::from_array([x0 + 2.0, 2.0, 4.0]),
-                Point3::from_array([x0 + 8.0, 8.0, 10.0]),
-            );
-            m.rebuild_adjacency();
+            let p = crate::fixtures::cuboid(m, [x0 + 2.0, 2.0, 4.0], [x0 + 8.0, 8.0, 10.0]);
             out = boolean(m, BoolKind::Cut, out, p).expect("the pocket cuts")[0];
-            m.rebuild_adjacency();
         }
         let bore = cyl(m, [x0 + 14.0, 14.0, -1.0], 2.0, 12.0);
-        m.rebuild_adjacency();
         out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
-        m.rebuild_adjacency();
         out
     }
     type Fx = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
@@ -1030,7 +994,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             |m| {
                 let a = plate(m, [40.0, 40.0, 20.0]);
                 let b = cyl(m, [40.0, 10.0, -10.0], 5.0, 50.0);
-                m.rebuild_adjacency();
                 (a, b)
             },
             [ok(1), ok(1), ok(1)],
@@ -1040,7 +1003,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             |m| {
                 let a = plate(m, [40.0, 40.0, 20.0]);
                 let b = cyl(m, [40.0, 20.0, 0.0], 5.0, 20.0);
-                m.rebuild_adjacency();
                 (a, b)
             },
             [ok(1), ok(1), ok(1)],
@@ -1050,7 +1012,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             |m| {
                 let a = plate(m, [4.0, 4.0, 2.0]);
                 let b = cyl(m, [0.0, 0.0, -1.0], 0.5, 4.0);
-                m.rebuild_adjacency();
                 (a, b)
             },
             [ok(1), ok(1), ok(1)],
@@ -1060,7 +1021,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             |m| {
                 let a = plate(m, [4.0, 4.0, 2.0]);
                 let b = cyl(m, [2.0, 2.0, 1.0], 0.5, 1.0);
-                m.rebuild_adjacency();
                 (a, b)
             },
             [ok(1), ok(1), ok(1)],
@@ -1070,7 +1030,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             |m| {
                 let a = plate(m, [40.0, 40.0, 10.0]);
                 let b = cyl(m, [10.0, 20.0, 5.0], 3.0, 8.0);
-                m.rebuild_adjacency();
                 let b = tr(m, b, [15.3, 0.1, 0.0]);
                 (a, b)
             },
@@ -1081,11 +1040,8 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             |m| {
                 let p = plate(m, [40.0, 40.0, 10.0]);
                 let bore = cyl(m, [18.0, 20.0, -5.0], 2.1, 30.0);
-                m.rebuild_adjacency();
                 let holed = boolean(m, BoolKind::Cut, p, bore).expect("the bore cuts")[0];
-                m.rebuild_adjacency();
                 let twin = cyl(m, [7.3, 20.0, -5.0], 2.1, 30.0);
-                m.rebuild_adjacency();
                 let twin = tr(m, twin, [10.7, 0.0, 0.0]);
                 (holed, twin)
             },
@@ -1106,7 +1062,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
                 let a = ct2cell(m, 0.0, false);
                 let b = ct2cell(m, 20.0, false);
                 let ab = boolean(m, BoolKind::Fuse, a, b).expect("the first pair fuses")[0];
-                m.rebuild_adjacency();
                 let c = ct2cell(m, 40.0, false);
                 (ab, c)
             },
@@ -1123,7 +1078,6 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
             match (boolean(&mut m, kind, a, b), want) {
                 (Ok(out), Ok(n)) => {
                     assert_eq!(out.len(), *n, "{name} {kind:?}: solids");
-                    m.rebuild_adjacency();
                     let issues = nacre_validate::validate(&m);
                     assert!(issues.is_empty(), "{name} {kind:?}: {issues:?}");
                 }
@@ -1143,21 +1097,15 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
 fn census_corpus_xy_generations_build_or_refuse_by_name() {
     use nacre_exact::{Angle, Isometry, Rotation};
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
-        let s = transform(
+        transform(
             m,
             s,
             &Isometry::translation(v.map(|x| Rat::try_from_f64(x).unwrap())),
         )
-        .unwrap();
-        m.rebuild_adjacency();
-        s
+        .unwrap()
     }
     fn cell(m: &mut Model) -> Handle<Solid> {
-        let plate = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([20.0, 20.0, 10.0]),
-        );
+        let plate = crate::fixtures::cuboid(m, [0.0; 3], [20.0, 20.0, 10.0]);
         let bore = crate::fixtures::cylinder_with_seam(
             m,
             Point3::from_array([6.3, 6.3, -1.0]),
@@ -1167,10 +1115,7 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
             12.0,
         )
         .solid;
-        m.rebuild_adjacency();
-        let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-        m.rebuild_adjacency();
-        out
+        boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0]
     }
     fn row(m: &mut Model, n: usize, step: [f64; 3]) -> Handle<Solid> {
         let mut acc = cell(m);
@@ -1178,7 +1123,6 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
             let c = cell(m);
             let c = tr(m, c, step.map(|v| v * i as f64));
             acc = boolean(m, BoolKind::Fuse, acc, c).expect("the row fuses")[0];
-            m.rebuild_adjacency();
         }
         acc
     }
@@ -1232,7 +1176,6 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
                     }),
                 )
                 .unwrap();
-                m.rebuild_adjacency();
                 (a, b)
             },
             [Err(RejectReason::CylinderGateUndecided); 3],
@@ -1248,7 +1191,6 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
             match (boolean(&mut m, kind, a, b), want) {
                 (Ok(out), Ok(n)) => {
                     assert_eq!(out.len(), *n, "{name} {kind:?}: solids");
-                    m.rebuild_adjacency();
                     let issues = nacre_validate::validate(&m);
                     assert!(issues.is_empty(), "{name} {kind:?}: {issues:?}");
                 }
@@ -1285,11 +1227,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
     let pi = std::f64::consts::PI;
     let build = || {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([4.0, 2.0, -1.0]),
@@ -1299,9 +1237,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
-        m.rebuild_adjacency();
         let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
         assert!(
             (v0 - (32.0 + 3.0 * pi / 4.0)).abs() < 1e-9,
@@ -1312,16 +1248,10 @@ fn a_spliced_band_is_cut_across_its_notch() {
     // (a) caps across the band above the plate and beyond it.
     {
         let (mut m, r0, v0) = build();
-        let tool = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([3.0, -1.0, 2.5]),
-            Point3::from_array([6.0, 5.0, 4.0]),
-        );
-        m.rebuild_adjacency();
+        let tool = crate::fixtures::cuboid(&mut m, [3.0, -1.0, 2.5], [6.0, 5.0, 4.0]);
         let r = boolean(&mut m, BoolKind::Cut, r0, tool)
             .unwrap_or_else(|e| panic!("the band is cut above the plate: {e:?}"));
         assert_eq!(r.len(), 1, "one solid");
-        m.rebuild_adjacency();
         let issues = nacre_validate::validate(&m);
         assert!(issues.is_empty(), "{issues:?}");
         let v = nacre_props::mass_props(&m, r[0]).expect("props").volume;
@@ -1339,18 +1269,12 @@ fn a_spliced_band_is_cut_across_its_notch() {
     // the ruling side the ring carried — the f64 road to the sign `crossing_on_ruling` chose by.
     {
         let (mut m, r0, v0) = build();
-        let tool = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([3.0, -1.0, 0.5]),
-            Point3::from_array([6.0, 5.0, 1.5]),
-        );
-        m.rebuild_adjacency();
+        let tool = crate::fixtures::cuboid(&mut m, [3.0, -1.0, 0.5], [6.0, 5.0, 1.5]);
         let r = crate::ledger::owned(|| {
             boolean(&mut m, BoolKind::Cut, r0, tool)
                 .unwrap_or_else(|e| panic!("the notch is cut across its rulings: {e:?}"))
         });
         assert_eq!(r.len(), 1, "one solid");
-        m.rebuild_adjacency();
         let issues = nacre_validate::validate(&m);
         assert!(issues.is_empty(), "{issues:?}");
         let v = nacre_props::mass_props(&m, r[0]).expect("props").volume;

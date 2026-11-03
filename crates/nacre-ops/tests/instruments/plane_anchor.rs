@@ -398,7 +398,6 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
         },
     )
     .expect("the wf cut");
-    m.rebuild_adjacency();
     m
 }
 

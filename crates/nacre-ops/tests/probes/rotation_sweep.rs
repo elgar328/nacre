@@ -33,9 +33,7 @@ fn unit(m: &mut Model) -> Handle<Solid> {
     let p1 = prism(m, &plate, Axis::Z, 12.0);
     let bar = [[20.0, 12.0], [75.0, 12.0], [75.0, 37.0], [55.0, 37.0]];
     let p2 = prism(m, &bar, Axis::X, 25.0);
-    let out = boolean(m, BoolKind::Fuse, p1, p2).expect("the part fuses")[0];
-    m.rebuild_adjacency();
-    out
+    boolean(m, BoolKind::Fuse, p1, p2).expect("the part fuses")[0]
 }
 
 fn prism(m: &mut Model, pts: &[[f64; 2]], axis: Axis, dist: f64) -> Handle<Solid> {
@@ -49,7 +47,6 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], axis: Axis, dist: f64) -> Handle<Solid
     let nacre_ops::OpOutput::Extrude { solid, .. } = apply(m, &op).expect("extrude") else {
         panic!("extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -59,7 +56,6 @@ fn copy_of(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     else {
         panic!("copy output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -75,7 +71,6 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Result<Handle<Solid>, na
             }),
         },
     )?;
-    m.rebuild_adjacency();
     match out {
         nacre_ops::OpOutput::Transform { solid } => Ok(solid),
         o => panic!("{o:?}"),
@@ -138,7 +133,6 @@ fn a_fused_result_names_itself_in_its_own_surfaces() {
     let c = copy_of(&mut m, u);
     let c = rot_z(&mut m, c, 30).expect("rotating a copy");
     let fused = boolean(&mut m, BoolKind::Fuse, u, c).expect("30° fuses")[0];
-    m.rebuild_adjacency();
     assert_eq!(
         foreign_definitions(&m, fused),
         Vec::<String>::new(),
@@ -165,7 +159,6 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
                 // severing carry on against a *fragment* — green, and measuring something else.
                 assert_eq!(out.len(), 1, "the {step}° fold split at the {deg}° copy");
                 part = out[0];
-                m.rebuild_adjacency();
             }
             Err(e) => return Err((deg, e)),
         }
@@ -239,7 +232,6 @@ fn the_thirty_degree_sweep_runs_to_completion() {
             .unwrap_or_else(|e| panic!("fusing the {deg}° copy: {e:?}"));
         assert_eq!(out.len(), 1, "the star stays one body at {deg}°");
         part = out[0];
-        m.rebuild_adjacency();
         assert_eq!(
             foreign_definitions(&m, part),
             Vec::<String>::new(),
@@ -273,7 +265,6 @@ fn another_rejection_keeps_its_own_reason() {
             match boolean(&mut m, BoolKind::Fuse, part, c) {
                 Ok(out) => {
                     part = out[0];
-                    m.rebuild_adjacency();
                 }
                 Err(e) => {
                     got = Some(e);
@@ -325,7 +316,6 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
     let c = copy_of(&mut m, u);
     let c = rot_z(&mut m, c, 120).expect("rotating a copy");
     let out = boolean(&mut m, BoolKind::Fuse, part, c).expect("a line contact separates");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2, "the part and its 120° copy only touch");
     let total: f64 = out
         .iter()

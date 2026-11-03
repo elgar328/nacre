@@ -62,7 +62,6 @@ fn the_whole_pipeline_runs_through_the_facade_alone() {
 
     let joined = boolean(&mut model, BoolKind::Fuse, a, b).unwrap();
     assert_eq!(joined.len(), 1);
-    model.rebuild_adjacency();
 
     let issues = validate(&model);
     assert!(issues.is_empty(), "{issues:?}");
@@ -103,7 +102,6 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
 
     let mut model = Model::new();
     let solid = extrude(&mut model, profiles.into_iter().next().unwrap(), 1.0);
-    model.rebuild_adjacency();
 
     // Pick the face looking straight up, the way a script names one.
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
@@ -147,12 +145,7 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
 #[test]
 fn the_test_util_primitive_is_forwarded() {
     let mut model = Model::new();
-    let cube = nacre_ops::fixtures::cuboid(
-        &mut model,
-        Point3::origin(),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
-    model.rebuild_adjacency();
+    let cube = nacre_ops::fixtures::cuboid(&mut model, [0.0; 3], [2.0, 3.0, 4.0]);
     assert!((mass_props(&model, cube).unwrap().volume - 24.0).abs() < 1e-12);
 
     // Tessellation and OBJ live one module away; check they are wired at all.
@@ -202,18 +195,9 @@ fn a_caller_can_name_vertices_and_build_a_datum_through_them() {
     use nacre::prelude::*;
 
     let mut m = nacre::topo::Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 4.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, 2.0]),
-        Point3::from_array([3.0, 3.0, 5.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [4.0, 4.0, 4.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0, 1.0, 2.0], [3.0, 3.0, 5.0]);
     nacre::ops::boolean(&mut m, nacre::ops::BoolKind::Cut, a, b).expect("a pocketed box");
-    m.rebuild_adjacency();
 
     // The walk. This is the whole vocabulary a caller has for "give me a corner".
     let mut corners = Vec::new();

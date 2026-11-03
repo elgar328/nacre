@@ -28,6 +28,7 @@
 use crate::stated::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::{
     BoolKind, CacheDecline, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
     SketchPlane, apply, boolean, realize_vertex, realize_vertex_cache, realize_vertex_decimal,
@@ -37,16 +38,11 @@ use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
 use crate::fixtures::{datum_frame, extrude_op, live_vertices, p2, regular_ngon};
 
-fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
-}
-
 fn boolean_corner() -> Model {
     let mut m = Model::new();
     let a = cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
     let b = cuboid(&mut m, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
-    m.rebuild_adjacency();
     m
 }
 
@@ -55,7 +51,6 @@ fn boolean_twice() -> Model {
     let a = m.live_solids()[0];
     let b = cuboid(&mut m, [-1.0, 4.4, 4.4], [11.0, 8.8, 8.8]);
     boolean(&mut m, BoolKind::Cut, a, b).expect("second cut");
-    m.rebuild_adjacency();
     m
 }
 
@@ -84,7 +79,6 @@ fn tilted_frame(passes: usize) -> Model {
     .expect("the wf base prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     let mut done: Vec<Handle<Surface>> = Vec::new();
     for pass in 0..passes {
@@ -118,7 +112,6 @@ fn tilted_frame(passes: usize) -> Model {
             0.4,
         )
         .unwrap_or_else(|e| panic!("the wf pocket, pass {pass}: {e:?}"));
-        m.rebuild_adjacency();
     }
     m
 }
@@ -145,7 +138,6 @@ fn cylinder() -> Model {
     .expect("the circle extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     m
 }
 
@@ -173,7 +165,6 @@ fn bored_plate() -> Model {
     .expect("the bored plate extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     m
 }
 
@@ -407,11 +398,7 @@ fn every_vertex_variant_answers() {
     }
     // The refusing half of `Pierce` has no producer, so that population is stated here.
     let mut m = cylinder();
-    let _ = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
+    let _ = cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     let mut refused = 0usize;
     for vh in pierce_vertices(&mut m) {
         match realize_vertex_decimal(&m, vh, 25) {
@@ -580,7 +567,6 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
     .expect("a rational translation moves the prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert_eq!(m.live_solids().to_vec(), vec![moved]);
     let (mut bounded, mut kept) = (0usize, 0usize);
     for vh in live_vertices(&m) {
@@ -705,7 +691,6 @@ fn a_bounded_cache_contains_the_coordinate_its_definition_names() {
     let mut m = Model::new();
     let s = cuboid(&mut m, [0.1, 0.2, 0.3], [1.7, 1.3, 0.9]);
     moved(&mut m, s, turn(Axis::Z, 30));
-    m.rebuild_adjacency();
     const PLACES: usize = 25;
     let decimal = |d: &str| -> Rat {
         let (neg, d) = d.strip_prefix('-').map_or((false, d), |t| (true, t));
@@ -767,7 +752,6 @@ fn a_corner_of_a_turned_and_an_unturned_wall_is_realized() {
     let b = moved(&mut m, b, turn(Axis::Z, 30));
     let out = boolean(&mut m, BoolKind::Common, a, b).expect("the slab and the turned box overlap");
     assert_eq!(out.len(), 1);
-    m.rebuild_adjacency();
     let want = [
         1.0,
         "0.57735026918962576450914878".parse::<f64>().unwrap(),
@@ -811,15 +795,10 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
         let mut m = Model::new();
         let s = nacre_ops::fixtures::windowed_boss(&mut m, 0.6, -1.0);
         moved(&mut m, s, turn(Axis::X, 30));
-        m.rebuild_adjacency();
         m
     };
     let mut stated = cylinder();
-    let _ = nacre_ops::fixtures::cuboid(
-        &mut stated,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
+    let _ = cuboid(&mut stated, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     let hand = pierce_vertices(&mut stated);
     let models = [tilted_frame(1), turned_cylinder];
     let (mut ok, mut refused) = (0usize, 0usize);
@@ -979,11 +958,9 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
     let turned = |n: usize| {
         let mut m = Model::new();
         let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-        m.rebuild_adjacency();
         for _ in 0..n {
             s = moved(&mut m, s, turn(Axis::Z, 7));
         }
-        m.rebuild_adjacency();
         m
     };
     for (what, m) in [
@@ -1025,9 +1002,7 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
 fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
     let mut m = Model::new();
     let s = crate::fixtures::through_block(&mut m, 4.0);
-    m.rebuild_adjacency();
     moved(&mut m, s, turn(Axis::X, 90));
-    m.rebuild_adjacency();
     let vs = live_vertices(&m);
     assert!(!vs.is_empty(), "no live vertices");
     let mut zeros = 0;
@@ -1060,11 +1035,9 @@ fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
 fn a_folding_chain_past_the_cost_cap_is_still_read_exactly() {
     let mut m = Model::new();
     let mut s = crate::fixtures::through_block(&mut m, 4.0);
-    m.rebuild_adjacency();
     for _ in 0..300 {
         s = moved(&mut m, s, turn(Axis::Z, 90));
     }
-    m.rebuild_adjacency();
     let vs = live_vertices(&m);
     assert!(!vs.is_empty(), "no live vertices");
     for &vh in &vs {
@@ -1089,9 +1062,7 @@ fn a_folding_chain_past_the_cost_cap_is_still_read_exactly() {
 fn a_coordinate_that_cancels_to_zero_is_read_as_zero() {
     let mut m = Model::new();
     let s = cuboid(&mut m, [0.0; 3], [2.0, 2.0, 1.0]);
-    m.rebuild_adjacency();
     moved(&mut m, s, turn(Axis::Z, 45));
-    m.rebuild_adjacency();
     let mut zeros = 0;
     for vh in live_vertices(&m) {
         let PointCache::Realized { coord, bound } = *m.vertex_cache(vh) else {
@@ -1134,9 +1105,7 @@ fn a_plane_turned_off_the_quarters_has_its_normal_realized() {
     const HALF_ROOT3: f64 = 0.8660254037844386; // nearest f64 of √3/2
     let mut m = Model::new();
     let s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     let s = moved(&mut m, s, turn(Axis::Z, 30));
-    m.rebuild_adjacency();
     let shell = m.solid(s).outer;
     let mut seen = 0;
     for &fh in &m.shell(shell).faces {
@@ -1182,9 +1151,7 @@ fn a_plane_turned_off_the_quarters_has_its_normal_realized() {
 fn a_plane_turned_off_the_quarters_has_its_anchor_realized() {
     let mut m = Model::new();
     let s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     let s = moved(&mut m, s, turn(Axis::Z, 30));
-    m.rebuild_adjacency();
     // Nearest f64 of the turned `(x, y)`, keyed by the corner.
     let turned = |x: f64, y: f64| -> [f64; 2] {
         match (x, y) {
@@ -1240,9 +1207,7 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
     let Ok(OpOutput::Extrude { solid, .. }) = apply(&mut m, &op) else {
         panic!("the 16-gon extrudes");
     };
-    m.rebuild_adjacency();
     let s = moved(&mut m, solid, turn(Axis::X, 30));
-    m.rebuild_adjacency();
     let (first, next) = (
         [-1.8477590650225735, 0.7653668647301798, 0.0],
         [-2.0, 2.4492935982947064e-16, 0.0],
@@ -1331,7 +1296,6 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     // ── the cost wall ──────────────────────────────────────────────────────────────────────
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     // A 7° turn gives the box a history, so every translation after it is recorded.
     s = moved(&mut m, s, turn(Axis::Z, 7));
     for _ in 0..300 {
@@ -1342,7 +1306,6 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         ]);
         s = moved(&mut m, s, iso);
     }
-    m.rebuild_adjacency();
 
     let vs = live_vertices(&m);
     assert!(!vs.is_empty(), "no live vertices");
@@ -1375,12 +1338,10 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     // ── the bits wall ──────────────────────────────────────────────────────────────────────
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     for _ in 0..60 {
         s = moved(&mut m, s, turn(Axis::Z, 37));
         s = moved(&mut m, s, turn(Axis::Z, -37));
     }
-    m.rebuild_adjacency();
 
     let vs = live_vertices(&m);
     let undecided = vs
@@ -1415,11 +1376,9 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
 fn seventy_turns_of_thirty_seven_degrees_are_realized_on_the_second_rung() {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     for _ in 0..70 {
         s = moved(&mut m, s, turn(Axis::Z, 37));
     }
-    m.rebuild_adjacency();
     let vs = live_vertices(&m);
     let first_rung_short = vs
         .iter()
@@ -1474,7 +1433,6 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
     .expect("a prism on the deep wall") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let corners: Vec<_> = live_vertices(&m)
         .into_iter()
         .filter(|&vh| m.reachable_from(&[prism]).vertices.contains(&vh))
@@ -1510,7 +1468,6 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     let mut m = translated_chain(200);
     let deep = m.live_solids()[0];
     let still = cuboid(&mut m, [10.0, 0.0, 0.0], [11.0, 1.0, 1.0]);
-    m.rebuild_adjacency();
     let corner = |m: &Model, s: Handle<Solid>, k: usize| {
         let top = m.shell(m.solid(s).outer).faces[1];
         m.he_start(m.face(top).outer.half_edges[k])
@@ -1556,7 +1513,6 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     .expect("a prism on the datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let corners: Vec<_> = m.reachable_from(&[prism]).vertices.into_iter().collect();
     assert!(!corners.is_empty(), "the prism has corners");
     for &vh in &corners {
@@ -1599,7 +1555,6 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
     for (k, deg) in [7i128, 11, 13].into_iter().enumerate() {
         let x = 5.0 * k as f64;
         let mut s = cuboid(&mut m, [x, 0.0, 0.0], [x + 1.0, 1.0, 1.0]);
-        m.rebuild_adjacency();
         s = moved(&mut m, s, turn(Axis::Z, deg));
         for _ in 0..70 {
             let iso = Isometry::translation([
@@ -1609,7 +1564,6 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
             ]);
             s = moved(&mut m, s, iso);
         }
-        m.rebuild_adjacency();
         let top = m.shell(m.solid(s).outer).faces[1];
         corners.push(m.he_start(m.face(top).outer.half_edges[0]));
     }
@@ -1656,7 +1610,6 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
     .expect("a prism on the datum") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let on_it: Vec<_> = m.reachable_from(&[prism]).vertices.into_iter().collect();
     for &vh in &on_it {
         assert_eq!(
@@ -1683,10 +1636,8 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
 fn translated_chain(n: usize) -> Model {
     let mut m = Model::new();
     let s = chain_box(&mut m);
-    m.rebuild_adjacency();
     let s = moved(&mut m, s, turn(Axis::Z, 7));
     moved_along_x(&mut m, s, n, 1);
-    m.rebuild_adjacency();
     m
 }
 
@@ -1975,10 +1926,8 @@ fn a_refined_model_exports_the_same_bytes_twice() {
 fn the_refine_door_raises_a_deep_cylinder() {
     let mut m = Model::new();
     let c = chain_cylinder(&mut m);
-    m.rebuild_adjacency();
     let s = moved(&mut m, c, turn(Axis::Z, 7));
     let s = moved_along_x(&mut m, s, 300, 1);
-    m.rebuild_adjacency();
     let lateral = m
         .shell(m.solid(s).outer)
         .faces
@@ -2087,17 +2036,13 @@ type DeepEdges = (
 fn deep_edges_build(m: &mut Model, fixture: &DeepEdges, deep: bool) -> Vec<Handle<Solid>> {
     let (_, body, first, on) = fixture;
     let s = body(m);
-    m.rebuild_adjacency();
     let s = moved(m, s, *first);
     let s = if deep {
         moved_along_x(m, s, 300, 1)
     } else {
         moved_along_x(m, s, 1, 300)
     };
-    m.rebuild_adjacency();
-    let out = on(m, s);
-    m.rebuild_adjacency();
-    out
+    on(m, s)
 }
 
 /// A square prism on `frame`.
@@ -2133,7 +2078,6 @@ fn extruded(m: &mut Model, frame: SketchFrame, profile: Profile2d) -> Handle<Sol
 /// rational unit, so the frame stands in the world and the pad's planes keep their names.
 fn pad_on_a_fresh_datum(m: &mut Model) -> Handle<Solid> {
     let base = cuboid(m, [0.0; 3], [4.0, 3.0, 1.0]);
-    m.rebuild_adjacency();
     let corner = |m: &Model, want: [f64; 3]| {
         m.reachable_from(&[base])
             .vertices
@@ -2185,9 +2129,7 @@ fn bored_and_turned(m: &mut Model, s: Handle<Solid>) -> Vec<Handle<Solid>> {
     )
     .solid;
     let bored = boolean(m, BoolKind::Cut, s, bore).expect("a bore")[0];
-    m.rebuild_adjacency();
     let turned = moved(m, bored, turn(Axis::X, 7));
-    m.rebuild_adjacency();
     vec![turned]
 }
 
@@ -2438,7 +2380,6 @@ fn the_write_door_refuses_a_vertex_that_is_not_a_ceiling() {
 fn translated_chain_cold(n: usize) -> Model {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     m.clear_prefix_hp();
     s = moved(&mut m, s, turn(Axis::Z, 7));
     for _ in 0..n {
@@ -2450,7 +2391,6 @@ fn translated_chain_cold(n: usize) -> Model {
         ]);
         s = moved(&mut m, s, iso);
     }
-    m.rebuild_adjacency();
     m
 }
 
@@ -2523,11 +2463,9 @@ fn the_prefix_table_stays_one_generation() {
     // second rung files nothing, so the first rung's entry is still the one generation kept.
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-    m.rebuild_adjacency();
     for _ in 0..100 {
         s = moved(&mut m, s, turn(Axis::Z, 37));
     }
-    m.rebuild_adjacency();
     assert_eq!(
         m.prefix_hp_len(),
         live_vertices(&m).len(),
@@ -2544,7 +2482,6 @@ fn the_prefix_table_stays_one_generation() {
         );
         boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
     }
-    m.rebuild_adjacency();
     assert_eq!(
         m.prefix_hp_len(),
         0,
@@ -2569,7 +2506,6 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
         let build = |clear: bool| {
             let mut m = Model::new();
             let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
-            m.rebuild_adjacency();
             for _ in 0..6 {
                 if clear {
                     m.clear_prefix_hp();
@@ -2585,7 +2521,6 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
                 };
                 s = moved(&mut m, s, iso);
             }
-            m.rebuild_adjacency();
             m
         };
         let (warm, cold) = (build(false), build(true));
@@ -2621,7 +2556,6 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
 fn a_deep_folding_chain_is_realized_and_the_lock_agrees() {
     let mut m = Model::new();
     let mut s = crate::fixtures::through_block(&mut m, 1.0);
-    m.rebuild_adjacency();
     let quarter = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::new(1, 2).expect("1/2"); 3],
@@ -2630,7 +2564,6 @@ fn a_deep_folding_chain_is_realized_and_the_lock_agrees() {
     for _ in 0..250 {
         s = moved(&mut m, s, quarter);
     }
-    m.rebuild_adjacency();
     let mut seen: Vec<_> = m
         .reachable()
         .faces

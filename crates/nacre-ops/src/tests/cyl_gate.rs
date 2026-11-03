@@ -305,11 +305,7 @@ fn a_lateral_faces_reach_and_what_clears_it() {
 #[test]
 fn the_tangent_wall_states_itself_exactly() {
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
     let cyl = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([0.5, 1.0, -1.0]),
@@ -319,7 +315,6 @@ fn the_tangent_wall_states_itself_exactly() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let (setup, cyl_surfs) =
         crate::arrangement::plane_index_setup_inner(&m, cube, cyl).expect("setup");
     let surf = cyl_surfs[0];
@@ -488,12 +483,7 @@ fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Result<Vec<Tangency>, Bo
     ) else {
         panic!("the half cylinder extrudes")
     };
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([lo[0], lo[1], -0.5]),
-        Point3::from_array([hi[0], hi[1], 2.5]),
-    );
-    m.rebuild_adjacency();
+    let b = crate::fixtures::cuboid(&mut m, [lo[0], lo[1], -0.5], [hi[0], hi[1], 2.5]);
     crate::arrangement::plane_index_setup(&m, a, b).map(|s| s.tangencies)
 }
 
@@ -537,17 +527,8 @@ fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
 fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
     let rows = |z0: f64, h: f64| {
         let mut m = Model::new();
-        let block = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, -3.0, 0.0]),
-            Point3::from_array([6.0, 3.0, 2.0]),
-        );
-        let slot = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-1.0, -2.0, 1.0]),
-            Point3::from_array([7.0, 2.0, 3.0]),
-        );
-        m.rebuild_adjacency();
+        let block = crate::fixtures::cuboid(&mut m, [0.0, -3.0, 0.0], [6.0, 3.0, 2.0]);
+        let slot = crate::fixtures::cuboid(&mut m, [-1.0, -2.0, 1.0], [7.0, 2.0, 3.0]);
         let a = crate::boolean(&mut m, crate::BoolKind::Cut, block, slot).expect("the slot")[0];
         let b = crate::fixtures::cylinder_with_seam(
             &mut m,
@@ -558,7 +539,6 @@ fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
             h,
         )
         .solid;
-        m.rebuild_adjacency();
         crate::arrangement::plane_index_setup(&m, a, b)
             .expect("the gate passes")
             .tangencies
@@ -592,12 +572,7 @@ fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
     let rows = |w: f64, seam: f64, z: [f64; 2]| {
         let mut m = Model::new();
         let boss = crate::fixtures::windowed_boss(&mut m, w, seam);
-        let slab = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-2.0, -2.0, z[0]]),
-            Point3::from_array([1.0, 2.0, z[1]]),
-        );
-        m.rebuild_adjacency();
+        let slab = crate::fixtures::cuboid(&mut m, [-2.0, -2.0, z[0]], [1.0, 2.0, z[1]]);
         crate::arrangement::plane_index_setup(&m, slab, boss)
             .expect("the gate passes")
             .tangencies

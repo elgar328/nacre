@@ -48,7 +48,6 @@ fn block(m: &mut Model) -> Handle<Solid> {
     .expect("the block") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -63,7 +62,6 @@ fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     .expect("transform") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -263,7 +261,6 @@ fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
         let top_face = nacre_ops::fixtures::pad(&mut m, f, profile.clone(), 0.5)
             .expect("the pad")
             .cap_face(&m);
-        m.rebuild_adjacency();
         let pad_fp = nacre_props::face_props(&m, top_face)
             .expect("props")
             .centroid
@@ -284,7 +281,6 @@ fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
         .expect("the extrude in the returned frame") else {
             unreachable!()
         };
-        m2.rebuild_adjacency();
         let (lo, hi) = nacre_props::bounds(&m2, prism).expect("bounds");
         // The prism runs from its base along `n` for 0.5, so the base is centre − n·0.25.
         let prism_fp = (lo + (hi - lo) * 0.5) - n * 0.25;

@@ -51,10 +51,9 @@ fn chained_cylinder_operations_on_a_face_build() {
             96.0 - quarter * 2.0 + (quarter * 4.0 - 0.5 * quarter * 2.0),
         ),
     ] {
-        let (mut m, r) = chained(first, second);
+        let (m, r) = chained(first, second);
         let out = r.unwrap_or_else(|e| panic!("{name}: {e:?}"));
         assert_eq!(out.len(), 1, "{name}: one solid");
-        m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty(), "{name}: validate");
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
@@ -83,11 +82,7 @@ fn chained_cylinder_operations_on_a_face_build() {
 #[test]
 fn the_gate_records_a_wall_the_boss_is_seated_on() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let seam = Vector3::from_array([0.0, -1.0, 0.0]);
     let a = crate::fixtures::cylinder_with_seam(
@@ -99,9 +94,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
-    m.rebuild_adjacency();
     let b = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([6.0, 2.0, -1.0]),
@@ -111,7 +104,6 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     // The gate *deciding* is half the claim — past the first corner the boss makes.
     let setup = crate::arrangement::plane_index_setup(&m, first, b).expect("the gate decides");
     // And recording is the other half. The boss sits **on** `y = 0`, so those faces are not
@@ -164,11 +156,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 #[test]
 fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let seam = Vector3::from_array([0.0, -1.0, 0.0]);
     let a = crate::fixtures::cylinder_with_seam(
@@ -180,9 +168,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
-    m.rebuild_adjacency();
     let b = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([6.0, 2.0, -1.0]),
@@ -192,7 +178,6 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, first, b).expect("the bore builds"));
     // This operation's own carvings — but it carves other classes of the same model too (a
     // panel's ruling is one graze, a chain's a transversal then a graze), so the boss is still
@@ -285,11 +270,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
     // step is restating the ruling's root for a different ⊥ plane.
     for base in [-1.0, 1.0] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([12.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
         let up = Vector3::from_array([0.0, 0.0, 1.0]);
         let seam = Vector3::from_array([0.0, -1.0, 0.0]);
         let a = crate::fixtures::cylinder_with_seam(
@@ -301,9 +282,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
-        m.rebuild_adjacency();
         let b = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([6.0, 2.0, base]),
@@ -313,7 +292,6 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         crate::ledger::owned(|| {
             let _ = boolean(&mut m, BoolKind::Cut, first, b);
         });
@@ -371,11 +349,7 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
         ("the crossing arm on a seed plane", -1.0, -4.0, 1.0),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 0.0, dz]),
-            Point3::from_array([12.0, 4.0, 2.0 + dz]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0, 0.0, dz], [12.0, 4.0, 2.0 + dz]);
         let origin = [6.0, 2.0, -1.0 + dz];
         let bore = crate::fixtures::cylinder_with_seam(
             &mut m,
@@ -386,19 +360,11 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let bored = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore")[0];
-        m.rebuild_adjacency();
-        let tongue = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([5.4, 2.0, 0.5 + dz]),
-            Point3::from_array([6.6, 3.5, 1.5 + dz]),
-        );
-        m.rebuild_adjacency();
+        let tongue = crate::fixtures::cuboid(&mut m, [5.4, 2.0, 0.5 + dz], [6.6, 3.5, 1.5 + dz]);
         let first = boolean(&mut m, BoolKind::Fuse, bored, tongue)
             .unwrap_or_else(|e| panic!("{name}: the tongue: {e:?}"));
         assert_eq!(first.len(), 1, "{name}: the tongue makes one solid");
-        m.rebuild_adjacency();
         let v = nacre_props::mass_props(&m, first[0]).expect("mass").volume;
         assert!(
             (v - first_volume).abs() < 1e-9,
@@ -413,7 +379,6 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         // The premise of the third row: the cap that crosses the hole is `Reversed`, and on the
         // others it is not.
         let top = m
@@ -437,7 +402,6 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
         let out = crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, first[0], b))
             .unwrap_or_else(|e| panic!("{name}: the second cylinder: {e:?}"));
         assert_eq!(out.len(), 1, "{name}: one solid");
-        m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty(), "{name}: validate");
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         let want = first_volume - q * removed;
@@ -480,17 +444,11 @@ fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
     ] {
         let mut m = Model::new();
         let a = walled_bore(&mut m);
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([30.0, 30.0, 8.0]),
-            Point3::from_array([35.0, 35.0, 18.0]),
-        );
-        m.rebuild_adjacency();
+        let b = crate::fixtures::cuboid(&mut m, [30.0, 30.0, 8.0], [35.0, 35.0, 18.0]);
         let from = crate::arrangement::arc_probe::MIDS.len();
         let out = crate::ledger::owned(|| boolean(&mut m, kind, a, b))
             .unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
         assert_eq!(out.len(), 1, "{kind:?}: one solid");
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{kind:?}: validate"
@@ -559,10 +517,9 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
             96.0 + 3.0 * q - q,
         ),
     ] {
-        let (mut m, r) = chained(wall_boss, second);
+        let (m, r) = chained(wall_boss, second);
         let out = r.unwrap_or_else(|e| panic!("{name}: {e:?}"));
         assert_eq!(out.len(), 1, "{name}: one solid");
-        m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty(), "{name}: validate");
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
@@ -624,11 +581,7 @@ fn an_operand_bounded_by_a_cylinder_is_named_in_class_space() {
 
 fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([12.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [12.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array(at),
@@ -638,9 +591,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         4.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
-    m.rebuild_adjacency();
     let r = out[0];
 
     let faces_tab = collect_planes(&m, r).expect("the result's face table");
@@ -984,11 +935,7 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
 #[test]
 fn a_disk_merges_into_the_face_it_lies_in() {
     let plate_and_boss = |m: &mut Model, base: [f64; 3], h: f64| {
-        let a = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let a = crate::fixtures::cuboid(m, [0.0; 3], [4.0, 4.0, 2.0]);
         let b = crate::fixtures::cylinder_with_seam(
             m,
             Point3::from_array(base),
@@ -998,7 +945,6 @@ fn a_disk_merges_into_the_face_it_lies_in() {
             h,
         )
         .solid;
-        m.rebuild_adjacency();
         (a, b)
     };
     let faces_of = |m: &Model, s: Handle<Solid>| -> usize {
@@ -1013,7 +959,6 @@ fn a_disk_merges_into_the_face_it_lies_in() {
         let (a, b) = plate_and_boss(&mut m, base, h);
         let out = boolean(&mut m, kind, a, b).expect("the boolean builds");
         assert_eq!(out.len(), 1, "one solid");
-        m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         // The merged face has to survive tessellation too: `validate` reads the topology store,
         // and a boundary this pass rewrote is exactly the kind a mesher can drop a piece of.
@@ -1090,19 +1035,9 @@ fn a_moved_face_answers_the_clearance_test() {
 fn moved_face_answers_the_clearance_test(recorded: bool) {
     use nacre_exact::Rat;
     let cell = |m: &mut Model| {
-        let plate = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([86.0, 86.0, 71.5]),
-        );
-        let pocket = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([60.3, 47.8, 0.0]),
-            Point3::from_array([73.2, 64.5, 68.5]),
-        );
-        m.rebuild_adjacency();
+        let plate = crate::fixtures::cuboid(m, [0.0; 3], [86.0, 86.0, 71.5]);
+        let pocket = crate::fixtures::cuboid(m, [60.3, 47.8, 0.0], [73.2, 64.5, 68.5]);
         let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
-        m.rebuild_adjacency();
         let bore = crate::fixtures::cylinder_with_seam(
             m,
             Point3::from_array([17.1, 48.6, -1.0]),
@@ -1112,9 +1047,7 @@ fn moved_face_answers_the_clearance_test(recorded: bool) {
             80.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
-        m.rebuild_adjacency();
         if recorded {
             super::fixtures::through_notched(m, out, 10.0)
         } else {
@@ -1134,7 +1067,6 @@ fn moved_face_answers_the_clearance_test(recorded: bool) {
         ]),
     )
     .unwrap();
-    m.rebuild_adjacency();
     assert_eq!(carries_motion(&m, b), recorded, "recorded {recorded}");
     if recorded {
         // The population, or both roads go unmeasured: the bore stands on a chain that folds, and
@@ -1180,7 +1112,6 @@ fn moved_face_answers_the_clearance_test(recorded: bool) {
     // cell), so this is an ordinary two-body result — what it pins is that the gate **decided**
     // the near-miss wall face by face.
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved cell is judged");
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let pi = std::f64::consts::PI;
     let notch = if recorded { 10.0 * 298.0 / 75.0 } else { 0.0 };
@@ -1203,11 +1134,7 @@ fn moved_face_answers_the_clearance_test(recorded: bool) {
 fn a_rotated_cylinder_is_still_undecided() {
     use nacre_exact::{Angle, Rat, Rotation};
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 10.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 10.0]);
     let tool = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([18.0, 7.3, -5.0]),
@@ -1217,7 +1144,6 @@ fn a_rotated_cylinder_is_still_undecided() {
         30.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let tool = transform(
         &mut m,
         tool,
@@ -1228,7 +1154,6 @@ fn a_rotated_cylinder_is_still_undecided() {
         }),
     )
     .unwrap();
-    m.rebuild_adjacency();
     assert!(carries_motion(&m, tool), "the turn records a chain");
     let live = m.live_solids().to_vec();
     let err = boolean(&mut m, BoolKind::Cut, plate, tool).expect_err("no world description");

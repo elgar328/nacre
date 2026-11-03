@@ -24,6 +24,7 @@
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::reject_census::{self, Census, ReasonId};
 use nacre_ops::{
     BoolError, BoolKind, DatumDef, OpOutput, Operation, Profile2d, RejectReason, SketchFrame,
@@ -54,12 +55,6 @@ fn cylinder(
     nacre_ops::fixtures::cylinder_with_seam(m, base, axis, seam, radius, height).solid
 }
 
-fn cub(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-    m.rebuild_adjacency();
-    s
-}
-
 /// A prism raised from `z` on the world XY plane (`contact_separates.rs`'s helper).
 fn prism_z(m: &mut Model, pts: &[[f64; 2]], z: f64, dist: f64) -> Handle<Solid> {
     let profile =
@@ -86,7 +81,6 @@ fn prism_z(m: &mut Model, pts: &[[f64; 2]], z: f64, dist: f64) -> Handle<Solid> 
     .expect("extrude") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -105,7 +99,6 @@ fn prism_axis(m: &mut Model, pts: &[[f64; 2]], axis: Axis, dist: f64) -> Handle<
     .expect("extrude") else {
         panic!("extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -115,7 +108,6 @@ fn moved(m: &mut Model, s: Handle<Solid>, isometry: Isometry) -> Handle<Solid> {
     else {
         panic!("transform output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -123,7 +115,6 @@ fn copy_of(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     let OpOutput::Copy { solid } = apply(m, &Operation::Copy { solid: s }).expect("copy") else {
         panic!("copy output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -163,32 +154,29 @@ struct Fixture {
 /// ① A fuse that pinches one solid at a single vertex — two bridges run around the contact, so the
 /// material loops and there is no pair of solids to hand back (`coverage/rejects.rs`).
 fn pinched_vertex(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let g1 = cub(m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
-    let g2 = cub(m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
-    let b = cub(m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
+    let a = cuboid(m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let g1 = cuboid(m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
+    let g2 = cuboid(m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
+    let b = cuboid(m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
     let t1 = boolean(m, BoolKind::Fuse, a, g1).expect("a and g1 overlap");
-    m.rebuild_adjacency();
     let t2 = boolean(m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Fuse, t2[0], b)
 }
 
 /// ② The edge twin: A and B meet only along `x = 2, y = 2`, and a bridge takes the material around
 /// the contact, so four faces use that segment (`coverage/rejects.rs`).
 fn pinched_edge(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let bridge = cub(m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
-    let b = cub(m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+    let a = cuboid(m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let bridge = cuboid(m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+    let b = cuboid(m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
     let ab = boolean(m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Fuse, ab[0], b)
 }
 
 /// ③ A wedge sunk into a cube whose sharp tip lands exactly on the far wall: the cut's cavity
 /// meets the outer shell along a line, so the result's surface touches itself (`self_touch.rs`).
 fn wedge_tip_on_wall(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let a = cuboid(m, [0.0; 3], [1.0, 1.0, 1.0]);
     let b = prism_axis(m, &[[1.0, 0.5], [0.1, 0.1], [0.1, 0.9]], Axis::Z, 0.6);
     let b = moved(
         m,
@@ -218,7 +206,7 @@ fn diamond_void(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 /// ⑤ A non-planar operand — the coverage limit named at the plane table, not in the assembly.
 fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let a = cuboid(m, [0.0; 3], [2.0; 3]);
     let cyl = cylinder(
         m,
         Point3::from_array([1.0, 1.0, 0.0]),
@@ -226,12 +214,11 @@ fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
         0.5,
         2.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Common, a, cyl)
 }
 
 fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let a = cuboid(m, [0.0; 3], [2.0; 3]);
     let cyl = cylinder(
         m,
         Point3::from_array([1.0, 1.0, -1.0]),
@@ -239,7 +226,6 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
         0.5,
         4.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
@@ -260,7 +246,7 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 /// sub-micron radius is refused before any solid exists (`SketchError::Undecidable`). The
 /// width this fixture needs comes from the centre and the box, which square past `i128` alone.
 fn cylinder_wide_axis(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(
+    let a = cuboid(
         m,
         [0.0; 3],
         [
@@ -280,12 +266,11 @@ fn cylinder_wide_axis(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
         5e-8,
         4.000000000000001e-7,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
 fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let a = cuboid(m, [0.0; 3], [2.0; 3]);
     let cyl = cylinder(
         m,
         Point3::from_array([0.3, 1.0, -1.0]),
@@ -293,7 +278,6 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
         0.5,
         4.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
@@ -301,7 +285,7 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
 /// the lateral along one line. The gate passes it; this `Cut` is refused by the
 /// **verdict**, because what it leaves near the line is two wedges of one solid.
 fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let a = cuboid(m, [0.0; 3], [2.0; 3]);
     let cyl = cylinder(
         m,
         Point3::from_array([0.5, 1.0, -1.0]),
@@ -309,7 +293,6 @@ fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
         0.5,
         4.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
@@ -320,7 +303,7 @@ fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     // because the sketch frame on its caps then has a rational unit basis and is stated in the
     // world; an axis like (0,1,1) has none, rides a frame node, and the gate refuses it earlier as
     // having no world statement. The axis passes through the box's centre.
-    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let a = cuboid(m, [0.0; 3], [2.0; 3]);
     let cyl = cylinder(
         m,
         Point3::from_array([1.0, -0.8, -1.4]),
@@ -328,7 +311,6 @@ fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
         0.5,
         6.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
@@ -347,7 +329,6 @@ fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
         0.5,
         3.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Fuse, a, b)
 }
 
@@ -393,7 +374,6 @@ fn cylinder_pair_edge(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
         -1.0,
         2.0,
     );
-    m.rebuild_adjacency();
     boolean(m, BoolKind::Fuse, leaf, block)
 }
 
@@ -416,14 +396,12 @@ fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let bar = [[20.0, 12.0], [75.0, 12.0], [75.0, 37.0], [55.0, 37.0]];
     let p2 = prism_axis(m, &bar, Axis::X, 25.0);
     let unit = boolean(m, BoolKind::Fuse, p1, p2).expect("the part fuses")[0];
-    m.rebuild_adjacency();
 
     let mut part = copy_of(m, unit);
     for deg in (45..360).step_by(45) {
         let c = copy_of(m, unit);
         let c = rot_z(m, c, deg as i128);
         part = boolean(m, BoolKind::Fuse, part, c)?[0];
-        m.rebuild_adjacency();
     }
     Ok(vec![part])
 }
@@ -431,8 +409,8 @@ fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 /// ⑦ **The control.** Two overlapping cubes fuse. A boolean that succeeds must leave the census
 /// empty — otherwise every row above could be noise from the machinery rather than from the shape.
 fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [1.0; 3]);
-    let b = cub(m, [0.5; 3], [1.5; 3]);
+    let a = cuboid(m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(m, [0.5; 3], [1.5; 3]);
     boolean(m, BoolKind::Fuse, a, b)
 }
 

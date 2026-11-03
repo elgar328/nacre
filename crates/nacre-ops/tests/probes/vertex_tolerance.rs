@@ -16,7 +16,7 @@
 //! asserts is the **proposition**, on shapes chosen because they must exercise it.
 
 use nacre_exact::Axis;
-use nacre_math::{Point2, Point3};
+use nacre_math::Point2;
 use nacre_ops::{
     BoolKind, Operation, Precision, Profile2d, SketchFrame, apply, boolean, realize_vertex,
 };
@@ -38,7 +38,6 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     .expect("extrude") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -142,9 +141,7 @@ fn a_pierced_step_realizes_on_its_defining_planes() {
         .expect("extrude") else {
             panic!()
         };
-        m.rebuild_adjacency();
         let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
-        m.rebuild_adjacency();
         assert!(!got.is_empty());
         let n = every_vertex_matches_its_definition(&m);
         assert!(n > 0, "apex {apex}: no vertex was realized");
@@ -157,19 +154,9 @@ fn a_pierced_step_realizes_on_its_defining_planes() {
 #[test]
 fn an_axis_aligned_fuse_matches_its_definitions() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, 1.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
     let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
-    m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert!(every_vertex_matches_its_definition(&m) > 0);
     assert!(nacre_validate::validate(&m).is_empty());

@@ -1,6 +1,7 @@
 //! Rotation-generality: the trace engine's decisions are coordinate-free.
 
 use super::*;
+use crate::fixtures::cuboid;
 
 /// The boolean's error and the class audit's `failed_at` are the **same** reject.
 ///
@@ -28,16 +29,10 @@ fn the_audit_does_not_invent_failures() {
     // it — after every class pipeline has run, which is the property this test needs.
     let build = || -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-            let s = crate::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
-            s
-        };
-        let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-        let bridge = cub(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
-        let b = cub(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+        let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+        let bridge = cuboid(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+        let b = cuboid(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
         let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
-        m.rebuild_adjacency();
         (m, ab[0], b)
     };
     let (mut m, a, b) = build();
@@ -72,20 +67,11 @@ fn rotated_overlapping_cubes_all_three() {
     use nacre_exact::Axis;
     let vol_of = |kind: BoolKind| -> f64 {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, 0.5, 0.5]),
-            Point3::from_array([1.5, 1.5, 1.5]),
-        );
+        let a = cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+        let b = cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]);
         let a = tilt(&mut m, a, &[Axis::Z]);
         let b = tilt(&mut m, b, &[Axis::Z]);
         let solids = boolean(&mut m, kind, a, b).unwrap();
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
         solids
@@ -116,20 +102,11 @@ fn rotated_tunnel_cut_all_orientations() {
     use nacre_exact::Axis;
     let vol_of = |axes: &[Axis]| -> f64 {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 0.0, 0.0]),
-            Point3::from_array([3.0, 3.0, 3.0]),
-        );
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 1.0, -1.0]),
-            Point3::from_array([2.0, 2.0, 4.0]),
-        );
+        let a = cuboid(&mut m, [0.0, 0.0, 0.0], [3.0, 3.0, 3.0]);
+        let b = cuboid(&mut m, [1.0, 1.0, -1.0], [2.0, 2.0, 4.0]);
         let a = tilt(&mut m, a, axes);
         let b = tilt(&mut m, b, axes);
         let solids = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "manifold: {vs:?}");
         solids
@@ -159,16 +136,8 @@ fn rotated_tunnel_cut_all_orientations() {
 fn rotated_tunnel_area_and_faces() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Point3::from_array([2.0, 2.0, 4.0]),
-    );
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [3.0, 3.0, 3.0]);
+    let b = cuboid(&mut m, [1.0, 1.0, -1.0], [2.0, 2.0, 4.0]);
     let a = tilt(&mut m, a, &[Axis::Z, Axis::X]);
     let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
 
@@ -248,7 +217,6 @@ fn rotated_tunnel_area_and_faces() {
 
     // Area (assembled).
     let solids = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let area: f64 = solids
         .iter()
@@ -268,44 +236,14 @@ fn rotated_tunnel_area_and_faces() {
 fn rotated_tunnel_declines_nothing() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Point3::from_array([2.0, 2.0, 4.0]),
-    );
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [3.0, 3.0, 3.0]);
+    let b = cuboid(&mut m, [1.0, 1.0, -1.0], [2.0, 2.0, 4.0]);
     let a = tilt(&mut m, a, &[Axis::Z, Axis::X]);
     let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    for wc in 0..planes.len() {
-        let tr = trace_on_class_of(
-            &m,
-            a,
-            b,
-            wc,
-            &jd,
-            &[],
-            &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
-            &plane_ix,
-        );
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    for wc in 0..setup.geom.len() {
+        let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
         assert!(
             tr.declined.is_empty(),
             "rotated class {wc} declined: {tr:?}"

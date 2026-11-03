@@ -217,13 +217,8 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
     }])
     .unwrap();
     let a = m.live_solids()[0];
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, 0.5]),
-        Point3::from_array([0.7, 0.7, 1.5]),
-    );
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.3, 0.3, 0.5], [0.7, 0.7, 1.5]);
     let r = boolean_one(&mut m, kind, a, b).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -247,13 +242,8 @@ fn island_cut() -> (Model, Handle<Solid>) {
     }])
     .unwrap();
     let a = m.live_solids()[0];
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, 0.5]),
-        Point3::from_array([0.7, 0.7, 1.5]),
-    );
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.3, 0.3, 0.5], [0.7, 0.7, 1.5]);
     let r = boolean_one(&mut m, BoolKind::Cut, b, a).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -304,7 +294,6 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
     .unwrap();
     let (a, b) = (m.live_solids()[0], m.live_solids()[1]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -355,7 +344,6 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
     .unwrap();
     let (a, b) = (m.live_solids()[0], m.live_solids()[1]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -364,13 +352,8 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
 /// both flipped, and they become the result's new end caps.
 fn u_cut_by_slab() -> (Model, Handle<Solid>) {
     let (mut m, u) = u_prism();
-    let slab = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5, 1.5, -0.5]),
-        Point3::from_array([3.5, 2.5, 1.5]),
-    );
+    let slab = nacre_ops::fixtures::cuboid(&mut m, [-0.5, 1.5, -0.5], [3.5, 2.5, 1.5]);
     let r = boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -428,7 +411,6 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
     .unwrap();
     let (a, b) = (m.live_solids()[0], m.live_solids()[1]);
     let r = boolean_one(&mut m, BoolKind::Cut, b, a).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -436,18 +418,9 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
     let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-    m.rebuild_adjacency();
     (m, r)
 }
 
@@ -456,11 +429,7 @@ fn a_convex_hole_free_solid_meshes_exactly() {
     // The simplest shape. Nothing to catch here — this pins the gate itself, so a later failure
     // means the gate moved, not the mesh.
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     let g = mesh_vs_props(&m, c);
     assert_eq!(g.tris, 12);
     assert_agrees(&g, "cube");
@@ -521,11 +490,7 @@ fn a_sealed_cavity_meshes_watertight() {
     // outer surface and the void's) and that the void's inward faces subtract in the mesh
     // volume exactly as they do in `props` — the cavity's `2.408` against the outer `2.44`.
     let (mut m, pc) = pocketed_cube();
-    let slab = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.2, -0.25, 0.7]),
-        Point3::from_array([1.3, 1.2, 1.5]),
-    );
+    let slab = nacre_ops::fixtures::cuboid(&mut m, [-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]);
     let s = boolean_one(&mut m, BoolKind::Fuse, slab, pc).unwrap();
     assert_eq!(m.solid(s).cavities.len(), 1);
     let g = mesh_vs_props(&m, s);
@@ -632,11 +597,7 @@ fn only_the_signed_volume_sees_a_reversed_face() {
     // origin and contribute nothing to `Σ ⅙ p₀·(p₁ × p₂)`, so reversing one of those
     // would move the signed volume by exactly zero and this test would pass vacuously.
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let c = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let good = mesh_vs_props(&m, c);
     assert_eq!(good.tris, 12);
     assert_agrees(&good, "offset cube");
@@ -662,7 +623,6 @@ fn only_the_signed_volume_sees_a_reversed_face() {
         cavities: vec![],
     });
     m.restore_live(vec![solid]);
-    m.rebuild_adjacency();
 
     let g = mesh_vs_props(&m, solid);
     assert_eq!((g.tris, g.leaks), (12, 0), "watertight stayed quiet");
@@ -772,7 +732,6 @@ fn a_flipped_island_loop_is_caught() {
         cavities: vec![],
     });
     m.restore_live(vec![solid]);
-    m.rebuild_adjacency();
 
     assert!(
         nacre_validate::validate(&m)
@@ -828,13 +787,8 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
         ("bottom corner", [0.85, 0.85, -0.15], [1.15, 1.15, 0.15]),
     ] {
         let (mut m, pc) = pocketed_cube();
-        let bx = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array(box_lo),
-            Point3::from_array(box_hi),
-        );
+        let bx = nacre_ops::fixtures::cuboid(&mut m, box_lo, box_hi);
         let s = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
-        m.rebuild_adjacency();
         let g = mesh_vs_props(&m, s);
         assert_agrees(&g, name);
         let vol = nacre_props::mass_props(&m, s).unwrap().volume;
@@ -848,13 +802,8 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
 #[test]
 fn a_flipped_face_keeps_its_hole() {
     let (mut m, pc) = pocketed_cube();
-    let slab = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.2, -0.25, 0.3]),
-        Point3::from_array([1.3, 1.2, 1.5]),
-    );
+    let slab = nacre_ops::fixtures::cuboid(&mut m, [-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]);
     let s = boolean_one(&mut m, BoolKind::Cut, slab, pc).unwrap();
-    m.rebuild_adjacency();
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "slab cut by pocket");
     let props = nacre_props::mass_props(&m, s).unwrap();
@@ -891,13 +840,8 @@ fn a_drilled_solid_meshes_watertight() {
     }])
     .unwrap();
     let a = m.live_solids()[0];
-    let rod = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, -0.5]),
-        Point3::from_array([0.5, 0.6, 1.5]),
-    );
+    let rod = nacre_ops::fixtures::cuboid(&mut m, [0.3, 0.3, -0.5], [0.5, 0.6, 1.5]);
     let s = boolean_one(&mut m, BoolKind::Cut, a, rod).unwrap();
-    m.rebuild_adjacency();
 
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "drilled L");
@@ -914,18 +858,9 @@ fn a_drilled_solid_meshes_watertight() {
 #[test]
 fn a_notched_cube_meshes() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([10.0; 3]),
-    );
-    let notch = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([3.0, -1.0, -1.0]),
-        Point3::from_array([7.0, 1.4, 1.2]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [10.0; 3]);
+    let notch = nacre_ops::fixtures::cuboid(&mut m, [3.0, -1.0, -1.0], [7.0, 1.4, 1.2]);
     let s = boolean_one(&mut m, BoolKind::Cut, a, notch).unwrap();
-    m.rebuild_adjacency();
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "notched cube");
     let vol = nacre_props::mass_props(&m, s).unwrap().volume;
@@ -949,28 +884,11 @@ fn a_notched_cube_meshes() {
 #[test]
 fn a_wall_with_two_windows_meshes() {
     let mut m = Model::new();
-    let hub = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 3.0]),
-    );
-    m.rebuild_adjacency();
-    let upper = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-4.0, 0.26, 1.0]),
-        Point3::from_array([0.0, 0.70, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let hub = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [1.0, 1.0, 3.0]);
+    let upper = nacre_ops::fixtures::cuboid(&mut m, [-4.0, 0.26, 1.0], [0.0, 0.70, 2.0]);
     let part = boolean_one(&mut m, BoolKind::Fuse, hub, upper).unwrap();
-    m.rebuild_adjacency();
-    let lower = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-4.0, -0.70, 1.0]),
-        Point3::from_array([0.0, -0.26, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let lower = nacre_ops::fixtures::cuboid(&mut m, [-4.0, -0.70, 1.0], [0.0, -0.26, 2.0]);
     let part = boolean_one(&mut m, BoolKind::Fuse, part, lower).unwrap();
-    m.rebuild_adjacency();
 
     assert!(
         nacre_validate::validate(&m).is_empty(),
@@ -1005,7 +923,6 @@ fn the_fin_array_with_a_star_bore_meshes() {
             },
         )
         .expect("rotate");
-        m.rebuild_adjacency();
         match out {
             nacre_ops::OpOutput::Transform { solid } => solid,
             o => panic!("{o:?}"),
@@ -1014,35 +931,18 @@ fn the_fin_array_with_a_star_bore_meshes() {
 
     let fins = 7;
     let mut m = Model::new();
-    let mut part = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let mut part = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [1.0, 1.0, 3.0]);
     for i in 0..fins {
         // The script's `i * 360.0 / fins`, lifted to the exact rational it landed on.
         let deg = Rat::try_from_f64(i as f64 * 360.0 / fins as f64).expect("degrees");
-        let fin = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, -0.2, 1.0]),
-            Point3::from_array([4.0, 0.2, 2.0]),
-        );
-        m.rebuild_adjacency();
+        let fin = nacre_ops::fixtures::cuboid(&mut m, [0.5, -0.2, 1.0], [4.0, 0.2, 2.0]);
         let fin = turn(&mut m, fin, deg);
         part = boolean_one(&mut m, BoolKind::Fuse, part, fin).unwrap();
-        m.rebuild_adjacency();
     }
     for deg in [0, 45] {
-        let bore = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.6, -0.6, 0.0]),
-            Point3::from_array([0.6, 0.6, 2.0]),
-        );
-        m.rebuild_adjacency();
+        let bore = nacre_ops::fixtures::cuboid(&mut m, [-0.6, -0.6, 0.0], [0.6, 0.6, 2.0]);
         let bore = turn(&mut m, bore, Rat::from_int(deg));
         part = boolean_one(&mut m, BoolKind::Cut, part, bore).unwrap();
-        m.rebuild_adjacency();
     }
 
     assert!(nacre_validate::validate(&m).is_empty());
@@ -1084,7 +984,6 @@ fn a_split_dimension_meets_the_undivided_one() {
             },
         )
         .expect("extrude");
-        m.rebuild_adjacency();
         match out {
             nacre_ops::OpOutput::Extrude { solid, .. } => solid,
             o => panic!("{o:?}"),
@@ -1096,11 +995,9 @@ fn a_split_dimension_meets_the_undivided_one() {
     let lower = raise(&mut m, 0.0, 3.0, 4.0, 1.1);
     let upper = raise(&mut m, 1.1, 3.0, 4.0, 6.6);
     let stack = boolean_one(&mut m, BoolKind::Fuse, lower, upper).unwrap();
-    m.rebuild_adjacency();
     // The neighbour: the same height in one step, sharing the wall x = 4.
     let side = raise(&mut m, 0.0, 4.0, 5.0, 7.7);
     let part = boolean_one(&mut m, BoolKind::Fuse, stack, side).unwrap();
-    m.rebuild_adjacency();
 
     assert!(
         nacre_validate::validate(&m).is_empty(),
@@ -1148,7 +1045,6 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
         .expect("extrude") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         solid
     }
     fn square(n: f64) -> Profile2d {
@@ -1171,11 +1067,9 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
     }
     fn pad(m: &mut Model, s: Handle<Solid>, dist: f64) -> Handle<Solid> {
         let face = top_face(m, s);
-        let solid = nacre_ops::fixtures::pad(m, face, boss(), dist)
+        nacre_ops::fixtures::pad(m, face, boss(), dist)
             .expect("pad")
-            .solid();
-        m.rebuild_adjacency();
-        solid
+            .solid()
     }
 
     assert_ne!(

@@ -2753,7 +2753,6 @@ mod tests {
             };
             solid = s;
         }
-        m.rebuild_adjacency();
         let seams: Vec<Handle<Vertex>> = m
             .reachable()
             .vertices

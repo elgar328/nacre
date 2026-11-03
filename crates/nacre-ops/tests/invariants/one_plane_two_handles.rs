@@ -43,7 +43,6 @@ fn extrude(m: &mut Model, frame: SketchFrame, profile: Profile2d, dist: f64) -> 
     .expect("extrude") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -92,7 +91,6 @@ fn floor_pair(m: &mut Model, below: bool) -> (Handle<Solid>, Handle<Vertex>, Han
         .expect("move B down") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         b = solid;
     }
     let world = SketchFrame::world(m, Axis::Z);
@@ -107,7 +105,6 @@ fn floor_pair(m: &mut Model, below: bool) -> (Handle<Solid>, Handle<Vertex>, Han
     .expect("turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let (c, s) = (37f64.to_radians().cos(), 37f64.to_radians().sin());
     (
         b,
@@ -346,7 +343,6 @@ fn shape(m: &Model, solids: &[Handle<Solid>]) -> Shape {
 fn run(sc: &mut Scene, kind: BoolKind) -> (Shape, BoolReport) {
     let (out, report) = boolean_with_report(&mut sc.m, kind, sc.lhs, sc.rhs)
         .unwrap_or_else(|e| panic!("{kind:?} must answer: {e:?}"));
-    sc.m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&sc.m).is_empty(),
         "{kind:?}: the result is a valid b-rep"

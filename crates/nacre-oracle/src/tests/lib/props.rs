@@ -118,11 +118,7 @@ fn parse_reports_non_numeric() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cuboid_matches_occt() {
     let mut model = Model::new();
-    nacre_ops::fixtures::cuboid(
-        &mut model,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
+    nacre_ops::fixtures::cuboid(&mut model, [0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
     let p = occt_props_of(&model).unwrap();
     assert!(approx(p.volume, 24.0), "volume {}", p.volume); // 2·3·4
     assert!(approx(p.area, 52.0), "area {}", p.area); // 2(6+8+12)
@@ -156,7 +152,6 @@ fn centroid_matches_occt() {
         dist: 3.0,
     };
     apply(&mut model, &op).unwrap();
-    model.rebuild_adjacency();
     let live = model.live_solids()[0];
     let p = occt_props_of(&model).unwrap();
     let c = nacre_props::centroid(&model, live).unwrap();
@@ -172,15 +167,9 @@ fn centroid_matches_occt() {
     // (b) A box with an off-centre void. The cavity shell carries the opposite
     //     sign; getting that wrong is invisible on a centred void.
     let mut model = Model::new();
-    let outer =
-        nacre_ops::fixtures::cuboid(&mut model, Point3::origin(), Point3::from_array([10.0; 3]));
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut model,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
+    let outer = nacre_ops::fixtures::cuboid(&mut model, [0.0; 3], [10.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut model, [1.0; 3], [3.0, 3.0, 3.0]);
     let r = boolean(&mut model, BoolKind::Cut, outer, inner).unwrap();
-    model.rebuild_adjacency();
     assert_eq!(r.len(), 1);
     let p = occt_props_of(&model).unwrap();
     let c = nacre_props::centroid(&model, r[0]).unwrap();
@@ -223,7 +212,6 @@ fn a_turned_cylinder_matches_occt() {
     ) else {
         panic!("the turn")
     };
-    model.rebuild_adjacency();
     let ours = mass_props(&model, solid).unwrap();
     let occt = occt_props_of(&model).unwrap();
     centroid_agrees(&model, solid, occt.centroid, "the turned cylinder");
@@ -271,7 +259,6 @@ fn cylinder_bounds_match_occt() {
         5.0,
     )
     .solid;
-    model.rebuild_adjacency();
     let p = occt_props_of(&model).unwrap();
     let (lo, hi) = nacre_props::bounds(&model, s).unwrap();
     let slack = 1e-5;
@@ -300,11 +287,7 @@ fn cylinder_bounds_match_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn through_hole_cut_matches_occt() {
     let mut model = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut model,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut model, [0.0; 3], [2.0; 3]);
     let b = nacre_ops::fixtures::cylinder_with_seam(
         &mut model,
         Point3::from_array([1.0, 1.0, -1.0]),
@@ -314,7 +297,6 @@ fn through_hole_cut_matches_occt() {
         4.0,
     )
     .solid;
-    model.rebuild_adjacency();
     let s = boolean_one(&mut model, BoolKind::Cut, a, b).unwrap();
     let ours = mass_props(&model, s).unwrap();
     let p = occt_props_of(&model).unwrap();
@@ -353,12 +335,7 @@ fn a_tangent_wall_through_a_lateral_window_matches_occt() {
         for seam in [1.0, -1.0] {
             let mut m = Model::new();
             let boss = nacre_ops::fixtures::windowed_boss(&mut m, w, seam);
-            let slab = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 1.7]),
-                Point3::from_array([1.0, 2.0, 2.3]),
-            );
-            m.rebuild_adjacency();
+            let slab = nacre_ops::fixtures::cuboid(&mut m, [-2.0, -2.0, 1.7], [1.0, 2.0, 2.3]);
             let occt = occt_boolean_of(&m, OcctBool::Cut, slab, boss).unwrap();
             let r = boolean_one(&mut m, BoolKind::Cut, slab, boss).unwrap();
             let ours = mass_props(&m, r).unwrap();
@@ -405,11 +382,7 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
     // The plate with a bore, and a boss whose `x = 11` face is exactly tangent to the rim.
     let build = |bx: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let plate = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([40.0, 20.0, 5.0]),
-        );
+        let plate = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
         let hole = nacre_ops::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([8.0, 10.0, -1.0]),
@@ -419,14 +392,8 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
             7.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let holed = boolean_one(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts");
-        let boss = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([bx, 8.0, 5.0]),
-            Point3::from_array([15.0, 12.0, 8.0]),
-        );
-        m.rebuild_adjacency();
+        let boss = nacre_ops::fixtures::cuboid(&mut m, [bx, 8.0, 5.0], [15.0, 12.0, 8.0]);
         (m, holed, boss)
     };
     // `11.0` is the tangency; `11.01` breaks it and is the control.
@@ -469,11 +436,7 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
 fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
     let build = |ax: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let cube = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.5; 3]),
-            Point3::from_array([0.5; 3]),
-        );
+        let cube = nacre_ops::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
         let stud = nacre_ops::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([ax, 0.0, 0.0]),
@@ -483,7 +446,6 @@ fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
             2.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, cube, stud)
     };
     // `0.3` is the tangency (`0.3 + 0.2 = 0.5`); `0.35` pushes the stud through the wall.
@@ -517,11 +479,7 @@ fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
 fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
     let build = |bz: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let plate = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = nacre_ops::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([4.0, 2.0, bz]),
@@ -531,7 +489,6 @@ fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
             1.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, plate, boss)
     };
     // `1.5` puts the circle's top exactly on `z = 2`; `1.49` clears it by 0.01.
@@ -566,11 +523,7 @@ fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn two_bores_match_occt() {
     let mut model = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut model,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 2.0, 1.0]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut model, [0.0; 3], [4.0, 2.0, 1.0]);
     let bore = |m: &mut Model, x: f64| {
         nacre_ops::fixtures::cylinder_with_seam(
             m,
@@ -584,7 +537,6 @@ fn two_bores_match_occt() {
     };
     let d1 = bore(&mut model, 1.0);
     let d2 = bore(&mut model, 3.0);
-    model.rebuild_adjacency();
     let one = boolean_one(&mut model, BoolKind::Cut, a, d1).unwrap();
     let two = boolean_one(&mut model, BoolKind::Cut, one, d2).unwrap();
     let ours = mass_props(&model, two).unwrap();
@@ -634,7 +586,6 @@ fn swept_hole_matches_occt() {
         },
     )
     .unwrap();
-    model.rebuild_adjacency();
 
     let p = occt_props_of(&model).unwrap();
     assert!(approx(p.volume, 12.0), "volume {}", p.volume); // 16 − 4
@@ -678,7 +629,6 @@ fn mirrored_solid_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
-    model.rebuild_adjacency();
     apply(
         &mut model,
         &Operation::Mirror {
@@ -688,7 +638,6 @@ fn mirrored_solid_matches_occt() {
         },
     )
     .unwrap();
-    model.rebuild_adjacency();
 
     let p = occt_props_of(&model).unwrap();
     assert!(approx(p.volume, 4.0), "volume {}", p.volume);
@@ -747,36 +696,21 @@ fn rotated_result_reuse_diff_occt() {
             },
         )
         .unwrap();
-        m.rebuild_adjacency();
         match out {
             OpOutput::Transform { solid } => solid,
             _ => unreachable!(),
         }
     };
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     let r = xf(&mut m, r);
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, -1.0]),
-        Point3::from_array([0.5, 4.0, 4.0]),
-    );
+    let c = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, -1.0], [0.5, 4.0, 4.0]);
     let c = xf(&mut m, c);
     // OCCT's boolean of the two rotated solids (taken while both are still live).
     let occt = occt_boolean_of(&m, OcctBool::Cut, r, c).unwrap();
     let out = boolean_one(&mut m, BoolKind::Cut, r, c).unwrap();
-    m.rebuild_adjacency();
     let nacre = mass_props(&m, out).unwrap();
     assert!(
         approx(nacre.volume, occt.volume),
@@ -790,11 +724,7 @@ fn rotated_result_reuse_diff_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cube_props_diff_occt() {
     let mut model = Model::new();
-    let solid = nacre_ops::fixtures::cuboid(
-        &mut model,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
+    let solid = nacre_ops::fixtures::cuboid(&mut model, [0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
     assert!(
@@ -1058,16 +988,9 @@ fn seamless_laterals_read_as_valid_solids() {
         shapes.push(("a plain cylinder", m));
     }
     let bore = |m: &mut Model| {
-        let plate = fixtures::cuboid(
-            m,
-            Point3::from_array([-2.0, -2.0, 0.0]),
-            Point3::from_array([2.0, 2.0, 4.0]),
-        );
+        let plate = fixtures::cuboid(m, [-2.0, -2.0, 0.0], [2.0, 2.0, 4.0]);
         let pin = fixtures::cylinder(m, Point3::from_array([0.0, 0.0, -1.0]), z, 1.0, 6.0).solid;
-        m.rebuild_adjacency();
-        let s = boolean(m, BoolKind::Cut, plate, pin).expect("the bore")[0];
-        m.rebuild_adjacency();
-        s
+        boolean(m, BoolKind::Cut, plate, pin).expect("the bore")[0]
     };
     {
         let mut m = Model::new();
@@ -1083,10 +1006,8 @@ fn seamless_laterals_read_as_valid_solids() {
             ([-3.0, -0.8, 2.1], [-0.5, 0.8, 2.6]),
             ([-0.8, -3.0, 2.9], [0.8, -0.5, 3.4]),
         ] {
-            let w = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
+            let w = fixtures::cuboid(&mut m, lo, hi);
             s = boolean(&mut m, BoolKind::Cut, s, w).expect("a slot")[0];
-            m.rebuild_adjacency();
         }
         shapes.push(("a bore with four slots", m));
     }
@@ -1094,7 +1015,6 @@ fn seamless_laterals_read_as_valid_solids() {
         for y_min in [-2.0, 0.0] {
             let mut m = Model::new();
             fixtures::cut_at_both_rims(&mut m, kind, y_min);
-            m.rebuild_adjacency();
             shapes.push((
                 match (kind, y_min < 0.0) {
                     (BoolKind::Fuse, true) => "both rims cut, fused",
@@ -1109,7 +1029,6 @@ fn seamless_laterals_read_as_valid_solids() {
     for seam_x in [1.0, -1.0] {
         let mut m = Model::new();
         fixtures::windowed_boss(&mut m, 0.6, seam_x);
-        m.rebuild_adjacency();
         shapes.push((
             if seam_x > 0.0 {
                 "a window on the rims' vertices"
@@ -1122,14 +1041,8 @@ fn seamless_laterals_read_as_valid_solids() {
     {
         let mut m = Model::new();
         let boss = fixtures::cylinder(&mut m, Point3::origin(), z, 1.0, 4.0).solid;
-        let plate = fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-2.0, 0.0, 0.0]),
-            Point3::from_array([2.0, 2.0, 2.0]),
-        );
-        m.rebuild_adjacency();
+        let plate = fixtures::cuboid(&mut m, [-2.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
         boolean(&mut m, BoolKind::Fuse, boss, plate).expect("the boss on the edge");
-        m.rebuild_adjacency();
         shapes.push(("a chain rim with a corner at the whole rim's angle", m));
     }
     for (name, triangle, z, height) in [

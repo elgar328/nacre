@@ -139,7 +139,6 @@ fn a_circle_profile_extrudes_into_two_rims() {
     .expect("the circle extrudes") else {
         unreachable!()
     };
-    b.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&b).is_empty(),
         "{:?}",
@@ -201,7 +200,6 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     .expect("the bored plate extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -259,7 +257,6 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     .expect("the annulus extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -324,7 +321,6 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
         solid
     };
     let (s1, s2) = (extrude(&mut m), extrude(&mut m));
-    m.rebuild_adjacency();
     refused(crate::boolean(&mut m, BoolKind::Fuse, s1, s2));
     // Two circles on a stated datum plane — the same hazard on the other frame road.
     let mut m = Model::new();
@@ -339,7 +335,6 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
         .solid
     };
     let (s1, s2) = (on_datum(&mut m), on_datum(&mut m));
-    m.rebuild_adjacency();
     refused(crate::boolean(&mut m, BoolKind::Cut, s1, s2));
 }
 
@@ -370,7 +365,6 @@ fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
         .expect("the circle prism builds on the wall's frame") else {
             unreachable!()
         };
-        m2.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m2).is_empty(),
             "{:?}",
@@ -427,7 +421,6 @@ fn extrude_world_z(
     .expect("the profile extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     (solid, faces)
 }
 
@@ -601,7 +594,6 @@ fn a_slot_pads_and_pockets_at_the_tangent_ruling() {
                  r: Result<crate::fixtures::Feature, crate::fixtures::FeatureError>,
                  want: f64| {
         let solid = r.expect("the slot builds at its tangent rulings").solid();
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(m).is_empty(),
             "{:?}",
@@ -641,7 +633,6 @@ fn a_half_disk_boss_pads_onto_a_plate() {
     ]);
     let r = crate::fixtures::pad(&mut m, faces[1], d_shape, 3.0);
     let solid = r.expect("the half disk pads").solid();
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -676,15 +667,9 @@ fn a_sketched_bored_plate_meets_a_box() {
     ] {
         let mut m = Model::new();
         let (plate, _) = extrude_world_z(&mut m, bored(), 1.0);
-        let box_ = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-2.0, 4.0, -1.0]),
-            Point3::from_array([2.0, 6.0, 2.0]),
-        );
-        m.rebuild_adjacency();
+        let box_ = crate::fixtures::cuboid(&mut m, [-2.0, 4.0, -1.0], [2.0, 6.0, 2.0]);
         let out =
             crate::boolean(&mut m, kind, plate, box_).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
-        m.rebuild_adjacency();
         assert_eq!(out.len(), 1, "{kind:?}");
         assert!(
             nacre_validate::validate(&m).is_empty(),
@@ -727,16 +712,10 @@ fn a_filleted_plate_builds_beside_a_far_box() {
     .expect("the filleted plate extrudes") else {
         unreachable!()
     };
-    let far = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([20.0, 20.0, 20.0]),
-        Point3::from_array([21.0, 21.0, 21.0]),
-    );
-    m.rebuild_adjacency();
+    let far = crate::fixtures::cuboid(&mut m, [20.0, 20.0, 20.0], [21.0, 21.0, 21.0]);
     let out = boolean(&mut m, BoolKind::Fuse, plate, far)
         .expect("the filleted plate and the far box fuse");
     assert_eq!(out.len(), 2, "two bodies, apart");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -849,13 +828,10 @@ fn the_users_plate_slot_and_gusset_fold() {
     let a = plate(&mut m);
     let b = slot_plate(&mut m);
     let c = gusset(&mut m, 1.6);
-    m.rebuild_adjacency();
     let ab = boolean(&mut m, BoolKind::Fuse, a, b).expect("plate + slot plate");
     assert_eq!(ab.len(), 1);
-    m.rebuild_adjacency();
     let abc = boolean(&mut m, BoolKind::Fuse, ab[0], c).expect("+ gusset");
     assert_eq!(abc.len(), 1);
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -871,10 +847,8 @@ fn the_users_plate_slot_and_gusset_fold() {
     let mut m = Model::new();
     let a = plate(&mut m);
     let c = gusset(&mut m, 1.5);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, a, c).expect("plate + gusset on the axis plane");
     assert_eq!(out.len(), 1);
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -980,7 +954,6 @@ fn the_gate_reads_the_arc_not_the_circle() {
         let mut m = Model::new();
         let a = sector(&mut m);
         let b = gusset(&mut m, mirror_y);
-        m.rebuild_adjacency();
         let recorded: usize = plane_index_setup(&m, a, b)
             .expect("the gate passes")
             .cyls
@@ -995,7 +968,6 @@ fn the_gate_reads_the_arc_not_the_circle() {
         assert_eq!(recorded, sections, "mirror {mirror_y}: sections recorded");
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("two bodies, apart");
         assert_eq!(out.len(), 2, "two bodies, apart");
-        m.rebuild_adjacency();
         clean(&m);
         let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
         let want = 0.5625 * std::f64::consts::PI + 5.0625;
@@ -1024,10 +996,8 @@ fn the_gate_reads_the_arc_not_the_circle() {
     let mut m = Model::new();
     let a = half(&mut m, 0.0, -1.0);
     let b = half(&mut m, 2.5, 1.0);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the arcs face away");
     assert_eq!(out.len(), 2, "two bodies, apart");
-    m.rebuild_adjacency();
     clean(&m);
     let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
     let want = 2.25 * std::f64::consts::PI;
@@ -1037,7 +1007,6 @@ fn the_gate_reads_the_arc_not_the_circle() {
     let mut m = Model::new();
     let a = half(&mut m, 0.0, -1.0);
     let b = half(&mut m, -2.5, 1.0);
-    m.rebuild_adjacency();
     rejects(
         boolean(&mut m, BoolKind::Fuse, a, b),
         RejectReason::CylinderPairContact,
@@ -1101,10 +1070,8 @@ fn the_gate_reads_faces_at_every_site() {
     let boss = circle(&mut m, [0.0, 0.0], 2.0, 2.0);
     let pin = circle(&mut m, [0.0, 0.0], 1.0, 2.0);
     let pin = shift(&mut m, pin, [0.0, 0.0, 2.0]);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, boss, pin).expect("stacked cylinders fuse");
     assert_eq!(out.len(), 1);
-    m.rebuild_adjacency();
     clean(&m);
     let v = volume(&m, out[0]);
     let want = 10.0 * std::f64::consts::PI;
@@ -1144,10 +1111,8 @@ fn the_gate_reads_faces_at_every_site() {
     let mut m = Model::new();
     let a = plate(&mut m);
     let b = gusset(&mut m, [1.5, 0.0, 0.0]);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the gusset stands beside the holes");
     assert_eq!(out.len(), 1);
-    m.rebuild_adjacency();
     clean(&m);
     let v = volume(&m, out[0]);
     let want = 56.0 - 2.0 * std::f64::consts::PI + 7.5;
@@ -1163,7 +1128,6 @@ fn the_gate_reads_faces_at_every_site() {
     let mut m = Model::new();
     let a = plate(&mut m);
     let b = gusset(&mut m, [1.5, -2.0, 0.0]);
-    m.rebuild_adjacency();
     assert!(matches!(
         boolean(&mut m, BoolKind::Fuse, a, b),
         Err(BoolError::Rejected {
@@ -1187,23 +1151,15 @@ fn the_gate_reads_faces_at_every_site() {
             3.0,
         )
     };
-    let box_b = |m: &mut Model| {
-        crate::fixtures::cuboid(
-            m,
-            Point3::from_array([1.0, 0.0, 1.0]),
-            Point3::from_array([6.0, 4.0, 5.0]),
-        )
-    };
+    let box_b = |m: &mut Model| crate::fixtures::cuboid(m, [1.0, 0.0, 1.0], [6.0, 4.0, 5.0]);
     let mut vols = Vec::new();
     for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
         let mut m = Model::new();
         let a = annulus(&mut m);
         let b = box_b(&mut m);
-        m.rebuild_adjacency();
         let (va, vb) = (volume(&m, a), volume(&m, b));
         let out = boolean(&mut m, kind, a, b).expect("the annulus and the box combine");
         assert_eq!(out.len(), 1, "{kind:?}");
-        m.rebuild_adjacency();
         clean(&m);
         vols.push((va, vb, volume(&m, out[0])));
     }
@@ -1228,10 +1184,8 @@ fn the_gate_reads_faces_at_every_site() {
     let boss = circle(&mut m, [0.0, 0.0], 2.0, 2.0);
     let pin = circle(&mut m, [0.0, 0.0], 1.0, 2.0);
     let pin = shift(&mut m, pin, [0.0, 0.0, 2.0]);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Cut, boss, pin).expect("the pin cuts nothing off the boss");
     assert_eq!(out.len(), 1);
-    m.rebuild_adjacency();
     clean(&m);
     let v = volume(&m, out[0]);
     let want = 8.0 * std::f64::consts::PI;
@@ -1256,10 +1210,8 @@ fn the_gate_reads_faces_at_every_site() {
     let a = tube(&mut m);
     let pin = circle(&mut m, [2.0, 2.0], 1.0, 5.0);
     let pin = shift(&mut m, pin, [0.0, 0.0, -1.0]);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, a, pin).expect("the tube and the pin fuse");
     assert_eq!(out.len(), 2, "two bodies, neither inside the other");
-    m.rebuild_adjacency();
     clean(&m);
     let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
     let want = 25.25 * std::f64::consts::PI;
@@ -1268,7 +1220,6 @@ fn the_gate_reads_faces_at_every_site() {
     let a = tube(&mut m);
     let pin = circle(&mut m, [2.0, 2.0], 1.0, 5.0);
     let pin = shift(&mut m, pin, [0.0, 0.0, -1.0]);
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Common, a, pin).expect("a common of nothing is empty");
     assert!(out.is_empty(), "{out:?}");
 }
@@ -1344,11 +1295,9 @@ fn a_component_with_no_vertex_is_read_on_its_face_holes_and_all() {
         );
         let pin = prism(&mut m, vec![stated::circle(p2(2.0, 2.0), r)], ph);
         let pin = shift(&mut m, pin, rise);
-        m.rebuild_adjacency();
         let out =
             boolean(&mut m, BoolKind::Fuse, tube, pin).unwrap_or_else(|e| panic!("{what}: {e:?}"));
         assert_eq!(out.len(), 2, "{what}: two bodies, neither inside the other");
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{what}: {:?}",
@@ -1415,10 +1364,8 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
         vec![stated::circle(p2(0.0, 4.0), 3.5)],
         30.0,
     );
-    m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Cut, plate, drill).expect("the drill crosses the plate");
     assert_eq!(out.len(), 1, "one plate with a hole through it");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -1501,9 +1448,7 @@ fn a_four_plane_operand_vertex_has_one_name() {
     };
     let g1 = gusset(&mut m, 1.4);
     let g2 = gusset(&mut m, -2.4);
-    m.rebuild_adjacency();
     let wg = boolean(&mut m, BoolKind::Fuse, w, g1).expect("wall + gusset")[0];
-    m.rebuild_adjacency();
     let report = arrangement::operand_vertex_audit(&m, wg, g2).expect("the audit runs");
     let four: Vec<_> = report.iter().filter(|r| r.topo.len() >= 4).collect();
     for r in &four {
@@ -1571,7 +1516,6 @@ fn a_four_plane_operand_vertex_fuses_in_either_order() {
         let (a, b) = if swapped { (g2, wg) } else { (wg, g2) };
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the four-plane operand fuses");
         assert_eq!(out.len(), 1, "one body (swapped {swapped})");
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{:?}",
@@ -1722,7 +1666,6 @@ fn users_four_part_fold_in_either_order(gx: f64) {
         shift(m, g, [x, 0.0, 0.0])
     };
     let fuse = |m: &mut Model, a: Handle<Solid>, b: Handle<Solid>| -> Handle<Solid> {
-        m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Fuse, a, b).expect("the fold's fuse builds");
         assert_eq!(out.len(), 1, "one body");
         out[0]
@@ -1745,7 +1688,6 @@ fn users_four_part_fold_in_either_order(gx: f64) {
             let a = fuse(&mut m, a, g1);
             fuse(&mut m, a, g2)
         };
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{:?}",
@@ -1802,7 +1744,6 @@ fn a_four_plane_operand_vertex_has_one_name_under_rigid_motion() {
         let (mut m, wg, g2) = wall_and_gusset_operand();
         let a = transform(&mut m, wg, &iso).expect("the operand moves");
         let b = transform(&mut m, g2, &iso).expect("the gusset moves");
-        m.rebuild_adjacency();
         let report = arrangement::operand_vertex_audit(&m, a, b).expect("the audit runs");
         let four: Vec<_> = report.iter().filter(|r| r.topo.len() >= 4).collect();
         assert_eq!(four.len(), 2, "{mn}: the apex edge's two ends: {four:?}");
@@ -1820,7 +1761,6 @@ fn a_four_plane_operand_vertex_has_one_name_under_rigid_motion() {
         }
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved operand fuses");
         assert_eq!(out.len(), 1, "{mn}: one body");
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{mn}: {:?}",
@@ -1857,12 +1797,7 @@ fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     .expect("the plate extrudes") else {
         unreachable!()
     };
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.5, -3.0, 1.0]),
-        Point3::from_array([2.5, 0.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let slab = crate::fixtures::cuboid(&mut m, [1.5, -3.0, 1.0], [2.5, 0.0, 2.0]);
     (m, plate, slab)
 }
 
@@ -1890,7 +1825,6 @@ fn a_plane_through_the_fillet_axis_shares_the_tangent_ruling() {
             };
             let out = boolean(&mut m, kind, a, b)
                 .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             assert!(
                 nacre_validate::validate(&m).is_empty(),
                 "{kind:?} swapped {swapped}: {:?}",
@@ -1972,14 +1906,12 @@ fn a_wall_tangent_where_the_lateral_is_not_touches_nothing() {
         {
             let mut m = Model::new();
             let a = build(&mut m);
-            let b = crate::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
+            let b = crate::fixtures::cuboid(&mut m, lo, hi);
             let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
             operands = (vol(&m, a), vol(&m, b));
             let (x, y) = if swapped { (b, a) } else { (a, b) };
             let out = boolean(&mut m, kind, x, y)
                 .unwrap_or_else(|e| panic!("{name}: {kind:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{name}: {kind:?} swapped {swapped}: {vs:?}");
             let want = if i == 2 { a_minus_b } else { 1 };
@@ -2014,7 +1946,6 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
         let (mut m, plate, slab) = fillet_plate_and_axis_slab();
         let a = transform(&mut m, plate, &iso).expect("the plate moves");
         let b = transform(&mut m, slab, &iso).expect("the slab moves");
-        m.rebuild_adjacency();
         let corners = arrangement::pierce_corner_audit(&m, a, b).expect("the audit runs");
         assert_eq!(
             corners.len(),
@@ -2038,7 +1969,6 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
         assert!(declines.is_empty(), "{mn}: no class declines: {declines:?}");
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved operands fuse");
         assert_eq!(out.len(), 1, "{mn}: one body");
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{mn}: {:?}",

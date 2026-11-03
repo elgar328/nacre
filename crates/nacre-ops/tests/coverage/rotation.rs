@@ -19,7 +19,6 @@ fn rotated_corner_bite_cut_is_rotation_invariant() {
     let l = xf(&mut m, l, rot30());
     let bx = xf(&mut m, bx, rot30());
     let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - (3.0 - 0.224)).abs() < 1e-9, "volume {vol}");
@@ -31,7 +30,6 @@ fn rotated_corner_bite_fuse_is_rotation_invariant() {
     let l = xf(&mut m, l, rot30());
     let bx = xf(&mut m, bx, rot30());
     let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - (3.0 + 0.924 - 0.224)).abs() < 1e-9, "volume {vol}");
@@ -43,7 +41,6 @@ fn rotated_sever_cut_severs_into_two() {
     let l = xf(&mut m, l, rot30());
     let rod = xf(&mut m, rod, rot30());
     let solids = boolean(&mut m, BoolKind::Cut, rod, l).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(solids.len(), 2, "rotated sever still yields two solids");
     assert!(nacre_validate::validate(&m).is_empty());
     let vol: f64 = solids
@@ -59,7 +56,6 @@ fn rotated_containment_cut_makes_cavity() {
     let a = xf(&mut m, a, rot30());
     let b = xf(&mut m, b, rot30());
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     assert_eq!(
         m.solid(r).cavities.len(),
@@ -78,28 +74,14 @@ fn a_rotated_cut_result_can_be_cut_again() {
     // fresh slab, then Cut. A boolean commutes with a rigid motion, so the volume matches the
     // unrotated chain (7 − 2 = 5) and the result stays valid.
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    m.rebuild_adjacency();
     let r = xf(&mut m, r, rot30());
     // A slab that severs at x = 0.5 — no plane coincides with R's (avoids rotated coplanar).
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, -1.0]),
-        Point3::from_array([0.5, 4.0, 4.0]),
-    );
+    let c = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, -1.0], [0.5, 4.0, 4.0]);
     let c = xf(&mut m, c, rot30());
     let r2 = boolean_one(&mut m, BoolKind::Cut, r, c).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r2).unwrap().volume;
@@ -112,13 +94,8 @@ fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
     // dimple's hole, so an inward `n_out` would reverse it — only `validate` and the
     // signed volume would ever say so.
     let (mut m, l) = rotated_l_prism();
-    let stub = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, 0.5]),
-        Point3::from_array([0.7, 0.7, 1.5]),
-    );
+    let stub = nacre_ops::fixtures::cuboid(&mut m, [0.3, 0.3, 0.5], [0.7, 0.7, 1.5]);
     let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -134,19 +111,10 @@ fn rotated_coplanar_contact_boss_and_pocket_solve() {
     let tilt = |m: &mut Model, s| xf(m, s, rot_iso(Axis::X, 30));
     // boss fuse — fused volume 1.25.
     let mut m = Model::new();
-    let base = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let boss = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.25, 0.25, 1.0]),
-        Point3::from_array([0.75, 0.75, 2.0]),
-    );
+    let base = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let boss = nacre_ops::fixtures::cuboid(&mut m, [0.25, 0.25, 1.0], [0.75, 0.75, 2.0]);
     let (base, boss) = (tilt(&mut m, base), tilt(&mut m, boss));
     let r = boolean_one(&mut m, BoolKind::Fuse, base, boss).expect("tilted boss fuse solves");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "solved boss is valid"
@@ -155,19 +123,10 @@ fn rotated_coplanar_contact_boss_and_pocket_solve() {
     assert!((v - 1.25).abs() < 1e-9, "solved boss fuse is correct: {v}");
     // pocket cut — carved volume 0.875.
     let mut m = Model::new();
-    let base = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let prism = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.25, 0.25, 0.5]),
-        Point3::from_array([0.75, 0.75, 1.0]),
-    );
+    let base = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let prism = nacre_ops::fixtures::cuboid(&mut m, [0.25, 0.25, 0.5], [0.75, 0.75, 1.0]);
     let (base, prism) = (tilt(&mut m, base), tilt(&mut m, prism));
     let r = boolean_one(&mut m, BoolKind::Cut, base, prism).expect("tilted pocket cut solves");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "solved pocket is valid"
@@ -198,30 +157,16 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
     };
     for swap in [false, true] {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
-        let b_raw = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 0.0, 0.0]),
-            Point3::from_array([2.0, 1.0, 1.0]),
-        );
-        let nick = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.6, 0.6, 0.6]),
-            Point3::from_array([2.5, 1.5, 1.5]),
-        );
+        let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b_raw = nacre_ops::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+        let nick = nacre_ops::fixtures::cuboid(&mut m, [1.6, 0.6, 0.6], [2.5, 1.5, 1.5]);
         let b = boolean_one(&mut m, BoolKind::Cut, b_raw, nick).unwrap(); // vol 1 − 0.064 = 0.936
-        m.rebuild_adjacency();
         let bvol = nacre_props::mass_props(&m, b).unwrap().volume;
         let (a, b) = (tilt(&mut m, a), tilt(&mut m, b));
         let (x, y) = if swap { (b, a) } else { (a, b) };
         let r = boolean_one(&mut m, BoolKind::Fuse, x, y).unwrap_or_else(|e| {
             panic!("rotated result + coplanar contact (swap={swap}) rejected: {e:?}")
         });
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "swap={swap}: {vs:?}");
         let v = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -286,21 +231,13 @@ fn the_near_misses_around_the_four_plane_concurrency_all_build() {
     ] {
         let (mut m, cube, bar) = cube_and_spun_bar(half_z, deg, pivot_z);
         let target = if fuse {
-            let block = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.5, 0.0, 1.0]),
-                Point3::from_array([1.0, 1.0, 2.0]),
-            );
-            m.rebuild_adjacency();
-            let t = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
-            m.rebuild_adjacency();
-            t
+            let block = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.0, 1.0], [1.0, 1.0, 2.0]);
+            boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0]
         } else {
             cube
         };
         let r = boolean_one(&mut m, BoolKind::Cut, target, bar)
             .unwrap_or_else(|e| panic!("{what}: {e:?}"));
-        m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty(), "{what}: invalid");
         // The bar passes clean through, so the cut always removes material.
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -328,17 +265,10 @@ fn a_tool_edge_lying_in_a_target_plane_builds_and_agrees_with_its_neighbours() {
     use nacre_exact::Rat;
     let cut_volume = |ulps: i64| -> (f64, bool) {
         let (mut m, cube, bar) = cube_and_spun_bar_ulp(0.2, 45, Rat::from_int(1), ulps);
-        let block = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, 0.0, 1.0]),
-            Point3::from_array([1.0, 1.0, 2.0]),
-        );
-        m.rebuild_adjacency();
+        let block = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.0, 1.0], [1.0, 1.0, 2.0]);
         let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
-        m.rebuild_adjacency();
         let solids = boolean(&mut m, BoolKind::Cut, target, bar)
             .unwrap_or_else(|e| panic!("ulps {ulps}: {e:?}"));
-        m.rebuild_adjacency();
         let vol = solids
             .iter()
             .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
@@ -431,7 +361,6 @@ fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
             },
         )
         .expect("extrude");
-        m.rebuild_adjacency();
         match out {
             OpOutput::Extrude { solid, .. } => solid,
             o => panic!("{o:?}"),
@@ -452,12 +381,10 @@ fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
             },
         )
         .expect("rotate");
-        m.rebuild_adjacency();
         let OpOutput::Transform { solid: fin } = out else {
             unreachable!()
         };
         acc = boolean(&mut m, BoolKind::Fuse, acc, fin)
             .unwrap_or_else(|e| panic!("fin {i} ({}deg) declined: {e:?}", 9 * i))[0];
-        m.rebuild_adjacency();
     }
 }

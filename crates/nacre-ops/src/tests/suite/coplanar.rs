@@ -7,13 +7,8 @@ fn fuse_a_boss_onto_a_non_convex_solid() {
     // A contained boss on the top of an L-prism (non-convex kept `a`); the contained-coplanar
     // Fuse admits it. Volume 3 (L) + 0.4²·0.5 = 3.08.
     let (mut m, l) = l_prism(); // L footprint area 3, height 1
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, 0.3, 1.0]),
-        Point3::from_array([0.7, 0.7, 1.5]),
-    );
+    let boss = crate::fixtures::cuboid(&mut m, [0.3, 0.3, 1.0], [0.7, 0.7, 1.5]);
     let r = boolean_one(&mut m, BoolKind::Fuse, l, boss).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -33,11 +28,7 @@ fn fuse_a_non_convex_profile_boss() {
     // carries the L footprint as a hole.
     // Volume 1 (cube) + 0.12 (L area) · 0.4 = 1.048.
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     let l_base: Vec<Point3> = [
         [0.3, 0.3],
         [0.7, 0.3],
@@ -59,7 +50,6 @@ fn fuse_a_non_convex_profile_boss() {
     )
     .unwrap();
     let r = boolean_one(&mut m, BoolKind::Fuse, cube, boss).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -83,30 +73,15 @@ fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
     // would not label. With the side read from the ring's travel (`arrangement::run_body_above`),
     // the notch comes out at the hand-computed volume with a clean model.
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 1.0]),
-        Point3::from_array([1.5, 1.5, 2.0]),
-    );
-    let pin = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.55, 0.55, 0.5]),
-        Point3::from_array([0.75, 0.75, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let block = crate::fixtures::cuboid(&mut m, [0.5, 0.5, 1.0], [1.5, 1.5, 2.0]);
+    let pin = crate::fixtures::cuboid(&mut m, [0.55, 0.55, 0.5], [0.75, 0.75, 1.0]);
     let tool = boolean_one(&mut m, BoolKind::Fuse, block, pin).unwrap();
-    m.rebuild_adjacency();
     assert!(
         (nacre_props::mass_props(&m, tool).unwrap().volume - 1.02).abs() < 1e-12,
         "the pinned tool itself"
     );
     let notched = boolean_one(&mut m, BoolKind::Cut, base, tool).expect("the notch is buildable");
-    m.rebuild_adjacency();
     assert!(
         (nacre_props::mass_props(&m, notched).unwrap().volume - 0.98).abs() < 1e-12,
         "the notch the tool owes: {}",
@@ -125,17 +100,8 @@ fn plane_classes_merge_a_shared_wall() {
     // plane, opposite normals). `plane_classes` must merge those two into one line class and
     // keep the far walls (a's x=0, b's x=2) distinct.
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
     let planes_a = collect_planes(&m, a).unwrap();
     let na = planes_a.len();
     let mut planes = planes_a;
@@ -174,17 +140,8 @@ fn plane_classes_merge_a_shared_wall() {
 #[test]
 fn two_faces_of_one_judged_surface_are_one_class() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([10.0; 3]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([3.3, 3.3, -1.0]),
-        Point3::from_array([7.7, 7.7, 11.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [10.0; 3]);
+    let b = crate::fixtures::cuboid(&mut m, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     let OpOutput::Transform { solid: b } = crate::apply(
         &mut m,
         &Operation::Transform {
@@ -199,9 +156,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
     .expect("turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let cut = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
-    m.rebuild_adjacency();
 
     // A straddling vertex of the cut, plus two pure corners that share its plane sanely.
     let mut straddle = None;
@@ -257,7 +212,6 @@ fn two_faces_of_one_judged_surface_are_one_class() {
     .expect("prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     // Sever the prism through the middle with a thin box crossing the whole height: two
     // pieces, each with a base-cap face on the SAME judged surface.
@@ -276,12 +230,10 @@ fn two_faces_of_one_judged_surface_are_one_class() {
     ]);
     let knife = crate::fixtures::cuboid(
         &mut m,
-        centre + Vector3::from_array([-0.1, -5.0, -5.0]),
-        centre + Vector3::from_array([0.1, 5.0, 5.0]),
+        (centre + Vector3::from_array([-0.1, -5.0, -5.0])).as_array(),
+        (centre + Vector3::from_array([0.1, 5.0, 5.0])).as_array(),
     );
-    m.rebuild_adjacency();
     let pieces = crate::boolean(&mut m, BoolKind::Cut, prism, knife).expect("sever");
-    m.rebuild_adjacency();
     assert!(pieces.len() >= 2, "the knife must sever the prism");
 
     // The judgment table over the two pieces: their base-cap faces share the judged surface
@@ -314,11 +266,7 @@ fn overhang_boss_with_a_non_convex_footprint() {
     // An L-shaped (non-convex) boss footprint overhanging a cube edge, built exactly. Volume =
     // cube 1.0 + L-prism (area 0.9·0.2 + 0.3·0.2 = 0.24) · height 0.4 = 1.096.
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     let l_base: Vec<Point3> = [
         [0.3, 0.3],
         [1.2, 0.3],
@@ -340,7 +288,6 @@ fn overhang_boss_with_a_non_convex_footprint() {
     )
     .unwrap();
     let r = boolean_one(&mut m, BoolKind::Fuse, cube, l_tool).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -437,18 +384,9 @@ fn an_overhang_fuse_keeps_the_two_z1_caps_separate() {
     // proves it against OCCT but is `#[ignore]`, so this hand-computed volume is the non-ignored
     // guard. A wrong merge collapses the topology — the volume shifts or `validate` speaks.
     let mut m = Model::new();
-    let base = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.25, 1.0]),
-        Point3::from_array([1.5, 0.75, 2.0]),
-    );
+    let base = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let boss = crate::fixtures::cuboid(&mut m, [0.5, 0.25, 1.0], [1.5, 0.75, 2.0]);
     let r = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -586,14 +524,12 @@ proptest! {
         let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1);
         prop_assume!(rf.is_ok()); // skip rare coplanar/degenerate configs
         let rf = rf.unwrap();
-        m1.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m1).is_empty());
         let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
         prop_assert!((vf - (va + vb - ov)).abs() <= 1e-9 * (va + vb), "fuse {vf}");
 
         let (mut m2, a2, b2) = build();
         let rc = boolean_one(&mut m2, BoolKind::Cut, a2, b2).unwrap();
-        m2.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m2).is_empty());
         let vc = nacre_props::mass_props(&m2, rc).unwrap().volume;
         prop_assert!((vc - (va - ov)).abs() <= 1e-9 * va, "cut {vc}");
@@ -633,7 +569,6 @@ proptest! {
         // (measured).
         let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1)
             .expect("stacked boxes fuse at any dimensions");
-        m1.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m1).is_empty());
         let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
         prop_assert!((vf - (va + vb)).abs() <= 1e-9 * (va + vb), "fuse {vf}");

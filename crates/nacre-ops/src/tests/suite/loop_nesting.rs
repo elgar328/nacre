@@ -17,11 +17,7 @@ fn named(t: [usize; 3]) -> combinatorics::NodeId {
 /// pocket walls as well — two loops, nested.
 fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, pc) = pocketed_cube();
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.2, -0.25, z0]),
-        Point3::from_array([1.3, 1.2, 1.5]),
-    );
+    let slab = crate::fixtures::cuboid(&mut m, [-0.2, -0.25, z0], [1.3, 1.2, 1.5]);
     (m, slab, pc)
 }
 
@@ -45,7 +41,6 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
         let (mut m, slab, pc) = pocket_and_slab(0.7);
         let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
         let r = boolean_one(&mut m, BoolKind::Cut, x, y).unwrap();
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "Cut swap={swap}: {vs:?}");
         let props = nacre_props::mass_props(&m, r).unwrap();
@@ -60,7 +55,6 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
         let (mut m, slab, pc) = pocket_and_slab(0.7);
         let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
         let r = boolean_one(&mut m, BoolKind::Fuse, x, y).unwrap();
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "Fuse swap={swap}: {vs:?}");
         let props = nacre_props::mass_props(&m, r).unwrap();
@@ -242,7 +236,6 @@ fn triangle_prism(m: &mut Model, tri: [[f64; 2]; 3], z: f64, height: f64) -> Han
     ) else {
         panic!("extruding a triangle")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -290,11 +283,7 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
         ("boss on the edge, boss first", on_edge, -1.0, 3.0, true),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 0.0, 0.0]),
-            Point3::from_array([6.0, 6.0, 1.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [6.0, 6.0, 1.0]);
         let one = |out: Vec<Handle<Solid>>| {
             assert_eq!(out.len(), 1, "{name}: one body");
             out[0]
@@ -302,17 +291,14 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
         let out = if boss_first {
             let b = triangle_prism(&mut m, boss, 1.0, 1.0);
             let bossed = one(crate::boolean(&mut m, crate::BoolKind::Fuse, plate, b).expect(name));
-            m.rebuild_adjacency();
             let h = triangle_prism(&mut m, hole, hole_floor, hole_height);
             one(crate::boolean(&mut m, crate::BoolKind::Cut, bossed, h).expect(name))
         } else {
             let h = triangle_prism(&mut m, hole, hole_floor, hole_height);
             let holed = one(crate::boolean(&mut m, crate::BoolKind::Cut, plate, h).expect(name));
-            m.rebuild_adjacency();
             let b = triangle_prism(&mut m, boss, 1.0, 1.0);
             one(crate::boolean(&mut m, crate::BoolKind::Fuse, holed, b).expect(name))
         };
-        m.rebuild_adjacency();
         assert!(
             a_loop_passes_twice(&m, out, [2.0, 2.0, 1.0]),
             "{name}: the top's boundary passes (2, 2, 1) twice, as one vertex"
@@ -357,12 +343,11 @@ fn a_pinched_body_is_an_operand_like_any_other() {
     // `(2,2) (4,3) (4,4)` of area 1 meets it at `(2, 2)`, so the top's one hole ring passes there
     // twice.
     let pinched = |m: &mut Model, body: Body| -> Handle<Solid> {
-        let plate = crate::fixtures::cuboid(m, pt([0.0, 0.0, 0.0]), pt([6.0, 6.0, 1.0]));
+        let plate = crate::fixtures::cuboid(m, [0.0, 0.0, 0.0], [6.0, 6.0, 1.0]);
         let floor = if body == Under { -1.0 } else { 1.0 };
         let corner = if body == Holed { 0.5 } else { 0.0 };
         let boss = triangle_prism(m, [[2.0, 2.0], [4.0, corner], [4.0, 1.0]], floor, 1.0);
         let mut s = crate::boolean(m, Fuse, plate, boss).expect("the boss")[0];
-        m.rebuild_adjacency();
         if body == Bored {
             let bore = crate::fixtures::cylinder(
                 m,
@@ -373,12 +358,10 @@ fn a_pinched_body_is_an_operand_like_any_other() {
             )
             .solid;
             s = crate::boolean(m, Cut, s, bore).expect("the bore")[0];
-            m.rebuild_adjacency();
         }
         if body == Holed {
             let hole = triangle_prism(m, [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]], -1.0, 3.0);
             s = crate::boolean(m, Cut, s, hole).expect("the hole")[0];
-            m.rebuild_adjacency();
         }
         let pinch = match body {
             Under => [4.0, 0.0, 0.0],
@@ -511,12 +494,10 @@ fn a_pinched_body_is_an_operand_like_any_other() {
             let what = format!("{name}, {kind:?}, swapped = {swapped}");
             let mut m = Model::new();
             let a = pinched(&mut m, body);
-            let b = crate::fixtures::cuboid(&mut m, pt(lo), pt(hi));
-            m.rebuild_adjacency();
+            let b = crate::fixtures::cuboid(&mut m, lo, hi);
             let (x, y) = if swapped { (b, a) } else { (a, b) };
             let out =
                 crate::boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{what}: {e:?}"));
-            m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{what}: {vs:?}");
             mesh_covers_faces(&what, &m, &out);
@@ -554,7 +535,6 @@ fn a_face_pinched_at_its_lowest_point_meshes_on_a_mirrored_chart() {
     let boss = triangle_prism(&mut m, [[0.0, 0.0], [1.0, 2.0], [-0.5, 2.0]], -1.0, 1.0);
     let out = crate::boolean(&mut m, crate::BoolKind::Fuse, plate, boss).expect("the union");
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     assert!(
         a_loop_passes_twice(&m, out[0], [0.0, 0.0, 0.0]),
         "the underside passes its corner twice, as one vertex"
@@ -874,11 +854,7 @@ fn grazed_plate(outline: &[[f64; 2]]) -> (Vec<WorkingPlane>, usize, Ring, Ring) 
     let mut m = replay(&[extrude_log_op(profile, 12.0)]).unwrap();
     let plate = m.live_solids()[0];
     // Through, so the cap really is holed rather than dimpled.
-    let pocket = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([20.0, 10.0, -1.0]),
-        Point3::from_array([30.0, 20.0, 13.0]),
-    );
+    let pocket = crate::fixtures::cuboid(&mut m, [20.0, 10.0, -1.0], [30.0, 20.0, 13.0]);
     holed_face_rings_of(m, plate, pocket)
 }
 

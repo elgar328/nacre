@@ -25,7 +25,6 @@ fn mirror_solid(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: i128) -> Ha
     .unwrap() else {
         unreachable!("Mirror yields a Mirror output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -33,7 +32,6 @@ fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     let OpOutput::Copy { solid } = apply(m, &Operation::Copy { solid: s }).unwrap() else {
         unreachable!("Copy yields a Copy output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -60,7 +58,6 @@ fn ell(m: &mut Model) -> Handle<Solid> {
     .unwrap() else {
         unreachable!("Extrude yields an Extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -127,15 +124,9 @@ fn a_mirrored_solid_is_a_usable_operand() {
     let a = ell(&mut m);
     let b = mirror_solid(&mut m, a, Axis::X, 0);
     // A knife across the mirrored L's arm.
-    let knife = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-3.0, -1.0, 0.5]),
-        Point3::from_array([3.0, 4.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let knife = nacre_ops::fixtures::cuboid(&mut m, [-3.0, -1.0, 0.5], [3.0, 4.0, 2.0]);
 
     let r = boolean_one(&mut m, BoolKind::Cut, b, knife).unwrap();
-    m.rebuild_adjacency();
 
     // The L is 4 units of area, 1 tall; the knife takes everything above z = 0.5.
     assert!((volume(&m, r) - 2.0).abs() < 1e-12, "{}", volume(&m, r));
@@ -155,7 +146,6 @@ fn a_half_and_its_mirror_fuse_into_a_symmetric_part() {
     let twin = copy_solid(&mut m, half);
     let other = mirror_solid(&mut m, twin, Axis::X, 0); // x ∈ [−2, 0]
     let whole = boolean_one(&mut m, BoolKind::Fuse, half, other).unwrap();
-    m.rebuild_adjacency();
 
     assert!(
         (volume(&m, whole) - 2.0 * v_half).abs() < 1e-12,
@@ -181,9 +171,7 @@ fn a_half_and_its_mirror_fuse_into_a_symmetric_part() {
 #[test]
 fn a_boolean_result_mirrors() {
     let (mut m, a, b) = two_boxes();
-    m.rebuild_adjacency();
     let fused = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-    m.rebuild_adjacency();
     let before = volume(&m, fused);
 
     let mirrored = mirror_solid(&mut m, fused, Axis::Z, 0);
@@ -191,14 +179,8 @@ fn a_boolean_result_mirrors() {
     assert!((volume(&m, mirrored) - before).abs() < 1e-12);
     assert!(nacre_validate::validate(&m).is_empty());
 
-    let knife = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, -2.0, -2.0]),
-        Point3::from_array([2.0, 2.0, -0.75]),
-    );
-    m.rebuild_adjacency();
+    let knife = nacre_ops::fixtures::cuboid(&mut m, [-2.0, -2.0, -2.0], [2.0, 2.0, -0.75]);
     let r = boolean_one(&mut m, BoolKind::Cut, mirrored, knife).unwrap();
-    m.rebuild_adjacency();
     assert!(volume(&m, r) > 0.0);
     assert!(nacre_validate::validate(&m).is_empty());
 }
@@ -207,19 +189,9 @@ fn a_boolean_result_mirrors() {
 #[test]
 fn a_hollow_solid_mirrors_with_its_cavity() {
     let mut m = Model::new();
-    let big = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let inner = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let big = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let inner = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    m.rebuild_adjacency();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
 
     let mirrored = mirror_solid(&mut m, hollow, Axis::X, 0);
@@ -234,12 +206,7 @@ fn a_hollow_solid_mirrors_with_its_cavity() {
 #[test]
 fn an_offset_mirror_plane() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
 
     let b = mirror_solid(&mut m, a, Axis::X, 3); // x ∈ [0,1] ↦ x ∈ [5,6]
 
@@ -269,7 +236,6 @@ fn an_offset_mirror_plane() {
 #[test]
 fn a_mirror_is_carried_when_every_statement_moves_exactly() {
     let recorded = |m: &mut Model, a: Handle<Solid>, offset: Rat| -> Vec<bool> {
-        m.rebuild_adjacency();
         let OpOutput::Mirror { solid: b } = apply(
             m,
             &Operation::Mirror {
@@ -281,7 +247,6 @@ fn a_mirror_is_carried_when_every_statement_moves_exactly() {
         .expect("mirror") else {
             unreachable!("Mirror yields a Mirror output")
         };
-        m.rebuild_adjacency();
         let motions: Vec<bool> = m
             .shell(m.solid(b).outer)
             .faces
@@ -300,11 +265,7 @@ fn a_mirror_is_carried_when_every_statement_moves_exactly() {
         Rat::new(7, 22).unwrap(),
     ] {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
+        let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
         assert!(
             recorded(&mut m, a, offset).iter().all(|r| !r),
             "{offset:?}: every statement reflects exactly, so nothing is recorded"
@@ -334,7 +295,6 @@ fn mirroring_a_cylinder_is_declined() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
 
     let err = apply(
         &mut m,
@@ -353,14 +313,8 @@ fn mirroring_a_cylinder_is_declined() {
 #[test]
 fn a_rotated_solid_mirrors() {
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     let r = xf(&mut m, c, rot30());
-    m.rebuild_adjacency();
     let before = volume(&m, r);
 
     let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
@@ -399,14 +353,8 @@ fn a_rotated_solid_mirrors() {
 #[test]
 fn a_mirrored_rotated_solid_lands_where_reflection_says() {
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 1.0, 1.0]);
     let r = xf(&mut m, c, rot30());
-    m.rebuild_adjacency();
     let source = outer_points(&m, r);
 
     let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
@@ -434,24 +382,12 @@ fn a_mirrored_rotated_solid_lands_where_reflection_says() {
 #[test]
 fn a_mirrored_rotated_solid_is_a_usable_operand() {
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
     let r = xf(&mut m, c, rot30());
-    m.rebuild_adjacency();
     let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
 
-    let knife = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-10.0, -10.0, 1.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let knife = nacre_ops::fixtures::cuboid(&mut m, [-10.0, -10.0, 1.0], [10.0, 10.0, 10.0]);
     let cut = boolean_one(&mut m, BoolKind::Cut, mirrored, knife).unwrap();
-    m.rebuild_adjacency();
 
     // The knife takes the top half of a 2³ box, whatever its orientation about z.
     assert!((volume(&m, cut) - 4.0).abs() < 1e-9, "{}", volume(&m, cut));

@@ -59,7 +59,7 @@ fn approx(a: f64, b: f64) -> bool {
 /// supersedes its operands.
 fn l_prism_and_box(lo: [f64; 3], hi: [f64; 3]) -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+    let bx = nacre_ops::fixtures::cuboid(&mut m, lo, hi);
     (m, l, bx)
 }
 
@@ -85,16 +85,8 @@ fn l_prism() -> (Model, Handle<Solid>) {
 /// cavity is B's shell turned inside out.
 fn hollow_box() -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [4.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
     let b_outer = m.solid(b).outer;
     let void = m.reversed_shell(b_outer);
     let a_outer = m.solid(a).outer;

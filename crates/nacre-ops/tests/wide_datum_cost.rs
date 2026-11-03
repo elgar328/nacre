@@ -136,7 +136,6 @@ fn tilted_prism(m: &mut Model, dist: f64) -> Handle<Solid> {
     .expect("a prism on the tilted frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -278,7 +277,6 @@ fn wf_family_with_pocket() -> Model {
     .expect("the wf base prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let wall = *m
         .shell(m.solid(solid).outer)
         .faces
@@ -306,7 +304,6 @@ fn wf_family_with_pocket() -> Model {
         0.4,
     )
     .expect("the wf pocket");
-    m.rebuild_adjacency();
     m
 }
 
@@ -383,7 +380,6 @@ fn what_a_datum_bearing_boolean_costs() {
                             dist: 1.2,
                         },
                     ) {
-                        m.rebuild_adjacency();
                         tool = Some(solid);
                         break 'pick;
                     }
@@ -467,7 +463,6 @@ fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
                         dist: 50.0,
                     },
                 ) {
-                    m.rebuild_adjacency();
                     slab = Some(solid);
                     break 'pick;
                 }
@@ -475,15 +470,10 @@ fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
         }
     }
     let slab = slab?;
-    let cub = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, -1.0]),
-        Point3::from_array([5.0, 5.0, 4.0]),
-    );
+    let cub = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, -1.0], [5.0, 5.0, 4.0]);
     let sliced = *nacre_ops::boolean(&mut m, BoolKind::Cut, cub, slab)
         .ok()?
         .first()?;
-    m.rebuild_adjacency();
     Some((m, sliced))
 }
 
@@ -517,11 +507,7 @@ fn a_second_generation_boolean_on_world_names_never_climbs() {
         };
         let (c, b, _) = climb_census::take();
         first_cut = (first_cut.0 + c, first_cut.1 + b);
-        let column = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, 0.5, -2.0]),
-            Point3::from_array([2.5, 2.5, 5.0]),
-        );
+        let column = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, -2.0], [2.5, 2.5, 5.0]);
         let _ = climb_census::take();
         nacre_ops::boolean(&mut m, BoolKind::Cut, sliced, column).expect("the second cut");
         let (climbs, _, _) = climb_census::take();

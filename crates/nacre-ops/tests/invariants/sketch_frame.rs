@@ -99,7 +99,6 @@ fn a_named_frame_rejects_each_bad_claim_by_name() {
     .expect("an extrude in the accepted frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty(), "a valid prism");
     let volume = nacre_props::mass_props(&m, solid).expect("props").volume;
     assert!(
@@ -189,12 +188,7 @@ fn a_named_frame_states_what_the_extrude_road_builds() {
 #[test]
 fn face_sketch_frame_is_the_frame_its_extrude_leaves_behind() {
     let mut m = Model::new();
-    let s = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let s = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
 
     // Axis-aligned faces first: canonical placement, hand-checkable flips.
     let face_with_surface = |m: &Model, su| {
@@ -249,7 +243,6 @@ fn face_sketch_frame_is_the_frame_its_extrude_leaves_behind() {
         };
         solid
     };
-    m.rebuild_adjacency();
     let top = m
         .shell(m.solid(turned).outer)
         .faces
@@ -313,11 +306,9 @@ fn pad_centred(
     dist: f64,
 ) -> nacre_store::Handle<nacre_topo::Face> {
     let profile = centred_square(m, face, 0.2);
-    let top_face = nacre_ops::fixtures::pad(m, face, profile, dist)
+    nacre_ops::fixtures::pad(m, face, profile, dist)
         .expect("the pad")
-        .cap_face(m);
-    m.rebuild_adjacency();
-    top_face
+        .cap_face(m)
 }
 
 /// Extrude `profile` by `dist` in `frame` and return the far cap's surface.
@@ -338,7 +329,6 @@ fn far_cap(
     .expect("the extrude") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     m.face(faces[1]).surface
 }
 
@@ -412,7 +402,6 @@ fn a_pad_on_a_rational_tilted_face_shares_the_plane_with_an_extrude() {
     .expect("the prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let padded = pad_centred(&mut m, faces[1], 1.0);
     let far = far_cap(&mut m, frame, square(0.0, 1.0), 2.0);
     assert_eq!(
@@ -450,7 +439,6 @@ fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
     .expect("a box") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let corner = |want: [f64; 3]| {
         m.shell(m.solid(solid).outer)
             .faces
@@ -485,7 +473,6 @@ fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
     .expect("the prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let padded = pad_centred(&mut m, faces[1], 1.0);
     let far = far_cap(&mut m, frame, square(0.0, 1.0), 2.0);
     assert_eq!(m.face(padded).surface, far, "one plane, one handle");
@@ -517,7 +504,6 @@ fn the_reported_frame_extrudes_where_the_pad_lands() {
         let profile = centred_square(&m, top, 0.2);
         let feat = nacre_ops::fixtures::pad(&mut m, top, profile.clone(), 1.0).expect("the pad");
         let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
-        m.rebuild_adjacency();
         let bad = nacre_validate::validate(&m);
         assert!(bad.is_empty(), "{what}: {bad:?}");
         let v = crate::fixtures::volume(&m, solid);

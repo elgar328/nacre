@@ -222,7 +222,6 @@ fn trace_surface(_reason: RejectReason) {}
 mod tests {
     use super::*;
     use crate::DeclineKind;
-    use nacre_math::Point3;
     use nacre_topo::Model;
 
     /// **The tracer's [`DeclineKind`]s all ring from one line**, so `file:line` cannot tell them
@@ -235,11 +234,7 @@ mod tests {
     #[test]
     fn the_key_is_as_fine_as_the_reasons_own_vocabulary() {
         let mut m = Model::new();
-        let s = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
+        let s = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
         let face = m.shell(m.solid(s).outer).faces[0];
         let of = |kind| {
             ReasonId::of(RejectReason::TraceDeclined {

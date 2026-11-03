@@ -11,11 +11,7 @@ mod region_tests {
     #[test]
     fn the_half_height_boss_lateral_is_one_face() {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([40.0, 40.0, 20.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([40.0, 20.0, -10.0]),
@@ -25,9 +21,7 @@ mod region_tests {
             20.0,
         )
         .solid;
-        m.rebuild_adjacency();
         crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half-height boss builds");
-        m.rebuild_adjacency();
         let laterals: Vec<_> = m
             .reachable()
             .faces
@@ -73,14 +67,9 @@ mod region_tests {
 #[test]
 fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
     use crate::RejectReason;
-    use nacre_math::Point3;
     use nacre_topo::{HalfEdge, Model, Shell, Solid};
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     assert_eq!(
         super::check_result_topology(&m, &[cube]),
         None,
@@ -155,11 +144,7 @@ fn a_vertex_named_by_a_face_away_from_it_is_refused() {
     use nacre_topo::{Edge, HalfEdge, Model, PointCache, Shell, Solid, Vertex};
     use std::collections::HashMap;
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     assert_eq!(
         super::vertex_named_off_its_faces(&m, cube),
         None,
@@ -687,10 +672,8 @@ fn an_arch_on_a_cylinders_rim_fuses_to_two_solids() {
     let Ok(OpOutput::Extrude { solid: arch, .. }) = apply(&mut m, &op) else {
         panic!("the arch extrudes")
     };
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, cylinder, arch)
         .unwrap_or_else(|e| panic!("the arch and the cylinder fuse: {e:?}"));
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2, "two solids touching at two points");
     assert_eq!(nacre_validate::validate(&m), vec![], "a valid model");
     let mut volumes: Vec<f64> = out

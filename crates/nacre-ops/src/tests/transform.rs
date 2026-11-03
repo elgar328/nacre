@@ -23,11 +23,7 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
         });
         let motion = Xform::Rigid(&iso);
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([4.0, 4.0, -1.0]),
@@ -37,10 +33,8 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let fused = crate::boolean::boolean(&mut m, crate::BoolKind::Fuse, plate, boss)
             .expect("a boss fuses onto its plate");
-        m.rebuild_adjacency();
         let pierce_points = |m: &Model, s: Handle<Solid>| -> Vec<Point3> {
             let mut out = Vec::new();
             for &fh in &m.shell(m.solid(s).outer).faces {
@@ -65,7 +59,6 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
             .collect();
         assert!(!images.is_empty(), "{what}: the boss pierces its plate");
         let moved = transform_solid(&mut m, fused[0], &motion).expect("a quadrantal turn");
-        m.rebuild_adjacency();
         let after = pierce_points(&m, moved);
         assert_eq!(after.len(), images.len(), "{what}");
         for p in &after {
@@ -163,11 +156,7 @@ fn deep_topped_cube(
         None,
         nacre_topo::Orientation::Forward,
     );
-    let s = crate::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
+    let s = crate::fixtures::cuboid(m, [0.0; 3], [1.0, 1.0, 1.0]);
     assert!(
         m.shell(m.solid(s).outer)
             .faces
@@ -196,7 +185,6 @@ fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
     // this test is about the transport overflowing).
     let iso = Isometry::translation([t, Rat::from_int(0), Rat::from_int(1)]);
     let moved = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
-    m.rebuild_adjacency();
     let moved_surf = m
         .shell(m.solid(moved).outer)
         .faces
@@ -274,16 +262,13 @@ fn an_overflow_splits_the_representation_not_the_world() {
     let (s, ..) = deep_topped_cube(&mut at_once);
     let rigid = Isometry::rigid(turn, shift);
     let a = transform_solid(&mut at_once, s, &Xform::Rigid(&rigid)).unwrap();
-    at_once.rebuild_adjacency();
 
     let mut in_two = Model::new();
     let (s, ..) = deep_topped_cube(&mut in_two);
     let r = Isometry::rotation(turn);
     let t = Isometry::translation(shift);
     let b = transform_solid(&mut in_two, s, &Xform::Rigid(&r)).unwrap();
-    in_two.rebuild_adjacency();
     let b = transform_solid(&mut in_two, b, &Xform::Rigid(&t)).unwrap();
-    in_two.rebuild_adjacency();
 
     let (names_a, bits_a, recorded_a) = said(&at_once, a);
     let (names_b, bits_b, recorded_b) = said(&in_two, b);
@@ -388,7 +373,6 @@ fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
@@ -431,14 +415,12 @@ fn a_rotated_cylinder_records_its_motion() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
         angle: nacre_exact::Angle::from_deg(Rat::from_int(31)).expect("angle"),
     });
     let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
-    m.rebuild_adjacency();
     let lateral = m
         .shell(m.solid(turned).outer)
         .faces
@@ -490,7 +472,6 @@ fn a_pierce_definition_keeps_its_rank_when_its_planes_swap() {
         5.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let shell = m.solid(s).outer;
     let faces = m.shell(shell).faces.clone();
     let lateral = faces
@@ -610,14 +591,12 @@ fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
         2.5,
     )
     .solid;
-    m.rebuild_adjacency();
     let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
         angle: nacre_exact::Angle::from_deg(Rat::from_int(90)).expect("angle"),
     });
     let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
-    m.rebuild_adjacency();
     let lateral = m
         .shell(m.solid(turned).outer)
         .faces
@@ -673,11 +652,7 @@ fn a_turned_plane_holds_the_line_it_turned_about() {
     // mirrored in `x = 12.5` (onto itself) where `mirrored`.
     let hinge_after = |mirrored: bool, moves: &[Isometry], name: [Rat; 4]| {
         let mut m = Model::new();
-        let mut s = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([10.0, 20.0, 0.0]),
-            Point3::from_array([15.0, 25.0, 5.0]),
-        );
+        let mut s = crate::fixtures::cuboid(&mut m, [10.0, 20.0, 0.0], [15.0, 25.0, 5.0]);
         if mirrored {
             s = mirror(&mut m, s, Axis::X, Rat::new(25, 2).unwrap()).expect("the box mirrors");
         }
@@ -776,11 +751,7 @@ fn a_turn_about_the_axis_carries_the_cylinder_back() {
     // The cylinder carried back before the moved face's chain, from where the same chain puts it.
     let back = |moves: &[Isometry]| {
         let mut m = Model::new();
-        let mut s = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([10.0, 20.0, 0.0]),
-            Point3::from_array([15.0, 25.0, 5.0]),
-        );
+        let mut s = crate::fixtures::cuboid(&mut m, [10.0, 20.0, 0.0], [15.0, 25.0, 5.0]);
         // An exact step moves the cylinder with the box; a turn off the quarters has no rational
         // image and leaves it where it stands — in place when the turn is about its axis.
         let mut world = before.clone();

@@ -112,7 +112,6 @@ fn cell(
     else {
         unreachable!("extrude yields Extrude output")
     };
-    m.rebuild_adjacency();
 
     let OpOutput::Transform { solid } = apply(
         &mut m,
@@ -128,13 +127,11 @@ fn cell(
     else {
         unreachable!("transform yields Transform output")
     };
-    m.rebuild_adjacency();
 
     // First pad: partial cover, so the walls around it inherit points that do not turn.
     let f = faces_of(&m, solid)[0];
     let profile = footprint_on(&m, f, inset);
     let solid = nacre_ops::fixtures::pad(&mut m, f, profile, 1.0)?.solid();
-    m.rebuild_adjacency();
     every_face_knows_which_way_it_faces(&m, solid, "after the first pad");
     let before = nacre_props::mass_props(&m, solid).expect("props").volume;
 
@@ -142,7 +139,6 @@ fn cell(
     let f = faces_of(&m, solid)[0];
     let profile = footprint_on(&m, f, 0.0);
     let solid = nacre_ops::fixtures::pad(&mut m, f, profile, 1.0)?.solid();
-    m.rebuild_adjacency();
     let after = nacre_props::mass_props(&m, solid).expect("props").volume;
     Ok((m, solid, before, after))
 }

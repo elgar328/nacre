@@ -9,15 +9,10 @@
 //! ([`one_name_per_vertex`]).
 
 use super::*;
+use crate::fixtures::cuboid;
 use nacre_exact::{Isometry, Rat};
 
 use Want::{Built, Refused};
-
-fn cuboid(m: &mut Model, min: [f64; 3], max: [f64; 3]) -> Handle<Solid> {
-    let s = crate::fixtures::cuboid(m, Point3::from_array(min), Point3::from_array(max));
-    m.rebuild_adjacency();
-    s
-}
 
 /// A cylinder along the world axis `dir` of radius `r` standing on `at` with height `h`.
 fn cylinder(m: &mut Model, at: [f64; 3], dir: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
@@ -26,7 +21,7 @@ fn cylinder(m: &mut Model, at: [f64; 3], dir: [f64; 3], r: f64, h: f64) -> Handl
     } else {
         [0.0, 0.0, 1.0]
     };
-    let s = crate::fixtures::cylinder_with_seam(
+    crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array(at),
         Vector3::from_array(dir),
@@ -34,15 +29,11 @@ fn cylinder(m: &mut Model, at: [f64; 3], dir: [f64; 3], r: f64, h: f64) -> Handl
         r,
         h,
     )
-    .solid;
-    m.rebuild_adjacency();
-    s
+    .solid
 }
 
 fn op(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
-    let out = boolean(m, kind, a, b).expect("the fixture's boolean builds")[0];
-    m.rebuild_adjacency();
-    out
+    boolean(m, kind, a, b).expect("the fixture's boolean builds")[0]
 }
 
 /// A prism over the world triangle `tri`, from `z0` up `h`.
@@ -60,15 +51,12 @@ fn prism(m: &mut Model, tri: &[[f64; 2]; 3], z0: i128, h: f64) -> Handle<Solid> 
     .expect("the prism extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
-    let out = transform(
+    transform(
         m,
         solid,
         &Isometry::translation([0, 0, z0].map(Rat::from_int)),
     )
-    .expect("the prism moves");
-    m.rebuild_adjacency();
-    out
+    .expect("the prism moves")
 }
 
 const PI: f64 = std::f64::consts::PI;
@@ -368,7 +356,6 @@ fn fillet_plate_with_prism(
     (
         move |m: &mut Model| {
             let p = rounded_plate(m, 1, 0);
-            m.rebuild_adjacency();
             let t = prism(m, &tri, 12, 2.0);
             op(m, BoolKind::Fuse, p, t)
         },
@@ -464,15 +451,11 @@ fn one_name_per_vertex() {
         }),
         ("four planes at the tangent point", |m| {
             let p = rounded_plate(m, 1, 0);
-            m.rebuild_adjacency();
             let t = prism(m, &[[40.0, -25.0], [38.0, -21.0], [36.0, -24.0]], 12, 2.0);
             op(m, BoolKind::Fuse, p, t)
         }),
         ("pinched cap", |m| {
-            let w =
-                crate::fixtures::wedge_on_a_rim(m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
-            m.rebuild_adjacency();
-            w
+            crate::fixtures::wedge_on_a_rim(m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0)
         }),
     ];
     for (name, build) in bodies {

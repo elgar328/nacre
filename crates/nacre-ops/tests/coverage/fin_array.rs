@@ -11,7 +11,6 @@
 
 use crate::common::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
-use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
@@ -22,21 +21,11 @@ use nacre_topo::{Model, Solid};
 /// intersects it and its neighbours rather than merely touching.
 fn hub_and_fins(angles: &[f64]) -> (Model, Handle<Solid>, Vec<Handle<Solid>>) {
     let mut m = Model::new();
-    let hub = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let hub = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [1.0, 1.0, 3.0]);
     let fins = angles
         .iter()
         .map(|&a| {
-            let f = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.5, -0.2, 1.0]),
-                Point3::from_array([4.0, 0.2, 3.0]),
-            );
-            m.rebuild_adjacency();
+            let f = nacre_ops::fixtures::cuboid(&mut m, [0.5, -0.2, 1.0], [4.0, 0.2, 3.0]);
             // Rational degrees: the angle is exact, only its cos/sin are not.
             let deg = Rat::new((a * 100.0).round() as i128, 100).expect("angle");
             xf(
@@ -59,7 +48,6 @@ fn fuse_fins(angles: &[f64]) -> Result<f64, BoolError> {
     let mut part = hub;
     for f in fins {
         part = boolean(&mut m, BoolKind::Fuse, part, f)?[0];
-        m.rebuild_adjacency();
     }
     Ok(nacre_props::mass_props(&m, part).expect("props").volume)
 }
@@ -122,19 +110,9 @@ fn theta_sweep_census() {
 #[ignore = "the full 22-boolean shape (run with --ignored)"]
 fn the_whole_fin_array_with_bores_builds() {
     let mut m = Model::new();
-    let mut part = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let mut part = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [1.0, 1.0, 3.0]);
     for i in 0..20 {
-        let fin = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, -0.2, 1.0]),
-            Point3::from_array([4.0, 0.2, 3.0]),
-        );
-        m.rebuild_adjacency();
+        let fin = nacre_ops::fixtures::cuboid(&mut m, [0.5, -0.2, 1.0], [4.0, 0.2, 3.0]);
         let fin = xf(
             &mut m,
             fin,
@@ -144,12 +122,10 @@ fn the_whole_fin_array_with_bores_builds() {
                 angle: Angle::from_deg(Rat::new(i * 18, 1).unwrap()).expect("angle"),
             }),
         );
-        m.rebuild_adjacency();
         match boolean(&mut m, BoolKind::Fuse, part, fin) {
             Ok(v) => part = v[0],
             Err(e) => panic!("fin {i} at {}°: {e:?}", i * 18),
         }
-        m.rebuild_adjacency();
     }
     let after_fins = nacre_props::mass_props(&m, part).expect("props").volume;
     assert!(
@@ -163,14 +139,11 @@ fn the_whole_fin_array_with_bores_builds() {
     .into_iter()
     .enumerate()
     {
-        let tool =
-            nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(a), Point3::from_array(b));
-        m.rebuild_adjacency();
+        let tool = nacre_ops::fixtures::cuboid(&mut m, a, b);
         match boolean(&mut m, BoolKind::Cut, part, tool) {
             Ok(v) => part = v[0],
             Err(e) => panic!("bore {n}: {e:?}"),
         }
-        m.rebuild_adjacency();
     }
     let final_volume = nacre_props::mass_props(&m, part).expect("props").volume;
     assert!(

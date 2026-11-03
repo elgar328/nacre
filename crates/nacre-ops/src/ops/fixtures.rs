@@ -119,15 +119,9 @@ pub fn windowed_boss(m: &mut Model, half_width: f64, seam_x: f64) -> Handle<Soli
         4.0,
     )
     .solid;
-    let window = cuboid(
-        m,
-        Point3::from_array([0.5, -half_width, 1.5]),
-        Point3::from_array([2.0, half_width, 2.5]),
-    );
-    m.rebuild_adjacency();
+    let window = cuboid(m, [0.5, -half_width, 1.5], [2.0, half_width, 2.5]);
     let out = boolean(m, BoolKind::Cut, boss, window).expect("the window");
     assert_eq!(out.len(), 1, "a window leaves one body");
-    m.rebuild_adjacency();
     out[0]
 }
 
@@ -153,24 +147,12 @@ pub fn cut_at_both_rims(m: &mut Model, kind: BoolKind, y_min: f64) -> Handle<Sol
         4.0,
     )
     .solid;
-    let lo = cuboid(
-        m,
-        Point3::from_array([0.5, y_min, -1.0]),
-        Point3::from_array([3.0, 2.0, 0.5]),
-    );
-    m.rebuild_adjacency();
+    let lo = cuboid(m, [0.5, y_min, -1.0], [3.0, 2.0, 0.5]);
     let a = boolean(m, kind, c, lo).expect("the lower bite");
     assert_eq!(a.len(), 1, "the lower bite leaves one body");
-    m.rebuild_adjacency();
-    let hi = cuboid(
-        m,
-        Point3::from_array([0.5, y_min, 3.5]),
-        Point3::from_array([3.0, 2.0, 5.0]),
-    );
-    m.rebuild_adjacency();
+    let hi = cuboid(m, [0.5, y_min, 3.5], [3.0, 2.0, 5.0]);
     let out = boolean(m, kind, a[0], hi).expect("the upper bite");
     assert_eq!(out.len(), 1, "the upper bite leaves one body");
-    m.rebuild_adjacency();
     let laterals: Vec<&Face> = m
         .shell(m.solid(out[0]).outer)
         .faces
@@ -245,22 +227,20 @@ pub fn wedge_on_a_rim(
         Ok(OpOutput::Extrude { solid, .. }) => solid,
         other => panic!("extruding the wedge: {other:?}"),
     };
-    m.rebuild_adjacency();
     let out = boolean(m, BoolKind::Fuse, c, wedge).expect("the union");
     assert_eq!(out.len(), 1, "the wedge and the cylinder fuse to one body");
-    m.rebuild_adjacency();
     out[0]
 }
 
-/// An axis-aligned box from `min` to `max` — [`cuboid_on`] with the floor at `min.z` and the
-/// height `max.z − min.z`, **exactly**: the height is the difference of the two corners'
+/// An axis-aligned box from `min` to `max` — [`cuboid_on`] with the floor at `min[2]` and the
+/// height `max[2] − min[2]`, **exactly**: the height is the difference of the two corners'
 /// decimals, and it must be a decimal an `f64` carries (its shortest decimal), or the far cap
-/// would not stand at `max.z`. Panics otherwise, saying so — state the floor and the height
+/// would not stand at `max[2]`. Panics otherwise, saying so — state the floor and the height
 /// instead ([`cuboid_on`]); a fixture's input is the test's own.
-pub fn cuboid(m: &mut Model, min: Point3, max: Point3) -> Handle<Solid> {
-    let [x0, y0, z0] = min.as_array();
-    let [x1, y1, z1] = max.as_array();
-    // Reversed corners are refused rather than read: a lower `max.z` would become a negative
+pub fn cuboid(m: &mut Model, min: [f64; 3], max: [f64; 3]) -> Handle<Solid> {
+    let [x0, y0, z0] = min;
+    let [x1, y1, z1] = max;
+    // Reversed corners are refused rather than read: a lower `max[2]` would become a negative
     // height — a box below the floor — and a reversed `x`/`y` a clockwise rectangle the extrude
     // quietly winds the other way.
     assert!(

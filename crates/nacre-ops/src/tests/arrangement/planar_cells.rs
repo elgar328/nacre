@@ -59,37 +59,19 @@ fn pt(n: NodeId, jd: &Judge<'_, WorkingPlane>) -> [f64; 3] {
 #[test]
 fn a_seated_cap_emits_its_boundary_with_the_right_body_side() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
 
     // The shared class z=1: the class both solids seat a cap on.
-    let wc = (0..planes.len())
+    let wc = (0..setup.geom.len())
         .find(|&c| {
             let seats = |s: Handle<Solid>| {
                 solid_shell_handles(&m, s).into_iter().any(|sh| {
                     m.shell(sh).faces.iter().any(|fh| {
-                        plane_ix[surf_ix[fh]].plane() == c && face_on_z1(*fh, &surf_ix, &faces_tab)
+                        setup.plane_ix[setup.surf_ix[fh]].plane() == c
+                            && face_on_z1(*fh, &setup.surf_ix, &setup.planes)
                     })
                 })
             };
@@ -97,19 +79,7 @@ fn a_seated_cap_emits_its_boundary_with_the_right_body_side() {
         })
         .expect("a shared cap class");
 
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
     // entirely on one side — so they trace as `Graze` chords, not `Transversal`; the two far
     // caps are parallel to z=1 and contribute nothing — misses, not declines.)
@@ -191,12 +161,7 @@ fn the_cap_chord_stops_where_the_on_line_edge_begins() {
     }])
     .unwrap();
     // A far cube so plane_index_setup has two solids; it never touches the y=1 class.
-    crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 10.0, 10.0]),
-        Point3::from_array([11.0, 11.0, 11.0]),
-    );
-    m.rebuild_adjacency();
+    crate::fixtures::cuboid(&mut m, [10.0, 10.0, 10.0], [11.0, 11.0, 11.0]);
     let a2 = m.live_solids()[0];
     let b2 = m.live_solids()[1];
     let PlaneSetup {
@@ -311,12 +276,7 @@ fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
         dist: 1.0,
     }])
     .unwrap();
-    crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 10.0, 10.0]),
-        Point3::from_array([11.0, 11.0, 11.0]),
-    );
-    m.rebuild_adjacency();
+    crate::fixtures::cuboid(&mut m, [10.0, 10.0, 10.0], [11.0, 11.0, 11.0]);
     let a2 = m.live_solids()[0];
     let b2 = m.live_solids()[1];
     let PlaneSetup {
@@ -521,43 +481,12 @@ fn coincident_cap_edges_merge_by_footprint() {
     // the 4 rim edges is produced 4× (a-seated, a-wall, b-seated, b-wall) → 4 merged edges.
     {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 0.0, 1.0]),
-            Point3::from_array([1.0, 1.0, 2.0]),
-        );
-        m.rebuild_adjacency();
-        let PlaneSetup {
-            planes: faces_tab,
-            geom: planes,
-            surf_ix,
-            inc_a,
-            inc_b,
-            plane_ix,
-            standard,
-            notes,
-            ..
-        } = plane_index_setup(&m, a, b).unwrap();
-        let jd = Judge::new(&planes, standard, &notes);
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class_of(
-            &m,
-            a,
-            b,
-            wc,
-            &jd,
-            &[],
-            &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
-            &plane_ix,
-        );
+        let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+        let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
+        let setup = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+        let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
         assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
         for e in &merged {
@@ -573,43 +502,12 @@ fn coincident_cap_edges_merge_by_footprint() {
     // different rims, so no a↔b coincidence: a's 4 pairs → 4, b's 4 pairs → 4 = 8.
     {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 1.0, 0.0]),
-            Point3::from_array([3.0, 2.0, 1.0]),
-        );
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 0.0, 0.0]),
-            Point3::from_array([2.0, 3.0, 1.0]),
-        );
-        m.rebuild_adjacency();
-        let PlaneSetup {
-            planes: faces_tab,
-            geom: planes,
-            surf_ix,
-            inc_a,
-            inc_b,
-            plane_ix,
-            standard,
-            notes,
-            ..
-        } = plane_index_setup(&m, a, b).unwrap();
-        let jd = Judge::new(&planes, standard, &notes);
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class_of(
-            &m,
-            a,
-            b,
-            wc,
-            &jd,
-            &[],
-            &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
-            &plane_ix,
-        );
+        let a = crate::fixtures::cuboid(&mut m, [0.0, 1.0, 0.0], [3.0, 2.0, 1.0]);
+        let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+        let setup = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+        let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
         assert_eq!(
             merged.len(),
@@ -633,43 +531,12 @@ fn coincident_cap_edges_merge_by_footprint() {
 #[test]
 fn split_cuts_the_cross_into_the_right_pieces() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 2.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 1.0, 0.0], [3.0, 2.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     assert_eq!(merged.len(), 8, "8 merged edges before split");
 
@@ -745,48 +612,18 @@ fn split_cuts_the_cross_into_the_right_pieces() {
 #[test]
 fn partial_overlap_is_resolved() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 1.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [3.0, 1.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
     // The shared y=1 wall (a face at y=1).
-    let y1 = planes
+    let y1 = setup
+        .geom
         .iter()
         .position(|p| {
             p.witness_coords()
@@ -833,43 +670,12 @@ fn partial_overlap_is_resolved() {
 #[test]
 fn a_circle_meeting_a_ruling_is_refused_by_name() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 2.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 1.0, 0.0], [3.0, 2.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
@@ -1011,43 +817,12 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
 #[test]
 fn the_cross_arrangement_has_six_cells() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 2.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 1.0, 0.0], [3.0, 2.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
@@ -1153,43 +928,12 @@ fn the_cross_arrangement_has_six_cells() {
 #[test]
 fn cell_labels_propagate_and_match_footprints() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 2.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 1.0, 0.0], [3.0, 2.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let edges =
@@ -1232,52 +976,22 @@ fn cell_labels_propagate_and_match_footprints() {
 #[test]
 fn a_straddle_drives_the_above_bit_and_seated_wins() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 2.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     // a passes through z=1 (no seated face); find the class b caps at z=1.
-    let wc = (0..planes.len())
+    let wc = (0..setup.geom.len())
         .find(|&c| {
             solid_shell_handles(&m, b).into_iter().any(|sh| {
                 m.shell(sh).faces.iter().any(|fh| {
-                    plane_ix[surf_ix[fh]].plane() == c && face_on_z1(*fh, &surf_ix, &faces_tab)
+                    setup.plane_ix[setup.surf_ix[fh]].plane() == c
+                        && face_on_z1(*fh, &setup.surf_ix, &setup.planes)
                 })
             })
         })
         .expect("b's z=1 cap class");
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let edges =
@@ -1308,43 +1022,12 @@ fn a_straddle_drives_the_above_bit_and_seated_wins() {
 #[test]
 fn boolean_keep_and_result_faces_on_the_cross() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 2.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 3.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 1.0, 0.0], [3.0, 2.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 3.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
     let edges =
@@ -1427,8 +1110,8 @@ fn boolean_keep_and_result_faces_on_the_cross() {
 
     // flip oracle (coordinate, test-only): the result normal points away from the kept
     // chamber. Fuse keeps below (bodies below the cap), so n_result·n_w > 0.
-    let n_w = planes[wc].plane.normal();
-    let os = planes[wc].frame_sign as f64;
+    let n_w = setup.geom[wc].plane.normal();
+    let os = setup.geom[wc].frame_sign as f64;
     for f in &fuse {
         let n_result = os * if f.flip { -1.0 } else { 1.0 };
         let dot = n_result * n_w.dot(n_w); // n_result·n_w, |n_w|²>0
@@ -1488,17 +1171,8 @@ fn boolean_keep_and_result_faces_on_the_cross() {
 #[test]
 fn stacked_fuse_emits_ten_closed_faces() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,
@@ -1573,20 +1247,10 @@ fn stacked_fuse_emits_ten_closed_faces() {
 #[test]
 fn end_to_end_stacked_fuse_is_a_tall_box() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
     let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
     assert_eq!(solids.len(), 1, "one connected solid");
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "manifold: {vs:?}");
     let vol = nacre_props::mass_props(&m, solids[0]).unwrap().volume;
@@ -1602,19 +1266,9 @@ fn end_to_end_stacked_fuse_is_a_tall_box() {
 fn end_to_end_overlapping_cubes_all_three() {
     let vol_of = |kind: BoolKind| -> f64 {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let b = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, 0.5, 0.5]),
-            Point3::from_array([1.5, 1.5, 1.5]),
-        );
-        m.rebuild_adjacency();
+        let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+        let b = crate::fixtures::cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]);
         let solids = boolean(&mut m, kind, a, b).unwrap();
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
         solids
@@ -1634,19 +1288,9 @@ fn end_to_end_overlapping_cubes_all_three() {
 /// and sum (volume, area) over the result solids.
 fn tunnel_vol_area(kind: BoolKind) -> (f64, f64) {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Point3::from_array([2.0, 2.0, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [3.0, 3.0, 3.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 1.0, -1.0], [2.0, 2.0, 4.0]);
     let solids = boolean(&mut m, kind, a, b).unwrap();
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
     solids.iter().fold((0.0, 0.0), |acc, &s| {
@@ -1706,17 +1350,8 @@ fn tunnel_common_is_the_bar_box_control() {
 #[test]
 fn tunnel_cut_emits_ten_faces_two_annular() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Point3::from_array([2.0, 2.0, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [3.0, 3.0, 3.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 1.0, -1.0], [2.0, 2.0, 4.0]);
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,
@@ -1821,12 +1456,7 @@ fn u_slab_fuse_emits_a_two_hole_face() {
     }])
     .unwrap();
     let u = m.live_solids()[0];
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5, 1.5, -0.5]),
-        Point3::from_array([3.5, 2.5, 1.5]),
-    );
-    m.rebuild_adjacency();
+    let slab = crate::fixtures::cuboid(&mut m, [-0.5, 1.5, -0.5], [3.5, 2.5, 1.5]);
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,

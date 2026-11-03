@@ -25,12 +25,7 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
         Profile2d::polygon(vec![p(-1.0, -0.6), p(1.0, -0.6), p(1.0, 0.6), p(-1.0, 0.6)]).unwrap()
     };
     let mut m = Model::new();
-    let mut solid = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, -2.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let mut solid = crate::fixtures::cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 1.0]);
     // The topmost face pointing up. Everything here is axis-aligned, so this is unambiguous.
     let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
         let shell = m.solid(s).outer;
@@ -54,7 +49,6 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
         let out = crate::fixtures::pad(&mut m, face, rect(), dist)
             .expect("pad")
             .solid();
-        m.rebuild_adjacency();
         solid = out;
     }
     let shell = m.solid(solid).outer;
@@ -120,18 +114,12 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
     };
     let build = |dists: &[f64]| -> (Model, Handle<Solid>) {
         let mut m = Model::new();
-        let mut solid = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([98.0, 98.0, 0.0]),
-            Point3::from_array([102.0, 102.0, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let mut solid = crate::fixtures::cuboid(&mut m, [98.0, 98.0, 0.0], [102.0, 102.0, 1.0]);
         for &dist in dists {
             let face = top(&m, solid);
             let out = crate::fixtures::pad(&mut m, face, rect(), dist)
                 .expect("pad")
                 .solid();
-            m.rebuild_adjacency();
             solid = out;
         }
         (m, solid)
@@ -182,20 +170,10 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
 #[test]
 fn two_faces_of_one_plane_share_a_sketch_origin() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
     // A notch out of one end: the lid `z = 1` becomes two faces of the same plane.
-    let cutter = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.8, -1.0, 0.5]),
-        Point3::from_array([1.2, 3.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let cutter = crate::fixtures::cuboid(&mut m, [0.8, -1.0, 0.5], [1.2, 3.0, 2.0]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, cutter).expect("cut");
-    m.rebuild_adjacency();
     let lids: Vec<_> = m
         .shell(m.solid(r).outer)
         .faces
@@ -359,12 +337,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
-    let mut s = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let mut s = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [4.0, 4.0, 2.0]);
     // Two turns, so the face's normal is off every world axis and its frame is not exact.
     for (axis, deg) in [(Axis::Y, 53i128), (Axis::Z, 17)] {
         let OpOutput::Transform { solid } = apply(
@@ -381,7 +354,6 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
         .expect("turn") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         s = solid;
     }
     // Where the original +z went, so the face can be picked without a heuristic tie.
@@ -425,7 +397,6 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
         let feat = crate::fixtures::pad(&mut m, f, profile, 7.7)
             .expect("a boss on a tilted face keeps its cap");
         let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
-        m.rebuild_adjacency();
         s = solid;
         caps.push(top_face);
     }
@@ -509,7 +480,6 @@ fn a_boss_on_a_slanted_wall_is_correct_today() {
     let profile = centred_on(&m, wall, 0.5);
     let feat = crate::fixtures::pad(&mut m, wall, profile, 1.0).expect("pad");
     let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
-    m.rebuild_adjacency();
     // Base prism 15 × 3 = 45, plus a 1 × 1 × 1 boss.
     let props = nacre_props::mass_props(&m, solid).unwrap();
     assert!(
@@ -537,7 +507,6 @@ fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
     let profile = centred_on(&m, wall, 0.5);
     let feat = crate::fixtures::pad(&mut m, wall, profile, 1.0).expect("pad");
     let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
-    m.rebuild_adjacency();
     // A side face of that boss: not the cap, not on the original wall's plane.
     let cap_n = nacre_props::face_props(&m, top_face)
         .unwrap()
@@ -559,7 +528,6 @@ fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
     let solid = crate::fixtures::pad(&mut m, side, profile, 0.5)
         .expect("nested pad")
         .solid();
-    m.rebuild_adjacency();
     let props = nacre_props::mass_props(&m, solid).unwrap();
     // The nested boss is 0.4 × 0.4 × 0.5 = 0.08.
     assert!(
@@ -578,7 +546,6 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
     let solid = crate::fixtures::pocket(&mut m, wall, profile, 0.5)
         .expect("pocket")
         .solid();
-    m.rebuild_adjacency();
     let props = nacre_props::mass_props(&m, solid).unwrap();
     assert!(
         (props.volume - 44.5).abs() < 1e-9,
@@ -619,7 +586,6 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
     .unwrap() else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let mut s = solid;
     for (axis, deg) in [(Axis::Y, 53i128), (Axis::Z, 17)] {
         let OpOutput::Transform { solid } = apply(
@@ -636,7 +602,6 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
         .unwrap() else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         s = solid;
     }
     let (sy, cy) = (53f64).to_radians().sin_cos();
@@ -670,7 +635,6 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
         .unwrap();
         let feat = crate::fixtures::pad(&mut m, f, profile, 7.7).expect("boss");
         let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
-        m.rebuild_adjacency();
         s = solid;
         let su = m.face(top_face).surface;
         assert_eq!(
@@ -959,7 +923,6 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     .expect("extrude on a Pythagorean frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     // Fixture qualification: a wall whose name is narrow but whose squared lengths are not
     // — the exact population the narrow frame derivation hard-declines.
     let shell = m.solid(solid).outer;
@@ -978,7 +941,6 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     let solid = crate::fixtures::pad(&mut m, wall, profile, 0.4)
         .expect("S4: a pad on a wide-named wall must build")
         .solid();
-    m.rebuild_adjacency();
     // The chain is cut: every face of the result states its exact points.
     let mut missing = 0;
     let mut total = 0;
@@ -1048,7 +1010,6 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
     .expect("S6a: an axes-only tilted extrude must build exactly") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     // The end-to-end claim: nothing fell to f64 — every face states its exact points.
     let mut missing = 0;
     let mut total = 0;

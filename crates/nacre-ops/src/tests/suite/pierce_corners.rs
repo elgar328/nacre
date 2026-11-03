@@ -86,7 +86,6 @@ fn a_turned_pierce_corner_is_realized_where_the_turn_took_it() {
     for (name, build, turns) in shapes {
         let mut m0 = Model::new();
         let s0 = build(&mut m0);
-        m0.rebuild_adjacency();
         let want: Vec<[f64; 3]> = pierce_corners(&m0, s0)
             .into_iter()
             .map(|v| {
@@ -103,7 +102,6 @@ fn a_turned_pierce_corner_is_realized_where_the_turn_took_it() {
         for &(axis, deg) in turns {
             s = transform(&mut m, s, &rot_iso(axis, deg)).expect("a turn");
         }
-        m.rebuild_adjacency();
         let got = pierce_corners(&m, s);
         assert_eq!(got.len(), want.len(), "{name}");
         for v in got {
@@ -173,7 +171,6 @@ fn a_turned_slot_is_realized_and_leaves_nothing_for_the_export() {
         let frame = SketchFrame::world(&m, Axis::Z);
         let s = prism_on(&mut m, frame, upright_slot(2.0, 0.0, 10.0), 3.0);
         let s = transform(&mut m, s, &rot_iso(axis, 30)).expect("a turn");
-        m.rebuild_adjacency();
         let corners = pierce_corners(&m, s);
         assert_eq!(corners.len(), 8, "{axis:?}");
         for v in &corners {
@@ -207,11 +204,7 @@ fn a_turned_slot_is_realized_and_leaves_nothing_for_the_export() {
 fn a_slot_stands_on_every_face_of_a_turned_box() {
     let r = Rat::from_int;
     let mut m = Model::new();
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-10.0, -10.0, -10.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
+    let block = crate::fixtures::cuboid(&mut m, [-10.0, -10.0, -10.0], [10.0, 10.0, 10.0]);
     let block = fixtures::xf(
         &mut m,
         block,
@@ -221,13 +214,11 @@ fn a_slot_stands_on_every_face_of_a_turned_box() {
             angle: nacre_exact::Angle::from_deg(r(30)).expect("an angle"),
         }),
     );
-    m.rebuild_adjacency();
     let faces = m.shell(m.solid(block).outer).faces.clone();
     assert_eq!(faces.len(), 6);
     for fh in faces {
         let frame = crate::face_sketch_frame(&m, fh).expect("a planar live face");
         let slot = prism_on(&mut m, frame, upright_slot(1.0, -3.0, 3.0), 2.0);
-        m.rebuild_adjacency();
         let want = (2.0 * 6.0 + std::f64::consts::PI) * 2.0;
         let got = nacre_props::mass_props(&m, slot).expect("props").volume;
         assert!((got - want).abs() < 1e-9, "{fh:?}: volume {got} vs {want}");

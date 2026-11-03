@@ -30,13 +30,11 @@ fn rot_iso(axis: nacre_exact::Axis) -> nacre_exact::Isometry {
     })
 }
 
-/// Rotate a solid by each axis in turn. A compound tilt needs `rebuild_adjacency` BETWEEN the
-/// transforms (matching the oracle's `rotated_boolean_matches_occt`), or the second reads a
-/// stale topology.
+/// Rotate a solid by each axis in turn — a compound tilt, as the oracle's
+/// `rotated_boolean_matches_occt` builds one.
 fn tilt(m: &mut Model, mut s: Handle<Solid>, axes: &[nacre_exact::Axis]) -> Handle<Solid> {
     for &ax in axes {
         s = transform(m, s, &rot_iso(ax)).unwrap();
-        m.rebuild_adjacency();
     }
     s
 }

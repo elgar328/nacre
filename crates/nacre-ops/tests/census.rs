@@ -39,6 +39,7 @@
 //! population present.**
 
 use nacre_math::Point3;
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
 #[path = "support/stated.rs"]
 mod stated;
@@ -92,7 +93,6 @@ fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     .expect("transform") else {
         unreachable!("transform yields Transform output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -108,7 +108,6 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
     .expect("mirror") else {
         unreachable!("mirror yields Mirror output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -609,20 +608,10 @@ fn measure_census() {
     for (kn, k) in KINDS {
         for (i, (lo, hi)) in boxes.iter().enumerate() {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([1.0; 3]),
-            );
-            let b = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array(*lo),
-                Point3::from_array(*hi),
-            );
-            m.rebuild_adjacency();
+            let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+            let b = cuboid(&mut m, *lo, *hi);
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("aa {kn} {i}"), &m, &inputs, &out);
         }
     }
@@ -632,17 +621,8 @@ fn measure_census() {
         for deg in [7i128, 30, 45, 90, 123] {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
-                let a = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([0.0; 3]),
-                    Point3::from_array([2.0, 2.0, 2.0]),
-                );
-                let b = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([0.4, 0.4, -1.0]),
-                    Point3::from_array([1.6, 1.6, 3.0]),
-                );
-                m.rebuild_adjacency();
+                let a = cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
+                let b = cuboid(&mut m, [0.4, 0.4, -1.0], [1.6, 1.6, 3.0]);
                 let b = xf(
                     &mut m,
                     b,
@@ -654,7 +634,6 @@ fn measure_census() {
                 );
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("rot {ax:?} {deg} {kn}"), &m, &inputs, &out);
             }
         }
@@ -678,17 +657,8 @@ fn measure_census() {
     for (n, d) in offsets {
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([2.0; 3]),
-            );
-            let b = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([1.0, 1.0, 1.0]),
-                Point3::from_array([3.0, 3.0, 3.0]),
-            );
-            m.rebuild_adjacency();
+            let a = cuboid(&mut m, [0.0; 3], [2.0; 3]);
+            let b = cuboid(&mut m, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
             let t = Rat::new(n, d).expect("offset");
             let a = xf(
                 &mut m,
@@ -698,23 +668,13 @@ fn measure_census() {
             let b = xf(&mut m, b, Isometry::translation([t, t, Rat::from_int(0)]));
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("tr {n}/{d} {kn}"), &m, &inputs, &out);
         }
         // Chained: the same total move split in two, which f64 accumulation and exact folding
         // disagree about.
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0; 3]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 1.0, 1.0]),
-            Point3::from_array([3.0, 3.0, 3.0]),
-        );
-        m.rebuild_adjacency();
+        let a = cuboid(&mut m, [0.0; 3], [2.0; 3]);
+        let b = cuboid(&mut m, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
         let t = Rat::new(n, d).expect("offset");
         let mut a = a;
         for _ in 0..2 {
@@ -735,7 +695,6 @@ fn measure_census() {
         );
         let inputs = operands(&m, a, b);
         let out = boolean(&mut m, BoolKind::Fuse, a, b);
-        m.rebuild_adjacency();
         record(&format!("tr2 {n}/{d} fuse"), &m, &inputs, &out);
     }
 
@@ -743,21 +702,11 @@ fn measure_census() {
     for (n, d) in [(0i128, 1i128), (1, 2), (1, 3), (7, 22), (5, 7)] {
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([1.0, 0.0, 0.0]),
-                Point3::from_array([2.0, 1.0, 1.0]),
-            );
-            let b = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-1.0, 0.25, 0.25]),
-                Point3::from_array([1.5, 0.75, 0.75]),
-            );
-            m.rebuild_adjacency();
+            let a = cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+            let b = cuboid(&mut m, [-1.0, 0.25, 0.25], [1.5, 0.75, 0.75]);
             let a = mirror(&mut m, a, Axis::X, Rat::new(n, d).expect("plane"));
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("mir {n}/{d} {kn}"), &m, &inputs, &out);
         }
     }
@@ -765,17 +714,8 @@ fn measure_census() {
     // ── Rotate then place.
     for deg in [7i128, 30, 45] {
         let mut m = Model::new();
-        let base = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-2.0, -2.0, 0.0]),
-            Point3::from_array([2.0, 2.0, 1.0]),
-        );
-        let tool = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.5, -0.5, -1.0]),
-            Point3::from_array([0.5, 0.5, 2.0]),
-        );
-        m.rebuild_adjacency();
+        let base = cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 1.0]);
+        let tool = cuboid(&mut m, [-0.5, -0.5, -1.0], [0.5, 0.5, 2.0]);
         let tool = xf(
             &mut m,
             tool,
@@ -790,7 +730,6 @@ fn measure_census() {
         let base = xf(&mut m, base, place);
         let inputs = operands(&m, base, tool);
         let out = boolean(&mut m, BoolKind::Cut, base, tool);
-        m.rebuild_adjacency();
         record(&format!("rt {deg}"), &m, &inputs, &out);
     }
 
@@ -812,10 +751,8 @@ fn measure_census() {
             let b1 = ex(&mut m, 0.0, [1.0, 1.0], [3.0, 3.0], *first);
             let b2 = ex(&mut m, *first, [1.0, 1.0], [3.0, 3.0], *second);
             let b = boolean(&mut m, BoolKind::Fuse, b1, b2).expect("stack fuses")[0];
-            m.rebuild_adjacency();
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("ex {kn} {i}"), &m, &inputs, &out);
         }
     }
@@ -857,20 +794,10 @@ fn measure_census() {
     for (kn, k) in KINDS {
         for (i, (lo, hi)) in fw.iter().enumerate() {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array(fw[0].0),
-                Point3::from_array(fw[0].1),
-            );
-            let b = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array(*lo),
-                Point3::from_array(*hi),
-            );
-            m.rebuild_adjacency();
+            let a = cuboid(&mut m, fw[0].0, fw[0].1);
+            let b = cuboid(&mut m, *lo, *hi);
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("fw {kn} {i}"), &m, &inputs, &out);
         }
     }
@@ -894,7 +821,6 @@ fn measure_census() {
             let b = tilted_prism(&mut m, *n, 0.5, 1.6, 1.25);
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("tp {kn} {i}"), &m, &inputs, &out);
         }
     }
@@ -933,7 +859,6 @@ fn measure_census() {
             .expect("the wf base prism") else {
                 unreachable!()
             };
-            m.rebuild_adjacency();
             // The family qualifies itself: a wall whose name is narrow but whose squared
             // lengths overflow — the exact population the narrow frame derivation declines.
             let wall = *m
@@ -984,7 +909,6 @@ fn measure_census() {
             ) else {
                 panic!("the wf feature must build")
             };
-            m.rebuild_adjacency();
             record(&format!("wf {kn}"), &m, &inputs, &Ok(solids));
         }
     }
@@ -996,38 +920,18 @@ fn measure_census() {
     for (kn, k) in KINDS {
         // Two cubes sharing exactly the vertical line x=1, y=1.
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 1.0, 0.0]),
-            Point3::from_array([2.0, 2.0, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b = cuboid(&mut m, [1.0, 1.0, 0.0], [2.0, 2.0, 1.0]);
         let inputs = operands(&m, a, b);
         let out = boolean(&mut m, k, a, b);
-        m.rebuild_adjacency();
         record(&format!("ct edge {kn}"), &m, &inputs, &out);
 
         // Two cubes sharing exactly the point (1,1,1).
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0; 3]),
-            Point3::from_array([2.0; 3]),
-        );
-        m.rebuild_adjacency();
+        let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b = cuboid(&mut m, [1.0; 3], [2.0; 3]);
         let inputs = operands(&m, a, b);
         let out = boolean(&mut m, k, a, b);
-        m.rebuild_adjacency();
         record(&format!("ct corner {kn}"), &m, &inputs, &out);
     }
     // **The pinch that must stay a reject.** A and B meet only along the line x=2, y=2, but a
@@ -1035,27 +939,12 @@ fn measure_census() {
     // remains, not two. A line that ever stops saying `ERR` here is the separation going too far.
     {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 0.0, 0.0]),
-            Point3::from_array([2.0, 2.0, 1.0]),
-        );
-        let bridge = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([1.0, 0.3, 0.2]),
-            Point3::from_array([3.0, 3.0, 0.8]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([2.0, 2.0, 0.0]),
-            Point3::from_array([4.0, 4.0, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+        let bridge = cuboid(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+        let b = cuboid(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
         let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
-        m.rebuild_adjacency();
         let inputs = operands(&m, ab[0], b);
         let out = boolean(&mut m, BoolKind::Fuse, ab[0], b);
-        m.rebuild_adjacency();
         record("ct ring-pinch fuse", &m, &inputs, &out);
     }
     // ── A pinched face as an operand: a plate with a triangular boss whose corner sits on its edge,
@@ -1067,28 +956,16 @@ fn measure_census() {
         ("pinched-operand contact cut", false),
     ] {
         let mut m = Model::new();
-        let plate = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 0.0, 0.0]),
-            Point3::from_array([6.0, 6.0, 1.0]),
-        );
+        let plate = cuboid(&mut m, [0.0, 0.0, 0.0], [6.0, 6.0, 1.0]);
         let boss = tri_prism(&mut m, [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]], 1.0, 1.0);
-        m.rebuild_adjacency();
         let bossed = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss on the edge");
-        m.rebuild_adjacency();
         let tool = if hole {
             tri_prism(&mut m, [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]], -1.0, 3.0)
         } else {
-            nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([4.0, 0.5, 1.0]),
-                Point3::from_array([5.0, 1.5, 2.0]),
-            )
+            cuboid(&mut m, [4.0, 0.5, 1.0], [5.0, 1.5, 2.0])
         };
-        m.rebuild_adjacency();
         let inputs = operands(&m, bossed[0], tool);
         let out = boolean(&mut m, BoolKind::Cut, bossed[0], tool);
-        m.rebuild_adjacency();
         record(tag, &m, &inputs, &out);
     }
     // ── Cylinders: the truth rides beside the cache. Solo and moved bodies are digest
@@ -1127,7 +1004,6 @@ fn measure_census() {
             1.5,
             2.5,
         );
-        m.rebuild_adjacency();
         println!("c cyl solo {}", solo(&m, c));
         // An exact 90° turn (truth transported, nothing recorded) and an inexact 31° turn
         // (node recorded, def carried verbatim) — both roads in the corpus.
@@ -1154,11 +1030,7 @@ fn measure_census() {
 
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([2.0, 2.0, 2.0]),
-            );
+            let a = cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
             let b = cylinder(
                 &mut m,
                 Point3::from_array([1.0, 1.0, -1.0]),
@@ -1166,10 +1038,8 @@ fn measure_census() {
                 0.5,
                 4.0,
             );
-            m.rebuild_adjacency();
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("cyl {kn}"), &m, &inputs, &out);
         }
         // ── **Cut rims**: a boss whose circle a boundary segment cuts — the arc
@@ -1183,11 +1053,7 @@ fn measure_census() {
         ] {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
-                let a = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([0.0; 3]),
-                    Point3::from_array([4.0, 4.0, 2.0]),
-                );
+                let a = cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
                 let b = cylinder(
                     &mut m,
                     Point3::from_array(origin),
@@ -1195,10 +1061,8 @@ fn measure_census() {
                     0.5,
                     1.0,
                 );
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("arc {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1208,11 +1072,7 @@ fn measure_census() {
         // second varies by kind.
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let plate = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
+            let plate = cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
             let bore = cylinder(
                 &mut m,
                 Point3::from_array([1.0, 1.0, -1.0]),
@@ -1220,7 +1080,6 @@ fn measure_census() {
                 0.5,
                 4.0,
             );
-            m.rebuild_adjacency();
             let bored = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
             let boss = cylinder(
                 &mut m,
@@ -1229,10 +1088,8 @@ fn measure_census() {
                 0.5,
                 1.0,
             );
-            m.rebuild_adjacency();
             let inputs = operands(&m, bored, boss);
             let out = boolean(&mut m, k, bored, boss);
-            m.rebuild_adjacency();
             record(&format!("arc bored straddle {kn}"), &m, &inputs, &out);
         }
         // ── **The rulings road** (the gate's record-and-pass arm): a boss whose axis
@@ -1251,11 +1108,7 @@ fn measure_census() {
         ] {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
-                let a = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([0.0; 3]),
-                    Point3::from_array([40.0, 40.0, 20.0]),
-                );
+                let a = cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
                 let b = cylinder(
                     &mut m,
                     Point3::from_array(base),
@@ -1263,10 +1116,8 @@ fn measure_census() {
                     5.0,
                     h,
                 );
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("rul {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1278,22 +1129,11 @@ fn measure_census() {
     // merged caps).
     {
         let cell = |m: &mut Model, x0: f64, pocket: bool| {
-            let plate = nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([x0, 0.0, 0.0]),
-                Point3::from_array([x0 + 20.0, 20.0, 10.0]),
-            );
-            m.rebuild_adjacency();
+            let plate = cuboid(m, [x0, 0.0, 0.0], [x0 + 20.0, 20.0, 10.0]);
             let mut out = plate;
             if pocket {
-                let p = nacre_ops::fixtures::cuboid(
-                    m,
-                    Point3::from_array([x0 + 2.0, 2.0, 4.0]),
-                    Point3::from_array([x0 + 8.0, 8.0, 10.0]),
-                );
-                m.rebuild_adjacency();
+                let p = cuboid(m, [x0 + 2.0, 2.0, 4.0], [x0 + 8.0, 8.0, 10.0]);
                 out = boolean(m, BoolKind::Cut, out, p).expect("the pocket cuts")[0];
-                m.rebuild_adjacency();
             }
             let bore = cylinder(
                 m,
@@ -1302,9 +1142,7 @@ fn measure_census() {
                 2.0,
                 12.0,
             );
-            m.rebuild_adjacency();
             out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
-            m.rebuild_adjacency();
             out
         };
         for (pn, pocket) in [("bored", false), ("pocketed", true)] {
@@ -1314,7 +1152,6 @@ fn measure_census() {
                 let b = cell(&mut m, 20.0, pocket);
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("ct2 {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1323,11 +1160,9 @@ fn measure_census() {
             let a = cell(&mut m, 0.0, false);
             let b = cell(&mut m, 20.0, false);
             let ab = boolean(&mut m, BoolKind::Fuse, a, b).expect("the first pair fuses")[0];
-            m.rebuild_adjacency();
             let c = cell(&mut m, 40.0, false);
             let inputs = operands(&m, ab, c);
             let out = boolean(&mut m, k, ab, c);
-            m.rebuild_adjacency();
             record(&format!("ct2 chain {kn}"), &m, &inputs, &out);
         }
     }
@@ -1344,11 +1179,7 @@ fn measure_census() {
         };
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let plate = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([40.0, 40.0, 10.0]),
-            );
+            let plate = cuboid(&mut m, [0.0; 3], [40.0, 40.0, 10.0]);
             let tool = cylinder(
                 &mut m,
                 Point3::from_array([7.3, 7.3, -5.0]),
@@ -1356,20 +1187,14 @@ fn measure_census() {
                 2.1,
                 30.0,
             );
-            m.rebuild_adjacency();
             let tool = xf(&mut m, tool, off(10.7, 0.0, 0.0));
             let inputs = operands(&m, plate, tool);
             let out = boolean(&mut m, k, plate, tool);
-            m.rebuild_adjacency();
             record(&format!("trc tool {kn}"), &m, &inputs, &out);
         }
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let plate = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([40.0, 40.0, 10.0]),
-            );
+            let plate = cuboid(&mut m, [0.0; 3], [40.0, 40.0, 10.0]);
             let boss = cylinder(
                 &mut m,
                 Point3::from_array([10.0, 20.0, 5.0]),
@@ -1377,21 +1202,15 @@ fn measure_census() {
                 3.0,
                 8.0,
             );
-            m.rebuild_adjacency();
             let boss = xf(&mut m, boss, off(15.3, 0.1, 0.0));
             let inputs = operands(&m, plate, boss);
             let out = boolean(&mut m, k, plate, boss);
-            m.rebuild_adjacency();
             record(&format!("trc boss {kn}"), &m, &inputs, &out);
         }
         for (kn, k) in KINDS {
             let mut m = Model::new();
             let bored = |m: &mut Model| {
-                let plate = nacre_ops::fixtures::cuboid(
-                    m,
-                    Point3::from_array([0.0; 3]),
-                    Point3::from_array([40.0, 40.0, 10.0]),
-                );
+                let plate = cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
                 let bore = cylinder(
                     m,
                     Point3::from_array([7.3, 7.3, -5.0]),
@@ -1399,26 +1218,18 @@ fn measure_census() {
                     2.1,
                     30.0,
                 );
-                m.rebuild_adjacency();
-                let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-                m.rebuild_adjacency();
-                out
+                boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0]
             };
             let a = bored(&mut m);
             let b = bored(&mut m);
             let b = xf(&mut m, b, off(25.7, 3.3, 2.0));
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("trc body {kn}"), &m, &inputs, &out);
         }
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let plate = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([40.0, 40.0, 10.0]),
-            );
+            let plate = cuboid(&mut m, [0.0; 3], [40.0, 40.0, 10.0]);
             let bore = cylinder(
                 &mut m,
                 Point3::from_array([18.0, 20.0, -5.0]),
@@ -1426,9 +1237,7 @@ fn measure_census() {
                 2.1,
                 30.0,
             );
-            m.rebuild_adjacency();
             let holed = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-            m.rebuild_adjacency();
             let twin = cylinder(
                 &mut m,
                 Point3::from_array([7.3, 20.0, -5.0]),
@@ -1436,11 +1245,9 @@ fn measure_census() {
                 2.1,
                 30.0,
             );
-            m.rebuild_adjacency();
             let twin = xf(&mut m, twin, off(10.7, 0.0, 0.0)); // 7.1e-16 short of the bore's axis
             let inputs = operands(&m, holed, twin);
             let out = boolean(&mut m, k, holed, twin);
-            m.rebuild_adjacency();
             record(&format!("trc onaxis {kn}"), &m, &inputs, &out);
         }
     }
@@ -1454,15 +1261,7 @@ fn measure_census() {
     // of cylinder edge, this table cannot say — a population fact is not a code fact.
     // Fuse alone for the twins: the control only has to say that the planar straddle builds.
     {
-        let plate = |m: &mut Model| {
-            let a = nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
-            m.rebuild_adjacency();
-            a
-        };
+        let plate = |m: &mut Model| cuboid(m, [0.0; 3], [4.0, 4.0, 2.0]);
         for (pn, base) in [
             ("xlo", [0.0, 2.0, -1.0]),
             ("xhi", [4.0, 2.0, -1.0]),
@@ -1481,10 +1280,8 @@ fn measure_census() {
                     0.5,
                     4.0,
                 );
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("wal {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1496,12 +1293,9 @@ fn measure_census() {
         ] {
             let mut m = Model::new();
             let a = plate(&mut m);
-            let b =
-                nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
+            let b = cuboid(&mut m, lo, hi);
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, BoolKind::Fuse, a, b);
-            m.rebuild_adjacency();
             record(&format!("wal {pn} fuse"), &m, &inputs, &out);
         }
     }
@@ -1518,11 +1312,7 @@ fn measure_census() {
     // empty): the silent wrong answer the law closes.
     {
         let boss = |m: &mut Model, base: [f64; 3]| -> (Handle<Solid>, Handle<Solid>) {
-            let plate = nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
+            let plate = cuboid(m, [0.0; 3], [4.0, 4.0, 2.0]);
             let b = cylinder(
                 m,
                 Point3::from_array(base),
@@ -1530,7 +1320,6 @@ fn measure_census() {
                 0.5,
                 4.0,
             );
-            m.rebuild_adjacency();
             (plate, b)
         };
         let rot = |ax: Axis, deg: i128| {
@@ -1578,7 +1367,6 @@ fn measure_census() {
                 let b = xf(&mut m, b, *iso);
                 let inputs = operands(&m, p, b);
                 let out = boolean(&mut m, k, p, b);
-                m.rebuild_adjacency();
                 record(&format!("mot {name} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1590,11 +1378,7 @@ fn measure_census() {
         for (name, axis) in [("h+rx90", Axis::X), ("h+rz90", Axis::Z)] {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
-                let plate = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([0.0; 3]),
-                    Point3::from_array([4.0, 4.0, 2.0]),
-                );
+                let plate = cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
                 let boss = cylinder(
                     &mut m,
                     Point3::from_array([2.0, 2.0, -1.0]),
@@ -1602,7 +1386,6 @@ fn measure_census() {
                     0.5,
                     4.0,
                 );
-                m.rebuild_adjacency();
                 let prefix = Isometry::translation([Rat::new(1, 10).expect("1/10"); 3]);
                 let turn = Isometry::rotation(Rotation {
                     axis,
@@ -1615,7 +1398,6 @@ fn measure_census() {
                 let boss = xf(&mut m, boss, turn);
                 let inputs = operands(&m, plate, boss);
                 let out = boolean(&mut m, k, plate, boss);
-                m.rebuild_adjacency();
                 record(&format!("mot {name} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1637,11 +1419,7 @@ fn measure_census() {
     ] {
         for (kn, k) in KINDS {
             let mut m = Model::new();
-            let a = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
+            let a = cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
             let b = cylinder(
                 &mut m,
                 Point3::from_array(base),
@@ -1649,10 +1427,8 @@ fn measure_census() {
                 0.5,
                 h,
             );
-            m.rebuild_adjacency();
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("cap {pn} {kn}"), &m, &inputs, &out);
         }
     }
@@ -1668,11 +1444,7 @@ fn measure_census() {
     // one bore already puts a cylinder gate on a twice-moved wall.
     {
         let cell = |m: &mut Model| {
-            let plate = nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([20.0, 20.0, 10.0]),
-            );
+            let plate = cuboid(m, [0.0; 3], [20.0, 20.0, 10.0]);
             let bore = cylinder(
                 m,
                 Point3::from_array([6.3, 6.3, -1.0]),
@@ -1680,10 +1452,7 @@ fn measure_census() {
                 2.1,
                 12.0,
             );
-            m.rebuild_adjacency();
-            let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-            m.rebuild_adjacency();
-            out
+            boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0]
         };
         let row = |m: &mut Model, n: usize, step: [f64; 3]| {
             let mut acc = cell(m);
@@ -1697,7 +1466,6 @@ fn measure_census() {
                     ),
                 );
                 acc = boolean(m, BoolKind::Fuse, acc, c).expect("the row fuses")[0];
-                m.rebuild_adjacency();
             }
             acc
         };
@@ -1718,7 +1486,6 @@ fn measure_census() {
                 );
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("xy {an} {kn}"), &m, &inputs, &out);
             }
         }
@@ -1736,7 +1503,6 @@ fn measure_census() {
             );
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("xy three {kn}"), &m, &inputs, &out);
         }
         // **The row that actually needs the world road.** Everything above builds whether or
@@ -1749,19 +1515,9 @@ fn measure_census() {
         // Treat the numbers as pinned — nudging one moves the row out of its population.
         {
             let featured = |m: &mut Model| {
-                let plate = nacre_ops::fixtures::cuboid(
-                    m,
-                    Point3::from_array([0.0; 3]),
-                    Point3::from_array([86.0, 86.0, 71.5]),
-                );
-                let pocket = nacre_ops::fixtures::cuboid(
-                    m,
-                    Point3::from_array([1.0, 38.6, 0.0]),
-                    Point3::from_array([33.2, 58.6, 68.5]),
-                );
-                m.rebuild_adjacency();
+                let plate = cuboid(m, [0.0; 3], [86.0, 86.0, 71.5]);
+                let pocket = cuboid(m, [1.0, 38.6, 0.0], [33.2, 58.6, 68.5]);
                 let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
-                m.rebuild_adjacency();
                 let mut out = out;
                 for (c, r) in [([17.1, 8.9], 2.22), ([46.75, 37.35], 2.34)] {
                     let bore = cylinder(
@@ -1771,9 +1527,7 @@ fn measure_census() {
                         r,
                         143.0,
                     );
-                    m.rebuild_adjacency();
                     out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
-                    m.rebuild_adjacency();
                 }
                 out
             };
@@ -1787,9 +1541,7 @@ fn measure_census() {
                         [86.0, 0.0, 0.0].map(|v: f64| Rat::try_from_f64(v).expect("rational")),
                     ),
                 );
-                let out = boolean(m, BoolKind::Fuse, a, b).expect("the row fuses")[0];
-                m.rebuild_adjacency();
-                out
+                boolean(m, BoolKind::Fuse, a, b).expect("the row fuses")[0]
             };
             for (kn, k) in KINDS {
                 let mut m = Model::new();
@@ -1804,7 +1556,6 @@ fn measure_census() {
                 );
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("xy needsworld {kn}"), &m, &inputs, &out);
             }
         }
@@ -1825,7 +1576,6 @@ fn measure_census() {
             );
             let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
-            m.rebuild_adjacency();
             record(&format!("xy turned {kn}"), &m, &inputs, &out);
         }
     }
@@ -1843,11 +1593,7 @@ fn measure_census() {
     // watching.
     for (kn, k) in KINDS {
         let mut m = Model::new();
-        let block = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 2.0, 2.0]),
-        );
+        let block = cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
         let turned = xf(
             &mut m,
             block,
@@ -1901,10 +1647,8 @@ fn measure_census() {
         .expect("a prism on the datum") else {
             unreachable!("extrude yields Extrude output")
         };
-        m.rebuild_adjacency();
         let inputs = operands(&m, turned, tool);
         let out = boolean(&mut m, k, turned, tool);
-        m.rebuild_adjacency();
         record(&format!("dt {kn}"), &m, &inputs, &out);
     }
 
@@ -2009,15 +1753,9 @@ fn measure_census() {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let a = build(&mut m);
-                let b = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([1.0, 0.0, 1.0]),
-                    Point3::from_array([6.0, 4.0, 5.0]),
-                );
-                m.rebuild_adjacency();
+                let b = cuboid(&mut m, [1.0, 0.0, 1.0], [6.0, 4.0, 5.0]);
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("arcprofile {sn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -2056,11 +1794,7 @@ fn measure_census() {
             xf(m, s, Isometry::translation([r(t[0]), r(t[1]), r(t[2])]))
         }
         fn far_box(m: &mut Model) -> Handle<Solid> {
-            nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([20.0, 20.0, 20.0]),
-                Point3::from_array([21.0, 21.0, 21.0]),
-            )
+            cuboid(m, [20.0, 20.0, 20.0], [21.0, 21.0, 21.0])
         }
         fn circle_prism(m: &mut Model, c: [f64; 2], r: f64, dist: f64) -> Handle<Solid> {
             prism(m, Axis::Z, vec![circle(p2(c[0], c[1]), r)], dist)
@@ -2197,11 +1931,7 @@ fn measure_census() {
                 "rrect-box",
                 Box::new(move |m| {
                     let a = rrect(m);
-                    let b = nacre_ops::fixtures::cuboid(
-                        m,
-                        Point3::from_array([3.0, 2.0, 1.0]),
-                        Point3::from_array([7.0, 6.0, 5.0]),
-                    );
+                    let b = cuboid(m, [3.0, 2.0, 1.0], [7.0, 6.0, 5.0]);
                     (a, b)
                 }),
             ),
@@ -2234,10 +1964,8 @@ fn measure_census() {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let (a, b) = build(&mut m);
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("arcwalls {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -2291,7 +2019,6 @@ fn measure_census() {
         }
         // A fuse inside a fixture: the operand a later row feeds back.
         fn fuse(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
-            m.rebuild_adjacency();
             let out = boolean(m, BoolKind::Fuse, a, b).expect("the fixture's own fuse builds");
             assert_eq!(out.len(), 1, "the fixture's own fuse is one body");
             out[0]
@@ -2428,11 +2155,7 @@ fn measure_census() {
                     let w = wall(m);
                     let g1 = gusset(m, 1.4, 6.0);
                     let a = fuse(m, w, g1);
-                    let b = nacre_ops::fixtures::cuboid(
-                        m,
-                        Point3::from_array([-3.0, 0.0, 6.0]),
-                        Point3::from_array([-1.0, 2.0, 7.0]),
-                    );
+                    let b = cuboid(m, [-3.0, 0.0, 6.0], [-1.0, 2.0, 7.0]);
                     (a, b)
                 }),
             ),
@@ -2452,10 +2175,8 @@ fn measure_census() {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let (a, b) = build(&mut m);
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("fourplane {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -2492,7 +2213,6 @@ fn measure_census() {
             xf(m, s, Isometry::translation([r(t[0]), r(t[1]), r(t[2])]))
         }
         fn fuse(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
-            m.rebuild_adjacency();
             let out = boolean(m, BoolKind::Fuse, a, b).expect("the fixture's own fuse builds");
             assert_eq!(out.len(), 1, "the fixture's own fuse is one body");
             out[0]
@@ -2512,9 +2232,6 @@ fn measure_census() {
                 ],
                 1.0,
             )
-        }
-        fn slab(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-            nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
         }
         // The user's parts: the filleted, bored plate, the slot plate, the gusset at `x`.
         fn plate(m: &mut Model) -> Handle<Solid> {
@@ -2571,17 +2288,17 @@ fn measure_census() {
             // at `y = −3`, short of the plate's bottom wall, so that plane is the only coincidence.
             (
                 "fillet-slab",
-                Box::new(|m| (plate1(m), slab(m, [1.5, -3.0, 1.0], [2.5, 0.0, 2.0]))),
+                Box::new(|m| (plate1(m), cuboid(m, [1.5, -3.0, 1.0], [2.5, 0.0, 2.0]))),
             ),
             // Same plane, the slab far from the plate: the class still cuts the fillet.
             (
                 "fillet-slab far",
-                Box::new(|m| (plate1(m), slab(m, [1.5, 10.0, 1.0], [2.5, 12.0, 2.0]))),
+                Box::new(|m| (plate1(m), cuboid(m, [1.5, 10.0, 1.0], [2.5, 12.0, 2.0]))),
             ),
             // Off the axis by 0.1: an ordinary offset wall — the control.
             (
                 "slab 1.6",
-                Box::new(|m| (plate1(m), slab(m, [1.6, -3.0, 1.0], [2.6, 0.0, 2.0]))),
+                Box::new(|m| (plate1(m), cuboid(m, [1.6, -3.0, 1.0], [2.6, 0.0, 2.0]))),
             ),
             // A slab reaching the plate's bottom wall plane `y = −4`
             // — its face coplanar with the wall, not overlapping it, its bottom edge on the
@@ -2593,11 +2310,11 @@ fn measure_census() {
             // part (the coverage lock holds both rows).
             (
                 "slab wall 1.5",
-                Box::new(|m| (plate1(m), slab(m, [1.5, -4.0, 1.0], [2.5, 0.0, 2.0]))),
+                Box::new(|m| (plate1(m), cuboid(m, [1.5, -4.0, 1.0], [2.5, 0.0, 2.0]))),
             ),
             (
                 "slab wall 1.6",
-                Box::new(|m| (plate1(m), slab(m, [1.6, -4.0, 1.0], [2.6, 0.0, 2.0]))),
+                Box::new(|m| (plate1(m), cuboid(m, [1.6, -4.0, 1.0], [2.6, 0.0, 2.0]))),
             ),
             // The user's fold at the script's own gusset position: the third fuse of the script
             // (plate + slot plate, then the gusset at `1.5`). The fourth (`−2.5`) is the ops lock's.
@@ -2615,10 +2332,8 @@ fn measure_census() {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let (a, b) = build(&mut m);
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("tangentline {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -2715,9 +2430,6 @@ fn measure_census() {
             );
             shift(m, s, [x, -20.0, 0.0])
         }
-        fn box_at(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-            nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
-        }
         type Pair = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>)>;
         let pairs: Vec<(&str, Pair)> = vec![
             // Standing on the plate's top face.
@@ -2726,7 +2438,7 @@ fn measure_census() {
                 Box::new(|m| {
                     (
                         plate(m, 4, 4),
-                        box_at(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
+                        cuboid(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
                     )
                 }),
             ),
@@ -2736,7 +2448,7 @@ fn measure_census() {
                 Box::new(|m| {
                     (
                         plate(m, 4, 4),
-                        box_at(m, [10.0, -20.0, 6.0], [25.0, 20.0, 62.0]),
+                        cuboid(m, [10.0, -20.0, 6.0], [25.0, 20.0, 62.0]),
                     )
                 }),
             ),
@@ -2747,7 +2459,7 @@ fn measure_census() {
                 Box::new(|m| {
                     (
                         plate(m, 4, 4),
-                        box_at(m, [200.0, -5.0, -5.0], [210.0, 5.0, 5.0]),
+                        cuboid(m, [200.0, -5.0, -5.0], [210.0, 5.0, 5.0]),
                     )
                 }),
             ),
@@ -2757,7 +2469,7 @@ fn measure_census() {
                 Box::new(|m| {
                     (
                         plate(m, 3, 4),
-                        box_at(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
+                        cuboid(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
                     )
                 }),
             ),
@@ -2767,7 +2479,7 @@ fn measure_census() {
                 Box::new(|m| {
                     (
                         plate(m, 4, 0),
-                        box_at(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
+                        cuboid(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
                     )
                 }),
             ),
@@ -2781,10 +2493,8 @@ fn measure_census() {
                 Box::new(|m| {
                     let p1 = plate(m, 4, 4);
                     let r1 = rib(m, 17.5);
-                    m.rebuild_adjacency();
                     let ab = boolean(m, BoolKind::Fuse, p1, r1).expect("plate + rib")[0];
                     let r2 = rib(m, -17.5);
-                    m.rebuild_adjacency();
                     let abc = boolean(m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
                     let c = prism(m, Axis::Z, vec![circle(p2(0.0, 0.0), 10.0)], 90.0);
                     let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
@@ -2859,10 +2569,8 @@ fn measure_census() {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let (a, b) = build(&mut m);
-                m.rebuild_adjacency();
                 let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
-                m.rebuild_adjacency();
                 record(&format!("roundplate {pn} {kn}"), &m, &inputs, &out);
             }
         }
@@ -2882,38 +2590,18 @@ fn measure_census() {
                 1.0,
                 4.0,
             );
-            m.rebuild_adjacency();
-            let lo = nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([0.5, -2.0, -1.0]),
-                Point3::from_array([3.0, 2.0, 0.5]),
-            );
-            m.rebuild_adjacency();
+            let lo = cuboid(m, [0.5, -2.0, -1.0], [3.0, 2.0, 0.5]);
             let a = boolean(m, k, c, lo).expect("the lower bite")[0];
-            m.rebuild_adjacency();
-            let hi = nacre_ops::fixtures::cuboid(
-                m,
-                Point3::from_array([0.5, -2.0, 3.5]),
-                Point3::from_array([3.0, 2.0, 5.0]),
-            );
-            m.rebuild_adjacency();
-            let out = boolean(m, k, a, hi).expect("the upper bite")[0];
-            m.rebuild_adjacency();
-            out
+            let hi = cuboid(m, [0.5, -2.0, 3.5], [3.0, 2.0, 5.0]);
+            boolean(m, k, a, hi).expect("the upper bite")[0]
         };
         for (bn, built) in [("fused", BoolKind::Fuse), ("cut", BoolKind::Cut)] {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let band = bitten(&mut m, built);
-                let slab = nacre_ops::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([-0.5, -2.0, 1.5]),
-                    Point3::from_array([3.0, 2.0, 2.5]),
-                );
-                m.rebuild_adjacency();
+                let slab = cuboid(&mut m, [-0.5, -2.0, 1.5], [3.0, 2.0, 2.5]);
                 let inputs = operands(&m, band, slab);
                 let out = boolean(&mut m, k, band, slab);
-                m.rebuild_adjacency();
                 record(&format!("bothrims {bn} slab {kn}"), &m, &inputs, &out);
             }
         }
@@ -3004,7 +2692,6 @@ fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> H
     .expect("tilted extrude") else {
         unreachable!("extrude yields Extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -3030,7 +2717,6 @@ fn tri_prism(m: &mut Model, tri: [[f64; 2]; 3], z: f64, height: f64) -> Handle<S
     .expect("extrude") else {
         unreachable!("extrude yields Extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -3058,6 +2744,5 @@ fn ex(m: &mut Model, z: f64, lo: [f64; 2], hi: [f64; 2], dist: f64) -> Handle<So
     .expect("extrude") else {
         unreachable!("extrude yields Extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }

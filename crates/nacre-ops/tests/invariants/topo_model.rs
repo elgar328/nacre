@@ -3,19 +3,13 @@
 //! `reversed_shell`, seed interning and the live set's order. They live here because a solid
 //! is needed and topo's own tests cannot build one through the operations.
 
-use nacre_math::Point3;
 use nacre_ops::fixtures::cuboid;
 use nacre_topo::{Adjacency, Model, Solid};
 
-/// The unit box, adjacency built.
+/// The unit box.
 fn unit_cube() -> Model {
     let mut m = Model::new();
-    cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    m.rebuild_adjacency();
+    cuboid(&mut m, [0.0; 3], [1.0; 3]);
     m
 }
 
@@ -33,11 +27,7 @@ fn a_foreign_handle_cannot_read_a_cache() {
     let mut a = Model::new();
     let mut b = Model::new();
     for m in [&mut a, &mut b] {
-        cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0; 3]),
-        );
+        cuboid(m, [0.0; 3], [1.0; 3]);
     }
     let surf = b.surface_handle_at(4).expect("b has surfaces");
     let vert = b.vertex_handle_at(3).expect("b has vertices");
@@ -115,11 +105,7 @@ fn the_write_doors_refuse_what_their_invariants_forbid() {
     // A bigger model mints handles this one does not hold. It is the only way to name an
     // out-of-bounds cell: `handle_at` answers `None` past the end, by design.
     let mut big = cube();
-    cuboid(
-        &mut big,
-        Point3::from_array([2.0, 2.0, 2.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
+    cuboid(&mut big, [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]);
     let stranger_surface = big
         .surface_handle_at((big.surface_count() - 1) as u32)
         .expect("the bigger model has surfaces");
@@ -259,12 +245,7 @@ fn reversed_shell_is_a_valid_manifold() {
 #[test]
 fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
     let mut m = Model::new();
-    let s = cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let s = cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     let face_surfaces: Vec<_> = m
         .shell(m.solid(s).outer)
         .faces
@@ -299,21 +280,9 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
 #[test]
 fn supersede_live_preserves_the_order_of_the_survivors() {
     let mut m = Model::new();
-    let a = cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = cuboid(
-        &mut m,
-        Point3::from_array([10.0; 3]),
-        Point3::from_array([11.0; 3]),
-    );
-    let c = cuboid(
-        &mut m,
-        Point3::from_array([20.0; 3]),
-        Point3::from_array([21.0; 3]),
-    );
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [10.0; 3], [11.0; 3]);
+    let c = cuboid(&mut m, [20.0; 3], [21.0; 3]);
     assert_eq!(
         m.live_solids(),
         [a, b, c].as_slice(),
@@ -336,16 +305,8 @@ fn supersede_live_preserves_the_order_of_the_survivors() {
 #[test]
 fn restore_live_puts_the_snapshot_back() {
     let mut m = Model::new();
-    let a = cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = cuboid(
-        &mut m,
-        Point3::from_array([10.0; 3]),
-        Point3::from_array([11.0; 3]),
-    );
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [10.0; 3], [11.0; 3]);
     let snapshot = m.live_solids().to_vec();
 
     m.supersede_live(&[a]);

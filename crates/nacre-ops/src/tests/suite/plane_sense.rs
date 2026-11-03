@@ -248,17 +248,8 @@ fn every_plane_faces_the_way_its_truth_says() {
     // axes and fused — whose witness is its judged frame's probes, not its own points: still, moved
     // and mirrored.
     let straddling = |m: &mut Model| -> Handle<Solid> {
-        let a = crate::fixtures::cuboid(
-            m,
-            nacre_math::Point3::from_array([0.0, 0.0, 0.0]),
-            nacre_math::Point3::from_array([2.0, 2.0, 2.0]),
-        );
-        let b = crate::fixtures::cuboid(
-            m,
-            nacre_math::Point3::from_array([1.0, 1.0, 1.0]),
-            nacre_math::Point3::from_array([3.0, 3.0, 3.0]),
-        );
-        m.rebuild_adjacency();
+        let a = crate::fixtures::cuboid(m, [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
+        let b = crate::fixtures::cuboid(m, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
         let turned = |deg: i128, axis| {
             Isometry::rotation(Rotation {
                 axis,
@@ -278,7 +269,6 @@ fn every_plane_faces_the_way_its_truth_says() {
         ) else {
             panic!("the fuse")
         };
-        m.rebuild_adjacency();
         let straddler = m
             .reachable_from(&solids)
             .vertices

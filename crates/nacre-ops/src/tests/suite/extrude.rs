@@ -87,11 +87,7 @@ fn concave_l_profile_is_valid() {
 #[test]
 fn outward_normals_agree_with_their_orientation() {
     let mut cube = Model::new();
-    let c = crate::fixtures::cuboid(
-        &mut cube,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
+    let c = crate::fixtures::cuboid(&mut cube, [0.0; 3], [1.0; 3]);
     let (ml, sl) = l_prism();
     let (mu, su) = u_prism();
     let (mr, sr) = rotated_l_prism();
@@ -119,7 +115,6 @@ fn outward_normals_agree_with_their_orientation() {
         ) else {
             panic!("the three-quarter disk extrudes")
         };
-        m.rebuild_adjacency();
         (m, solid)
     };
     let (mq, sq) = sector(false);
@@ -433,7 +428,6 @@ proptest! {
         else { unreachable!() };
         // An honest reject is acceptable; a panic is not (and would fail the test).
         if let Ok(f) = crate::fixtures::pocket(&mut m, faces[1], lid_square(), 0.5) {
-            m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
             let vol = nacre_props::mass_props(&m, f.solid()).unwrap().volume;
             prop_assert!((vol - (8.0 - 0.16 * 0.5)).abs() <= 1e-9 * 8.0, "volume {}", vol);
@@ -464,7 +458,6 @@ proptest! {
             p2(cx - h, cy - h), p2(cx + h, cy - h), p2(cx + h, cy + h), p2(cx - h, cy + h),
         ]).unwrap();
         let s = crate::fixtures::pad(&mut m, faces[1], boss, dist).unwrap().solid();
-        m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
         // The volume is the same wherever the boss touches; the hole is what says it is inside.
         let holes: Vec<usize> = m.shell(m.solid(s).outer).faces.iter()
@@ -498,7 +491,6 @@ proptest! {
             p2(cx - h, cy - h), p2(cx + h, cy - h), p2(cx + h, cy + h), p2(cx - h, cy + h),
         ]).unwrap();
         let s = crate::fixtures::pocket(&mut m, faces[1], hole, dist).unwrap().solid();
-        m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, s).unwrap().volume;
         let want = sx * sy * sz - 4.0 * h * h * dist;

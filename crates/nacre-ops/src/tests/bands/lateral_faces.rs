@@ -7,11 +7,7 @@ use super::*;
 /// disjoint bands on one lateral surface. Returns the model and that solid.
 fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([10.0; 3]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [10.0; 3]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([5.0, 5.0, -1.0]),
@@ -21,28 +17,16 @@ fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
         12.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // Walls 3 from the axis (r = 2), so the wall rule is not what this measures.
-    let mid = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([cut_x0, cut_x0, 4.0]),
-        Point3::from_array([cut_x1, cut_x1, 6.0]),
-    );
-    m.rebuild_adjacency();
+    let mid = crate::fixtures::cuboid(&mut m, [cut_x0, cut_x0, 4.0], [cut_x1, cut_x1, 6.0]);
     let out = crate::boolean(&mut m, BoolKind::Cut, bored, mid).expect("the middle cut");
     (m, out[0])
 }
 
 /// The lid tool the locks below cut with.
 fn add_lid(m: &mut Model) -> Handle<Solid> {
-    let lid = crate::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0, 0.0, 8.0]),
-        Point3::from_array([10.0, 10.0, 12.0]),
-    );
-    m.rebuild_adjacency();
-    lid
+    crate::fixtures::cuboid(m, [0.0, 0.0, 8.0], [10.0, 10.0, 12.0])
 }
 
 /// **Making it.** The split bore is an ordinary, correct solid, and this is its own test: if
@@ -72,12 +56,7 @@ fn a_bore_cut_across_the_middle_leaves_two_bands_on_one_surface() {
 #[test]
 fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let lid = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 8.0]),
-        Point3::from_array([10.0, 10.0, 12.0]),
-    );
-    m.rebuild_adjacency();
+    let lid = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 8.0], [10.0, 10.0, 12.0]);
     let out = crate::boolean(&mut m, BoolKind::Cut, s, lid).expect("the lid cut");
     assert_eq!(out.len(), 1);
     assert!(
@@ -117,12 +96,7 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
 fn a_middle_cut_that_misses_the_bore_leaves_one_band() {
     let (mut m, s) = plate_with_a_split_bore(0.0, 2.0);
     assert_eq!(lateral_face_counts(&m, s), vec![1], "the wall is untouched");
-    let lid = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 8.0]),
-        Point3::from_array([10.0, 10.0, 12.0]),
-    );
-    m.rebuild_adjacency();
+    let lid = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 8.0], [10.0, 10.0, 12.0]);
     let out = crate::boolean(&mut m, BoolKind::Cut, s, lid).expect("the lid cut");
     let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
     let want = 1000.0 - std::f64::consts::PI * 40.0 - 8.0 - (200.0 - std::f64::consts::PI * 8.0);
@@ -224,12 +198,7 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
 #[test]
 fn a_wall_face_in_the_gap_between_two_bands_clears() {
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let tool = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 4.5]),
-        Point3::from_array([10.0, 6.0, 5.5]),
-    );
-    m.rebuild_adjacency();
+    let tool = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 4.5], [10.0, 6.0, 5.5]);
     let out = crate::boolean(&mut m, BoolKind::Cut, s, tool).expect("the wall clears in t");
     assert_eq!(out.len(), 1, "one body");
     assert!(
@@ -266,22 +235,12 @@ fn either_axis_clears_the_footprint_and_neither_does_not() {
     //     by more than `r`, or *it* becomes the face under test — at `x = 3` it is exactly
     //     tangent, and this arm would then measure the tangency instead of the clearance.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let across = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 3.0]),
-        Point3::from_array([2.5, 6.0, 7.0]),
-    );
-    m.rebuild_adjacency();
+    let across = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 3.0], [2.5, 6.0, 7.0]);
     crate::boolean(&mut m, BoolKind::Cut, s, across).expect("clear across the strip");
 
     // (b) Along only: the face spans the full width, so only the gap saves it.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let along = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 4.5]),
-        Point3::from_array([10.0, 6.0, 5.5]),
-    );
-    m.rebuild_adjacency();
+    let along = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 4.5], [10.0, 6.0, 5.5]);
     crate::boolean(&mut m, BoolKind::Cut, s, along).expect("clear along the axis");
 
     // (c) Neither: full width *and* straddling both bands — a genuine crossing of both
@@ -289,14 +248,8 @@ fn either_axis_clears_the_footprint_and_neither_does_not() {
     // records: two ruling pieces per band at `x = 5 ± √3`, the chord on the caps and on
     // the middle cut's ceiling and floor. One body, the exact volume.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let neither = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 3.0]),
-        Point3::from_array([10.0, 6.0, 7.0]),
-    );
-    m.rebuild_adjacency();
+    let neither = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 3.0], [10.0, 6.0, 7.0]);
     let out = crate::boolean(&mut m, BoolKind::Cut, s, neither).expect("crosses both, builds");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 1);
     assert!(nacre_validate::validate(&m).is_empty());
     let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();

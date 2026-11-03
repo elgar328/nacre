@@ -44,7 +44,6 @@ fn rotated_boolean_matches_occt(
                 panic!("expected Transform output");
             };
             s = solid;
-            m.rebuild_adjacency();
         }
         s
     };
@@ -79,16 +78,8 @@ fn rotated_boolean_matches_occt(
 fn rotated_overlap_cut_matches_occt() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5; 3]),
-        Point3::from_array([1.5; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.5; 3], [1.5; 3]);
     let isos = [rot_about(Axis::Z, 30), rot_about(Axis::X, 30)];
     rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Cut, &isos);
 }
@@ -98,16 +89,8 @@ fn rotated_overlap_cut_matches_occt() {
 fn rotated_overlap_fuse_matches_occt() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5; 3]),
-        Point3::from_array([1.5; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.5; 3], [1.5; 3]);
     rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Fuse, &[rot_about(Axis::Z, 30)]);
 }
 
@@ -116,16 +99,8 @@ fn rotated_overlap_fuse_matches_occt() {
 fn rotated_overlap_common_matches_occt() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5; 3]),
-        Point3::from_array([1.5; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.5; 3], [1.5; 3]);
     rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Common, &[rot_about(Axis::Z, 30)]);
 }
 
@@ -138,16 +113,8 @@ fn rotated_overlap_common_matches_occt() {
 fn rotated_sever_cut_matches_occt() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let cube = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let bar = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Point3::from_array([2.0, 2.0, 4.0]),
-    );
+    let cube = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let bar = nacre_ops::fixtures::cuboid(&mut m, [1.0, 1.0, -1.0], [2.0, 2.0, 4.0]);
     let isos = [rot_about(Axis::Z, 30), rot_about(Axis::X, 30)];
     let solids = rotated_boolean_matches_occt(&mut m, bar, cube, BoolKind::Cut, &isos);
     assert_eq!(solids.len(), 2, "rotated sever yields two solids");
@@ -160,16 +127,8 @@ fn rotated_sever_cut_matches_occt() {
 fn rotated_containment_cut_makes_cavity_matches_occt() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let solids =
         rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Cut, &[rot_about(Axis::Z, 30)]);
     assert_eq!(solids.len(), 1, "one solid");
@@ -199,11 +158,7 @@ fn rerotated_solid_props_match_occt() {
         })
     };
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     let step = |m: &mut Model, s, iso| {
         let out = apply(
             m,
@@ -271,11 +226,7 @@ fn corner_flush_common_matches_occt() {
     )
     .unwrap();
     let l = *m.live_solids().first().unwrap();
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.5, 1.5, 0.5]),
-    );
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.5, 1.5, 0.5]);
     let occt = occt_boolean_of(&m, OcctBool::Common, l, b).unwrap();
     let r = boolean_one(&mut m, BoolKind::Common, l, b).unwrap();
     let nacre = mass_props(&m, r).unwrap();
@@ -300,16 +251,8 @@ fn corner_flush_common_matches_occt() {
 fn common_result_volume_matches_occt() {
     use nacre_ops::BoolKind;
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 0.5]),
-        Point3::from_array([1.5, 1.5, 1.5]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]);
     // OCCT ground truth from the inputs (before nacre supersedes them).
     let occt = occt_boolean_of(&m, OcctBool::Common, a, b).unwrap();
     let r = boolean_one(&mut m, BoolKind::Common, a, b).unwrap();
@@ -329,16 +272,8 @@ fn fuse_cut_result_volume_matches_occt() {
     use nacre_ops::BoolKind;
     let boxes = || {
         let mut m = Model::new();
-        let a = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let b = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, 0.5, 0.5]),
-            Point3::from_array([1.5, 1.5, 1.5]),
-        );
+        let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+        let b = nacre_ops::fixtures::cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]);
         (m, a, b)
     };
     for kind in [BoolKind::Fuse, BoolKind::Cut] {
@@ -368,16 +303,8 @@ fn containment_cut_cavity_matches_occt() {
     // (an internal void). OCCT diffs the two cavity-free inputs; nacre builds
     // the cavity independently, so the volume agreement is non-self-referential.
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [3.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0; 3], [2.0; 3]);
     // Capture OCCT's answer before the boolean supersedes the inputs.
     let occt = occt_boolean_of(&m, OcctBool::Cut, a, b).unwrap();
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
@@ -449,11 +376,7 @@ fn nonconvex_containment_cut_matches_occt() {
     .unwrap() else {
         unreachable!("extrude yields Extrude output");
     };
-    let bx = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.1; 3]),
-        Point3::from_array([0.9; 3]),
-    );
+    let bx = nacre_ops::fixtures::cuboid(&mut m, [0.1; 3], [0.9; 3]);
     let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
     let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
     let nacre = mass_props(&m, r).unwrap();

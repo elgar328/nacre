@@ -52,7 +52,6 @@ fn extrude_on(m: &mut Model, frame: SketchFrame, profile: Profile2d, h: f64) -> 
     .expect("extrude") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -120,12 +119,7 @@ fn base_frame(m: &mut Model, tilted: bool) -> (SketchFrame, [[f64; 3]; 3]) {
 /// short of that it is an ordinary enclosed cavity.
 fn cube_and_wedge(tip_x: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     let b = prism(&mut m, &[[tip_x, 0.5], [0.1, 0.1], [0.1, 0.9]], 0.6);
     let b = xf(
         &mut m,
@@ -185,12 +179,7 @@ fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
 #[test]
 fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     // Not lifted, and as tall as the cube: the cut goes clean through.
     let b = prism(&mut m, &[[1.0, 0.5], [0.1, 0.1], [0.1, 0.9]], 1.0);
     let live = m.live_solids().to_vec();
@@ -213,15 +202,9 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
 #[test]
 fn a_through_cut_that_stops_short_of_the_wall_builds() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     let b = prism(&mut m, &[[0.999, 0.5], [0.1, 0.1], [0.1, 0.9]], 1.0);
     let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the nudged through cut builds");
-    m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert_eq!(
         m.solid(got[0]).cavities.len(),
@@ -256,7 +239,6 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
     let (mut m, a, b) = cube_and_wedge(0.999);
     let got =
         boolean(&mut m, BoolKind::Cut, a, b).expect("the cut with the tip off the wall builds");
-    m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert_eq!(m.solid(got[0]).cavities.len(), 1, "an enclosed cavity");
     assert!(nacre_props::mass_props(&m, got[0]).expect("props").volume > 0.0);
@@ -274,20 +256,10 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
 #[test]
 fn a_contact_between_two_bodies_keeps_its_own_name() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0, 1.0, 0.0], [2.0, 2.0, 1.0]);
     let out = boolean(&mut m, BoolKind::Fuse, a, b)
         .expect("two bodies meeting each other are not one surface touching itself");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2);
     assert!(nacre_validate::validate(&m).is_empty());
 }
@@ -350,7 +322,6 @@ fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
                 let (x, y) = if swapped { (b, a) } else { (a, b) };
                 let got =
                     boolean(&mut m, BoolKind::Fuse, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
-                m.rebuild_adjacency();
                 assert_eq!(got.len(), 2, "{at}: two bodies");
                 assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                 let v: f64 = got
@@ -501,7 +472,6 @@ fn a_body_standing_on_its_own_notched_block_at_a_corner_is_refused() {
             .remove(0);
             let cutter = extrude_on(&mut m, floor, disk, 7.0);
             let a = boolean(&mut m, BoolKind::Cut, block, cutter).expect("the notch")[0];
-            m.rebuild_adjacency();
             let f = slanted(&mut m);
             let b = prism_on(&mut m, f, top, 1.0);
             let (x, y) = if swapped { (b, a) } else { (a, b) };
@@ -514,7 +484,6 @@ fn a_body_standing_on_its_own_notched_block_at_a_corner_is_refused() {
                     }),
                 ) => {}
                 (false, Ok(solids)) => {
-                    m.rebuild_adjacency();
                     assert_eq!(solids.len(), 2, "{at}: two bodies");
                     assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                     let vol: f64 = solids
@@ -570,7 +539,6 @@ fn a_bar_resting_on_its_own_notched_block_is_refused() {
                 .remove(0);
                 let cutter = extrude_on(&mut m, floor, disk, 7.0);
                 let a = boolean(&mut m, BoolKind::Cut, block, cutter).expect("the notch")[0];
-                m.rebuild_adjacency();
                 // The bar's frame, tipped about the base's `u` towards its normal.
                 let tip: [f64; 3] = core::array::from_fn(|k| 0.8 * v[k] + 0.6 * n[k]);
                 let f = frame_on(&mut m, u, tip);
@@ -586,7 +554,6 @@ fn a_bar_resting_on_its_own_notched_block_is_refused() {
                         }),
                     ) => {}
                     (false, Ok(solids)) => {
-                        m.rebuild_adjacency();
                         assert_eq!(solids.len(), 2, "{at}: two bodies");
                         assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                         let vol: f64 = solids
@@ -640,7 +607,6 @@ fn a_turned_prism_standing_on_its_own_bored_block_is_refused() {
             .remove(0);
             let cutter = extrude_on(&mut m, floor, disk, 7.0);
             let a = boolean(&mut m, BoolKind::Cut, block, cutter).expect("the bore")[0];
-            m.rebuild_adjacency();
             let f = slanted(&mut m);
             let b = prism_on(&mut m, f, top, 1.0);
             let b = xf(&mut m, b, crate::common::rot_iso(Axis::Z, 30));
@@ -654,7 +620,6 @@ fn a_turned_prism_standing_on_its_own_bored_block_is_refused() {
                     }),
                 ) => {}
                 (false, Ok(solids)) => {
-                    m.rebuild_adjacency();
                     assert_eq!(solids.len(), 2, "{at}: two bodies");
                     assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                     let vol: f64 = solids
@@ -703,13 +668,11 @@ fn a_pin_flush_in_a_round_hole_is_one_body() {
                 let floor = offset_of(&mut m, base, 0.5);
                 let hole = extrude_on(&mut m, floor, crate::common::unit_disk(), 1.0);
                 let cup = boolean(&mut m, BoolKind::Cut, plate, hole).expect("the cup")[0];
-                m.rebuild_adjacency();
                 let floor = offset_of(&mut m, base, 0.5);
                 let b = prism_on(&mut m, floor, top, 0.5);
                 let (x, y) = if swapped { (b, cup) } else { (cup, b) };
                 let got =
                     boolean(&mut m, BoolKind::Fuse, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
-                m.rebuild_adjacency();
                 assert_eq!(got.len(), 1, "{at}: one body");
                 assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                 let v = nacre_props::mass_props(&m, got[0]).expect("props").volume;
@@ -738,12 +701,7 @@ fn a_pin_flush_in_a_round_hole_is_one_body() {
 #[test]
 fn an_area_contact_opens_the_wall_rather_than_touching_it() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
     // The right edge of this quadrilateral lies on x = 1, the cube's wall, over y in [0.4, 0.6].
     let b = prism(
         &mut m,
@@ -756,7 +714,6 @@ fn an_area_contact_opens_the_wall_rather_than_touching_it() {
         Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::new(2, 10).unwrap()]),
     );
     let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the flat-tipped cut builds");
-    m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert_eq!(
         m.solid(got[0]).cavities.len(),
@@ -776,17 +733,8 @@ fn an_area_contact_opens_the_wall_rather_than_touching_it() {
 #[test]
 fn an_ordinary_fuse_is_untouched() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, 1.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
     let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
     assert_eq!(got.len(), 1);
     let v = nacre_props::mass_props(&m, got[0]).expect("props").volume;
@@ -827,7 +775,6 @@ fn a_contact_on_a_holes_wall_is_seen() {
     .expect("extrude") else {
         panic!()
     };
-    m.rebuild_adjacency();
     // A wedge in the plate's material whose tip lands on the hole's wall x = 1.
     let b = prism(&mut m, &[[1.0, 1.5], [0.2, 1.1], [0.2, 1.9]], 1.0);
     assert!(
@@ -884,9 +831,7 @@ fn trimmed_block(m: &mut Model, base: SketchFrame, trim: Trim) -> Handle<Solid> 
             .expect("a disk")
             .remove(0);
             let cutter = extrude_on(m, floor, disk, depth + 1.0);
-            let got = boolean(m, BoolKind::Cut, block, cutter).expect("the notch")[0];
-            m.rebuild_adjacency();
-            got
+            boolean(m, BoolKind::Cut, block, cutter).expect("the notch")[0]
         }
         Trim::Fillet { top } => {
             use crate::stated::{arc_turns, line, stated};
@@ -919,7 +864,6 @@ fn with_steps(
     for &[[x0, y0], [x1, y1]] in rects {
         let step = prism_on(m, base, &[[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 3.0);
         body = boolean(m, BoolKind::Fuse, body, step).expect("a step")[0];
-        m.rebuild_adjacency();
     }
     body
 }
@@ -939,7 +883,6 @@ fn on_a_plate(
         2.0,
     );
     let body = boolean(m, BoolKind::Fuse, block, plate).expect("the plate")[0];
-    m.rebuild_adjacency();
     (below, body)
 }
 
@@ -997,7 +940,6 @@ fn expect_fuse(
     let got = boolean(m, BoolKind::Fuse, a, b);
     match (want, got) {
         (Want::Built(n, vol), Ok(solids)) => {
-            m.rebuild_adjacency();
             assert_eq!(solids.len(), n, "{at}");
             assert!(nacre_validate::validate(m).is_empty(), "{at}");
             let got: f64 = solids
@@ -1228,9 +1170,7 @@ fn an_edge_at_a_grooves_mouth_builds() {
                         let level = offset_of(&mut m, base, -3.5);
                         let reach = [[-5.3, -13.0], [-4.7, -13.0], [-4.7, -11.0], [-5.3, -11.0]];
                         let arm = prism_on(&mut m, level, &reach, 0.5);
-                        let got = boolean(&mut m, BoolKind::Fuse, column, arm).expect("bracket")[0];
-                        m.rebuild_adjacency();
-                        got
+                        boolean(&mut m, BoolKind::Fuse, column, arm).expect("bracket")[0]
                     }
                     "flush with the top" => prism_on(&mut m, below, &mouth, 8.0),
                     _ => unreachable!("a row with no column"),
@@ -1329,11 +1269,9 @@ fn a_body_touching_its_own_cap_rim_at_a_point_is_refused() {
                     .remove(0);
                     let boss = extrude_on(&mut m, base, disk, 4.0);
                     let mut a = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
-                    m.rebuild_adjacency();
                     if let Some(half) = trim {
                         let cutter = prism_on(&mut m, base, &half, 5.0);
                         a = boolean(&mut m, BoolKind::Cut, a, cutter).expect("the D")[0];
-                        m.rebuild_adjacency();
                     }
                     let level = offset_of(&mut m, base, 4.0 + lift);
                     let floor_of_arm = prism_on(&mut m, level, arm, 2.0);
@@ -1341,7 +1279,6 @@ fn a_body_touching_its_own_cap_rim_at_a_point_is_refused() {
                     let b = boolean(&mut m, BoolKind::Fuse, floor_of_arm, post).expect("the arm");
                     assert_eq!(b.len(), 1, "{at}: the arm is one body");
                     let b = b[0];
-                    m.rebuild_adjacency();
                     let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
                     let want = vol(&m, a) + vol(&m, b);
                     let (x, y) = if swapped { (b, a) } else { (a, b) };
@@ -1372,7 +1309,6 @@ fn a_body_touching_its_own_cap_rim_at_a_point_is_refused() {
                             }
                         }
                         (false, Ok(solids)) => {
-                            m.rebuild_adjacency();
                             assert_eq!(solids.len(), 1, "{at}: one body");
                             assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                             let got: f64 = solids.iter().map(|&s| vol(&m, s)).sum();
@@ -1416,15 +1352,12 @@ fn a_body_whose_vertex_on_a_cylinder_surface_touches_its_own_face_is_refused() {
                 .remove(0);
                 let boss = extrude_on(&mut m, world, disk, 3.0);
                 let mut a = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
-                m.rebuild_adjacency();
                 let level = offset_of(&mut m, world, 10.0);
                 let slab = prism_on(&mut m, level, &rect(-6.0, -2.0, 8.0, 8.0), 1.0);
                 let post = prism_on(&mut m, world, &rect(7.0, 7.0, 8.0, 8.0), 10.0);
                 let slab = boolean(&mut m, BoolKind::Fuse, slab, post).expect("the slab");
                 assert_eq!(slab.len(), 1, "{at}: the slab on its post is one body");
-                m.rebuild_adjacency();
                 a = boolean(&mut m, BoolKind::Fuse, a, slab[0]).expect("the slab")[0];
-                m.rebuild_adjacency();
                 // The pyramid: two wedges' common part, apex `(ax, ay, 10 − drop)`, base 3 below.
                 let (top, bot) = (10.0 - drop, 7.0 - drop);
                 let yz = frame_on(&mut m, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
@@ -1447,12 +1380,10 @@ fn a_body_whose_vertex_on_a_cylinder_surface_touches_its_own_face_is_refused() {
                 let pyramid =
                     boolean(&mut m, BoolKind::Common, along_x, along_y).expect("the pyramid");
                 assert_eq!(pyramid.len(), 1, "{at}: one pyramid");
-                m.rebuild_adjacency();
                 let column = prism_on(&mut m, world, &rect(ax - 1.0, ay + 1.0, ax, ay + 2.0), bot);
                 let b = boolean(&mut m, BoolKind::Fuse, pyramid[0], column).expect("the column");
                 assert_eq!(b.len(), 1, "{at}: the pyramid on its column is one body");
                 let b = b[0];
-                m.rebuild_adjacency();
                 let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
                 let want = vol(&m, a) + vol(&m, b);
                 let (x, y) = if swapped { (b, a) } else { (a, b) };
@@ -1473,7 +1404,6 @@ fn a_body_whose_vertex_on_a_cylinder_surface_touches_its_own_face_is_refused() {
                         );
                     }
                     (false, Ok(solids)) => {
-                        m.rebuild_adjacency();
                         assert_eq!(solids.len(), 1, "{at}: one body");
                         assert!(nacre_validate::validate(&m).is_empty(), "{at}");
                         let got: f64 = solids.iter().map(|&s| vol(&m, s)).sum();

@@ -38,8 +38,8 @@ fn grid_box(m: &mut Model, lo: [i64; 3], ext: [i64; 3]) -> Handle<Solid> {
     let f = |v: i64| v as f64;
     nacre_ops::fixtures::cuboid(
         m,
-        Point3::from_array([f(lo[0]), f(lo[1]), f(lo[2])]),
-        Point3::from_array([f(lo[0] + ext[0]), f(lo[1] + ext[1]), f(lo[2] + ext[2])]),
+        [f(lo[0]), f(lo[1]), f(lo[2])],
+        [f(lo[0] + ext[0]), f(lo[1] + ext[1]), f(lo[2] + ext[2])],
     )
 }
 
@@ -69,7 +69,6 @@ fn total_vol(m: &Model, solids: &[Handle<Solid>]) -> f64 {
 fn run(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Option<f64> {
     match boolean(m, kind, a, b) {
         Ok(solids) => {
-            m.rebuild_adjacency();
             let issues = nacre_validate::validate(m);
             assert!(
                 issues.is_empty(),

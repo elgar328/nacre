@@ -38,7 +38,6 @@ fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
     .unwrap() else {
         unreachable!("Extrude yields an Extrude output")
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -54,19 +53,9 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
     let swept_faces = m.shell(m.solid(swept).outer).faces.len();
 
     let mut m2 = Model::new();
-    let block = nacre_ops::fixtures::cuboid(
-        &mut m2,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 1.0]),
-    );
-    let bar = nacre_ops::fixtures::cuboid(
-        &mut m2,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Point3::from_array([3.0, 3.0, 2.0]),
-    );
-    m2.rebuild_adjacency();
+    let block = nacre_ops::fixtures::cuboid(&mut m2, [0.0, 0.0, 0.0], [4.0, 4.0, 1.0]);
+    let bar = nacre_ops::fixtures::cuboid(&mut m2, [1.0, 1.0, -1.0], [3.0, 3.0, 2.0]);
     let cut = boolean_one(&mut m2, BoolKind::Cut, block, bar).unwrap();
-    m2.rebuild_adjacency();
     let cut_props = nacre_props::mass_props(&m2, cut).unwrap();
     let cut_faces = m2.shell(m2.solid(cut).outer).faces.len();
 
@@ -182,15 +171,9 @@ fn a_profile_with_two_holes() {
 fn a_swept_hole_is_a_boolean_operand() {
     let mut m = Model::new();
     let d = extrude(&mut m, donut_profile(), 1.0);
-    let knife = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 0.5]),
-        Point3::from_array([5.0, 5.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let knife = nacre_ops::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.5], [5.0, 5.0, 2.0]);
 
     let r = boolean_one(&mut m, BoolKind::Cut, d, knife).unwrap();
-    m.rebuild_adjacency();
 
     assert!(nacre_validate::validate(&m).is_empty());
     assert!((volume(&m, r) - 6.0).abs() < 1e-12, "{}", volume(&m, r));
@@ -209,12 +192,7 @@ fn a_swept_hole_is_a_boolean_operand() {
 #[test]
 fn a_pocket_with_a_hole_sweeps_the_other_way() {
     let mut m = Model::new();
-    let block = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([10.0, 10.0, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let block = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 4.0]);
     let top = m
         .shell(m.solid(block).outer)
         .faces
@@ -248,7 +226,6 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
     let solid = nacre_ops::fixtures::pocket(&mut m, top, profile, 1.0)
         .unwrap()
         .solid();
-    m.rebuild_adjacency();
 
     // The trench is (8² − 4²) = 48 in plan, 1 deep. A hole wound the wrong way would remove the
     // whole 8² footprint (64) instead — or produce an invalid solid.
@@ -290,7 +267,6 @@ fn a_negative_extrude_sweeps_below_its_plane() {
     .unwrap() else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     assert!((volume(&m, solid) - 2.0 * (64.0 - 16.0)).abs() < 1e-9);
@@ -464,12 +440,7 @@ fn touching_rings_are_refused_on_every_profile_entry_point() {
 
     // Same profile, arriving through `pad` on a face of an existing solid.
     let mut m = Model::new();
-    let base = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([10.0, 10.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let base = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [10.0, 10.0, 1.0]);
     let top = *m.shell(m.solid(base).outer).faces.last().unwrap();
     assert!(matches!(
         nacre_ops::fixtures::pad(&mut m, top, touching, 1.0),
@@ -759,11 +730,7 @@ fn a_non_pythagorean_prism_is_cut_by_a_box() {
     let mut m = Model::new();
     let prism = extrude(&mut m, profile, 1.0);
     // A box covering `x ≥ 0`: the cut leaves the left half of the segment.
-    let cutter = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, -1.0]),
-        Point3::from_array([3.0, 3.0, 2.0]),
-    );
+    let cutter = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, -1.0], [3.0, 3.0, 2.0]);
     match apply(
         &mut m,
         &Operation::Boolean {

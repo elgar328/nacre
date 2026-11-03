@@ -7,6 +7,7 @@
 //! the quarter facing `(+x, −y)`. A line through `(43, −16)` along `z` lies on that fillet's
 //! cylinder (`(3, 4)` from the axis) but off its quarter.
 use super::*;
+use crate::fixtures::cuboid;
 use nacre_exact::{Angle, Isometry, Rat, Rotation};
 use std::f64::consts::PI;
 
@@ -17,7 +18,7 @@ fn q(x: f64) -> Rat {
 }
 
 fn turn(m: &mut Model, s: Handle<Solid>, deg: i128, pivot: [f64; 3]) -> Handle<Solid> {
-    let out = transform(
+    transform(
         m,
         s,
         &Isometry::rotation(Rotation {
@@ -26,25 +27,15 @@ fn turn(m: &mut Model, s: Handle<Solid>, deg: i128, pivot: [f64; 3]) -> Handle<S
             angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
         }),
     )
-    .expect("the solid turns");
-    m.rebuild_adjacency();
-    out
+    .expect("the solid turns")
 }
 
 fn shift(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
-    let out = transform(m, s, &Isometry::translation(v.map(q))).expect("the solid moves");
-    m.rebuild_adjacency();
-    out
-}
-
-fn bx(m: &mut Model, min: [f64; 3], max: [f64; 3]) -> Handle<Solid> {
-    let s = crate::fixtures::cuboid(m, Point3::from_array(min), Point3::from_array(max));
-    m.rebuild_adjacency();
-    s
+    transform(m, s, &Isometry::translation(v.map(q))).expect("the solid moves")
 }
 
 fn zcyl(m: &mut Model, at: [f64; 3], r: f64, h: f64, seam: [f64; 3]) -> Handle<Solid> {
-    let s = crate::fixtures::cylinder_with_seam(
+    crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array(at),
         Vector3::from_array([0.0, 0.0, 1.0]),
@@ -52,29 +43,24 @@ fn zcyl(m: &mut Model, at: [f64; 3], r: f64, h: f64, seam: [f64; 3]) -> Handle<S
         r,
         h,
     )
-    .solid;
-    m.rebuild_adjacency();
-    s
+    .solid
 }
 
 fn op1(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
     let out = boolean(m, kind, a, b).expect("the fixture's boolean builds");
     assert_eq!(out.len(), 1, "fixture boolean gives one solid");
-    m.rebuild_adjacency();
     out[0]
 }
 
 /// A `5 × 5 × h` box turned `deg` about its own centre, then set at `c`.
 fn turned_box(m: &mut Model, deg: i128, c: [f64; 2], z0: f64, h: f64) -> Handle<Solid> {
-    let b = bx(m, [-2.5, -2.5, z0], [2.5, 2.5, z0 + h]);
+    let b = cuboid(m, [-2.5, -2.5, z0], [2.5, 2.5, z0 + h]);
     let b = turn(m, b, deg, [0.0; 3]);
     shift(m, b, [c[0], c[1], 0.0])
 }
 
 fn plate(m: &mut Model) -> Handle<Solid> {
-    let p = rounded_plate(m, 1, 0);
-    m.rebuild_adjacency();
-    p
+    rounded_plate(m, 1, 0)
 }
 
 /// `40 × 40 × 10` with a slot `[15, 25] × [17, 23]` rounded at both ends (`r = 3`).
@@ -103,7 +89,6 @@ fn slotted_plate(m: &mut Model) -> Handle<Solid> {
     .expect("the slotted plate extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -136,8 +121,8 @@ fn refused(name: RejectReason) -> [[Want; 3]; 2] {
 /// `[43, 50] × [−13, −4]`, both over `z`.
 fn ell(m: &mut Model, y0: f64, z: [f64; 2]) -> (Handle<Solid>, Handle<Solid>) {
     let p = plate(m);
-    let b1 = bx(m, [41.0, y0, z[0]], [50.0, -12.0, z[1]]);
-    let b2 = bx(m, [43.0, -13.0, z[0]], [50.0, -4.0, z[1]]);
+    let b1 = cuboid(m, [41.0, y0, z[0]], [50.0, -12.0, z[1]]);
+    let b2 = cuboid(m, [43.0, -13.0, z[0]], [50.0, -4.0, z[1]]);
     let b = op1(m, BoolKind::Fuse, b1, b2);
     (p, b)
 }
@@ -145,8 +130,8 @@ fn ell(m: &mut Model, y0: f64, z: [f64; 2]) -> (Handle<Solid>, Handle<Solid>) {
 /// A box on the corner with a notch cut from its inner side.
 fn notched_corner_box(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<Solid>) {
     let p = plate(m);
-    let b = bx(m, [41.0, y0, 2.0], [50.0, -4.0, 10.0]);
-    let k = bx(m, [40.0, -12.0, 1.0], [43.0, -3.0, 11.0]);
+    let b = cuboid(m, [41.0, y0, 2.0], [50.0, -4.0, 10.0]);
+    let k = cuboid(m, [40.0, -12.0, 1.0], [43.0, -3.0, 11.0]);
     let b = op1(m, BoolKind::Cut, b, k);
     (p, b)
 }
@@ -200,7 +185,7 @@ fn a_corner_on_the_fillet_circle_beyond_its_quarter_builds() {
     every_kind(
         |m| {
             let p = plate(m);
-            (p, bx(m, [43.0, -16.0, 2.0], [50.0, -10.0, 10.0]))
+            (p, cuboid(m, [43.0, -16.0, 2.0], [50.0, -10.0, 10.0]))
         },
         one_body(PLATE, 336.0, 96.0),
     );
@@ -212,7 +197,7 @@ fn a_corner_off_the_fillet_circle_builds() {
     every_kind(
         |m| {
             let p = plate(m);
-            (p, bx(m, [43.0, -15.5, 2.0], [50.0, -10.0, 10.0]))
+            (p, cuboid(m, [43.0, -15.5, 2.0], [50.0, -10.0, 10.0]))
         },
         one_body(PLATE, 308.0, 88.0),
     );
@@ -222,7 +207,7 @@ fn a_corner_off_the_fillet_circle_builds() {
 
 /// `40 × 40 × 10` with a half-round notch (`r = 3`) cut from the edge `x = 40` at `y = 20`.
 fn notched(m: &mut Model) -> Handle<Solid> {
-    let p = bx(m, [0.0, 0.0, 0.0], [40.0, 40.0, 10.0]);
+    let p = cuboid(m, [0.0, 0.0, 0.0], [40.0, 40.0, 10.0]);
     let c = zcyl(m, [40.0, 20.0, -1.0], 3.0, 12.0, [1.0, 0.0, 0.0]);
     op1(m, BoolKind::Cut, p, c)
 }
@@ -277,14 +262,13 @@ fn a_pin_under_the_notch_inside_its_circle_box_builds() {
                 2.0,
             )
             .solid;
-            m.rebuild_adjacency();
             (a, c)
         },
         apart(NOTCHED + 125.0),
     );
     every_kind(
         |m| {
-            let p = bx(m, [0.0, 0.0, 0.0], [40.0, 40.0, 10.0]);
+            let p = cuboid(m, [0.0, 0.0, 0.0], [40.0, 40.0, 10.0]);
             let t = turned_box(m, 37, [10.0, 10.0], 5.0, 10.0);
             let p = op1(m, BoolKind::Fuse, p, t);
             let c = zcyl(m, [40.0, 20.0, -1.0], 3.0, 12.0, [1.0, 0.0, 0.0]);
@@ -329,7 +313,6 @@ fn bulged_with_box(m: &mut Model, c: [f64; 2]) -> Handle<Solid> {
     .expect("the bulged plate extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let t = turned_box(m, 37, c, 5.0, 10.0);
     op1(m, BoolKind::Fuse, solid, t)
 }
@@ -411,7 +394,7 @@ fn a_turned_box_beside_the_fillet_builds() {
     every_kind(
         |m| {
             let p = slotted_plate(m);
-            let b = bx(m, [-1.5, -2.5, 5.0], [1.5, 2.5, 15.0]);
+            let b = cuboid(m, [-1.5, -2.5, 5.0], [1.5, 2.5, 15.0]);
             let b = turn(m, b, 37, [0.0; 3]);
             (p, shift(m, b, [18.0, 30.0, 0.0]))
         },
@@ -420,9 +403,9 @@ fn a_turned_box_beside_the_fillet_builds() {
     every_kind(
         |m| {
             let p = plate(m);
-            let k = bx(m, [43.0, -14.0, 6.0], [46.0, -4.0, 13.0]);
+            let k = cuboid(m, [43.0, -14.0, 6.0], [46.0, -4.0, 13.0]);
             let a = op1(m, BoolKind::Cut, p, k);
-            let t = bx(m, [38.0, -6.0, 5.0], [43.0, -1.0, 15.0]);
+            let t = cuboid(m, [38.0, -6.0, 5.0], [43.0, -1.0, 15.0]);
             (a, turn(m, t, 8, [43.0, -16.0, 0.0]))
         },
         one_body(PLATE - 120.0, 250.0, 175.0),
@@ -435,9 +418,9 @@ fn a_turned_box_beside_the_fillet_builds() {
 fn corner_above_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<Solid>) {
     let p = plate(m);
     let pivot = [43.0, y0, 0.0];
-    let t = bx(m, [23.0, y0, 13.0], [43.0, y0 + 20.0, 20.0]);
+    let t = cuboid(m, [23.0, y0, 13.0], [43.0, y0 + 20.0, 20.0]);
     let t = turn(m, t, 8, pivot);
-    let k = bx(m, [28.0, y0 + 10.0, 5.0], [33.0, y0 + 15.0, 14.0]);
+    let k = cuboid(m, [28.0, y0 + 10.0, 5.0], [33.0, y0 + 15.0, 14.0]);
     let k = turn(m, k, 8, pivot);
     let b = op1(m, BoolKind::Fuse, t, k);
     (p, b)
@@ -472,9 +455,8 @@ fn wedge_above_the_fillet(m: &mut Model, p: [f64; 2]) -> (Handle<Solid>, Handle<
     .expect("the wedge extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let w = shift(m, solid, [0.0, 0.0, 13.0]);
-    let leg = bx(
+    let leg = cuboid(
         m,
         [p[0] - 8.0, p[1] + 18.0, 5.0],
         [p[0] - 5.0, p[1] + 20.0, 14.0],
@@ -490,7 +472,6 @@ fn gate_refusal(
 ) -> Result<RejectReason, String> {
     let mut m = Model::new();
     let (a, b) = build(&mut m);
-    m.rebuild_adjacency();
     match crate::arrangement::plane_index_setup(&m, a, b) {
         Err(BoolError::Rejected { reason, .. }) => Ok(reason),
         other => Err(format!("{:?}", other.map(|_| ()))),
@@ -557,7 +538,7 @@ fn a_turned_box_away_from_the_fillet_builds() {
     every_kind(
         |m| {
             let p = slotted_plate(m);
-            let b = bx(m, [-1.5, -2.5, 5.0], [1.5, 2.5, 15.0]);
+            let b = cuboid(m, [-1.5, -2.5, 5.0], [1.5, 2.5, 15.0]);
             let b = turn(m, b, 37, [0.0; 3]);
             (p, shift(m, b, [17.0, 30.0, 0.0]))
         },
@@ -566,9 +547,9 @@ fn a_turned_box_away_from_the_fillet_builds() {
     every_kind(
         |m| {
             let p = plate(m);
-            let k = bx(m, [43.0, -14.0, 6.0], [46.0, -4.0, 13.0]);
+            let k = cuboid(m, [43.0, -14.0, 6.0], [46.0, -4.0, 13.0]);
             let a = op1(m, BoolKind::Cut, p, k);
-            let t = bx(m, [38.0, -5.0, 5.0], [43.0, 0.0, 15.0]);
+            let t = cuboid(m, [38.0, -5.0, 5.0], [43.0, 0.0, 15.0]);
             (a, turn(m, t, 8, [43.0, -15.0, 0.0]))
         },
         one_body(PLATE - 120.0, 250.0, 175.0),
@@ -577,7 +558,7 @@ fn a_turned_box_away_from_the_fillet_builds() {
         |m| {
             let (p, t) = one(m);
             let a = op1(m, BoolKind::Fuse, p, t);
-            (a, bx(m, [-20.0, -5.0, -2.0], [-10.0, 5.0, 14.0]))
+            (a, cuboid(m, [-20.0, -5.0, -2.0], [-10.0, 5.0, 14.0]))
         },
         {
             let mut w = one_body(PLATE + 75.0, 1600.0, 1200.0);
@@ -597,25 +578,25 @@ fn unit_cylinder(m: &mut Model) -> Handle<Solid> {
 /// A slab `[−2, 2] × [1, 6]` whose face `y = 1` is tangent to the unit cylinder along `x = 0`, with
 /// a notch `[x, 3] × [4, 7]` cut from its far side.
 fn notched_slab(m: &mut Model, x: f64) -> (Handle<Solid>, Handle<Solid>) {
-    let a = bx(m, [-2.0, 1.0, 0.5], [2.0, 6.0, 1.5]);
-    let n = bx(m, [x, 4.0, 0.0], [3.0, 7.0, 2.0]);
+    let a = cuboid(m, [-2.0, 1.0, 0.5], [2.0, 6.0, 1.5]);
+    let n = cuboid(m, [x, 4.0, 0.0], [3.0, 7.0, 2.0]);
     let a = op1(m, BoolKind::Cut, a, n);
     (a, unit_cylinder(m))
 }
 
 /// A slab tangent along `x = 0` and an arm `[−2, x] × [2, 6]` fused to it.
 fn ell_slab(m: &mut Model, x: f64) -> (Handle<Solid>, Handle<Solid>) {
-    let a = bx(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
-    let b = bx(m, [-2.0, 2.0, 0.5], [x, 6.0, 1.5]);
+    let a = cuboid(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
+    let b = cuboid(m, [-2.0, 2.0, 0.5], [x, 6.0, 1.5]);
     let a = op1(m, BoolKind::Fuse, a, b);
     (a, unit_cylinder(m))
 }
 
 /// The tangent slab against the cylinder fused with a block `[x, 2] × [−3, −0.5]` on its far side.
 fn slab_and_blocked_cylinder(m: &mut Model, x: f64) -> (Handle<Solid>, Handle<Solid>) {
-    let a = bx(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
+    let a = cuboid(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
     let c = unit_cylinder(m);
-    let t = bx(m, [x, -3.0, 0.0], [2.0, -0.5, 2.0]);
+    let t = cuboid(m, [x, -3.0, 0.0], [2.0, -0.5, 2.0]);
     let b = op1(m, BoolKind::Fuse, c, t);
     (a, b)
 }
@@ -674,7 +655,7 @@ fn a_tangent_line_beside_a_third_plane_off_its_faces_builds() {
 fn a_tangent_line_with_no_third_plane_builds() {
     every_kind(
         |m| {
-            let a = bx(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
+            let a = cuboid(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
             (a, unit_cylinder(m))
         },
         touching(8.0, 2.0 * PI),
@@ -694,7 +675,7 @@ fn a_tangent_line_with_no_third_plane_builds() {
 /// is a triangle with one corner on the line, at `(0, 1, 1.75)` on the lateral, the face running off
 /// it above the slab: `(y, z)` = `(1, 1.75)`, `(2.5, 1.2)`, `(2.5, 2.5)`, swept over `x ∈ [0, 2]`.
 fn slab_with_a_wedge_on_the_line(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let slab = bx(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
+    let slab = cuboid(m, [-2.0, 1.0, 0.5], [2.0, 3.0, 1.5]);
     let pts =
         [(1.0, 1.75), (2.5, 1.2), (2.5, 2.5)].map(|(u, v)| nacre_math::Point2::from_array([u, v]));
     let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a triangle");
@@ -713,7 +694,6 @@ fn slab_with_a_wedge_on_the_line(m: &mut Model) -> (Handle<Solid>, Handle<Solid>
     .expect("the wedge extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     let a = op1(m, BoolKind::Fuse, slab, wedge);
     (a, unit_cylinder(m))
 }
@@ -738,9 +718,9 @@ fn a_third_plane_face_meeting_the_tangent_line_at_a_corner_is_refused_as_oblique
 /// box beside it.
 fn pocket_beside_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<Solid>) {
     let p = plate(m);
-    let k = bx(m, [41.0, y0, 6.0], [50.0, -10.0, 13.0]);
+    let k = cuboid(m, [41.0, y0, 6.0], [50.0, -10.0, 13.0]);
     let a = op1(m, BoolKind::Cut, p, k);
-    let t = bx(m, [38.0, -7.0, 5.0], [44.0, -2.0, 15.0]);
+    let t = cuboid(m, [38.0, -7.0, 5.0], [44.0, -2.0, 15.0]);
     (a, turn(m, t, 8, [44.0, -17.0, 0.0]))
 }
 

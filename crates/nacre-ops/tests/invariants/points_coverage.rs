@@ -33,7 +33,6 @@ fn extrude(m: &mut Model, plane: SketchPlane, profile: Profile2d, dist: f64) {
     )
     .expect("extrude");
     assert!(matches!(out, OpOutput::Extrude { .. }));
-    m.rebuild_adjacency();
 }
 
 /// Every live planar face of `m` records its three exact points — asserted through the truth
@@ -71,12 +70,7 @@ fn assert_all_planes_record_points(m: &Model, what: &str) {
 fn every_live_planar_face_records_its_points() {
     // ① Plain construction: cuboid + world extrude.
     let mut m = Model::new();
-    let base = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([4.0, 4.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let base = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [4.0, 4.0, 1.0]);
     extrude(&mut m, SketchPlane::world_xy(), square(10.0, 12.0), 1.5);
     assert_all_planes_record_points(&m, "construction");
 
@@ -112,7 +106,6 @@ fn every_live_planar_face_records_its_points() {
     let padded = nacre_ops::fixtures::pad(&mut m, top, square(1.0, 2.0), 0.5)
         .expect("pad")
         .solid();
-    m.rebuild_adjacency();
     assert_all_planes_record_points(&m, "pad");
 
     // ④ Motions: an inexact rotation (recorded node), and a mirror recorded behind it.
@@ -131,7 +124,6 @@ fn every_live_planar_face_records_its_points() {
         .expect("rotate") else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         solid
     };
     let OpOutput::Mirror { solid: mirrored } = apply(
@@ -145,25 +137,14 @@ fn every_live_planar_face_records_its_points() {
     .expect("mirror") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert_all_planes_record_points(&m, "motions");
 
     // ⑤ A boolean mints no surface, so its result inherits the record — but the sweep is what
     // says so, not the argument.
     let mut mb = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut mb,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut mb,
-        Point3::from_array([1.0, 1.0, 1.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    mb.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut mb, [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
+    let b = nacre_ops::fixtures::cuboid(&mut mb, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
     nacre_ops::boolean(&mut mb, BoolKind::Fuse, a, b).expect("fuse");
-    mb.rebuild_adjacency();
     assert_all_planes_record_points(&mb, "boolean");
 
     // ⑥ Cylinder caps — the lateral face is the skipped population, visibly.
@@ -176,7 +157,6 @@ fn every_live_planar_face_records_its_points() {
         1.0,
         2.0,
     );
-    mc.rebuild_adjacency();
     assert_all_planes_record_points(&mc, "cylinder caps");
 
     let _ = mirrored;

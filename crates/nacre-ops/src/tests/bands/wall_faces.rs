@@ -12,11 +12,7 @@ use super::*;
 /// stands only 2 from the bore's axis (`r = 3`). The boss's face is 20 away; nothing meets.
 fn plate_bore_and_boss(hole_y: f64, boss_z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, hole_y, -1.0]),
@@ -26,14 +22,8 @@ fn plate_bore_and_boss(hole_y: f64, boss_z0: f64) -> (Model, Handle<Solid>, Hand
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([28.0, 4.0, boss_z0]),
-        Point3::from_array([36.0, 12.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = crate::fixtures::cuboid(&mut m, [28.0, 4.0, boss_z0], [36.0, 12.0, 8.0]);
     (m, holed, boss)
 }
 
@@ -80,11 +70,7 @@ fn a_boss_whose_wall_plane_holds_the_bores_axis_still_fuses() {
 #[test]
 fn a_capped_tool_on_the_plates_wall_plane_fuses_as_two_bodies() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let tool = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([40.0, 30.0, 1.0]),
@@ -94,7 +80,6 @@ fn a_capped_tool_on_the_plates_wall_plane_fuses_as_two_bodies() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, tool).expect("a distant fuse");
     assert_eq!(out.len(), 2, "two disjoint bodies");
     assert!(
@@ -138,11 +123,7 @@ fn the_same_boss_cuts_the_bored_plate() {
 #[test]
 fn one_wall_plane_may_cross_two_bores() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let mut holed = plate;
     for x in [8.0, 20.0] {
         let hole = crate::fixtures::cylinder_with_seam(
@@ -154,15 +135,9 @@ fn one_wall_plane_may_cross_two_bores() {
             7.0,
         )
         .solid;
-        m.rebuild_adjacency();
         holed = crate::boolean(&mut m, BoolKind::Cut, holed, hole).expect("bore")[0];
     }
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([28.0, 4.0, 5.0]),
-        Point3::from_array([36.0, 12.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = crate::fixtures::cuboid(&mut m, [28.0, 4.0, 5.0], [36.0, 12.0, 8.0]);
     let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("two bores and a boss");
     assert_eq!(out.len(), 1);
     assert!(
@@ -183,11 +158,7 @@ fn one_wall_plane_may_cross_two_bores() {
 #[test]
 fn a_wall_face_that_really_crosses_the_bore_builds() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
@@ -197,17 +168,10 @@ fn a_wall_face_that_really_crosses_the_bore_builds() {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // A slab covering x ∈ [0, 40]: its y = 12 face passes straight through the bore.
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 12.0, 0.0]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
-    m.rebuild_adjacency();
+    let slab = crate::fixtures::cuboid(&mut m, [0.0, 12.0, 0.0], [40.0, 20.0, 5.0]);
     let out = crate::boolean(&mut m, BoolKind::Cut, holed, slab).expect("a real crossing builds");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 1);
     assert!(nacre_validate::validate(&m).is_empty());
     // The slab's box less the bore's `y ≥ 12` segment (d = 2, r = 3), taken from the bored plate.
@@ -231,11 +195,7 @@ fn a_wall_face_that_really_crosses_the_bore_builds() {
 #[test]
 fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
@@ -245,14 +205,12 @@ fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     let slab = crate::fixtures::cuboid(
         &mut m,
-        Point3::from_array([0.0, 13.0, 0.0]), // y = 13 is exactly r = 3 from y = 10
-        Point3::from_array([40.0, 20.0, 5.0]),
+        [0.0, 13.0, 0.0], // y = 13 is exactly r = 3 from y = 10
+        [40.0, 20.0, 5.0],
     );
-    m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Cut, holed, slab).expect_err("tangency");
     assert!(
         matches!(
@@ -285,11 +243,7 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
     let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 0.5);
     let build = || {
         let mut m = Model::new();
-        let cube = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.5; 3]),
-            Point3::from_array([0.5; 3]),
-        );
+        let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
         let stud = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([0.3, 0.0, 0.0]),
@@ -299,7 +253,6 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
             2.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, cube, stud)
     };
     for (kind, want) in [
@@ -308,7 +261,6 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
     ] {
         let (mut m, a, b) = build();
         let out = crate::boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
-        m.rebuild_adjacency();
         assert_eq!(out.len(), 1, "{kind:?}");
         assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
         let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
@@ -342,11 +294,7 @@ fn the_users_through_stud_gives_three_answers() {
     let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 1.0);
     let build = || {
         let mut m = Model::new();
-        let cube = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-0.5; 3]),
-            Point3::from_array([0.5; 3]),
-        );
+        let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
         let stud = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([0.3, 0.0, -1.0]),
@@ -356,7 +304,6 @@ fn the_users_through_stud_gives_three_answers() {
             2.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, cube, stud)
     };
     for (kind, want) in [
@@ -365,7 +312,6 @@ fn the_users_through_stud_gives_three_answers() {
     ] {
         let (mut m, a, b) = build();
         let out = crate::boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
-        m.rebuild_adjacency();
         assert_eq!(out.len(), 1, "{kind:?}");
         assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
         let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
@@ -434,20 +380,14 @@ fn the_users_cross_studs_build_in_either_order() {
     for z_first in [true, false] {
         let build = || {
             let mut m = Model::new();
-            let cube = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-0.5; 3]),
-                Point3::from_array([0.5; 3]),
-            );
+            let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
             let (first, second) = if z_first {
                 (z_stud(&mut m), y_stud(&mut m))
             } else {
                 (y_stud(&mut m), z_stud(&mut m))
             };
-            m.rebuild_adjacency();
             let studded = crate::boolean(&mut m, BoolKind::Fuse, cube, first)
                 .expect("the first stud fuses")[0];
-            m.rebuild_adjacency();
             (m, studded, second)
         };
         for (kind, want, faces_want) in [
@@ -458,7 +398,6 @@ fn the_users_cross_studs_build_in_either_order() {
             let (mut m, a, b) = build();
             let out = crate::boolean(&mut m, kind, a, b)
                 .unwrap_or_else(|e| panic!("{kind:?} (z first: {z_first}): {e:?}"));
-            m.rebuild_adjacency();
             assert_eq!(out.len(), 1, "{kind:?} (z first: {z_first})");
             assert!(
                 nacre_validate::validate(&m).is_empty(),
@@ -501,7 +440,6 @@ fn crossing_studs_are_still_a_cylinder_pair_that_meets() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Fuse, z, y).expect_err("the studs cross");
     assert!(
         matches!(
@@ -540,9 +478,7 @@ fn a_cross_above_a_stud_is_two_solids() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, low, high).unwrap_or_else(|e| panic!("{e:?}"));
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2, "two bodies that never touch");
     assert!(nacre_validate::validate(&m).is_empty());
     for s in &out {
@@ -584,11 +520,9 @@ fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
             2.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let out = crate::boolean(&mut m, BoolKind::Fuse, low, high);
         if clears {
             let out = out.unwrap_or_else(|e| panic!("z = {z}: {e:?}"));
-            m.rebuild_adjacency();
             assert_eq!(out.len(), 2, "z = {z}: two bodies that never touch");
             assert!(nacre_validate::validate(&m).is_empty());
             for s in &out {
@@ -625,11 +559,7 @@ fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
 #[test]
 fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5; 3]),
-        Point3::from_array([0.5; 3]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
     // The seam on `−y`, off the touching point `(0.5, 0)` — on `+x` it would *be* that point, a
     // vertex of the b-rep rather than a sample of the circle.
     let stud = crate::fixtures::cylinder_with_seam(
@@ -641,10 +571,8 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the through stud fuses");
     assert_eq!(out.len(), 1);
-    m.rebuild_adjacency();
     let (report, t) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default());
     assert!(
         report.declined.is_empty(),
@@ -674,11 +602,7 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     }
     // The blind stud (base anchoring) pinches one cap only.
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-0.5; 3]),
-        Point3::from_array([0.5; 3]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
     let stud = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([0.3, 0.0, 0.0]),
@@ -688,9 +612,7 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the blind stud fuses");
-    m.rebuild_adjacency();
     let (report, _) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default());
     assert!(report.declined.is_empty(), "{:?}", report.declined);
     assert_eq!(report.splits.len(), 1, "{:?}", report.splits);
@@ -709,11 +631,7 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
     let pi = std::f64::consts::PI;
     let build = || {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([-0.5, 2.0, -1.0]),
@@ -723,7 +641,6 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, plate, boss)
     };
     for (kind, bodies, want) in [
@@ -733,7 +650,6 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
     ] {
         let (mut m, a, b) = build();
         let out = crate::boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
-        m.rebuild_adjacency();
         assert_eq!(out.len(), bodies, "{kind:?}");
         assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
         let v: f64 = out
@@ -755,19 +671,9 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
 #[test]
 fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     let mut m = Model::new();
-    let outer = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([6.0, 6.0, 2.0]),
-    );
-    let notch = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0, 2.6, -0.5]),
-        Point3::from_array([6.5, 3.4, 2.5]),
-    );
-    m.rebuild_adjacency();
+    let outer = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [6.0, 6.0, 2.0]);
+    let notch = crate::fixtures::cuboid(&mut m, [2.0, 2.6, -0.5], [6.5, 3.4, 2.5]);
     let block = crate::boolean(&mut m, BoolKind::Cut, outer, notch).expect("notch")[0];
-    m.rebuild_adjacency();
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.5, 3.0, -0.5]),
@@ -777,7 +683,6 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Fuse, block, boss).expect_err("a joined pinch");
     assert!(
         matches!(
@@ -806,16 +711,10 @@ fn a_tangent_wall_through_a_lateral_window_builds() {
         for seam in [1.0, -1.0] {
             let mut m = Model::new();
             let boss = crate::fixtures::windowed_boss(&mut m, w, seam);
-            let slab = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 1.7]),
-                Point3::from_array([1.0, 2.0, 2.3]),
-            );
-            m.rebuild_adjacency();
+            let slab = crate::fixtures::cuboid(&mut m, [-2.0, -2.0, 1.7], [1.0, 2.0, 2.3]);
             let out = crate::boolean(&mut m, BoolKind::Cut, slab, boss)
                 .unwrap_or_else(|e| panic!("w {w} seam {seam}: {e:?}"));
             assert_eq!(out.len(), 1, "w {w} seam {seam}");
-            m.rebuild_adjacency();
             assert!(nacre_validate::validate(&m).is_empty(), "w {w} seam {seam}");
             let window = w * (1.0 - w * w).sqrt() + w.asin() - w;
             let want = 7.2 - (std::f64::consts::PI - window) * 0.6;
@@ -831,12 +730,7 @@ fn a_tangent_wall_longer_than_the_window_still_pinches() {
         for seam in [1.0, -1.0] {
             let mut m = Model::new();
             let boss = crate::fixtures::windowed_boss(&mut m, w, seam);
-            let slab = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 1.0]),
-                Point3::from_array([1.0, 2.0, 3.0]),
-            );
-            m.rebuild_adjacency();
+            let slab = crate::fixtures::cuboid(&mut m, [-2.0, -2.0, 1.0], [1.0, 2.0, 3.0]);
             let err = crate::boolean(&mut m, BoolKind::Cut, slab, boss)
                 .expect_err("the slab touches the lateral above and below the window");
             assert!(
@@ -868,7 +762,6 @@ fn two_bodies_touching_on_a_line(
             let (va, vb) = (vol(&m, a), vol(&m, b));
             let out = crate::boolean(&mut m, kind, a, b)
                 .unwrap_or_else(|e| panic!("{name}: {kind:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{name}: {kind:?} swapped {swapped}: {vs:?}");
             let mut got: Vec<f64> = out.iter().map(|&s| vol(&m, s)).collect();
@@ -904,11 +797,7 @@ fn two_bodies_touching_on_a_line(
 fn a_far_face_on_the_walls_plane_joins_nothing() {
     two_bodies_touching_on_a_line("boss, bar and block", || {
         let mut m = Model::new();
-        let a = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-2.0, -3.0, 0.0]),
-            Point3::from_array([0.0, 3.0, 1.0]),
-        );
+        let a = crate::fixtures::cuboid(&mut m, [-2.0, -3.0, 0.0], [0.0, 3.0, 1.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([1.0, 0.0, 0.0]),
@@ -918,21 +807,10 @@ fn a_far_face_on_the_walls_plane_joins_nothing() {
             1.0,
         )
         .solid;
-        let bar = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.5, 0.0, 0.0]),
-            Point3::from_array([1.5, 11.0, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let bar = crate::fixtures::cuboid(&mut m, [0.5, 0.0, 0.0], [1.5, 11.0, 1.0]);
         let b = crate::boolean(&mut m, BoolKind::Fuse, boss, bar).expect("boss and bar")[0];
-        let block = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, 10.0, 0.0]),
-            Point3::from_array([2.0, 12.0, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let block = crate::fixtures::cuboid(&mut m, [0.0, 10.0, 0.0], [2.0, 12.0, 1.0]);
         let b = crate::boolean(&mut m, BoolKind::Fuse, b, block).expect("and the block")[0];
-        m.rebuild_adjacency();
         (m, a, b)
     });
 }
@@ -947,17 +825,8 @@ fn a_far_face_on_the_walls_plane_joins_nothing() {
 fn a_tangency_through_a_wall_faces_notch_touches_nothing() {
     two_bodies_touching_on_a_line("notched box", || {
         let mut m = Model::new();
-        let block = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0, -3.0, 0.0]),
-            Point3::from_array([4.0, 3.0, 2.0]),
-        );
-        let slot = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-1.0, -2.0, 1.0]),
-            Point3::from_array([5.0, 2.0, 3.0]),
-        );
-        m.rebuild_adjacency();
+        let block = crate::fixtures::cuboid(&mut m, [0.0, -3.0, 0.0], [4.0, 3.0, 2.0]);
+        let slot = crate::fixtures::cuboid(&mut m, [-1.0, -2.0, 1.0], [5.0, 2.0, 3.0]);
         let a = crate::boolean(&mut m, BoolKind::Cut, block, slot).expect("the slot")[0];
         let b = crate::fixtures::cylinder_with_seam(
             &mut m,
@@ -968,7 +837,6 @@ fn a_tangency_through_a_wall_faces_notch_touches_nothing() {
             0.6,
         )
         .solid;
-        m.rebuild_adjacency();
         (m, a, b)
     });
 }
@@ -1005,25 +873,11 @@ fn wide_boss_in_a_wall_gap(gap: WallGap) -> (Model, Handle<Solid>, Handle<Solid>
         _ => -2.0,
     };
     let mut m = Model::new();
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, -3.0, 0.0]),
-        Point3::from_array([6.0, 3.0, top]),
-    );
-    let slot = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, slot_y0, 1.0]),
-        Point3::from_array([7.0, 2.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let block = crate::fixtures::cuboid(&mut m, [0.0, -3.0, 0.0], [6.0, 3.0, top]);
+    let slot = crate::fixtures::cuboid(&mut m, [-1.0, slot_y0, 1.0], [7.0, 2.0, 3.0]);
     let mut a = crate::boolean(&mut m, BoolKind::Cut, block, slot).expect("the slot")[0];
     if let WallGap::HoleBesideStep = gap {
-        let step = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([4.0, 0.0, -1.0]),
-            Point3::from_array([7.0, 4.0, 5.0]),
-        );
-        m.rebuild_adjacency();
+        let step = crate::fixtures::cuboid(&mut m, [4.0, 0.0, -1.0], [7.0, 4.0, 5.0]);
         a = crate::boolean(&mut m, BoolKind::Cut, a, step).expect("the step")[0];
     }
     let b = crate::fixtures::cylinder_with_seam(
@@ -1035,7 +889,6 @@ fn wide_boss_in_a_wall_gap(gap: WallGap) -> (Model, Handle<Solid>, Handle<Solid>
         h,
     )
     .solid;
-    m.rebuild_adjacency();
     (m, a, b)
 }
 
@@ -1074,7 +927,6 @@ fn a_tangency_through_a_wall_faces_gap_beside_material_builds() {
             };
             let out = crate::boolean(&mut m, kind, a, b)
                 .unwrap_or_else(|e| panic!("{gap:?} {kind:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{gap:?} {kind:?} swapped {swapped}: {vs:?}");
             assert_eq!(out.len(), 1, "{gap:?} {kind:?} swapped {swapped}");
@@ -1143,11 +995,7 @@ fn the_pinch_formula_is_a_truth_table() {
 #[test]
 fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 10.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 10.0]);
     // A crosswise bore along +X, ending inside the plate at x = 30: its cap lies on x = 30.
     let cross = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -1158,7 +1006,6 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
         31.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, cross).expect("crosswise bore")[0];
     // A vertical drill whose axis stands 1 from the plane x = 30 — inside its radius 3 — and
     // **6 from the crosswise bore's axis**, clear of the radius sum 5, so the pair rule is
@@ -1173,10 +1020,8 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
         12.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, bored, drill).expect("the drill cuts");
     assert_eq!(out.len(), 1, "one body");
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -1223,7 +1068,6 @@ fn a_wide_boss_in_a_wall_gap_common_builds() {
             };
             let out = crate::boolean(&mut m, BoolKind::Common, a, b)
                 .unwrap_or_else(|e| panic!("{gap:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{gap:?} swapped {swapped}: {vs:?}");
             let mut got: Vec<f64> = out
@@ -1280,7 +1124,6 @@ fn a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure() {
         };
         let out = crate::boolean(&mut m, kind, a, b)
             .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} swapped {swapped}: {vs:?}");
         assert_eq!(out.len(), 1, "{kind:?} swapped {swapped}");
@@ -1321,7 +1164,6 @@ fn a_tangent_line_through_a_hole_beside_a_far_step_builds() {
             };
             let out = crate::boolean(&mut m, kind, a, b)
                 .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
-            m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{kind:?} swapped {swapped}: {vs:?}");
             let (bodies, want) = match (kind, swapped) {

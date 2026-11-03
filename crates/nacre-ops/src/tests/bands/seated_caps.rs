@@ -24,11 +24,7 @@ use super::*;
 #[test]
 fn a_flush_through_drill_bores_the_plate() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let drill = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 0.0]),
@@ -38,7 +34,6 @@ fn a_flush_through_drill_bores_the_plate() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a flush through hole");
     assert_eq!(out.len(), 1);
     assert!(
@@ -56,11 +51,7 @@ fn a_flush_through_drill_bores_the_plate() {
 #[test]
 fn a_blind_drill_seated_on_the_plates_base_bores_it() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let drill = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 0.0]),
@@ -70,7 +61,6 @@ fn a_blind_drill_seated_on_the_plates_base_bores_it() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a seated blind hole");
     assert_eq!(out.len(), 1);
     assert!(
@@ -88,11 +78,7 @@ fn a_blind_drill_seated_on_the_plates_base_bores_it() {
 #[test]
 fn a_boss_seated_on_the_plate_fuses_to_it() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 2.0]),
@@ -102,7 +88,6 @@ fn a_boss_seated_on_the_plate_fuses_to_it() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("a seated boss");
     assert_eq!(out.len(), 1, "one body, not two");
     assert!(
@@ -120,11 +105,7 @@ fn a_boss_seated_on_the_plate_fuses_to_it() {
 #[test]
 fn a_flush_cylinder_meets_the_box_in_itself() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
     let b = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([1.0, 1.0, 0.0]),
@@ -134,7 +115,6 @@ fn a_flush_cylinder_meets_the_box_in_itself() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Common, a, b).expect("a flush common");
     assert_eq!(out.len(), 1);
     assert!(
@@ -153,18 +133,9 @@ fn a_flush_cylinder_meets_the_box_in_itself() {
 #[test]
 fn a_drill_seated_on_a_pocket_floor_bores_it() {
     let mut m = Model::new();
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([6.0; 3]),
-    );
+    let block = crate::fixtures::cuboid(&mut m, [0.0; 3], [6.0; 3]);
     // Open at the top — a tool that stopped inside would leave a void, not a pocket.
-    let pocket_tool = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 1.0, 2.0]),
-        Point3::from_array([5.0, 5.0, 7.0]),
-    );
-    m.rebuild_adjacency();
+    let pocket_tool = crate::fixtures::cuboid(&mut m, [1.0, 1.0, 2.0], [5.0, 5.0, 7.0]);
     let pocketed = crate::boolean(&mut m, BoolKind::Cut, block, pocket_tool).expect("pocket")[0];
     // The bore hangs from the pocket floor (z = 2) down into the material below it.
     let drill = crate::fixtures::cylinder_with_seam(
@@ -176,7 +147,6 @@ fn a_drill_seated_on_a_pocket_floor_bores_it() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, pocketed, drill).expect("a floor bore");
     assert_eq!(out.len(), 1);
     assert!(
@@ -195,11 +165,7 @@ fn a_drill_seated_on_a_pocket_floor_bores_it() {
 /// a flipped panel winding, disk-side selector, ruling turn or chord sense moves it.
 fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 20.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array(base),
@@ -209,10 +175,8 @@ fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
         50.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, kind, plate, boss).expect("the rulings road builds");
     assert_eq!(out.len(), 1, "one solid");
-    m.rebuild_adjacency();
     assert_eq!(
         m.live_solids().to_vec(),
         out,
@@ -293,11 +257,7 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
     let want = |d: f64| 32000.0 + 1250.0 * pi - (25.0 * pi - seg(d, 5.0)) * 20.0;
     for (base, d) in [([38.0, 20.0, -10.0], 2.0), ([35.0, 20.0, -10.0], 5.0)] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([40.0, 40.0, 20.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array(base),
@@ -307,10 +267,8 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
             50.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
             .unwrap_or_else(|e| panic!("{base:?}: {e:?}"));
-        m.rebuild_adjacency();
         assert_eq!(out.len(), 1, "{base:?}");
         assert!(nacre_validate::validate(&m).is_empty(), "{base:?}");
         let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
@@ -343,11 +301,7 @@ fn a_half_height_boss_builds() {
         (10.0, BoolKind::Common, 125.0 * pi, vec![1]),
     ] {
         let mut m = Model::new();
-        let plate = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([40.0, 40.0, 20.0]),
-        );
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([40.0, 20.0, z0]),
@@ -357,11 +311,9 @@ fn a_half_height_boss_builds() {
             20.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let out = crate::boolean(&mut m, kind, plate, boss)
             .unwrap_or_else(|e| panic!("{kind:?} z0 {z0}: the half-height boss builds: {e:?}"));
         assert_eq!(out.len(), 1, "{kind:?}: one solid");
-        m.rebuild_adjacency();
         assert_eq!(
             m.live_solids().to_vec(),
             out,
@@ -405,11 +357,7 @@ fn a_half_height_boss_builds() {
 #[test]
 fn a_boss_overhanging_the_plates_edge_builds() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([4.0, 2.0, 2.0]),
@@ -419,10 +367,8 @@ fn a_boss_overhanging_the_plates_edge_builds() {
         1.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
     assert_eq!(out.len(), 1, "one fused solid");
-    m.rebuild_adjacency();
     assert_eq!(
         m.live_solids().to_vec(),
         out,
@@ -455,11 +401,7 @@ fn a_boss_overhanging_the_plates_edge_builds() {
 #[test]
 fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
@@ -469,16 +411,10 @@ fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // Footprint `[7,9] × [9,11]` sits wholly inside the rim `(8,10)`, `r = 3`; `z ∈ [5,8]`
     // leaves the bore's span `t ∈ [1,6]` clear along the axis, so the wall rule passes it on.
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([7.0, 9.0, 5.0]),
-        Point3::from_array([9.0, 11.0, 8.0]),
-    );
-    m.rebuild_adjacency();
+    let boss = crate::fixtures::cuboid(&mut m, [7.0, 9.0, 5.0], [9.0, 11.0, 8.0]);
     let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a boss over a bore");
     // The boss's whole footprint is inside the rim, so it stands over the **hole** and
     // touches no material: two bodies, not one. That is forced by the *geometry* — the

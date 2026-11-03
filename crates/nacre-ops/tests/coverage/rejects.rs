@@ -5,7 +5,7 @@
 //! exists to keep the error surface usable from outside the crate, which is the only place that can
 //! prove it.
 
-use nacre_math::Point3;
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::{BoolError, BoolKind, RejectClass, RejectReason, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
@@ -41,19 +41,12 @@ fn user_message(err: BoolError) -> String {
 #[test]
 fn a_pinched_fuse_tells_the_caller_why() {
     let mut m = Model::new();
-    let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-        m.rebuild_adjacency();
-        s
-    };
-    let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let g1 = cub(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
-    let g2 = cub(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
-    let b = cub(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let g1 = cuboid(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
+    let g2 = cuboid(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
+    let b = cuboid(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
     let t1 = boolean(&mut m, BoolKind::Fuse, a, g1).expect("a and g1 overlap");
-    m.rebuild_adjacency();
     let t2 = boolean(&mut m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
-    m.rebuild_adjacency();
 
     let err = boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap_err();
 
@@ -80,16 +73,10 @@ fn a_pinched_fuse_tells_the_caller_why() {
 #[test]
 fn a_pinched_fuse_is_impossible_not_unsupported() {
     let mut m = Model::new();
-    let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-        m.rebuild_adjacency();
-        s
-    };
-    let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let bridge = cub(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
-    let b = cub(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let bridge = cuboid(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+    let b = cuboid(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
     let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
-    m.rebuild_adjacency();
 
     let err = boolean(&mut m, BoolKind::Fuse, ab[0], b).unwrap_err();
 
@@ -114,19 +101,9 @@ fn a_pinched_fuse_is_impossible_not_unsupported() {
 #[test]
 fn a_stale_operand_is_not_a_reject_reason() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5; 3]),
-        Point3::from_array([1.5; 3]),
-    );
-    m.rebuild_adjacency();
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [0.5; 3], [1.5; 3]);
     let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("overlapping cubes fuse");
-    m.rebuild_adjacency();
 
     // `a` was consumed by the fuse above (supersede semantics), so reusing it is stale.
     let err = boolean(&mut m, BoolKind::Fuse, a, fused[0]).unwrap_err();
@@ -161,16 +138,10 @@ fn a_rejected_boolean_leaves_the_operands_live() {
     // build, so one fixture covers a reject and a success against the same assertion.
     let pinched = || -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-            let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
-            s
-        };
-        let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-        let bridge = cub(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
-        let b = cub(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+        let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+        let bridge = cuboid(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+        let b = cuboid(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
         let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
-        m.rebuild_adjacency();
         (m, ab[0], b)
     };
     let mut rejected = 0;

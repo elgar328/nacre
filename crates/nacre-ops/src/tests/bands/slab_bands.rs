@@ -89,12 +89,7 @@ fn a_through_hole_is_built_and_measures_what_it_should() {
     );
     // The same box without the bore, for the sign of the correction rather than its value.
     let mut m2 = Model::new();
-    let plain = crate::fixtures::cuboid(
-        &mut m2,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    m2.rebuild_adjacency();
+    let plain = crate::fixtures::cuboid(&mut m2, [0.0; 3], [2.0; 3]);
     let plain_v = nacre_props::mass_props(&m2, plain)
         .expect("a box has mass props")
         .volume;
@@ -114,11 +109,7 @@ fn a_through_hole_is_built_and_measures_what_it_should() {
 #[test]
 fn a_two_hole_plate_drills_both() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 2.0, 1.0]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 2.0, 1.0]);
     let d1 = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
@@ -137,7 +128,6 @@ fn a_two_hole_plate_drills_both() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let one = crate::boolean(&mut m, BoolKind::Cut, a, d1).expect("first bore");
     let v1 = nacre_props::mass_props(&m, one[0]).expect("props").volume;
     assert!(
@@ -170,11 +160,7 @@ fn a_two_hole_plate_drills_both() {
 #[test]
 fn three_bores_in_a_row() {
     let mut m = Model::new();
-    let mut solid = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([6.0, 2.0, 1.0]),
-    );
+    let mut solid = crate::fixtures::cuboid(&mut m, [0.0; 3], [6.0, 2.0, 1.0]);
     for x in [1.0, 3.0, 5.0] {
         let d = crate::fixtures::cylinder_with_seam(
             &mut m,
@@ -185,7 +171,6 @@ fn three_bores_in_a_row() {
             3.0,
         )
         .solid;
-        m.rebuild_adjacency();
         solid = crate::boolean(&mut m, BoolKind::Cut, solid, d).expect("a bore")[0];
     }
     assert!(
@@ -204,11 +189,7 @@ fn three_bores_in_a_row() {
 #[test]
 fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 2.0, 1.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 2.0, 1.0]);
     let d = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
@@ -218,14 +199,8 @@ fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let drilled = crate::boolean(&mut m, BoolKind::Cut, plate, d).expect("bore")[0];
-    let half = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let half = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 1.0]);
     let out = crate::boolean(&mut m, BoolKind::Common, drilled, half).expect("flush common");
     assert_eq!(out.len(), 1);
     assert!(
@@ -245,11 +220,7 @@ fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
 #[test]
 fn a_distant_cap_on_the_boxs_own_plane_removes_nothing() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
     // Far from the box in x/y, but its caps land exactly on z = 0 and z = 2.
     let b = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -260,7 +231,6 @@ fn a_distant_cap_on_the_boxs_own_plane_removes_nothing() {
         2.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("a cut that misses");
     assert_eq!(out.len(), 1);
     let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;

@@ -20,7 +20,6 @@ fn z_cylinder(r: f64, h: f64) -> (Model, CylinderSolid) {
         r,
         h,
     );
-    m.rebuild_adjacency();
     (m, c)
 }
 
@@ -161,11 +160,7 @@ fn an_edge_on_one_cylinder_twice_is_refused() {
 #[test]
 fn edge_cache_discard_and_regenerate_bit_identical() {
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 4.0, 10.0]),
-    );
+    nacre_ops::fixtures::cuboid(&mut m, [-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
     cylinder(
         &mut m,
         Point3::from_array([8.0, 0.0, 0.0]),
@@ -173,12 +168,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
         1.25,
         2.5,
     );
-    let boxed = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-6.0, -6.0, 0.0]),
-        Point3::from_array([-4.0, -5.0, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let boxed = nacre_ops::fixtures::cuboid(&mut m, [-6.0, -6.0, 0.0], [-4.0, -5.0, 3.0]);
     nacre_ops::apply(
         &mut m,
         &nacre_ops::Operation::Transform {
@@ -282,7 +272,6 @@ fn a_rims_frame_is_its_cylinders_cache() {
         for iso in turns {
             s = crate::fixtures::xf(&mut m, s, iso);
         }
-        m.rebuild_adjacency();
         let bits = |v: Vector3| v.as_array().map(f64::to_bits);
         let mut rims = 0;
         for &fh in &m.shell(m.solid(s).outer).faces {
@@ -369,7 +358,6 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
                 height,
             )
             .solid;
-            m.rebuild_adjacency();
             let b = base.map(|x| Rat::from_decimal(x).expect("a decimal"));
             let h = Rat::from_decimal(height).expect("a decimal");
             let top: [Rat; 3] = core::array::from_fn(|k| {
@@ -429,11 +417,7 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
 #[test]
 fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
     let mut m = Model::new();
-    let cuboid = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-3.0, -3.0, 0.0]),
-        Point3::from_array([-1.0, -1.0, 2.0]),
-    );
+    let cuboid = nacre_ops::fixtures::cuboid(&mut m, [-3.0, -3.0, 0.0], [-1.0, -1.0, 2.0]);
     let c = cylinder(
         &mut m,
         Point3::origin(),
@@ -441,7 +425,6 @@ fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
         1.0,
         2.0,
     );
-    m.rebuild_adjacency();
     let caps = [c.base, c.top].map(|f| m.face(f).surface);
     for s in &caps {
         assert!(
@@ -484,11 +467,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         1.0,
         2.0,
     );
-    nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([4.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 1.0, 1.0]),
-    );
+    nacre_ops::fixtures::cuboid(&mut m, [4.0, 0.0, 0.0], [5.0, 1.0, 1.0]);
     let mut vs: Vec<Handle<Vertex>> = Vec::new();
     let mut i = 0u32;
     while let Some(h) = m.vertex_handle_at(i) {
@@ -634,7 +613,6 @@ fn a_moved_cylinder_keeps_its_edges_kinds() {
             3.0,
         )
         .solid;
-        m.rebuild_adjacency();
         let v0 = nacre_props::mass_props(&m, s).unwrap().volume;
         for iso in moves {
             s = crate::fixtures::xf(&mut m, s, iso);
@@ -665,7 +643,6 @@ proptest! {
         prop_assume!(axis.norm() > 0.1); // skip near-zero axes
         let mut m = Model::new();
         cylinder(&mut m, Point3::from_array(base), axis, r, h);
-        m.rebuild_adjacency();
         prop_assert_eq!(m.vertex_count(), 2);
         prop_assert_eq!(m.edge_count(), 2);
         prop_assert_eq!(m.face_count(), 3);
@@ -692,7 +669,6 @@ proptest! {
         let axis = Vector3::from_array([u * 10f64.powi(-k), v * 10f64.powi(-j), 1.0]);
         let mut m = Model::new();
         cylinder(&mut m, Point3::origin(), axis, r, h);
-        m.rebuild_adjacency();
         prop_assert_eq!(m.vertex_count(), 2);
         prop_assert_eq!(m.edge_count(), 2);
         prop_assert_eq!(m.face_count(), 3);

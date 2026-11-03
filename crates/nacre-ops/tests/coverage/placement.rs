@@ -28,25 +28,14 @@ use nacre_topo::Model;
 /// and the second's `−x` wall came out as **one surface handle** before the fuse.
 fn place_and_fuse(n: i128, d: i128) -> Result<(Vec<f64>, bool), BoolError> {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
     let shift = |m: &mut Model, s, x: Rat| {
-        let s = xf(
+        xf(
             m,
             s,
             Isometry::translation([x, Rat::from_int(0), Rat::from_int(0)]),
-        );
-        m.rebuild_adjacency();
-        s
+        )
     };
     let a = shift(&mut m, a, Rat::new(n, d).expect("offset"));
     let b = shift(&mut m, b, Rat::new(n + d, d).expect("offset"));
@@ -70,7 +59,6 @@ fn place_and_fuse(n: i128, d: i128) -> Result<(Vec<f64>, bool), BoolError> {
     };
     let one_handle = wall(&m, a, 1.0) == wall(&m, b, -1.0);
     let out = boolean(&mut m, BoolKind::Fuse, a, b)?;
-    m.rebuild_adjacency();
     Ok((out.into_iter().map(|s| volume(&m, s)).collect(), one_handle))
 }
 
@@ -126,17 +114,8 @@ fn rotate_then_place_builds() {
     for deg in [7i128, 17, 30, 45, 63] {
         for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
             let mut m = Model::new();
-            let base = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 0.0]),
-                Point3::from_array([2.0, 2.0, 1.0]),
-            );
-            let tool = nacre_ops::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-0.5, -0.5, -1.0]),
-                Point3::from_array([0.5, 0.5, 2.0]),
-            );
-            m.rebuild_adjacency();
+            let base = nacre_ops::fixtures::cuboid(&mut m, [-2.0, -2.0, 0.0], [2.0, 2.0, 1.0]);
+            let tool = nacre_ops::fixtures::cuboid(&mut m, [-0.5, -0.5, -1.0], [0.5, 0.5, 2.0]);
             let tool = xf(
                 &mut m,
                 tool,
@@ -151,7 +130,6 @@ fn rotate_then_place_builds() {
             let base = xf(&mut m, base, place);
             let out = boolean(&mut m, BoolKind::Cut, base, tool)
                 .unwrap_or_else(|e| panic!("{deg}° then {off:?}: {e:?}"));
-            m.rebuild_adjacency();
             // The tool is a through-cut of a 4×4×1 slab by a 1×1 post: 16 − 1, whatever the angle.
             let v = volume(&m, out[0]);
             assert!((v - 15.0).abs() < 1e-9, "{deg}° then {off:?}: volume {v}");
@@ -176,12 +154,7 @@ fn rotate_then_place_builds() {
 fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     // Reflect `x = 1` in `x = 1/3`: the image is `−1/3`, computed as `2·fl(1/3) − 1`.
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let a = nacre_ops::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
     let nacre_ops::OpOutput::Mirror { solid: a } = nacre_ops::apply(
         &mut m,
         &nacre_ops::Operation::Mirror {
@@ -193,14 +166,8 @@ fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     .expect("mirror") else {
         unreachable!("mirror yields Mirror output")
     };
-    m.rebuild_adjacency();
     // Reach the same wall by translation instead: `x = 0` moved by `−1/3`.
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let b = nacre_ops::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     let b = xf(
         &mut m,
         b,
@@ -212,7 +179,6 @@ fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     );
 
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse itself succeeds");
-    m.rebuild_adjacency();
     let vols: Vec<f64> = out.iter().map(|&s| volume(&m, s)).collect();
     assert_eq!(vols.len(), 1, "one body, not a split: got {vols:?}");
     // Two unit cubes meeting on the shared wall.
@@ -238,7 +204,6 @@ fn a_coincidence_the_f64_image_breaks_is_judged_on_the_truth() {
         assert!((v - 3.0 * xs * ys).abs() < 1e-12, "{case}: box volume {v}");
         let out = boolean_one(&mut m, BoolKind::Common, bx, prism)
             .unwrap_or_else(|e| panic!("{case}: {e:?}"));
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{case}: {vs:?}");
         let faces = m.shell(m.solid(out).outer).faces.len();
@@ -350,7 +315,6 @@ fn a_line_is_ordered_along_its_true_direction() {
         let (x, y) = if swapped { (b, a) } else { (a, b) };
         let out = boolean_one(&mut m, kind, x, y)
             .unwrap_or_else(|e| panic!("{kind:?} swapped = {swapped}: {e:?}"));
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} swapped = {swapped}: {vs:?}");
         let v = volume(&m, out);
@@ -383,7 +347,6 @@ fn a_secant_wall_along_a_tilted_axis_is_arranged_on_its_rulings() {
         let (x, y) = if swapped { (b, a) } else { (a, b) };
         let out = boolean_one(&mut m, kind, x, y)
             .unwrap_or_else(|e| panic!("{kind:?} swapped = {swapped}: {e:?}"));
-        m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} swapped = {swapped}: {vs:?}");
         let v = volume(&m, out);
@@ -433,7 +396,6 @@ fn every_secant_wall_on_a_tilted_bore_builds() {
                 let out = boolean(&mut m, kind, x, y).unwrap_or_else(|e| {
                     panic!("y₀ = {y0}, y₁ = {y1}, {kind:?} swapped = {swapped}: {e:?}")
                 });
-                m.rebuild_adjacency();
                 let vs = nacre_validate::validate(&m);
                 assert!(
                     vs.is_empty(),

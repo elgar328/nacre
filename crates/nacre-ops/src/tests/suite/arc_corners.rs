@@ -32,7 +32,6 @@ fn leaf(m: &mut Model, h: f64, from_far: bool) -> Handle<Solid> {
     .expect("a leaf extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -156,7 +155,6 @@ fn an_s_joint_of_two_tangent_circles_is_one_point() {
     .expect("the S extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "{:?}",
@@ -263,7 +261,6 @@ fn a_moved_leaf_keeps_its_corner_names() {
         for iso in &moves {
             s = fixtures::xf(&mut m, s, *iso);
         }
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{name}: {:?}",
@@ -304,11 +301,7 @@ fn a_moved_leaf_keeps_its_corner_names() {
 fn a_leaf_stands_on_every_face_of_a_turned_box() {
     let r = Rat::from_int;
     let mut m = Model::new();
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-10.0, -10.0, -10.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
+    let block = crate::fixtures::cuboid(&mut m, [-10.0, -10.0, -10.0], [10.0, 10.0, 10.0]);
     let block = fixtures::xf(
         &mut m,
         block,
@@ -318,7 +311,6 @@ fn a_leaf_stands_on_every_face_of_a_turned_box() {
             angle: Angle::from_deg(r(30)).expect("an angle"),
         }),
     );
-    m.rebuild_adjacency();
     let faces = m.shell(m.solid(block).outer).faces.clone();
     assert_eq!(faces.len(), 6);
     let profile = stated(vec![
@@ -340,7 +332,6 @@ fn a_leaf_stands_on_every_face_of_a_turned_box() {
         .unwrap_or_else(|e| panic!("a leaf on {fh:?}: {e:?}")) else {
             unreachable!()
         };
-        m.rebuild_adjacency();
         let want = 25.0 * (std::f64::consts::FRAC_PI_2 - 1.0) * 2.0;
         let got = nacre_props::mass_props(&m, leaf).expect("props").volume;
         assert!((got - want).abs() < 1e-9, "{fh:?}: volume {got} vs {want}");
@@ -372,8 +363,7 @@ fn a_boolean_refuses_a_two_cylinder_edge_at_the_entry() {
         for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
             let mut m = Model::new();
             let l = leaf(&mut m, 2.0, false);
-            let b = crate::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-            m.rebuild_adjacency();
+            let b = crate::fixtures::cuboid(&mut m, lo, hi);
             let live = m.live_solids().to_vec();
             for (x, y) in [(l, b), (b, l)] {
                 let out = crate::boolean(&mut m, kind, x, y);
@@ -404,12 +394,7 @@ fn a_cylinder_pair_on_a_plane_along_the_axis_names_no_point() {
     let Vertex::CylinderPair { cylinders, .. } = *m.vertex(vertices_of(&m, s)[0]) else {
         panic!("a cylinder pair")
     };
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([10.0, 0.0, 0.0]),
-        Point3::from_array([11.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
+    let block = crate::fixtures::cuboid(&mut m, [10.0, 0.0, 0.0], [11.0, 1.0, 1.0]);
     let wall = m
         .shell(m.solid(block).outer)
         .faces

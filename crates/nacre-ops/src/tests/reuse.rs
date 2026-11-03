@@ -36,17 +36,8 @@ fn square(a: f64, b: f64) -> crate::Profile2d {
 #[test]
 fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
     let mut m = Model::new();
-    let unit = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let dec = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.3, -1.0, 0.3]),
-        Point3::from_array([0.7, 2.0, 0.7]),
-    );
-    m.rebuild_adjacency();
+    let unit = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let dec = crate::fixtures::cuboid(&mut m, [0.3, -1.0, 0.3], [0.7, 2.0, 0.7]);
 
     let unit_pts = solid_points(&m, unit).expect("an integer box answers");
     assert_eq!(unit_pts.len(), 8);
@@ -77,19 +68,9 @@ fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
 #[test]
 fn a_boolean_result_answers_from_its_definition() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0; 3], [3.0; 3]);
     let out = crate::boolean::boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 1);
     let pts =
         solid_points(&m, out[0]).expect("a result's vertices are three-plane meets with names");
@@ -149,7 +130,6 @@ fn a_framed_prisms_corners_solve_for_reuse() {
     .expect("the framed prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     // ① The solve: all eight corners — the narrow Cramer alone answered none of them.
     let pts = solid_points(&m, prism).expect("a framed prism's corners solve");
@@ -185,12 +165,7 @@ fn a_framed_prisms_corners_solve_for_reuse() {
     // ③ The gate bites in the consultation direction that matters: a class owned by the world
     // cuboid asks for the *prism's* points, so it can leave `Arrange`. (The other direction —
     // prism-owned classes consulting the cuboid — proves nothing here.)
-    let cub = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-2.0, -2.0, -2.0]),
-        Point3::from_array([10.0, 10.0, 10.0]),
-    );
-    m.rebuild_adjacency();
+    let cub = crate::fixtures::cuboid(&mut m, [-2.0, -2.0, -2.0], [10.0, 10.0, 10.0]);
     let setup = crate::arrangement::plane_index_setup(&m, prism, cub).expect("plane setup");
     let plans = class_plans(
         &m,
@@ -222,17 +197,8 @@ fn a_framed_prisms_corners_solve_for_reuse() {
 fn the_def_road_answers_for_the_populations_it_can_name() {
     let mut m = Model::new();
     // ① A constructed box, decimal-friendly and decimal-unfriendly corners.
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 2.0, 3.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.1, 5.0, 0.3]),
-        Point3::from_array([1.7, 6.9, 2.2]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.1, 5.0, 0.3], [1.7, 6.9, 2.2]);
     assert_answers(&m, a, true, "constructed (integer corners)");
     assert_answers(&m, b, true, "constructed (decimal corners)");
 
@@ -254,17 +220,11 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
         };
         solid
     };
-    m.rebuild_adjacency();
     assert_answers(&m, turned, true, "moved (rotated cuboid)");
 
     // ③ A fuse's result: its definition has a rational base, so it answers (reading the
     //    cache instead, a measured point "has no rational base").
-    let c = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.5, 0.5, 0.5]),
-        Point3::from_array([1.5, 2.5, 3.5]),
-    );
-    m.rebuild_adjacency();
+    let c = crate::fixtures::cuboid(&mut m, [0.5, 0.5, 0.5], [1.5, 2.5, 3.5]);
     let fused = {
         let OpOutput::Boolean { solids } = apply(
             &mut m,
@@ -279,7 +239,6 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
         };
         solids[0]
     };
-    m.rebuild_adjacency();
     assert_answers(&m, fused, true, "discovered (a fused result)");
 
     // ④ The recorded decline, pinned: a tilted-frame prism's base ring sits under a
@@ -305,7 +264,6 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
         };
         solid
     };
-    m.rebuild_adjacency();
     assert_answers(
         &m,
         prism,

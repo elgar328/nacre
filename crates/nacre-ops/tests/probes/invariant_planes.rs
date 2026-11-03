@@ -36,7 +36,6 @@ fn block(m: &mut Model) -> Handle<Solid> {
     .expect("the block") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -55,7 +54,6 @@ fn rot_z30(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     .expect("the turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 

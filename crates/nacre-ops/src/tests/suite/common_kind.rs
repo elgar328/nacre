@@ -131,9 +131,7 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
             let (mut m, a, b) = $name();
             let iso = rot_iso(nacre_exact::Axis::Z, 30);
             let a = transform(&mut m, a, &iso).unwrap();
-            m.rebuild_adjacency();
             let b = transform(&mut m, b, &iso).unwrap();
-            m.rebuild_adjacency();
             boxed.push((format!("{} (tilted)", stringify!($name)), m, a, b));
         }};
     }
@@ -270,11 +268,7 @@ fn every_producer_states_its_side_in_the_label_frame() {
         // The pocket family: `pocketed_cube` is itself a boolean result, so its pocket walls
         // are `Reversed` faces. Box coordinates are `pocket_corner_cut`'s.
         let (mut m, pc) = pocketed_cube();
-        let bx = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.85, 0.85, 0.85]),
-            Point3::from_array([1.15, 1.15, 1.15]),
-        );
+        let bx = crate::fixtures::cuboid(&mut m, [0.85, 0.85, 0.85], [1.15, 1.15, 1.15]);
         boxed.push(("pocket_corner_cut", m, pc, bx));
     }
 
@@ -378,11 +372,7 @@ fn every_producer_states_its_side_in_the_label_frame() {
 #[test]
 fn common_rejects_an_oblique_cylinder() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
     let frame = pythagorean_frame(&mut m, Point3::from_array([1.0, 1.0, 0.0]));
     let profile = stated(vec![circle(
         nacre_math::Point2::from_array([0.0, 0.0]),
@@ -401,7 +391,6 @@ fn common_rejects_an_oblique_cylinder() {
     .expect("a tilted cylinder on a rational frame") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     assert_rejects(
         || boolean_one(&mut m, BoolKind::Common, a, cyl),
         RejectReason::ObliqueCylinderCut,
@@ -436,7 +425,6 @@ proptest! {
         let res = boolean_one(&mut m, BoolKind::Common, a, b);
         prop_assume!(res.is_ok()); // skip rare coplanar/degenerate configs
         let r = res.unwrap();
-        m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         prop_assert!((vol - expected).abs() <= 1e-9 * expected.max(1.0), "{vol} vs {expected}");
@@ -468,11 +456,10 @@ proptest! {
         .unwrap();
         let prism = *m.live_solids().first().unwrap();
         let vol_prism = nacre_props::mass_props(&m, prism).unwrap().volume;
-        let c = crate::fixtures::cuboid(&mut m, Point3::from_array([-10.0; 3]), Point3::from_array([10.0; 3]));
+        let c = crate::fixtures::cuboid(&mut m, [-10.0; 3], [10.0; 3]);
         let res = boolean_one(&mut m, BoolKind::Common, prism, c);
         prop_assume!(res.is_ok());
         let r = res.unwrap();
-        m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
         let vol_r = nacre_props::mass_props(&m, r).unwrap().volume;
         prop_assert!(

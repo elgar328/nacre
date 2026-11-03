@@ -12,18 +12,13 @@
 //! their own").
 
 use nacre_math::{Point2, Point3};
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::{
     BoolError, BoolKind, DatumDef, OpOutput, Operation, Profile2d, RejectReason, RejectWhere,
     SketchPlane, apply, boolean,
 };
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
-
-fn cube(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
-    m.rebuild_adjacency();
-    s
-}
 
 fn volume(m: &Model, s: Handle<Solid>) -> f64 {
     nacre_props::mass_props(m, s).expect("props").volume
@@ -79,10 +74,9 @@ fn foreign_definitions(m: &Model, s: Handle<Solid>) -> Vec<String> {
 #[test]
 fn two_cubes_touching_along_an_edge_come_back_as_two_bodies() {
     let mut m = Model::new();
-    let a = cube(&mut m, [0.0; 3], [1.0; 3]);
-    let b = cube(&mut m, [1.0, 1.0, 0.0], [2.0, 2.0, 1.0]);
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [1.0, 1.0, 0.0], [2.0, 2.0, 1.0]);
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("a line contact separates");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2, "two bodies that only touch are two bodies");
     let total: f64 = out.iter().map(|&s| volume(&m, s)).sum();
     assert!((total - 2.0).abs() < 1e-12, "volumes sum to 2, got {total}");
@@ -102,10 +96,9 @@ fn two_cubes_touching_along_an_edge_come_back_as_two_bodies() {
 #[test]
 fn two_cubes_touching_at_a_corner_come_back_as_two_bodies() {
     let mut m = Model::new();
-    let a = cube(&mut m, [0.0; 3], [1.0; 3]);
-    let b = cube(&mut m, [1.0; 3], [2.0; 3]);
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [1.0; 3], [2.0; 3]);
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("a point contact separates");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 2);
     let total: f64 = out.iter().map(|&s| volume(&m, s)).sum();
     assert!((total - 2.0).abs() < 1e-12, "volumes sum to 2, got {total}");
@@ -120,11 +113,10 @@ fn two_cubes_touching_at_a_corner_come_back_as_two_bodies() {
 #[test]
 fn a_body_pinched_along_a_line_is_still_a_reject() {
     let mut m = Model::new();
-    let a = cube(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let bridge = cube(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
-    let b = cube(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let bridge = cuboid(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+    let b = cuboid(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
     let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
-    m.rebuild_adjacency();
     let err = boolean(&mut m, BoolKind::Fuse, ab[0], b).unwrap_err();
     let BoolError::Rejected {
         reason: RejectReason::NonManifoldResultEdge,
@@ -153,14 +145,12 @@ fn a_body_pinched_along_a_line_is_still_a_reject() {
 #[test]
 fn a_body_pinched_at_a_point_is_still_a_reject() {
     let mut m = Model::new();
-    let a = cube(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
-    let g1 = cube(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
-    let g2 = cube(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
-    let b = cube(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
+    let a = cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let g1 = cuboid(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
+    let g2 = cuboid(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
+    let b = cuboid(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
     let t1 = boolean(&mut m, BoolKind::Fuse, a, g1).expect("a and g1 overlap");
-    m.rebuild_adjacency();
     let t2 = boolean(&mut m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
-    m.rebuild_adjacency();
     let err = boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap_err();
     let BoolError::Rejected {
         reason: RejectReason::NonManifoldVertex,
@@ -206,7 +196,6 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], z: f64, dist: f64) -> Handle<Solid> {
     .expect("extrude") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -241,7 +230,6 @@ fn two_cavities_meeting_along_a_line_are_still_a_reject() {
         1.0,
     );
     let hollow = boolean(&mut m, BoolKind::Cut, b, v1).expect("the first void is ordinary");
-    m.rebuild_adjacency();
     let v2 = prism(
         &mut m,
         &[[2.0, 2.0], [3.0, 2.0], [3.0, 3.0], [2.0, 3.0]],
@@ -356,7 +344,6 @@ fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
             1.0,
         );
         let out = boolean(&mut m, kind, b, diamond).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
-        m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{kind:?}: {:?}",
@@ -412,7 +399,6 @@ fn every_all_grazing_void_names_its_shape_and_keeps_its_volumes() {
             let void = prism(&mut m, pts, 1.0, 1.0);
             let out = boolean(&mut m, kind, b, void)
                 .unwrap_or_else(|e| panic!("{pts:?} {kind:?}: {e:?}"));
-            m.rebuild_adjacency();
             assert!(
                 nacre_validate::validate(&m).is_empty(),
                 "{pts:?} {kind:?}: {:?}",
@@ -433,10 +419,9 @@ fn every_all_grazing_void_names_its_shape_and_keeps_its_volumes() {
 #[test]
 fn each_body_names_itself_by_its_own_planes() {
     let mut m = Model::new();
-    let a = cube(&mut m, [0.0; 3], [1.0; 3]);
-    let b = cube(&mut m, [1.0, 1.0, 0.0], [2.0, 2.0, 1.0]);
+    let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+    let b = cuboid(&mut m, [1.0, 1.0, 0.0], [2.0, 2.0, 1.0]);
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("a line contact separates");
-    m.rebuild_adjacency();
     for &s in &out {
         assert_eq!(
             foreign_definitions(&m, s),
@@ -454,16 +439,15 @@ fn cut_and_common_accept_a_contact() {
         ([1.0, 1.0, 1.0], [2.0, 2.0, 2.0]), // point
     ] {
         let mut m = Model::new();
-        let a = cube(&mut m, [0.0; 3], [1.0; 3]);
-        let b = cube(&mut m, lo, hi);
+        let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b = cuboid(&mut m, lo, hi);
         let cut = boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
         assert_eq!(cut.len(), 1, "a contact removes nothing");
-        m.rebuild_adjacency();
         assert!((volume(&m, cut[0]) - 1.0).abs() < 1e-12);
 
         let mut m = Model::new();
-        let a = cube(&mut m, [0.0; 3], [1.0; 3]);
-        let b = cube(&mut m, lo, hi);
+        let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b = cuboid(&mut m, lo, hi);
         assert!(
             boolean(&mut m, BoolKind::Common, a, b)
                 .expect("common")

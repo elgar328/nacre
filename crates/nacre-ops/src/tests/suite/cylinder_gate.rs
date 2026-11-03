@@ -264,7 +264,6 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
         solid
     };
     let across = turned_cylinder(&mut m, 5.0, 20.0, [-10.0, 0.0, 10.0]);
-    m.rebuild_adjacency();
     for kind in [BoolKind::Fuse, BoolKind::Cut] {
         let out = boolean(&mut m, kind, upright, across);
         assert!(
@@ -397,13 +396,8 @@ fn a_pin_floating_across_a_bore_builds() {
     let (bored, pin) = (12800.0 - 800.0 * PI, 24.0 * PI);
     builds_every_kind(
         |m| {
-            let plate = crate::fixtures::cuboid(
-                m,
-                Point3::from_array([-20.0, -20.0, -4.0]),
-                Point3::from_array([20.0, 20.0, 4.0]),
-            );
+            let plate = crate::fixtures::cuboid(m, [-20.0, -20.0, -4.0], [20.0, 20.0, 4.0]);
             let bore = axis_cylinder(m, [0.0, 0.0, -10.0], [0.0, 0.0, 1.0], 10.0, 20.0);
-            m.rebuild_adjacency();
             let bored = boolean(m, BoolKind::Cut, plate, bore).expect("the bore")[0];
             (
                 bored,
@@ -428,12 +422,7 @@ fn a_cylinder_across_a_half_cylinders_flat_wall_builds() {
     builds_every_kind(
         |m| {
             let big = axis_cylinder(m, [0.0, 0.0, -20.0], [0.0, 0.0, 1.0], 20.0, 40.0);
-            let cut = crate::fixtures::cuboid(
-                m,
-                Point3::from_array([-30.0, 0.0, -30.0]),
-                Point3::from_array([30.0, 30.0, 30.0]),
-            );
-            m.rebuild_adjacency();
+            let cut = crate::fixtures::cuboid(m, [-30.0, 0.0, -30.0], [30.0, 30.0, 30.0]);
             let half = boolean(m, BoolKind::Cut, big, cut).expect("the half")[0];
             (
                 half,
@@ -457,7 +446,6 @@ fn a_rim_touching_the_other_lateral_from_inside_is_refused() {
         let mut m = Model::new();
         let outer = axis_cylinder(&mut m, [0.0, 0.0, -5.0], [0.0, 0.0, 1.0], 5.0, 10.0);
         let inner = axis_cylinder(&mut m, [-4.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3.0, 8.0);
-        m.rebuild_adjacency();
         let out = boolean(&mut m, kind, outer, inner);
         assert!(
             matches!(
@@ -493,11 +481,7 @@ fn a_rim_touching_the_other_lateral_from_inside_is_refused() {
 #[test]
 fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([40.0, 20.0, 10.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [40.0, 20.0, 10.0]);
     // Tangent to `x = 0`: axis at x = 3, radius 3.
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -508,7 +492,6 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
         10.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let a = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss fuses")[0];
     // The bar's `+x` cap lands on `x = 0`, centred on the tangent line and overlapping the boss's
     // span, so its disk spans that line rather than clearing it.
@@ -521,7 +504,6 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
         20.0,
     )
     .solid;
-    m.rebuild_adjacency();
     for kind in [BoolKind::Fuse, BoolKind::Cut] {
         let out = crate::boolean(&mut m, kind, a, bar);
         assert!(
@@ -572,7 +554,6 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let c = crate::fixtures::windowed_boss(&mut m, 0.6, -1.0);
     let turned =
         transform(&mut m, c, &rot_iso(Axis::Y, 37)).expect("an irrational turn records a motion");
-    m.rebuild_adjacency();
     let (mut pierces, mut seams) = (Vec::new(), 0);
     let vertices: std::collections::BTreeSet<_> = m
         .shell(m.solid(turned).outer)
@@ -651,7 +632,6 @@ fn slanted_wedge(m: &mut Model) -> Handle<Solid> {
     .expect("the wedge extrudes") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -673,7 +653,6 @@ fn a_lateral_cut_at_both_rims_reads_its_span_from_both() {
                 let mut m = Model::new();
                 let band = crate::fixtures::cut_at_both_rims(&mut m, built, -2.0);
                 let across = turned_cylinder(&mut m, 0.2, 6.0, [-3.0, 0.0, z]);
-                m.rebuild_adjacency();
                 let out = boolean(&mut m, kind, band, across);
                 assert!(
                     refused_by(out.clone(), RejectReason::CylinderPairContact),
@@ -712,15 +691,9 @@ fn a_lateral_cut_at_both_rims_is_an_operand_like_any_other() {
         ] {
             let mut m = Model::new();
             let band = crate::fixtures::cut_at_both_rims(&mut m, built, -2.0);
-            let tool = crate::fixtures::cuboid(
-                &mut m,
-                nacre_math::Point3::from_array([-0.5, -2.0, 1.5]),
-                nacre_math::Point3::from_array([3.0, 2.0, 2.5]),
-            );
-            m.rebuild_adjacency();
+            let tool = crate::fixtures::cuboid(&mut m, [-0.5, -2.0, 1.5], [3.0, 2.0, 2.5]);
             let out = boolean(&mut m, kind, band, tool)
                 .unwrap_or_else(|e| panic!("built by {built:?}, {kind:?}: {e:?}"));
-            m.rebuild_adjacency();
             assert!(
                 nacre_validate::validate(&m).is_empty(),
                 "{built:?} {kind:?}"

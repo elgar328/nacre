@@ -36,7 +36,6 @@ fn reflected(
     .unwrap() else {
         panic!("expected Mirror");
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -64,7 +63,6 @@ fn transformed(
     .unwrap() else {
         panic!("expected Transform");
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -122,12 +120,7 @@ fn a_moved_corner_is_its_realization_and_replays_near_it() {
     let want: [(usize, usize); 5] = [(48, 0), (0, 48), (0, 48), (48, 0), (48, 0)];
     for (chain, want) in chains.iter().zip(want) {
         let mut m = Model::new();
-        let s = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 3.0, 4.0]),
-        );
-        m.rebuild_adjacency();
+        let s = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
         let mut r = s;
         for step in chain {
             r = match step {
@@ -213,12 +206,7 @@ fn a_moved_corner_is_its_realization_and_replays_near_it() {
 #[test]
 fn a_chain_reads_root_to_leaf() {
     let mut m = Model::new();
-    let s = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
-    m.rebuild_adjacency();
+    let s = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     let r = transformed(&mut m, s, &rot30z());
     let r = transformed(
         &mut m,

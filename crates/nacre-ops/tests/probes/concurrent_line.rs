@@ -35,7 +35,6 @@ fn prism(m: &mut Model, axis: Axis, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     .expect("extrude") else {
         panic!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -78,7 +77,6 @@ fn stair_and_prism(step: f64, apex: f64, dist: f64) -> (Model, Handle<Solid>, Ha
 fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
     let (mut m, a, b) = stair_and_prism(step, apex, dist);
     let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
-    m.rebuild_adjacency();
     assert_eq!(got.len(), 1, "one body");
     assert!(nacre_validate::validate(&m).is_empty());
     nacre_props::mass_props(&m, got[0]).expect("props").volume

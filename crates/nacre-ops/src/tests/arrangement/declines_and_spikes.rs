@@ -8,50 +8,19 @@ use super::*;
 #[test]
 fn axis_aligned_cubes_decline_nothing() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    for wc in 0..planes.len() {
-        let tr = trace_on_class_of(
-            &m,
-            a,
-            b,
-            wc,
-            &jd,
-            &[],
-            &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
-            &plane_ix,
-        );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [1.0, 1.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.0, 2.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    for wc in 0..setup.geom.len() {
+        let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
         assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
     }
 }
 
 fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_exact::Rat) -> Handle<Solid> {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
-    let out = transform(
+    transform(
         m,
         s,
         &Isometry::rotation(Rotation {
@@ -60,9 +29,7 @@ fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_exact::Rat) -> Handle<Sol
             angle: Angle::from_deg(deg).unwrap(),
         }),
     )
-    .unwrap();
-    m.rebuild_adjacency();
-    out
+    .unwrap()
 }
 
 /// **The crossing collector's direction families really are equivalence classes.**
@@ -89,38 +56,18 @@ fn direction_families_partition_the_walls() {
         let n = 24i128;
         let mut m = Model::new();
         let mut acc = if rotated {
-            crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-3.0, -3.0, 0.0]),
-                Point3::from_array([3.0, 3.0, 2.0]),
-            )
+            crate::fixtures::cuboid(&mut m, [-3.0, -3.0, 0.0], [3.0, 3.0, 2.0])
         } else {
-            crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-1.0, -1.0, 0.0]),
-                Point3::from_array([n as f64 * 0.5 + 1.0, 1.0, 3.0]),
-            )
+            crate::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [n as f64 * 0.5 + 1.0, 1.0, 3.0])
         };
-        m.rebuild_adjacency();
         let mut pairs = 0usize;
         for i in 0..n {
             let fin = if rotated {
-                let f = crate::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([2.0, -0.4, 0.0]),
-                    Point3::from_array([8.0, 0.4, 1.0]),
-                );
-                m.rebuild_adjacency();
+                let f = crate::fixtures::cuboid(&mut m, [2.0, -0.4, 0.0], [8.0, 0.4, 1.0]);
                 tilt_by(&mut m, f, nacre_exact::Rat::new(360 * i, n).unwrap())
             } else {
                 let x = i as f64 * 0.5;
-                let f = crate::fixtures::cuboid(
-                    &mut m,
-                    Point3::from_array([x, 0.5, 0.0]),
-                    Point3::from_array([x + 0.2, 4.0, 2.0]),
-                );
-                m.rebuild_adjacency();
-                f
+                crate::fixtures::cuboid(&mut m, [x, 0.5, 0.0], [x + 0.2, 4.0, 2.0])
             };
             // The audit needs the *same* judging context the boolean uses, and the walls of each
             // class as the tracer finds them — so it re-runs the setup and the trace, then checks
@@ -170,7 +117,6 @@ fn direction_families_partition_the_walls() {
             acc = super::super::boolean(&mut m, BoolKind::Fuse, acc, fin)
                 .expect("fuse")
                 .0[0];
-            m.rebuild_adjacency();
         }
         println!(
             "  {} fold: {pairs} wall pairs audited, all agree",
@@ -224,35 +170,17 @@ fn spend(n: i128, rotated: bool) {
     // own x instead, so both arms fuse `n` distinct blades onto a growing solid and the only
     // difference is which predicate route the judgements take.
     let mut acc = if rotated {
-        crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-3.0, -3.0, 0.0]),
-            Point3::from_array([3.0, 3.0, 2.0]),
-        )
+        crate::fixtures::cuboid(&mut m, [-3.0, -3.0, 0.0], [3.0, 3.0, 2.0])
     } else {
-        crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-1.0, -1.0, 0.0]),
-            Point3::from_array([n as f64 * 0.5 + 1.0, 1.0, 3.0]),
-        )
+        crate::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.0], [n as f64 * 0.5 + 1.0, 1.0, 3.0])
     };
-    m.rebuild_adjacency();
     let blade = |m: &mut Model, i: i128| {
         let f = if rotated {
-            crate::fixtures::cuboid(
-                m,
-                Point3::from_array([2.0, -0.4, 0.0]),
-                Point3::from_array([8.0, 0.4, 1.0]),
-            )
+            crate::fixtures::cuboid(m, [2.0, -0.4, 0.0], [8.0, 0.4, 1.0])
         } else {
             let x = i as f64 * 0.5;
-            crate::fixtures::cuboid(
-                m,
-                Point3::from_array([x, 0.5, 0.0]),
-                Point3::from_array([x + 0.2, 4.0, 2.0]),
-            )
+            crate::fixtures::cuboid(m, [x, 0.5, 0.0], [x + 0.2, 4.0, 2.0])
         };
-        m.rebuild_adjacency();
         if rotated {
             tilt_by(m, f, nacre_exact::Rat::new(360 * i, n).unwrap())
         } else {
@@ -266,7 +194,6 @@ fn spend(n: i128, rotated: bool) {
         acc = super::super::boolean(&mut m, BoolKind::Fuse, acc, f)
             .expect("warm")
             .0[0];
-        m.rebuild_adjacency();
     }
     phase::reset();
     phase::scale::reset();
@@ -279,7 +206,6 @@ fn spend(n: i128, rotated: bool) {
             .expect("fuse")
             .0[0];
         whole += t.elapsed();
-        m.rebuild_adjacency();
     }
 
     let rows = phase::all();
@@ -353,20 +279,10 @@ fn spend(n: i128, rotated: bool) {
 fn measure_spike_report_under_hoisting() {
     let n = 24i128;
     let mut m = Model::new();
-    let mut acc = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-3.0, -3.0, 0.0]),
-        Point3::from_array([3.0, 3.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let mut acc = crate::fixtures::cuboid(&mut m, [-3.0, -3.0, 0.0], [3.0, 3.0, 2.0]);
     let (mut total, mut loosest) = (0usize, String::new());
     for i in 0..n {
-        let fin = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([2.0, -0.4, 0.0]),
-            Point3::from_array([8.0, 0.4, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let fin = crate::fixtures::cuboid(&mut m, [2.0, -0.4, 0.0], [8.0, 0.4, 1.0]);
         let fin = tilt_by(&mut m, fin, nacre_exact::Rat::new(360 * i, n).unwrap());
         let (solids, report) =
             crate::boolean_with_report(&mut m, BoolKind::Fuse, acc, fin).unwrap();
@@ -375,7 +291,6 @@ fn measure_spike_report_under_hoisting() {
             loosest = format!("{e:?}");
         }
         acc = solids[0];
-        m.rebuild_adjacency();
     }
     let v = nacre_props::mass_props(&m, acc).unwrap().volume;
     println!("\n  coincidences over {n} booleans : {total}");
@@ -394,26 +309,15 @@ fn measure_spike_report_under_hoisting() {
 fn measure_spike_cull_potential() {
     let n = 60i128;
     let mut m = Model::new();
-    let mut acc = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-3.0, -3.0, 0.0]),
-        Point3::from_array([3.0, 3.0, 2.0]),
-    );
-    m.rebuild_adjacency();
+    let mut acc = crate::fixtures::cuboid(&mut m, [-3.0, -3.0, 0.0], [3.0, 3.0, 2.0]);
     let mut tot = Counts::default();
     for i in 0..n {
-        let fin = crate::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([2.0, -0.4, 0.0]),
-            Point3::from_array([8.0, 0.4, 1.0]),
-        );
-        m.rebuild_adjacency();
+        let fin = crate::fixtures::cuboid(&mut m, [2.0, -0.4, 0.0], [8.0, 0.4, 1.0]);
         let fin = tilt_by(&mut m, fin, nacre_exact::Rat::new(360 * i, n).unwrap());
         tot.add(&count_cull(&m, acc, fin));
         acc = super::super::boolean(&mut m, BoolKind::Fuse, acc, fin)
             .expect("fuse")
             .0[0];
-        m.rebuild_adjacency();
     }
     println!("over the fold, production config (ClassReuse::Proved):");
     println!("  classes                 {:>9}", tot.classes);

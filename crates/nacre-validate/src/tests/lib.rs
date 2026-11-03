@@ -8,7 +8,7 @@ use proptest::prelude::*;
 
 fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
-    nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
+    nacre_ops::fixtures::cuboid(&mut m, min, max);
     m
 }
 
@@ -997,7 +997,6 @@ fn a_cap_whose_flag_lies_is_caught_by_its_rim() {
         cavities: vec![],
     });
     m.restore_live(vec![replaced]);
-    m.rebuild_adjacency();
     let vs = validate(&m);
     assert_eq!(vs.len(), 1, "only the flag lie should fire: {vs:?}");
     assert!(
@@ -1010,8 +1009,7 @@ fn a_cap_whose_flag_lies_is_caught_by_its_rim() {
 /// check above is measuring the lie and not the shape.
 #[test]
 fn an_honest_cylinder_passes_the_rim_check() {
-    let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
-    m.rebuild_adjacency();
+    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
     assert!(validate(&m).is_empty(), "{:?}", validate(&m));
 }
 
@@ -1367,9 +1365,14 @@ fn a_vertex_nudged_off_its_definition_flags() {
 fn hollow_cube(outer: f64, inner: f64, reverse: bool) -> Model {
     let mut m = Model::new();
     let ext = |s: f64| Vector3::from_array([s, s, s]);
-    let a = nacre_ops::fixtures::cuboid(&mut m, Point3::origin(), Point3::origin() + ext(outer));
+    let a =
+        nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], (Point3::origin() + ext(outer)).as_array());
     let inner_min = Point3::origin() + ext(0.5 * (outer - inner));
-    let b = nacre_ops::fixtures::cuboid(&mut m, inner_min, inner_min + ext(inner));
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        inner_min.as_array(),
+        (inner_min + ext(inner)).as_array(),
+    );
     let b_outer = m.solid(b).outer;
     let void = if reverse {
         m.reversed_shell(b_outer)

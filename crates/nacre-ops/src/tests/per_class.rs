@@ -25,11 +25,8 @@ fn an_oblique_section_its_pieces_do_not_part_is_not_measured() {
         28.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let a = crate::boolean(&mut m, BoolKind::Cut, plate, across).expect("the blind bore")[0];
-    m.rebuild_adjacency();
     let b = crate::tests::gusset(&mut m, crate::tests::SUNK, 30.0);
-    m.rebuild_adjacency();
     let setup = crate::arrangement::plane_index_setup(&m, a, b).expect("the gate passes");
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let z = |v: i128| Rat::from_int(v);

@@ -87,7 +87,6 @@ fn parallel_boolean_is_thread_order_independent() {
                     },
                 )
                 .unwrap();
-                m.rebuild_adjacency();
                 match out {
                     OpOutput::Extrude { solid, .. } => solid,
                     o => panic!("{o:?}"),
@@ -103,9 +102,7 @@ fn parallel_boolean_is_thread_order_independent() {
                 }),
             )
             .unwrap();
-            m.rebuild_adjacency();
             let (solids, report) = boolean_with_report(&mut m, BoolKind::Fuse, acc, fin).unwrap();
-            m.rebuild_adjacency();
             acc = solids[0];
             // **The report's decisions travel in the signature**, not just the geometry. Measured
             // on this fixture: up to 25 coincidences per boolean, so `loosest`'s `max_by_key` is
@@ -152,18 +149,14 @@ fn parallel_boolean_is_thread_order_independent() {
         let b = m.live_solids()[1];
         let up = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
         let b = transform(&mut m, b, &up).unwrap();
-        m.rebuild_adjacency();
         let tilt = rot_iso(Axis::X, 30);
         let a = transform(&mut m, a, &tilt).unwrap();
-        m.rebuild_adjacency();
         let b = transform(&mut m, b, &tilt).unwrap();
-        m.rebuild_adjacency();
         (m, a, b)
     };
     let two_ngons = || {
         let (mut m, a, b) = build();
         let (solids, report) = boolean_with_report(&mut m, BoolKind::Fuse, a, b).unwrap();
-        m.rebuild_adjacency();
         // The same rule as the fold above: decisions travel, the work count does not.
         format!(
             "{:?}{:?}{}",
@@ -184,7 +177,6 @@ fn parallel_boolean_is_thread_order_independent() {
     let four_plane = || {
         let (mut m, target, bar) = four_plane_model(0.2, 45);
         let (solids, report) = boolean_with_report(&mut m, BoolKind::Cut, target, bar).unwrap();
-        m.rebuild_adjacency();
         // The same rule as the fold above: decisions travel, the work count does not.
         format!(
             "{:?}{:?}{}",

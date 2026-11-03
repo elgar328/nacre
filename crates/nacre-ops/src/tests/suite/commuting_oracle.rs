@@ -37,12 +37,7 @@ fn oracle_families() -> Vec<(&'static str, Build)> {
 fn recorded_block_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
     let a = super::fixtures::through_block(&mut m, 1.0);
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 2.5, 0.5]),
-        Point3::from_array([2.0, 3.5, 1.5]),
-    );
-    m.rebuild_adjacency();
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 2.5, 0.5], [2.0, 3.5, 1.5]);
     (m, a, b)
 }
 
@@ -62,31 +57,16 @@ fn recorded_bore_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let a = boolean(&mut m, BoolKind::Cut, block, bore).expect("the bore cuts")[0];
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 2.5, 0.5]),
-        Point3::from_array([2.0, 3.5, 1.5]),
-    );
-    m.rebuild_adjacency();
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 2.5, 0.5], [2.0, 3.5, 1.5]);
     (m, a, b)
 }
 
 /// The census's `rot` pair: a unit-ish box and a post through it.
 fn planar_pair() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 2.0, 2.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.4, 0.4, -1.0]),
-        Point3::from_array([1.6, 1.6, 3.0]),
-    );
-    m.rebuild_adjacency();
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.4, 0.4, -1.0], [1.6, 1.6, 3.0]);
     (m, a, b)
 }
 
@@ -94,11 +74,7 @@ fn planar_pair() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// crosses the bore — offset from the axis at `y0 = 12`, through it at `y0 = 10`.
 fn bored_plate_and_slab(y0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
@@ -108,15 +84,8 @@ fn bored_plate_and_slab(y0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
         7.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let holed = boolean(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts")[0];
-    m.rebuild_adjacency();
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, y0, 0.0]),
-        Point3::from_array([40.0, 20.0, 5.0]),
-    );
-    m.rebuild_adjacency();
+    let slab = crate::fixtures::cuboid(&mut m, [0.0, y0, 0.0], [40.0, 20.0, 5.0]);
     (m, holed, slab)
 }
 
@@ -125,13 +94,7 @@ fn bored_plate_and_slab(y0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 fn fused_through_and_mid_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, plate, boss) = boss_family([2.0, 2.0, -1.0], 4.0);
     let fused = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the through boss fuses")[0];
-    m.rebuild_adjacency();
-    let slab = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([-1.0, -1.0, 0.5]),
-        Point3::from_array([5.0, 5.0, 1.5]),
-    );
-    m.rebuild_adjacency();
+    let slab = crate::fixtures::cuboid(&mut m, [-1.0, -1.0, 0.5], [5.0, 5.0, 1.5]);
     (m, fused, slab)
 }
 
@@ -258,7 +221,6 @@ fn boolean_commutes(
 ) -> (Answer, Outcome, Digest) {
     let (mut m0, a0, b0) = build();
     let r0 = boolean(&mut m0, kind, a0, b0);
-    m0.rebuild_adjacency();
     let ans0 = answer(&m0, &r0);
     let (mut m, a, b) = build();
     let a = match transform(&mut m, a, iso) {
@@ -269,14 +231,12 @@ fn boolean_commutes(
         Ok(x) => x,
         Err(e) => return (ans0, Outcome::InputUntransportable(e), Digest::NotAsked),
     };
-    m.rebuild_adjacency();
     let r = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         boolean(&mut m, kind, a, b)
     })) {
         Ok(r) => r,
         Err(p) => return (ans0, Outcome::Panicked(panic_text(p)), Digest::NotAsked),
     };
-    m.rebuild_adjacency();
     let ans = answer(&m, &r);
     let outcome = match answers_agree(&ans0, &ans) {
         Ok(()) => Outcome::Commutes,
@@ -297,7 +257,6 @@ fn boolean_commutes(
             if refused {
                 Digest::Refused
             } else {
-                m0.rebuild_adjacency();
                 let x = sorted_vertex_bits(&m0, &moved0);
                 let y = sorted_vertex_bits(&m, v);
                 if x == y {
@@ -564,11 +523,7 @@ fn the_boolean_commutes_with_every_motion_of_the_group() {
 fn a_rigid_motion_behaves_as_its_two_operations() {
     use nacre_exact::{Angle, Isometry, Rat, Rotation};
     let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
-        let plate = crate::fixtures::cuboid(
-            m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
+        let plate = crate::fixtures::cuboid(m, [0.0; 3], [4.0, 4.0, 2.0]);
         let boss = crate::fixtures::cylinder_with_seam(
             m,
             Point3::from_array([4.3, 0.5, -1.0]),
@@ -578,7 +533,6 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             4.0,
         )
         .solid;
-        m.rebuild_adjacency();
         (plate, boss)
     };
     let turn = Rotation {
@@ -593,7 +547,6 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     let rigid = Isometry::rigid(turn, shift);
     let pa = transform(&mut a, pa, &rigid).unwrap();
     let ba = transform(&mut a, ba, &rigid).unwrap();
-    a.rebuild_adjacency();
     // Road B: the turn, then the translation.
     let mut b = Model::new();
     let (pb, bb) = build(&mut b);
@@ -602,7 +555,6 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     let pb = transform(&mut b, pb, &tr).unwrap();
     let bb = transform(&mut b, bb, &rot).unwrap();
     let bb = transform(&mut b, bb, &tr).unwrap();
-    b.rebuild_adjacency();
     // Both carry the whole motion: every statement moves exactly.
     assert!(!carries_motion(&a, ba) && !carries_motion(&b, bb));
     let lateral = |m: &Model, s: Handle<Solid>| -> nacre_topo::CylinderDef {
@@ -627,9 +579,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     assert_eq!(sorted_vertex_bits(&a, &[ba]), sorted_vertex_bits(&b, &[bb]));
     // The boolean cannot tell the roads apart.
     let ra = boolean(&mut a, BoolKind::Cut, pa, ba).expect("road A cuts");
-    a.rebuild_adjacency();
     let rb = boolean(&mut b, BoolKind::Cut, pb, bb).expect("road B cuts");
-    b.rebuild_adjacency();
     assert_eq!(sorted_vertex_bits(&a, &ra), sorted_vertex_bits(&b, &rb));
     assert!(nacre_validate::validate(&a).is_empty() && nacre_validate::validate(&b).is_empty());
 
@@ -645,7 +595,6 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
         } else {
             transform(&mut m, s, &rigid).unwrap()
         };
-        m.rebuild_adjacency();
         (m, s)
     };
     let faces_said = |m: &Model, s: Handle<Solid>| -> Vec<String> {
@@ -695,7 +644,6 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
     let iso = rigid_iso(Axis::Z, 90, [5, -3, 2]);
     let plate = transform(&mut m, plate, &iso).unwrap();
     let boss = transform(&mut m, boss, &iso).unwrap();
-    m.rebuild_adjacency();
     assert!(
         !carries_motion(&m, boss),
         "the whole motion is exact on this data"
@@ -711,7 +659,6 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
     assert_eq!(def.origin().map(|x| x.to_f64()), [3.0, 1.3, 1.0]);
     let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the moved boss cuts");
-    m.rebuild_adjacency();
     assert_eq!(out.len(), 1);
     let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
     let want = 32.0 - 0.223648;

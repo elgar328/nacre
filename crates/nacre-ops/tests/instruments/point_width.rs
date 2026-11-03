@@ -97,6 +97,7 @@
 
 use nacre_exact::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
+use nacre_ops::fixtures::cuboid;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane};
 use nacre_ops::{apply, boolean};
 use nacre_store::Handle;
@@ -107,10 +108,6 @@ use crate::fixtures::{datum_frame, live_vertices, p2};
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/invariants/points_coverage.rs` already uses
 // ---------------------------------------------------------------------------------------------
-
-fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
-}
 
 // ---------------------------------------------------------------------------------------------
 // the tally
@@ -479,7 +476,6 @@ fn boolean_corner() -> Model {
     let a = cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
     let b = cuboid(&mut m, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
-    m.rebuild_adjacency();
     m
 }
 
@@ -514,7 +510,6 @@ fn turned_after_the_cut() -> Model {
         unreachable!()
     };
     m.restore_live(vec![solid]);
-    m.rebuild_adjacency();
     m
 }
 
@@ -524,7 +519,6 @@ fn boolean_twice() -> Model {
     let a = m.live_solids()[0];
     let b = cuboid(&mut m, [-1.0, 4.4, 4.4], [11.0, 8.8, 8.8]);
     boolean(&mut m, BoolKind::Cut, a, b).expect("second cut");
-    m.rebuild_adjacency();
     m
 }
 
@@ -549,9 +543,7 @@ fn boolean_rotated() -> Model {
     .expect("turn") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
-    m.rebuild_adjacency();
     m
 }
 
@@ -593,7 +585,6 @@ fn tilted_frame(passes: usize) -> Model {
     .expect("the wf base prism") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
 
     let mut done: Vec<Handle<Surface>> = Vec::new();
     for pass in 0..passes {
@@ -627,7 +618,6 @@ fn tilted_frame(passes: usize) -> Model {
             0.4,
         )
         .unwrap_or_else(|e| panic!("the wf pocket, pass {pass}: {e:?}"));
-        m.rebuild_adjacency();
     }
     m
 }
@@ -792,7 +782,6 @@ fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     .expect("transform") else {
         unreachable!()
     };
-    m.rebuild_adjacency();
     solid
 }
 
@@ -823,11 +812,7 @@ fn a_stacked_name_is_as_wide_as_the_place_it_lands() {
 
     for (what, turn) in [("translate", false), ("rot90_translate", true)] {
         let mut m = Model::new();
-        let mut s = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 2.0, 3.0]),
-        );
+        let mut s = cuboid(&mut m, [0.0; 3], [1.0, 2.0, 3.0]);
         for i in 1..=40 {
             if turn {
                 s = moved(
@@ -863,11 +848,7 @@ fn a_stacked_name_is_as_wide_as_the_place_it_lands() {
     let mut once = Model::new();
     let step = [dec(0.13), dec(0.3), dec(0.7)];
     for k in 1..=40 {
-        let s = nacre_ops::fixtures::cuboid(
-            &mut once,
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 2.0, 3.0]),
-        );
+        let s = cuboid(&mut once, [0.0; 3], [1.0, 2.0, 3.0]);
         moved(
             &mut once,
             s,

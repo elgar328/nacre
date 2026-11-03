@@ -207,7 +207,6 @@ fn every_six<'q>(
     every_placement(a, quads, |c, m, got| {
         cur.push(match got {
             Ok(solids) => {
-                m.rebuild_adjacency();
                 let vs = nacre_validate::validate(m);
                 assert!(vs.is_empty(), "{c}: {vs:?}");
                 let v = solids.iter().map(|&s| volume(m, s)).sum();
@@ -865,7 +864,6 @@ fn a_body_touching_itself_along_a_ruling_is_refused() {
                 let at = format!("{family}, tilted = {tilted}, swapped = {swapped}");
                 match (boolean(&mut m, BoolKind::Fuse, x, y), want) {
                     (Ok(solids), Some((bodies, v))) => {
-                        m.rebuild_adjacency();
                         let vs = nacre_validate::validate(&m);
                         assert!(vs.is_empty(), "{at}: {vs:?}");
                         assert_eq!(solids.len(), bodies, "{at}: bodies");
@@ -1038,7 +1036,6 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
                     ) else {
                         panic!("extrude")
                     };
-                    m.rebuild_adjacency();
                     solid
                 };
                 let world = nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z);
@@ -1101,14 +1098,12 @@ fn a_pinched_cap_as_an_operand_builds() {
             for swapped in [false, true] {
                 let mut m = Model::new();
                 let w = wedge_on_a_rim(&mut m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
-                let t = cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
-                m.rebuild_adjacency();
+                let t = cuboid(&mut m, lo, hi);
                 (vw, vt) = (volume(&m, w), volume(&m, t));
                 let (x, y) = if swapped { (t, w) } else { (w, t) };
                 let at = format!("{tool}, {kind:?} swapped = {swapped}");
                 let solids =
                     boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{at}: refused — {e:?}"));
-                m.rebuild_adjacency();
                 let vs = nacre_validate::validate(&m);
                 assert!(vs.is_empty(), "{at}: {vs:?}");
                 let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
@@ -1185,7 +1180,6 @@ fn an_outside_corner_as_tall_as_the_cylinder_builds() {
                     let at = format!("{family}, tilted = {tilted}, {kind:?} swapped = {swapped}");
                     let solids = boolean(&mut m, kind, x, y)
                         .unwrap_or_else(|e| panic!("{at}: refused — {e:?}"));
-                    m.rebuild_adjacency();
                     let vs = nacre_validate::validate(&m);
                     assert!(vs.is_empty(), "{at}: {vs:?}");
                     let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())

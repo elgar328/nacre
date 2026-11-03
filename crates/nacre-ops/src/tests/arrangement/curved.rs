@@ -126,11 +126,7 @@ fn armed_boss_at(
     usize,
 ) {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 20.0]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 40.0, 20.0]);
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([40.0, y, z_lo]),
@@ -140,7 +136,6 @@ fn armed_boss_at(
         h,
     )
     .solid;
-    m.rebuild_adjacency();
     let (mut setup, cyl_surfs) =
         crate::arrangement::plane_index_setup_inner(&m, plate, boss).unwrap();
     for &surf in &cyl_surfs {
@@ -232,19 +227,7 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
                 .all(|q| (q.as_array()[2] - 20.0).abs() < 1e-12)
         })
         .expect("the plate's top class z = 20");
-    let tr = trace_on_class_of(
-        &m,
-        plate,
-        boss,
-        top,
-        &jd,
-        &setup.cyls,
-        &setup.planes,
-        &setup.surf_ix,
-        &setup.inc_a,
-        &setup.inc_b,
-        &setup.plane_ix,
-    );
+    let tr = trace_on_class_of(&m, plate, boss, top, &jd, &setup.cyls, &setup);
     let (split, _, _) =
         class_skeleton(&jd, &setup.cyls, top, &tr, &mut Aliases::default()).unwrap();
     let y0 = setup
@@ -504,19 +487,7 @@ fn the_gates_record_arms_the_ruling_trace() {
 fn the_armed_wall_class_walks_to_closed_cells() {
     let (m, plate, boss, setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
-    let tr = trace_on_class_of(
-        &m,
-        plate,
-        boss,
-        wc,
-        &jd,
-        &setup.cyls,
-        &setup.planes,
-        &setup.surf_ix,
-        &setup.inc_a,
-        &setup.inc_b,
-        &setup.plane_ix,
-    );
+    let tr = trace_on_class_of(&m, plate, boss, wc, &jd, &setup.cyls, &setup);
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     let (split, circles, rulings) =
         class_skeleton(&jd, &setup.cyls, wc, &tr, &mut Aliases::default()).unwrap();
@@ -577,19 +548,7 @@ fn armed_class_edges<'a>(
     jd: &Judge<'a, WorkingPlane>,
     wc: usize,
 ) -> ClassEdges<'a> {
-    let tr = trace_on_class_of(
-        m,
-        plate,
-        boss,
-        wc,
-        jd,
-        &setup.cyls,
-        &setup.planes,
-        &setup.surf_ix,
-        &setup.inc_a,
-        &setup.inc_b,
-        &setup.plane_ix,
-    );
+    let tr = trace_on_class_of(m, plate, boss, wc, jd, &setup.cyls, setup);
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     let (split, circles, rulings) =
         class_skeleton(jd, &setup.cyls, wc, &tr, &mut Aliases::default()).unwrap();
@@ -629,11 +588,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
     use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder, plane_side};
     use nacre_exact::{Orient, Rat};
     let mut m = Model::new();
-    let block = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 2.0, 3.0]),
-    );
+    let block = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 2.0, 3.0]);
     let boss = crate::fixtures::cylinder(
         &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
@@ -1225,7 +1180,6 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
     .unwrap();
     assert_eq!(out.len(), 1, "one welded solid");
     m.restore_live(out);
-    m.rebuild_adjacency();
     (m, setup, wc)
 }
 
@@ -1535,11 +1489,7 @@ fn with_cut_rings(
     ),
 ) {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array(plate),
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], plate);
     // The seam off every ring corner (`+x`, at `(45, 20)`) or on the chord end (`−y`, `(40, 15)`).
     let seam = if seam_off {
         [1.0, 0.0, 0.0]
@@ -1555,49 +1505,28 @@ fn with_cut_rings(
         10.0,
     )
     .solid;
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        cyls,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     // The one class whose circle is cut: find it by running the split everywhere.
     let mut found = None;
-    for wc in 0..planes.len() {
-        if !matches!(plane_ix.get(wc), Some(ClassIx::Plane(_)) | None) && wc < plane_ix.len() {
+    for wc in 0..setup.geom.len() {
+        if !matches!(setup.plane_ix.get(wc), Some(ClassIx::Plane(_)) | None)
+            && wc < setup.plane_ix.len()
+        {
             continue;
         }
         if jd.world_rat(wc).is_none() {
             continue;
         }
-        let tr = trace_on_class_of(
-            &m,
-            a,
-            b,
-            wc,
-            &jd,
-            &[],
-            &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
-            &plane_ix,
-        );
-        let Ok((split, circles, _)) = class_skeleton(&jd, &cyls, wc, &tr, &mut Aliases::default())
+        let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
+        let Ok((split, circles, _)) =
+            class_skeleton(&jd, &setup.cyls, wc, &tr, &mut Aliases::default())
         else {
             continue;
         };
         let Ok(edges) = ClassEdges::of(
             &jd,
-            &cyls,
+            &setup.cyls,
             &[],
             wc,
             &split,
@@ -1614,7 +1543,7 @@ fn with_cut_rings(
         if arcs.is_empty() {
             continue;
         }
-        let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
+        let (cells, face_of) = walk_cells(&jd, &setup.cyls, wc, &edges).unwrap();
         // Four cells share this class: the bitten plate-top face (+1, many steps), the
         // outside (−1 — it also borders the arc, via the outer bulge), and two digons
         // (chord + arc): the overhang (disk minus plate) and the bite (disk ∩ plate).
@@ -1662,7 +1591,7 @@ fn with_cut_rings(
         break;
     }
     let (wc, big, overhang, bite) = found.expect("one class carries the cut circle");
-    f(&jd, &cyls, wc, &big, &overhang, &bite);
+    f(&jd, &setup.cyls, wc, &big, &overhang, &bite);
 }
 
 /// **A root at an arc's own end is a corner on the ray, and the arc's tangent there says
@@ -1822,56 +1751,25 @@ fn the_two_roads_agree_on_every_rational_ring() {
     use nacre_exact::Rat;
     use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0, 4.0, 2.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([2.0, 2.0, 0.0]),
-        Point3::from_array([6.0, 6.0, 2.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        cyls,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
+    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [4.0, 4.0, 2.0]);
+    let b = crate::fixtures::cuboid(&mut m, [2.0, 2.0, 0.0], [6.0, 6.0, 2.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let (mut rings_swept, mut points, mut inside, mut boundary, mut reflex) =
         (0usize, 0usize, 0usize, 0usize, 0usize);
-    for wc in 0..planes.len() {
+    for wc in 0..setup.geom.len() {
         let Some(coeffs) = jd.world_rat(wc) else {
             continue;
         };
-        let tr = trace_on_class_of(
-            &m,
-            a,
-            b,
-            wc,
-            &jd,
-            &[],
-            &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
-            &plane_ix,
-        );
-        let Ok((split, circles, _)) = class_skeleton(&jd, &cyls, wc, &tr, &mut Aliases::default())
+        let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
+        let Ok((split, circles, _)) =
+            class_skeleton(&jd, &setup.cyls, wc, &tr, &mut Aliases::default())
         else {
             continue;
         };
         let Ok(edges) = ClassEdges::of(
             &jd,
-            &cyls,
+            &setup.cyls,
             &[],
             wc,
             &split,
@@ -1881,7 +1779,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
         ) else {
             continue;
         };
-        let Ok((cells, _)) = walk_cells(&jd, &cyls, wc, &edges) else {
+        let Ok((cells, _)) = walk_cells(&jd, &setup.cyls, wc, &edges) else {
             continue;
         };
         let n = [coeffs[0], coeffs[1], coeffs[2]];
@@ -1935,7 +1833,8 @@ fn the_two_roads_agree_on_every_rational_ring() {
                         "the lift is the chart's inverse"
                     );
                     let plane = point_in_ring_2d_rat(q, &ring2);
-                    let mixed = combinatorics::point_in_mixed_ring(&jd, &cyls, &coeffs, &p, &ring);
+                    let mixed =
+                        combinatorics::point_in_mixed_ring(&jd, &setup.cyls, &coeffs, &p, &ring);
                     match (plane, mixed) {
                         (RingSide::Inside, Some(true)) => inside += 1,
                         (RingSide::Outside, Some(false)) => {}
@@ -1961,11 +1860,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
 /// `(1,1)`, r=0.5 — every wall is a full unit from the axis, so the population gate passes
 /// and [`plane_index_setup`] hands the arrangement bricks a cylinder-bearing table.
 fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
-    let a = crate::fixtures::cuboid(
-        m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0; 3]),
-    );
+    let a = crate::fixtures::cuboid(m, [0.0; 3], [2.0; 3]);
     let b = crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array([1.0, 1.0, z0]),
@@ -1975,7 +1870,6 @@ fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
         h,
     )
     .solid;
-    m.rebuild_adjacency();
     (a, b)
 }
 
@@ -2113,34 +2007,11 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
 fn a_drill_circle_is_a_hole_of_the_cap_ring() {
     let mut m = Model::new();
     let (a, b) = drilled(&mut m, -1.0, 4.0); // z∈[-1,3]: through both caps of the box
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        cyls,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = class_at_z(&planes, 0.0);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = class_at_z(&setup.geom, 0.0);
 
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     assert!(
         matches!(
@@ -2157,7 +2028,8 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         tr.circles
     );
 
-    let (split, circles, _) = class_skeleton(&jd, &cyls, wc, &tr, &mut Aliases::default()).unwrap();
+    let (split, circles, _) =
+        class_skeleton(&jd, &setup.cyls, wc, &tr, &mut Aliases::default()).unwrap();
     assert_eq!(
         split.len(),
         4,
@@ -2166,7 +2038,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
 
     let edges = ClassEdges::of(
         &jd,
-        &cyls,
+        &setup.cyls,
         &[],
         wc,
         &split,
@@ -2175,7 +2047,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         &Aliases::default(),
     )
     .unwrap();
-    let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
+    let (cells, face_of) = walk_cells(&jd, &setup.cyls, wc, &edges).unwrap();
     assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
     let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
     let (disk, contour) = (at(2 * split.len()), at(2 * split.len() + 1));
@@ -2184,7 +2056,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         .position(|c| c.winding == 1 && c.half_edges.len() == 4)
         .unwrap();
 
-    let nesting = nest_cells(&jd, &cyls, wc, &cells, &edges).unwrap();
+    let nesting = nest_cells(&jd, &setup.cyls, wc, &cells, &edges).unwrap();
     assert_eq!(
         nesting.holes.get(&cap).map(Vec::as_slice),
         Some(&[contour][..]),
@@ -2194,7 +2066,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
     let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
     // The class is the box's **bottom** cap, so which of `W`'s two sides carries the box is
     // read off the class normal rather than assumed: the box occupies z>0.
-    let up = planes[wc].plane.normal().as_array()[2] > 0.0;
+    let up = setup.geom[wc].plane.normal().as_array()[2] > 0.0;
     let box_side = usize::from(!up); // 0 = above `n_W`, 1 = below
     let mut cap_label = [false; 4];
     cap_label[box_side] = true;
@@ -2313,50 +2185,16 @@ fn no_ghost_circle_outside_the_rim_span() {
     let mut m = Model::new();
     // z∈[-1,1.5]: through the box's bottom cap, short of its top cap at z=2.
     let (a, b) = drilled(&mut m, -1.0, 2.5);
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
 
     // The box's top cap at z=2 is past the rim span [−1, 1.5]: no circle, no decline.
-    let top = trace_on_class_of(
-        &m,
-        a,
-        b,
-        class_at_z(&planes, 2.0),
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let top = trace_on_class_of(&m, a, b, class_at_z(&setup.geom, 2.0), &jd, &[], &setup);
     assert!(top.circles.is_empty(), "{:?}", top.circles);
     assert!(top.declined.is_empty(), "{:?}", top.declined);
 
     // The bottom cap at z=0 is strictly inside the span: the transversal circle is there.
-    let bottom = trace_on_class_of(
-        &m,
-        a,
-        b,
-        class_at_z(&planes, 0.0),
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let bottom = trace_on_class_of(&m, a, b, class_at_z(&setup.geom, 0.0), &jd, &[], &setup);
     assert_eq!(
         bottom
             .circles
@@ -2374,19 +2212,7 @@ fn no_ghost_circle_outside_the_rim_span() {
     // inside). On a **convex** cap the two agree about which side the body is on; the whole
     // point of carrying both is the reflex corner (a blind bore's ceiling) where they do not,
     // and `edge_mask`'s `Graze > Seated` then picks the right one.
-    let cap = trace_on_class_of(
-        &m,
-        a,
-        b,
-        class_at_z(&planes, 1.5),
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let cap = trace_on_class_of(&m, a, b, class_at_z(&setup.geom, 1.5), &jd, &[], &setup);
     assert!(cap.declined.is_empty(), "{:?}", cap.declined);
     let sides: Vec<(bool, bool)> = cap
         .circles
@@ -2420,11 +2246,7 @@ fn no_ghost_circle_outside_the_rim_span() {
 #[test]
 fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([10.0; 3]),
-    );
+    let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [10.0; 3]);
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([5.0, 5.0, 0.0]),
@@ -2434,39 +2256,19 @@ fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
         3.0,
     )
     .solid;
-    m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // A second operand so the arrangement runs on the bored solid as an operand.
-    let boss = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 10.0]),
-        Point3::from_array([2.0, 2.0, 12.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, bored, boss).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
+    let boss = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 10.0], [2.0, 2.0, 12.0]);
+    let setup = plane_index_setup(&m, bored, boss).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let tr = trace_on_class_of(
         &m,
         bored,
         boss,
-        class_at_z(&planes, 3.0), // the bore's ceiling
+        class_at_z(&setup.geom, 3.0), // the bore's ceiling
         &jd,
         &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
+        &setup,
     );
     let seated: Vec<bool> = tr
         .circles
@@ -2506,49 +2308,19 @@ fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
 #[test]
 fn partial_overlap_is_not_merged() {
     let mut m = Model::new();
-    let a = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 1.0, 1.0]),
-    );
-    let b = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let PlaneSetup {
-        planes: faces_tab,
-        geom: planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        plane_ix,
-        standard,
-        notes,
-        ..
-    } = plane_index_setup(&m, a, b).unwrap();
-    let jd = Judge::new(&planes, standard, &notes);
-    let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-    let tr = trace_on_class_of(
-        &m,
-        a,
-        b,
-        wc,
-        &jd,
-        &[],
-        &faces_tab,
-        &surf_ix,
-        &inc_a,
-        &inc_b,
-        &plane_ix,
-    );
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [1.0, 0.0, 0.0], [3.0, 1.0, 1.0]);
+    let setup = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let wc = shared_cap_class(&m, a, b, &setup.surf_ix, &setup.planes, &setup.plane_ix);
+    let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
     // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
     // seated≡transversal coincidence).
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     // The shared y=1 wall class (a face at y=1).
-    let y1 = planes
+    let y1 = setup
+        .geom
         .iter()
         .position(|p| {
             p.witness_coords()
@@ -2608,7 +2380,6 @@ fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let tri = crate::Profile2d::polygon(vec![p2(-1.0, 2.0), p2(3.0, -2.0), p2(3.0, 2.0)]).unwrap();
     let b = extrude(&mut m, tri);
-    m.rebuild_adjacency();
     let PlaneSetup {
         planes: faces_tab,
         geom: planes,
@@ -2721,7 +2492,6 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
         1.0,
         4.0,
     );
-    m.rebuild_adjacency();
     let surf = m.face(bar.lateral).surface;
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
     let Some(realized) = m.surface_cache(surf).cylinder() else {
@@ -2836,11 +2606,7 @@ fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
     use nacre_exact::Rat;
     use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder};
     let mut m = Model::new();
-    let cube = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
+    let cube = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     let bar = crate::fixtures::cylinder(
         &mut m,
         Point3::from_array([0.0, 0.0, -1.0]),
@@ -2848,7 +2614,6 @@ fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
         1.0,
         3.0,
     );
-    m.rebuild_adjacency();
     let surf = m.face(bar.lateral).surface;
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
     let Some(realized) = m.surface_cache(surf).cylinder() else {
@@ -3028,8 +2793,8 @@ fn a_restatement_reads_a_cutting_plane_with_no_world_statement() {
         let z0 = z - if below { 5 } else { 0 };
         let floor = crate::fixtures::cuboid(
             m,
-            Point3::from_array([-1.0, -1.0, z0 as f64 / 5.0]),
-            Point3::from_array([1.0, 1.0, (z0 + 5) as f64 / 5.0]),
+            [-1.0, -1.0, z0 as f64 / 5.0],
+            [1.0, 1.0, (z0 + 5) as f64 / 5.0],
         );
         crate::transform::transform(
             m,
@@ -3067,7 +2832,6 @@ fn a_restatement_reads_a_cutting_plane_with_no_world_statement() {
         1.0,
         4.0,
     );
-    m.rebuild_adjacency();
     let surf = m.face(bar.lateral).surface;
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
     let Some(realized) = m.surface_cache(surf).cylinder() else {
