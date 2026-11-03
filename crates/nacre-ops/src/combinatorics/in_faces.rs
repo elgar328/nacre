@@ -590,7 +590,7 @@ pub(crate) fn loop_parity(
 /// and a crossing counts exactly when it is on that plane's **negative** side — so each road
 /// states its own half and nothing here has a front or a back: the named road's normal is the
 /// line's own direction `n_a × n_b` (which counts **behind** the query — `plane_plane_cylinder`
-/// builds the meet line's `dir` as `cross3(n_a, n_b)`, the very `d` that `order_along`'s
+/// builds the meet line's `dir` as `cross3_rat(n_a, n_b)`, the very `d` that `order_along`'s
 /// `fwd == 1` measures against), the coordinate road's is `−dir` (**ahead** of the origin).
 ///
 /// Each root asks the face by [`loop_parity`] **before** the half — a root off the face is not

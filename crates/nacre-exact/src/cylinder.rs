@@ -19,13 +19,6 @@ pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [
     if parallel_rat(ref_dir, dir) || dot_sign_rat(ref_dir, dir) != Orient::Zero {
         return None;
     }
-    let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
-        let mut acc = Rat::from_int(0);
-        for k in 0..3 {
-            acc = acc.checked_add(a[k].checked_mul(b[k])?)?;
-        }
-        Some(acc)
-    };
     let scale = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
         Some([
             v[0].checked_mul(k)?,
@@ -33,19 +26,9 @@ pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [
             v[2].checked_mul(k)?,
         ])
     };
-    let cross = [
-        dir[1]
-            .checked_mul(ref_dir[2])?
-            .checked_sub(dir[2].checked_mul(ref_dir[1])?)?,
-        dir[2]
-            .checked_mul(ref_dir[0])?
-            .checked_sub(dir[0].checked_mul(ref_dir[2])?)?,
-        dir[0]
-            .checked_mul(ref_dir[1])?
-            .checked_sub(dir[1].checked_mul(ref_dir[0])?)?,
-    ];
-    let inv_e = inv_sqrt_rat(dot(ref_dir, ref_dir)?)?;
-    let inv_m = inv_sqrt_rat(dot(dir, dir)?)?;
+    let cross = cross3_rat(dir, ref_dir)?;
+    let inv_e = inv_sqrt_rat(dot3_rat(ref_dir, ref_dir)?)?;
+    let inv_m = inv_sqrt_rat(dot3_rat(dir, dir)?)?;
     Some((
         scale(ref_dir, inv_e)?,
         scale(&cross, inv_e.checked_mul(inv_m)?)?,

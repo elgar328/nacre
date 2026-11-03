@@ -25,10 +25,7 @@ use super::*;
 pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
     let zero = Rat::from_int(0);
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let mut nn = zero;
-    for c in n {
-        nn = nn.checked_add(c.checked_mul(c)?)?;
-    }
+    let nn = dot3_rat(&n, &n)?;
     if nn == zero {
         return None;
     }
@@ -313,10 +310,7 @@ fn three_planes_int(m: [[num_bigint::BigInt; 4]; 3]) -> Option<MeetPoint> {
 /// two derivations checkable against each other.
 pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let mut nn = Rat::from_int(0);
-    for c in n {
-        nn = nn.checked_add(c.checked_mul(c)?)?;
-    }
+    let nn = dot3_rat(&n, &n)?;
     if nn == Rat::from_int(0) {
         return None; // not a plane
     }

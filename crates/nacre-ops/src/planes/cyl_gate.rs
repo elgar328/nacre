@@ -1147,11 +1147,10 @@ fn tangency_foot(
 ) -> Option<[nacre_exact::Rat; 3]> {
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let mut num = coeffs[3];
-    let mut den = nacre_exact::Rat::from_int(0);
     for k in 0..3 {
         num = num.checked_add(n[k].checked_mul(o[k])?)?;
-        den = den.checked_add(n[k].checked_mul(n[k])?)?;
     }
+    let den = nacre_exact::dot3_rat(&n, &n)?;
     // `Rat` has no division: the reciprocal is the exact inverse and `Rat::new` refuses `0`,
     // which is precisely the degenerate normal this must not divide by.
     let q = num.checked_mul(nacre_exact::Rat::new(den.denom(), den.numer())?)?;

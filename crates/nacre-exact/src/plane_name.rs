@@ -23,8 +23,7 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
         ])
     };
     let (u, v) = (d(b, a)?, d(c, a)?);
-    let term = |i: usize, j: usize| u[i].checked_mul(v[j])?.checked_sub(u[j].checked_mul(v[i])?);
-    let n = [term(1, 2)?, term(2, 0)?, term(0, 1)?];
+    let n = cross3_rat(&u, &v)?;
     if n.iter().all(|c| *c == Rat::from_int(0)) {
         return None; // collinear
     }
@@ -339,13 +338,8 @@ pub fn name_along_points(name: &PlaneName, points: [&MeetPoint; 3]) -> Option<bo
                 ])
             };
             let (u, v) = (e(b)?, e(p)?);
-            let t =
-                |i: usize, j: usize| u[i].checked_mul(v[j])?.checked_sub(u[j].checked_mul(v[i])?);
-            let n = [t(1, 2)?, t(2, 0)?, t(0, 1)?];
-            let mut dot = Rat::from_int(0);
-            for k in 0..3 {
-                dot = dot.checked_add(c[k].checked_mul(n[k])?)?;
-            }
+            let n = cross3_rat(&u, &v)?;
+            let dot = dot3_rat(&[c[0], c[1], c[2]], &n)?;
             let zero = Rat::from_int(0);
             Some(if n.iter().all(|x| *x == zero) {
                 None

@@ -537,23 +537,16 @@ pub(super) fn component_count(pieces: &[Piece]) -> usize {
         })
     };
     let mut parent: Vec<usize> = Vec::new();
-    fn find(parent: &mut [usize], mut x: usize) -> usize {
-        while parent[x] != x {
-            parent[x] = parent[parent[x]];
-            x = parent[x];
-        }
-        x
-    }
     // **The arcs join too.** The `-1` count the walk compares against is a count of the
     // 1-skeleton's components, and an arc is an edge of that skeleton like any other — leaving them
     // out would make a crossed circle look like a component of its own and the walk's check would
     // then be off by one wherever a circle was cut.
     for e in pieces.iter().map(|p| p.end) {
         let (a, b) = (id(e[0], &mut parent), id(e[1], &mut parent));
-        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+        let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
         parent[ra] = rb;
     }
     (0..parent.len())
-        .filter(|&i| find(&mut parent, i) == i)
+        .filter(|&i| uf_find(&mut parent, i) == i)
         .count()
 }

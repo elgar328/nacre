@@ -1367,9 +1367,9 @@ proptest::proptest! {
 /// `F(p) = |p − o|²(m·m) − ((p − o)·m)² − r²(m·m)`: zero exactly on the cylinder.
 fn cylinder_form(p: &V3, o: &V3, m: &V3, r2: Rat) -> Rat {
     let w = sub3(p, o).unwrap();
-    let mm = dot3(m, m).unwrap();
-    let wm = dot3(&w, m).unwrap();
-    dot3(&w, &w)
+    let mm = dot3_rat(m, m).unwrap();
+    let wm = dot3_rat(&w, m).unwrap();
+    dot3_rat(&w, &w)
         .unwrap()
         .checked_mul(mm)
         .unwrap()
@@ -1459,7 +1459,7 @@ proptest::proptest! {
         let m2 = m.map(|c| ri(c * k));
         match radical_plane(&o1, &mv, &big(r1), &o2, &m2, &big(r2)).unwrap() {
             RadicalPlane::Plane(pl) => {
-                let at = dot3(&[pl[0], pl[1], pl[2]], &p).unwrap().checked_add(pl[3]).unwrap();
+                let at = dot3_rat(&[pl[0], pl[1], pl[2]], &p).unwrap().checked_add(pl[3]).unwrap();
                 let diff = cylinder_form(&p, &o1, &mv, ri(r1))
                     .checked_sub(cylinder_form(&p, &o2, &mv, ri(r2)))
                     .unwrap();
@@ -1467,7 +1467,7 @@ proptest::proptest! {
             }
             RadicalPlane::Coaxial => {
                 let d = sub3(&o1, &o2).unwrap();
-                proptest::prop_assert!(is_zero3(&cross3(&d, &mv).unwrap()));
+                proptest::prop_assert!(is_zero3(&cross3_rat(&d, &mv).unwrap()));
             }
             RadicalPlane::NotParallel => proptest::prop_assert!(false, "the axes are parallel"),
         }

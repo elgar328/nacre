@@ -151,13 +151,6 @@ pub(crate) fn check_result_topology(
 ///
 /// An enclosed void is its own component — its boundary shares no edge with the outer.
 pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
-    fn find(p: &mut [usize], mut x: usize) -> usize {
-        while p[x] != x {
-            p[x] = p[p[x]];
-            x = p[x];
-        }
-        x
-    }
     /// The joining key — the third appearance of "a line is unordered, a circle is ordered"
     /// (`Wall` is the type half, `EdgeKey` the handle-space half; this is the node-space half).
     /// A 2-node circle folds its chord and both complementary arcs into one `norm_edge` pair, so
@@ -219,7 +212,7 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     }
     for us in users.values().chain(rim_users.values()) {
         if let [a, b] = us[..] {
-            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+            let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
             parent[ra] = rb;
         }
     }
@@ -227,7 +220,7 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     let mut labels = Vec::with_capacity(faces.len());
     let mut n = 0;
     for i in 0..faces.len() {
-        let root = find(&mut parent, i);
+        let root = uf_find(&mut parent, i);
         let next = label.len();
         let l = *label.entry(root).or_insert(next);
         labels.push(l);

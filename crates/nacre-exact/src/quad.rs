@@ -21,7 +21,7 @@
 //! two spellings — subtracting two of them is the same-radical arithmetic below, and refuses);
 //! structural equality is deliberately not offered until a consumer needs it by name.
 
-use crate::{BigRat, HpBounded, MeetPoint, Orient, Rat};
+use crate::{BigRat, HpBounded, MeetPoint, Orient, Rat, cross3_rat, dot3_rat};
 use num_bigint::BigInt;
 
 /// A quadratic algebraic scalar `a + b·√c`, exact.
@@ -551,23 +551,6 @@ fn biquad_sign_int(
 
 type V3 = [Rat; 3];
 
-fn dot3(x: &V3, y: &V3) -> Option<Rat> {
-    x[0].checked_mul(y[0])?
-        .checked_add(x[1].checked_mul(y[1])?)?
-        .checked_add(x[2].checked_mul(y[2])?)
-}
-
-fn cross3(x: &V3, y: &V3) -> Option<V3> {
-    Some([
-        x[1].checked_mul(y[2])?
-            .checked_sub(x[2].checked_mul(y[1])?)?,
-        x[2].checked_mul(y[0])?
-            .checked_sub(x[0].checked_mul(y[2])?)?,
-        x[0].checked_mul(y[1])?
-            .checked_sub(x[1].checked_mul(y[0])?)?,
-    ])
-}
-
 fn sub3(x: &V3, y: &V3) -> Option<V3> {
     Some([
         x[0].checked_sub(y[0])?,
@@ -1086,7 +1069,7 @@ pub fn plane_plane_cylinder(
     debug_assert!(r2.is_positive(), "cylinder squared radius must be positive");
     let n1 = [p1[0], p1[1], p1[2]];
     let n2 = [p2[0], p2[1], p2[2]];
-    let l = cross3(&n1, &n2)?;
+    let l = cross3_rat(&n1, &n2)?;
     if is_zero3(&l) {
         // Parallel normals: coincident iff the full 4-vectors are proportional. Cross-multiply
         // against a nonzero normal component (both normals are nonzero — a plane's contract).
@@ -1102,10 +1085,10 @@ pub fn plane_plane_cylinder(
     }
     // Deterministic base: Cramer for { n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0 }. The system's
     // determinant is ℓ·(n₁×n₂) = |ℓ|² > 0.
-    let det = dot3(&l, &l)?;
+    let det = dot3_rat(&l, &l)?;
     let rhs = [zero.checked_sub(p1[3])?, zero.checked_sub(p2[3])?, zero];
     let col = |k: usize| -> [Rat; 3] { [n1[k], n2[k], l[k]] };
-    let det3 = |c0: &V3, c1: &V3, c2: &V3| -> Option<Rat> { dot3(c0, &cross3(c1, c2)?) };
+    let det3 = |c0: &V3, c1: &V3, c2: &V3| -> Option<Rat> { dot3_rat(c0, &cross3_rat(c1, c2)?) };
     let mut base = [zero; 3];
     for (k, out) in base.iter_mut().enumerate() {
         // Replace column k by the rhs (columns here are the rows' k-th entries).
@@ -1117,12 +1100,12 @@ pub fn plane_plane_cylinder(
     // The quadratic A·s² + B·s + C = 0 of the line against |w|²|m|² − (w·m)² = r²|m|².
     let m = dir;
     let w0 = sub3(&base, origin)?;
-    let mm = dot3(m, m)?;
-    let ll = dot3(&line.dir, &line.dir)?;
-    let lm = dot3(&line.dir, m)?;
-    let w0m = dot3(&w0, m)?;
-    let w0l = dot3(&w0, &line.dir)?;
-    let w0w0 = dot3(&w0, &w0)?;
+    let mm = dot3_rat(m, m)?;
+    let ll = dot3_rat(&line.dir, &line.dir)?;
+    let lm = dot3_rat(&line.dir, m)?;
+    let w0m = dot3_rat(&w0, m)?;
+    let w0l = dot3_rat(&w0, &line.dir)?;
+    let w0w0 = dot3_rat(&w0, &w0)?;
     let a = ll.checked_mul(mm)?.checked_sub(lm.checked_mul(lm)?)?;
     let b =
         Rat::from_int(2).checked_mul(w0l.checked_mul(mm)?.checked_sub(w0m.checked_mul(lm)?)?)?;
@@ -1198,7 +1181,7 @@ pub fn radical_plane(
         !is_zero3(m1) && !is_zero3(m2),
         "cylinder axes must be nonzero"
     );
-    if !is_zero3(&cross3(m1, m2)?) {
+    if !is_zero3(&cross3_rat(m1, m2)?) {
         return Some(RadicalPlane::NotParallel);
     }
     // With one direction `m` for both (parallel axes have one projector), a cylinder is
@@ -1208,8 +1191,8 @@ pub fn radical_plane(
     // So the plane is `n·p − K/2 = 0`; `n = 0` exactly when `d` runs along the axis.
     let m = m1;
     let d = sub3(o1, o2)?;
-    let mm = dot3(m, m)?;
-    let dm = dot3(&d, m)?;
+    let mm = dot3_rat(m, m)?;
+    let dm = dot3_rat(&d, m)?;
     let mut n = [Rat::from_int(0); 3];
     for (k, out) in n.iter_mut().enumerate() {
         *out = mm.checked_mul(d[k])?.checked_sub(dm.checked_mul(m[k])?)?;
@@ -1223,8 +1206,8 @@ pub fn radical_plane(
         o1[2].checked_add(o2[2])?,
     ];
     let k = mm
-        .checked_mul(dot3(o1, o1)?.checked_sub(dot3(o2, o2)?)?)?
-        .checked_sub(dm.checked_mul(dot3(&sum, m)?)?)?
+        .checked_mul(dot3_rat(o1, o1)?.checked_sub(dot3_rat(o2, o2)?)?)?
+        .checked_sub(dm.checked_mul(dot3_rat(&sum, m)?)?)?
         .checked_sub(mm.checked_mul(r2_1.narrow()?.checked_sub(r2_2.narrow()?)?)?)?;
     let half_k = k.checked_mul(Rat::new(1, 2)?)?;
     Some(RadicalPlane::Plane([
@@ -1768,8 +1751,8 @@ pub fn circular_order_about_seam(
 ) -> Option<SeamOrder> {
     let m = dir;
     // e₁ = (m·m)·ref − (ref·m)·m: rational, ⊥ m, positively proportional to the unit e₁.
-    let mm = dot3(m, m)?;
-    let rm = dot3(ref_dir, m)?;
+    let mm = dot3_rat(m, m)?;
+    let rm = dot3_rat(ref_dir, m)?;
     let mut e1 = [Rat::from_int(0); 3];
     for (k, out) in e1.iter_mut().enumerate() {
         *out = mm
@@ -1783,12 +1766,13 @@ pub fn circular_order_about_seam(
         debug_assert!(false, "ref_dir parallel to the axis pins no seam");
         return None;
     }
-    let e2 = cross3(m, &e1)?;
+    let e2 = cross3_rat(m, &e1)?;
 
     // w(s)·e as a QuadVal: (u·e) + s·(ℓ·e), u = base − origin.
     let dot_w = |(line, s): (&MeetLine, &QuadVal), e: &V3| -> Option<QuadVal> {
         let u = sub3(&line.base, origin)?;
-        QuadVal::from_rat(dot3(&u, e)?).checked_add(&s.checked_mul_rat(dot3(&line.dir, e)?)?)
+        QuadVal::from_rat(dot3_rat(&u, e)?)
+            .checked_add(&s.checked_mul_rat(dot3_rat(&line.dir, e)?)?)
     };
     let class = |p: (&MeetLine, &QuadVal)| -> Option<SeamClass> {
         Some(match dot_w(p, &e2)?.sign() {
@@ -1833,7 +1817,7 @@ pub fn circular_order_about_seam(
     let (l2, s2) = second;
     let u1 = sub3(&l1.base, origin)?;
     let u2 = sub3(&l2.base, origin)?;
-    let trip = |x: &V3, y: &V3| -> Option<Rat> { dot3(&cross3(x, y)?, m) };
+    let trip = |x: &V3, y: &V3| -> Option<Rat> { dot3_rat(&cross3_rat(x, y)?, m) };
     let k0 = trip(&u1, &u2)?;
     let k1 = trip(&l1.dir, &u2)?;
     let k2 = trip(&u1, &l2.dir)?;

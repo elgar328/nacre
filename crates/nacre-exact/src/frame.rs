@@ -64,12 +64,9 @@ pub fn plane_frame_named(
     origin: [Rat; 3],
     ref_dir: [Rat; 3],
 ) -> Option<PlaneFrame> {
-    let zero = Rat::from_int(0);
     let n = reduce_direction([coeffs[0], coeffs[1], coeffs[2]])?;
     let u_raw = reduce_direction(ref_dir)?;
-    let dot =
-        |a: &[Rat; 3]| (0..3).try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(a[k])?));
-    let (uu, nn) = (dot(&u_raw)?, dot(&n)?);
+    let (uu, nn) = (dot3_rat(&u_raw, &u_raw)?, dot3_rat(&n, &n)?);
     // **`v_raw` is exact, and taking it exactly is what makes the axes come out exactly.**
     // Realizing `v̂` as `ŵ × û` in f64 costs two roundings that do not cancel: a plain wall whose
     // `v` is exactly `ẑ` came out `0.999999999999999_7`, which is a frame that is not quite
@@ -88,13 +85,9 @@ pub fn plane_frame_named(
     // graceful step down in accuracy, never a wrong frame. (Filling `vv` with something else would
     // not be a fallback but a corruption: `v̂` would come out the wrong *length* and the basis
     // would not be orthonormal.)
-    let cx = |i: usize, j: usize| {
-        n[i].checked_mul(u_raw[j])?
-            .checked_sub(n[j].checked_mul(u_raw[i])?)
-    };
     let v = (|| {
         let vv = nn.checked_mul(uu)?;
-        Some(([cx(1, 2)?, cx(2, 0)?, cx(0, 1)?], vv))
+        Some((cross3_rat(&n, &u_raw)?, vv))
     })();
     Some(PlaneFrame {
         origin,

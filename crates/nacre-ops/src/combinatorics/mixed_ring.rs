@@ -182,11 +182,6 @@ pub(crate) fn point_in_mixed_ring(
     // The class table is the identity's source; a chord-bounded ring carries no cylinder of its
     // own, so the ring's carriers cannot be the door.
     let def_of = |cyl: usize| cyls.get(cyl).map(|c| &c.def);
-    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
     // A corner's chart coordinates `r₀ + r₁·√c`, with the radical read **once, off the root** — a
     // coordinate's own `QuadVal` folds `c` to 0 where its radical part vanishes, so the two
     // coordinates of one corner can spell different `c()`s, and the radical read off either one
@@ -197,9 +192,9 @@ pub(crate) fn point_in_mixed_ring(
             let (line, s) = pierce_meet(jd, cyl, def, nd)?.into_exact()?;
             let (b, d) = (line.base(), line.dir());
             let coord = |e: &[Rat; 3]| -> Option<(Rat, Rat)> {
-                let along = dot(&d, e)?;
+                let along = nacre_exact::dot3_rat(&d, e)?;
                 Some((
-                    dot(&b, e)?.checked_add(s.a().checked_mul(along)?)?,
+                    nacre_exact::dot3_rat(&b, e)?.checked_add(s.a().checked_mul(along)?)?,
                     s.b().checked_mul(along)?,
                 ))
             };
@@ -328,8 +323,8 @@ pub(crate) fn point_in_mixed_ring(
                 for root in s {
                     // Right of the probe along the ray: chart-x of the root.
                     let (bse, dir) = (line.base(), line.dir());
-                    let x = QuadVal::from_rat(dot(&bse, e1)?)
-                        .checked_add(&root.checked_mul_rat(dot(&dir, e1)?)?)?;
+                    let x = QuadVal::from_rat(nacre_exact::dot3_rat(&bse, e1)?)
+                        .checked_add(&root.checked_mul_rat(nacre_exact::dot3_rat(&dir, e1)?)?)?;
                     let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
                     let rootp = (line.clone(), root);
                     match xsign {

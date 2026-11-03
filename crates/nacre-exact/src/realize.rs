@@ -632,11 +632,7 @@ pub fn seam_point_hp(
     r2: &BigRat,
     prec: usize,
 ) -> Option<[HpBounded; 3]> {
-    let mut sq = Rat::from_int(0);
-    for c in &e1 {
-        sq = sq.checked_add(c.checked_mul(*c)?)?;
-    }
-    let inv = inv_sqrt_hp(sq, prec)?;
+    let inv = inv_sqrt_hp(dot3_rat(&e1, &e1)?, prec)?;
     let scale = match sqrt_rat_big(r2) {
         Some(radius) => HpBounded::of_rat(radius, prec).mul(&inv, prec),
         None => sqrt_hp_big(r2, prec)?.mul(&inv, prec),

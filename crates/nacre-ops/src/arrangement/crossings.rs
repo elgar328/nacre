@@ -640,13 +640,6 @@ fn lateral_crossings(
 /// side and extent tests read it without re-solving).
 type LateralCrossing = (combinatorics::NodeId, combinatorics::PiercePoint);
 
-/// `x · y`, checked.
-fn dot(x: &[Rat; 3], y: &[Rat; 3]) -> Option<Rat> {
-    x[0].checked_mul(y[0])?
-        .checked_add(x[1].checked_mul(y[1])?)?
-        .checked_add(x[2].checked_mul(y[2])?)
-}
-
 /// **A point's coordinate along a cylinder's axis** (`m · x`), for either kind of name — the one
 /// reader the ruling split and the fold both order by. Exact where the point states it: three
 /// planes with exact coordinates, a plane of the name across the axis, a pierce point's exact meet
@@ -673,10 +666,9 @@ impl AxisCoord {
         match n.kind() {
             NodeKind::ThreePlane(t) => {
                 if let Some(p) = combinatorics::node_coords_rat(jd, n) {
-                    return Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(dot(
-                        &p,
-                        &def.dir(),
-                    )?)));
+                    return Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(
+                        nacre_exact::dot3_rat(&p, &def.dir())?,
+                    )));
                 }
                 Some(Self::across_axis(jd, def, &t)?.unwrap_or(Self::Three(t)))
             }
@@ -723,7 +715,8 @@ impl AxisCoord {
         };
         let t = crate::planes::axis_param_of_plane(&w, def)?;
         Some(Some(Self::Exact(nacre_exact::quad::QuadVal::from_rat(
-            dot(&def.origin(), &m)?.checked_add(t.checked_mul(dot(&m, &m)?)?)?,
+            nacre_exact::dot3_rat(&def.origin(), &m)?
+                .checked_add(t.checked_mul(nacre_exact::dot3_rat(&m, &m)?)?)?,
         ))))
     }
 

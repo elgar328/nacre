@@ -456,15 +456,12 @@ pub(crate) fn narrow_frame(
     };
     let (origin, ref_dir) = match placement {
         nacre_topo::FramePlacement::Named { origin, ref_dir } => {
-            let dot = |a: &[Rat; 3], b: &[Rat; 3]| {
-                (0..3).try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(b[k])?))
-            };
             let n = [c[0], c[1], c[2]];
-            let rn = dot(ref_dir, &n)?;
+            let rn = nacre_exact::dot3_rat(ref_dir, &n)?;
             let ref_dir = if rn == zero {
                 *ref_dir
             } else {
-                let nn = dot(&n, &n)?;
+                let nn = nacre_exact::dot3_rat(&n, &n)?;
                 let mut u = [zero; 3];
                 for (k, x) in u.iter_mut().enumerate() {
                     *x = nn

@@ -492,13 +492,7 @@ pub(crate) fn pierce_coords_rat(
 ) -> Option<[nacre_exact::Rat; 3]> {
     let (_, cyl, _) = pierce_name(n)?;
     let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?.into_exact()?;
-    let sv = s.as_rat()?;
-    let (b, d) = (line.base(), line.dir());
-    let mut p = b;
-    for k in 0..3 {
-        p[k] = p[k].checked_add(sv.checked_mul(d[k])?)?;
-    }
-    Some(p)
+    line.point_at(s.as_rat()?)
 }
 /// **Every rational point that names the interior of this *straight* ring edge** — the one rule,
 /// with one arm per way the two ends can be described.
@@ -578,13 +572,7 @@ pub(crate) fn pierce_ends_between(
     if la.base() != lb.base() || la.dir() != lb.dir() {
         return None;
     }
-    let t = rational_between(&sa, &sb)?;
-    let (b, d) = (la.base(), la.dir());
-    let mut p = b;
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
-    }
-    Some(p)
+    la.point_at(rational_between(&sa, &sb)?)
 }
 
 /// A rational strictly between two quadratic values that need not share a radical: the realized
@@ -684,12 +672,7 @@ pub(crate) fn conjugate_midpoint(
     }
     let def = &cyls.get(ca)?.def;
     let (line, s) = pierce_meet(jd, ca, def, e.node)?.into_exact()?;
-    let (b, d) = (line.base(), line.dir());
-    let t = s.a();
-    let mut p = [b[0], b[1], b[2]];
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
-    }
+    let p = line.point_at(s.a())?;
     // **Asserted where the fact is made, not where it is consumed.** Both claims this
     // function rests on are checkable here and nowhere cheaper: that `MeetLine`'s `base`/`dir`
     // really do parameterize the two planes' meet (so `base + t·dir` is on both), and that the

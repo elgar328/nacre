@@ -225,7 +225,7 @@ fn a_lifted_frames_normal_is_exactly_unit() {
     let f = SketchPlane::world_xy().exact().unwrap();
     let n = f.normal().unwrap();
     assert_eq!(n, [Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
-    assert_eq!(dot(&n, &n).unwrap(), Rat::from_int(1));
+    assert_eq!(nacre_exact::dot3_rat(&n, &n).unwrap(), Rat::from_int(1));
     assert_eq!(f.sweep(7.7).unwrap()[2], Rat::new(77, 10).unwrap());
 }
 

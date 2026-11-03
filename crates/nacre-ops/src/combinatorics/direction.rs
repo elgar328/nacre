@@ -148,25 +148,15 @@ fn arc_at(
     let at = pierce_meet(jd, a.cyl, &a.def, node)
         .and_then(PiercePoint::into_exact)
         .ok_or_else(undecided)?;
-    let coeffs = jd.world_rat(p).ok_or_else(undecided)?;
     // The circle's centre: where the axis pierces this plane. The canonical sign the coefficients
     // carry cancels in the parameter (numerator and denominator both flip), so this one does not
     // need the stored-frame turn that `arc_side` does.
-    let t = crate::planes::axis_param_of_plane(&coeffs, &a.def).ok_or_else(undecided)?;
-    let (o, m) = (a.def.origin(), a.def.dir());
-    let centre: [nacre_exact::Rat; 3] = (|| {
-        let mut c = [nacre_exact::Rat::from_int(0); 3];
-        for k in 0..3 {
-            c[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
-        }
-        Some(c)
-    })()
-    .ok_or_else(undecided)?;
+    let centre = circle_centre_rat(jd, p, &a.def).ok_or_else(undecided)?;
     Ok(EdgeDir::Arc(Box::new(ArcDir {
         cyl: a.cyl,
         at,
         centre,
-        axis: m,
+        axis: a.def.dir(),
         axis_up: crate::planes::plus_t_is_above(
             jd.planes[p].world.as_ref().ok_or_else(undecided)?,
             &a.def,

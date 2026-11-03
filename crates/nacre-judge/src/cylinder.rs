@@ -864,12 +864,8 @@ impl PiercePoint {
     pub fn stated_axis(&self, def: &CylinderDef) -> Option<QuadVal> {
         let (line, s) = self.exact()?;
         let m = def.dir();
-        let dot = |x: &[Rat; 3]| -> Option<Rat> {
-            x[0].checked_mul(m[0])?
-                .checked_add(x[1].checked_mul(m[1])?)?
-                .checked_add(x[2].checked_mul(m[2])?)
-        };
-        QuadVal::from_rat(dot(&line.base())?).checked_add(&s.checked_mul_rat(dot(&line.dir())?)?)
+        QuadVal::from_rat(nacre_exact::dot3_rat(&line.base(), &m)?)
+            .checked_add(&s.checked_mul_rat(nacre_exact::dot3_rat(&line.dir(), &m)?)?)
     }
 
     /// The exact pair, moved out.

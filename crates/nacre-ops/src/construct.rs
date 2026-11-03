@@ -53,20 +53,6 @@ pub(crate) struct RatFrame {
     parity: i8,
 }
 
-#[cfg(test)]
-fn dot(a: &[Rat; 3], b: &[Rat; 3]) -> Option<Rat> {
-    let mut acc = Rat::from_int(0);
-    for i in 0..3 {
-        acc = acc.checked_add(a[i].checked_mul(b[i])?)?;
-    }
-    Some(acc)
-}
-
-fn cross(a: &[Rat; 3], b: &[Rat; 3]) -> Option<[Rat; 3]> {
-    let term = |i: usize, j: usize| a[i].checked_mul(b[j])?.checked_sub(a[j].checked_mul(b[i])?);
-    Some([term(1, 2)?, term(2, 0)?, term(0, 1)?])
-}
-
 fn scale(v: &[Rat; 3], k: Rat) -> Option<[Rat; 3]> {
     Some([
         v[0].checked_mul(k)?,
@@ -123,7 +109,9 @@ impl SketchPlane {
         };
         let one = Rat::from_int(1);
         let zero = Rat::from_int(0);
-        (dot(&f.x, &f.x)? == one && dot(&f.y, &f.y)? == one && dot(&f.x, &f.y)? == zero)
+        (nacre_exact::dot3_rat(&f.x, &f.x)? == one
+            && nacre_exact::dot3_rat(&f.y, &f.y)? == one
+            && nacre_exact::dot3_rat(&f.x, &f.y)? == zero)
             .then_some(f)
     }
 }
@@ -210,7 +198,7 @@ impl RatFrame {
 
     /// The frame's unit `ŵ`, exactly: `x × y`, turned by the frame's handedness.
     pub(crate) fn normal(&self) -> Option<[Rat; 3]> {
-        let n = cross(&self.x, &self.y)?;
+        let n = nacre_exact::cross3_rat(&self.x, &self.y)?;
         if self.parity > 0 {
             Some(n)
         } else {
@@ -448,7 +436,11 @@ impl SweptRat {
             };
             let v = ring[k];
             let radial = sub(&v, &lifted)?;
-            return Some([lifted, v, add(&lifted, &cross(&self.normal, &radial)?)?]);
+            return Some([
+                lifted,
+                v,
+                add(&lifted, &nacre_exact::cross3_rat(&self.normal, &radial)?)?,
+            ]);
         }
         let f = |p: &[Rat; 3]| [p[0].to_f64(), p[1].to_f64(), p[2].to_f64()];
         let (a, b) = (f(&ring[0]), f(&ring[1]));

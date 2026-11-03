@@ -204,13 +204,6 @@ pub(super) fn nest_cells(
 
     // Union-find over cells (the pattern of `component_count`, but joining cells, not vertices).
     let mut parent: Vec<usize> = (0..n).collect();
-    fn find(parent: &mut [usize], mut x: usize) -> usize {
-        while parent[x] != x {
-            parent[x] = parent[parent[x]];
-            x = parent[x];
-        }
-        x
-    }
 
     let circle_ix: Vec<Option<usize>> = cells.iter().map(circle_of).collect();
     // The nesting engine asks a circle for its exact statement and nothing else, so it is
@@ -235,7 +228,7 @@ pub(super) fn nest_cells(
             // `label_cells` seeds it **void** — the boss over a bore would lose its base face and
             // the shell would open.
             let host = innermost_host(jd, cyls, wc, &rings, &circle_defs, &circle_ix, &hosts)?;
-            let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
+            let (rc, rr) = (uf_find(&mut parent, c), uf_find(&mut parent, host));
             parent[rc] = rr;
             holes.entry(host).or_default().push(c);
         }
@@ -243,7 +236,7 @@ pub(super) fn nest_cells(
     if roots.is_empty() {
         return Err(reject(RejectReason::HoleRoots)); // no unbounded contour: not a closed arrangement
     }
-    let group_of: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
+    let group_of: Vec<usize> = (0..n).map(|i| uf_find(&mut parent, i)).collect();
     let mut root_groups: Vec<usize> = roots.iter().map(|&r| group_of[r]).collect();
     root_groups.sort_unstable();
     root_groups.dedup();

@@ -210,8 +210,6 @@ pub(crate) fn coord_probes(
     cyls: &[crate::planes::WorkingCyl],
     faces: &[CompFace],
 ) -> Result<Vec<Probe>, BoolError> {
-    use nacre_exact::Rat;
-    let zero = Rat::from_int(0);
     let mut out = Vec::new();
     for f in faces {
         let CompSurf::Plane(q) = &f.surf else {
@@ -231,18 +229,7 @@ pub(crate) fn coord_probes(
             },
             _ => continue,
         };
-        let Some(centre) = jd
-            .world_rat(*q)
-            .and_then(|coeffs| crate::planes::axis_param_of_plane(&coeffs, def))
-            .and_then(|t| {
-                let (o, m) = (def.origin(), def.dir());
-                let mut p = [zero; 3];
-                for k in 0..3 {
-                    p[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
-                }
-                Some(p)
-            })
-        else {
+        let Some(centre) = circle_centre_rat(jd, *q, def) else {
             continue;
         };
         let cand = if !f.inner.is_empty() {
@@ -374,21 +361,16 @@ pub(crate) fn corner_probes(
 /// directions. Which candidate is *on the face* is [`coord_probes`]' question, the one it asks of
 /// every cap's candidates.
 ///
-/// `None`: no rational frame or radius — the caller passes the face over. A candidate whose
-/// arithmetic overflows ends the list there: those before it are still asked.
+/// `None`: no rational frame ([`nacre_exact::cyl_unit_frame`] — a `ref_dir` parallel or not
+/// perpendicular to the axis, or a norm that is not rational) or no rational radius — the caller
+/// passes the face over. A candidate whose arithmetic overflows ends the list there: those before
+/// it are still asked.
 fn holed_cap_candidates(
     def: &nacre_topo::CylinderDef,
     centre: &[nacre_exact::Rat; 3],
     f: &CompFace,
 ) -> Option<Vec<[nacre_exact::Rat; 3]>> {
-    use nacre_exact::{Rat, inv_sqrt_rat};
-    let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
-        let mut acc = Rat::from_int(0);
-        for k in 0..3 {
-            acc = acc.checked_add(a[k].checked_mul(b[k])?)?;
-        }
-        Some(acc)
-    };
+    use nacre_exact::Rat;
     let scale = |v: &[Rat; 3], s: Rat| -> Option<[Rat; 3]> {
         Some([
             v[0].checked_mul(s)?,
@@ -396,12 +378,7 @@ fn holed_cap_candidates(
             v[2].checked_mul(s)?,
         ])
     };
-    let (m, e) = (def.dir(), def.ref_dir());
-    // `1/|ref_dir|` and `1/(|m||ref_dir|)`, exact when the norms are (`inv_sqrt_rat`).
-    let inv_e = inv_sqrt_rat(dot(&e, &e)?)?;
-    let inv_me = inv_e.checked_mul(inv_sqrt_rat(dot(&m, &m)?)?)?;
-    let u1 = scale(&e, inv_e)?;
-    let u2 = scale(&nacre_exact::cross3_rat(&m, &e)?, inv_me)?;
+    let (u1, u2) = nacre_exact::cyl_unit_frame(&def.dir(), &def.ref_dir())?;
     let neg = |v: &[Rat; 3]| scale(v, Rat::from_int(-1));
     let dirs = [u1, neg(&u1)?, u2, neg(&u2)?];
     // Probe circles midway between the outer rim and each hole's, at rational radii — which

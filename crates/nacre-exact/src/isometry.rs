@@ -46,12 +46,7 @@ pub fn axis_rotation_fixes_plane(axis: Axis, coeffs: &[Rat; 4]) -> bool {
 /// normal is exactly zero (`n · offset == 0`, checked — an overflow answers `false`,
 /// a conservative miss).
 pub fn translation_fixes_plane(offset: &[Rat; 3], coeffs: &[Rat; 4]) -> bool {
-    let zero = Rat::from_int(0);
-    let dot = coeffs[..3]
-        .iter()
-        .zip(offset)
-        .try_fold(zero, |acc, (&a, &t)| a.checked_mul(t)?.checked_add(acc));
-    dot == Some(zero)
+    dot3_rat(&[coeffs[0], coeffs[1], coeffs[2]], offset) == Some(Rat::from_int(0))
 }
 
 /// Whether the reflection in the coordinate plane `axis = offset` fixes the plane as a

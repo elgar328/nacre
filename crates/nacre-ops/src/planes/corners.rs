@@ -410,15 +410,7 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Result<[nacre_exact::Rat; 
                 unreachable!("pierce_corner builds a pierce piece")
             };
             let sr = s.as_rat().ok_or(CornerFail::Shape)?;
-            let (b, d) = (line.base(), line.dir());
-            let mut out = b;
-            for k in 0..3 {
-                out[k] = sr
-                    .checked_mul(d[k])
-                    .and_then(|t| out[k].checked_add(t))
-                    .ok_or(CornerFail::Width)?;
-            }
-            Ok(out)
+            line.point_at(sr).ok_or(CornerFail::Width)
         }
     }
 }
@@ -561,20 +553,8 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corn
     if !class_carries_circle(&n, &m) {
         return Err(CornerFail::Shape);
     }
-    // `n·(o + t·m) + d = 0`, and `n·m ≠ 0` because the axis is along the normal.
-    let centre = (|| {
-        let nm = nacre_exact::dot3_rat(&n, &m)?;
-        let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(plane[3])?;
-        let t = nacre_exact::Rat::from_int(0)
-            .checked_sub(no_d)?
-            .checked_mul(nacre_exact::Rat::new(nm.denom(), nm.numer())?)?;
-        let mut centre = o;
-        for k in 0..3 {
-            centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
-        }
-        Some(centre)
-    })()
-    .ok_or(CornerFail::Width)?;
+    // The axis is along the normal, so `n·m ≠ 0` and the meet fails only on width.
+    let centre = nacre_exact::axis_plane_meet(&plane, &o, &m).ok_or(CornerFail::Width)?;
     Ok(Corner::Round {
         centre,
         rho2: def.r2().clone(),
