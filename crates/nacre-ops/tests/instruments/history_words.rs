@@ -51,7 +51,7 @@ const PHRASES: &[&str] = &[
 const PHRASES_KO: &[&str] = &["예전에", "과거에는"];
 
 /// The heading of `docs/design.md`'s section of rejected approaches.
-const STORY_SECTION: &str = "## 가지 말 것";
+pub(crate) const STORY_SECTION: &str = "## 가지 말 것";
 
 /// Lines that may tell a story, per file (relative to the repository root), with why.
 const ALLOWED: &[(&str, usize, &str)] = &[];

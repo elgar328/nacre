@@ -13,6 +13,8 @@ mod fixtures;
 mod comparators;
 #[path = "instruments/disallowed.rs"]
 mod disallowed;
+#[path = "instruments/doc_budget.rs"]
+mod doc_budget;
 #[path = "instruments/history_words.rs"]
 mod history_words;
 #[path = "instruments/lex.rs"]
