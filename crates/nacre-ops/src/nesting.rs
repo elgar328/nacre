@@ -3,13 +3,13 @@
 //!
 //! **Why a module of its own.** The question is answered from two roads — the arrangement's nesting
 //! (`arrangement::nest_cells`, `innermost_host`) and the coplanar merge's ownership
-//! (`assembly::unify_coplanar_faces`) — and when each road had its own copy, the copies drifted:
-//! five spellings of «what point may I use as a witness», four of «what does that point say about
-//! the target», three of «try them until one decides, and name the failure honestly», and two of
-//! the four-arm dispatch itself; the shortest — the arm that asks a **ring** against a **disk** —
-//! was one witness kind wide. A plate with every corner filleted has a cap ring of eight tangencies
-//! and no three-plane corner at all, so such an arm would find nothing and refuse, and the plate
-//! could not enter any boolean.
+//! (`assembly::unify_coplanar_faces`) — and copies per road drift: they held five spellings of
+//! «what point may I use as a witness», four of «what does that point say about the target», three
+//! of «try them until one decides, and name the failure honestly», and two of the four-arm dispatch
+//! itself. An arm that asks a **ring** against a **disk** with a supply one witness kind wide would
+//! find nothing for a ring with no three-plane corner and refuse. A plate with every corner
+//! filleted has such a cap ring (eight tangencies), and with such an arm could not enter any
+//! boolean.
 //!
 //! Nothing here is new geometry. There is **one** of each predicate, behind a module wall, so
 //! another copy cannot be written outside it.
@@ -22,42 +22,34 @@ use crate::tolerant::Judge;
 /// **The circle a ring *is***, when every one of its edges is an arc of one cylinder and they
 /// chain the whole way round — `None` otherwise.
 ///
-/// **Its clauses beyond "the first edge is an arc" are guards, and none of them fired** over the
-/// suite (88 acceptances, 0 rejections past that first test).
-///
-/// **Those 88 are not 88 questions.** Read against another measurement — *zero whole-circle
-/// rings as an engine question's source over 27,000* — the two look like a contradiction. They
-/// are **different populations**: this
-/// counts every ring the supply asks about, and 85% of the probe's rows are not engine questions
-/// at all. Both are true, and together they say the thing that matters: a ring that
-/// *is* a whole circle is **never** the source of an engine question in this corpus. ⇒ giving
-/// [`Cell::Ring`]'s whole-circle arm a rim
-/// would be building for an empty population. **It is not built, and this is
-/// why.** They are kept because each states a
-/// proposition proved somewhere else — two circles on one class cannot meet (the gate), a ring is
-/// a chain (measured over 153,798 rings), a mixed sense would retrace one arc — and a guard that
-/// stops holding is how a producer change is meant to surface here rather than two layers down.
-///
-/// **A cut circle's cell is still a disk, and must be asked a disk's question.** The
-/// dispatch calls a cell a `Disk` only where its half-edge is literally a `Circle`; a circle a wall
-/// has **split into arcs** arrives as a ring instead, whose corners are pierce points — so the
-/// three-plane names come out
-/// **empty** and the road refuses with a name about rays it never cast. The shape is the same
-/// circle either way, and this is what says so.
+/// **A cut circle's cell is still a disk, and must be asked a disk's question.** The dispatch
+/// calls a cell a `Disk` only where its half-edge is literally a `Circle`; a circle a wall has
+/// **split into arcs** arrives as a ring instead, whose corners are pierce points — so the
+/// three-plane names come out **empty** and the road refuses with a name about rays it never cast.
+/// The shape is the same circle either way, and this is what says so.
 ///
 /// **Why the chain is the whole circle.** The gate proves every pair of cylinders clear — their
 /// surfaces by more than the radius sum, parallel surfaces one inside the other, or their faces
 /// ([`crate::planes::pieces_clear`]; the gate is [`crate::planes::cylinder_gate`], else
-/// `CylinderPairContact`) — so two
-/// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
-/// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
-/// it exactly once. Measured: **every** ring with no three-plane corner and no rational one is
-/// either such a chain — and each of those the circle's own centre answers — or a wall panel with
-/// no circle at all, which only its pierce corners can ask (the last supply of [`witnesses`]).
-/// Against refusing every such ring as `NoClearRay`, in cells: of the crossing census's 44, **8**
-/// build and **20** are renamed, the rest being the other road's (`boolean`).
-/// Counted as *cells*, not as raises — a traced boolean runs twice in `debug`, and
-/// `reject_census`'s own note forbids reading raise counts as populations.
+/// `CylinderPairContact`) — so two circles on one class **cannot meet**: arcs that chain
+/// head-to-tail all ride the same circle, and running one way round (`ccw` all equal — a mixed pair
+/// would retrace one arc) closes it exactly once.
+///
+/// **The clauses beyond "the first edge is an arc" are guards, and none of them fired** over the
+/// suite (88 acceptances, 0 rejections past that first test). Each states a proposition proved
+/// elsewhere — the paragraph above, and a ring being a chain (measured over 153,798 rings) — and a
+/// guard that stops holding is how a producer change is meant to surface here rather than two
+/// layers down. The 88 count every ring the supply asks about, not engine questions (most probe
+/// rows are not, `nesting_probe`): over 27,000 engine questions, a ring that *is* a whole circle is
+/// **never** the source of one in this corpus.
+///
+/// Measured: **every** ring with no three-plane corner and no rational one is either such a chain
+/// — and each of those the circle's own centre answers — or a wall panel with no circle at all,
+/// which only its pierce corners can ask (the last supply of [`witnesses`]). Against refusing every
+/// such ring as `NoClearRay`, in cells: of the crossing census's 44, **8** build and **20** are
+/// renamed, the rest being the other road's (`boolean`). Counted as *cells*, not as raises — a
+/// traced boolean runs twice in `debug`, and `reject_census`'s own note forbids reading raise
+/// counts as populations.
 fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_topo::CylinderDef> {
     let n = ring.len();
     if n < 2 {
@@ -85,9 +77,9 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
 /// inside the other, whether the class is perpendicular to them (two circles) or oblique (two
 /// ellipses) — concentric or not.
 ///
-/// **Written once because it is asked from two directions**: the arrangement's nesting
-/// ([`cell_in_cell`], a pin's trace under a boss's cap) and the coplanar merge (a region whose
-/// outer bound is a circle asking which circle holes it owns).
+/// **Asked from the arrangement's nesting** ([`cell_in_cell`], a pin's trace under a boss's cap)
+/// **and the coplanar merge** (a region whose outer bound is a circle asking which circle holes it
+/// owns).
 pub(crate) fn disk_in_disk(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
@@ -97,12 +89,10 @@ pub(crate) fn disk_in_disk(
     let undecided = || reject(RejectReason::WitnessNotRational);
     let pa = combinatorics::circle_centre_rat(jd, wc, a).ok_or_else(undecided)?;
     let pb = combinatorics::circle_centre_rat(jd, wc, b).ok_or_else(undecided)?;
-    // **The axes must be parallel.** Across two parallel cylinders the sections nest exactly
-    // where the cylinders do, so the axis distance decides on any class the axes cross. Across two
-    // axes that are not parallel the sections are ellipses of different shapes on the class (or an
-    // ellipse and a circle), and neither the radii nor the axis distance says whether one holds the
-    // other; the gate refuses a class that would carry both (`ObliqueCylinderCut`), so this is
-    // the backstop's name.
+    // **The axes must be parallel.** Across two axes that are not parallel the sections are
+    // ellipses of different shapes on the class (or an ellipse and a circle), and neither the radii
+    // nor the axis distance says whether one holds the other; the gate refuses a class that would
+    // carry both (`ObliqueCylinderCut`), so this is the backstop's name.
     // Asked **before** the `ra >= rb` return below: that return is sound for any section (its
     // semi-minor axis is exactly `r`, so `ra < rb` is necessary for nesting), so putting the guard
     // after it would leave half the population unguarded. And asked **after** the two centres, so
@@ -138,9 +128,9 @@ pub(crate) enum Cell<'a> {
 /// which does the same job one dimension up (a component's witness carries a ray direction too,
 /// which is why the two are not one type).
 ///
-/// A `Named` witness needs no coordinates, and that is not a convenience: a **rotated** class has
-/// no rational description, so its points have no rational coordinates at all — the ray road is
-/// the only road there, and it runs on names. A name is either kind — three planes, or a pierce
+/// A `Named` witness needs no coordinates: a **rotated** class has no rational description, so its
+/// points have no rational coordinates at all — the ray road is the only road there, and it runs
+/// on names. A name is either kind — three planes, or a pierce
 /// point placed by its cylinder on the face plane's meet with each plane of its pair
 /// ([`combinatorics::every_ray`]).
 #[derive(Clone, Copy, Debug)]
@@ -151,13 +141,13 @@ enum Where {
 
 /// **A point that can decide a nesting question — and how much it decides.**
 ///
-/// **The distinction is the whole reason this is a type.** The two loops do not
-/// cross, so a point of `a`'s **boundary** settles the question outright: `∂a` is connected and
-/// misses `∂b`, so all of `∂a` is on the side that point is on. A point of `a`'s **interior**
-/// settles something weaker — «this point is in `b`» — which is *not* the same claim, because
-/// `b` may sit inside `a` and then `a`'s interior points are in `b` while `a` is not. Carried as
-/// a hand-written second clause on one arm («and the ring is not inside the circle»), that is one
-/// copy of the arm away from being left out; as a type, every witness says which kind it is.
+/// The two loops do not cross, so a point of `a`'s **boundary** settles the question outright:
+/// `∂a` is connected and misses `∂b`, so all of `∂a` is on the side that point is on. A point of
+/// `a`'s **interior** settles something weaker — «this point is in `b`» — which is *not* the same
+/// claim, because `b` may sit inside `a` and then `a`'s interior points are in `b` while `a` is
+/// not. Carried as a hand-written second clause on one arm («and the ring is not inside the
+/// circle»), that is one copy of the arm away from being left out; as a type, every witness says
+/// which kind it is.
 enum Witness {
     On(Where),
     In(Where),
@@ -176,12 +166,12 @@ impl Said {
     /// plane — both on it, both on one side (none or two crossings), or one on it (none or one):
     /// on that plane the road has no cylinder to side or count the arc with (a plane the gate
     /// passed silent answers from the gate's record — by boxes where it sections the cylinder).
-    /// That is a plane the witness chose, so the next witness
-    /// may answer, and it is an abstention. A ring of fewer than three edges is a lens
-    /// when it is mixed (a chord and its arc — an ordinary shape the ray road cannot walk) and a
-    /// producer defect when it is all straight, which is raised under its own name. Anything else
-    /// (`RingNaming`: a ring whose names the road cannot read) is not a witness's circumstance and
-    /// is raised rather than retried on the next witness.
+    /// That is a plane the witness chose, so the next witness may answer, and it is an abstention.
+    /// A ring of fewer than three edges is a lens when it is mixed (a chord and its arc — an
+    /// ordinary shape the ray road cannot walk) and a producer defect when it is all straight,
+    /// which is raised under its own name. Anything else (`RingNaming`: a ring whose names the road
+    /// cannot read) is not a witness's circumstance and is raised rather than retried on the next
+    /// witness.
     fn of_ray_error(e: BoolError, has_pierce: bool, mixed: bool) -> Result<Said, BoolError> {
         let BoolError::Rejected { reason, .. } = &e else {
             return Err(e);
@@ -199,18 +189,17 @@ impl Said {
 /// **A circle's own witnesses: four points on its rim, then its centre.**
 ///
 /// The rim points are `centre ± r·û₁` and `centre ± r·û₂` over the cylinder's rational unit
-/// cross-section frame ([`nacre_exact::cyl_unit_frame`]). They are **boundary** witnesses, and
-/// that is the whole point: a boundary witness that lands strictly inside settles the question at
-/// once, where the centre — an interior point — has to ask the converse, and a disk **cannot
-/// answer** a converse (`inside`'s `may_ask_interior` skips its one witness, so the reverse
-/// descent has always ended in [`crate::RejectReason::RingHasNoWitness`]).
+/// cross-section frame ([`nacre_exact::cyl_unit_frame`]). They are **boundary** witnesses: one
+/// that lands strictly inside settles the question at once, where the centre — an interior point —
+/// has to ask the converse, and a disk **cannot answer** a converse (`inside`'s `may_ask_interior`
+/// skips its one witness, so the reverse descent ends in
+/// [`crate::RejectReason::RingHasNoWitness`]).
 ///
-/// **This is not new geometry — it is the point the kernel already mints.** For a whole circle
-/// `crate::construct` states `ref_dir` as `(vertex − centre)/radius`, so `centre + radius·ref_dir`
-/// **is** that ring's one vertex, exactly, by construction — the point a seam vertex
-/// (`Vertex::OnSeam`) names. What the arrangement drops is the *node*: an
-/// uncut circle carries no `NodeId`, which is why the corner supply above finds nothing and why
-/// this rebuilds the point from the statement instead of reading it.
+/// **It is the point the kernel already mints.** For a whole circle `crate::construct` states
+/// `ref_dir` as `(vertex − centre)/radius`, so `centre + radius·ref_dir` **is** that ring's one
+/// vertex, exactly, by construction — the point a seam vertex (`Vertex::OnSeam`) names. What the
+/// arrangement drops is the *node*: an uncut circle carries no `NodeId`, which is why the corner
+/// supply finds nothing and why this rebuilds the point from the statement instead of reading it.
 ///
 /// **Four, and no pair is droppable.** The parity ray runs along the class chart's `e₁`, and a
 /// rim point shares the centre's ray line exactly when `û ∥ e₁`. `û₁ ⊥ û₂` span the plane ⊥ the
@@ -223,21 +212,18 @@ impl Said {
 /// **Soundness rests on `û·û = 1` exactly**, not on the frame being cheap:
 /// `cylinder_radial_side` reduces to `‖m‖²·r²·(û·û − 1)` for any `‖m‖`, so an inexact unit vector
 /// would make a rim point a `Witness::On` that is not on the boundary — and `inside` returns from
-/// a boundary `In` **without** the converse. Hence the exact `inv_sqrt_rat` road and the
-/// post-conditions below, asserted where the point is made rather than where it is used
-/// ([`combinatorics::conjugate_midpoint`]'s rule).
+/// a boundary `In` **without** the converse: a silent wrong answer rather than a refusal. Hence
+/// the exact `inv_sqrt_rat` road and the post-conditions below, asserted where the point is made
+/// rather than where it is used ([`combinatorics::conjugate_midpoint`]'s rule).
 ///
-/// **The premise that makes these boundary points is guarded, not assumed.** A rim point
-/// lies on the *cell* — not merely on the cylinder — because the class plane is ⊥ the axis:
-/// `circle_centre_rat` answers for a tilted axis too (it declines only on `n·m = 0`), and
-/// `û ⊥ m` does not give `û ⊥ n` unless `m ∥ n`. An `On` that is not on the boundary returns
-/// from `inside` **without** the converse, which would be a silent wrong answer rather than a
-/// refusal, so the rim is offered only to a class that carries the circle
-/// ([`class_carries_circle`]). On an oblique class
-/// `ask`'s radial arm is **right** (it reads the solid cylinder, and an
-/// elliptical section is exactly the plane's points within `r` of the axis), and so is
-/// `disk_in_disk` for parallel axes, which measures the distance between the axes rather than
-/// anything in the plane.
+/// **The premise that makes these boundary points is guarded, not assumed.** A rim point lies on
+/// the *cell* — not merely on the cylinder — because the class plane is ⊥ the axis:
+/// `circle_centre_rat` answers for a tilted axis too (it declines only on `n·m = 0`), and `û ⊥ m`
+/// does not give `û ⊥ n` unless `m ∥ n`. So the rim is offered only to a class that carries the
+/// circle ([`class_carries_circle`]). On an oblique class `ask`'s radial arm is **right** (it
+/// reads the solid cylinder, and an elliptical section is exactly the plane's points within `r` of
+/// the axis), and so is `disk_in_disk` for parallel axes, which measures the distance between the
+/// axes rather than anything in the plane.
 ///
 /// A centre that cannot be formed keeps its own name ([`Witness::Unformed`] →
 /// [`crate::RejectReason::WitnessNotRational`]); a frame that cannot be formed suppresses the
@@ -252,24 +238,19 @@ fn rim_and_centre<'a>(
         return vec![Witness::Unformed];
     };
     let mut out = Vec::with_capacity(5);
-    // **The rim is a boundary point only where the class is ⊥ to the axis**. Off that
-    // the section is an ellipse: `û ⊥ axis` does not give `û ⊥ n`, so `centre ± r·û` leaves the
-    // class plane and a `Witness::On` there is a lie `inside` answers **without the converse** —
-    // a silent wrong answer, not a refusal. The centre stays: it is the ellipse's centre either
-    // way, and `ask`'s radial arm reads the solid cylinder, which is right for any section.
-    // The guard is total ([`class_carries_circle`]) and fires on a class sectioning the cylinder
-    // obliquely (`CylRecord::Sections`), whose ellipse is offered its centre alone.
+    // The rim's guard (`class_carries_circle`) is total and fires on a class sectioning the
+    // cylinder obliquely (`CylRecord::Sections`), whose ellipse is offered its centre alone (the
+    // centre is the ellipse's either way).
     // `is_some_and` folds a *second* cause in — a class with no rational description also loses
-    // its rim. That population is empty: such a class passes the gate only as silent about
-    // every cylinder (`WorkingCyl::is_silent`), and a silent class carries no circle. If it ever stops
-    // being empty the cell falls to `RingHasNoWitness` rather than to a wrong answer, which is the
-    // direction this kernel takes.
+    // its rim. That population is empty: such a class passes the gate only as silent about every
+    // cylinder (`WorkingCyl::is_silent`), and a silent class carries no circle. If it ever stops
+    // being empty the cell falls to `RingHasNoWitness` rather than to a wrong answer.
     let carries = jd
         .world_rat(wc)
         .is_some_and(|c| class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
     // Rim witnesses at `centre + r·u` need the radius itself; a cell whose squared radius has no
-    // rational root is simply not offered them — it keeps its centre, exactly as when a witness's
-    // arithmetic leaves `i128` below.
+    // rational root is not offered them and keeps its centre, as when a witness's arithmetic
+    // leaves `i128` below.
     if carries
         && let Some((u1, u2)) = nacre_exact::cyl_unit_frame(&def.dir(), &def.ref_dir())
         && let Some(r) = def.radius_rat()
@@ -339,21 +320,19 @@ pub(crate) fn rim_witness_count(
 ///
 /// Boundary witnesses first and in this order: the corners' three-plane **names** (the ray road,
 /// and the only road a rotated class has), then the corners' rational coordinates, then the
-/// rational **pierce** corners (a fillet tangency), then a whole chord's **midpoint**,
-/// then a rational point **inside** an edge whose ends are two solves' roots. Then an interior
-/// witness, where there is one: a disk's centre, and a ring that *is* a circle. Last, the
-/// corners' **pierce names** — boundary points the ray road casts from along the class's meet with
-/// each plane of their pair, and the only supply a ring whose every corner is a pierce point on a
-/// class with no world statement has (a cylinder's section between two rulings). They come after everything else, so a question
-/// another witness answers is answered by that one.
+/// rational **pierce** corners (a fillet tangency), then a whole chord's **midpoint**, then a
+/// rational point **inside** an edge whose ends are two solves' roots. Then an interior witness,
+/// where there is one: a disk's centre, and a ring that *is* a circle. Last, the corners' **pierce
+/// names** — boundary points the ray road casts from along the class's meet with each plane of
+/// their pair, and the only supply a ring whose every corner is a pierce point on a class with no
+/// world statement has (a cylinder's section between two rulings). They come after everything
+/// else, so a question another witness answers is answered by that one.
 ///
-/// **A circle has no corner — and the conclusion drawn from that is false.**
-/// Every supply above reads the *arrangement*: names, nodes, chords, edge interiors. An uncut
-/// circle carries none of those — it arrives here as a `CylinderDef` and nothing else, and the
-/// contributions merged onto it upstream state no `NodeId` — which is
-/// true — and it is tempting to take the next step and conclude that such a cell has no
-/// boundary point that can be named at all. That step is wrong. A circle's boundary points are
-/// **geometric**, and they are exactly rational: [`rim_and_centre`].
+/// **A circle has no corner, yet it has boundary points that can be named.** Every supply above
+/// reads the *arrangement* — names, nodes, chords, edge interiors — and an uncut circle carries
+/// none of those: it arrives here as a `CylinderDef` and nothing else, and the contributions
+/// merged onto it upstream state no `NodeId`. Its boundary points are **geometric**, and exactly
+/// rational: [`rim_and_centre`].
 ///
 /// **Lazy on purpose.** The corpus asks this question 33,781 times in one census pass, and every
 /// kind after the first is a `pierce_meet` solve. The name that decides is almost always the first
@@ -364,22 +343,19 @@ fn witnesses<'a>(
     wc: usize,
     cell: Cell<'a>,
 ) -> Box<dyn Iterator<Item = Witness> + 'a> {
-    // A disk's interior witness, wherever the disk came from — the cell itself, or a ring that
-    // turned out to be a whole circle. Written once: this module is where each supply has one
-    // spelling.
+    // The interior witness of a ring that turned out to be a whole circle: its centre. (A
+    // `Cell::Disk` goes through `rim_and_centre`.)
     let centre_of =
         |def: &nacre_topo::CylinderDef| match combinatorics::circle_centre_rat(jd, wc, def) {
             Some(c) => Witness::In(Where::Coord(c)),
             None => Witness::Unformed,
         };
     match cell {
-        // A disk's boundary is a circle, and a circle's rim points are exact — the
-        // supply is not the centre alone.
-        // The wrapper does **not** buy laziness here and is not there for it: `inside` is the
-        // only caller and its `for` always polls once, so the closure always runs. It is the
-        // shape the ring arm needs when the two supplies fold into one, kept the same on both
-        // sides so that fold is a move and not a rewrite. What this arm costs is five points
-        // where the centre alone is one — a cost that has not been measured.
+        // A circle's rim points are exact, so a disk's supply is not the centre alone. The
+        // wrapper does **not** buy laziness: `inside`'s `for` always polls once, so the closure
+        // always runs. It is the shape the ring arm needs when the two supplies fold into one,
+        // kept the same on both sides so that fold is a move and not a rewrite. The cost — five
+        // points where the centre alone is one — has not been measured.
         Cell::Disk(def) => {
             Box::new(std::iter::once_with(move || rim_and_centre(jd, wc, def)).flatten())
         }
@@ -391,22 +367,14 @@ fn witnesses<'a>(
                 combinatorics::edge_witness_points(jd, cyls, e)
                     .map(|p| Witness::On(Where::Coord(p)))
             });
-            // A ring that is a whole circle does have boundary points anyone can name
-            // exactly. It has four — the same rim
-            // points [`rim_and_centre`] gives a `Cell::Disk`. This arm still offers only the
-            // centre, although the two arms of one supply reading differently is exactly what
-            // this module exists to prevent.
-            //
-            // **Deliberately: the answer to «give it the rim» is «do not».** The two numbers
-            // that look like a contradiction — `ring_own_circle`'s 88 acceptances against *zero*
-            // whole-circle rings as an engine question's source over 27,000 — are **different
-            // populations** (85% of the probe's rows are not engine questions at all).
-            // Both hold, and together they say a ring that *is* a whole circle never sources an
-            // engine question here: the rim would be built for nobody. Its centre answers
-            // meanwhile, as an interior witness, and that is enough for every row measured.
-            // And it is eager: `Option::map` runs `centre_of` before this iterator is polled,
-            // so the module's own "lazy on purpose" rule is already broken here. Folding both
-            // arms onto `rim_and_centre` fixes that in the same move.
+            // A ring that is a whole circle has the four exact rim points `rim_and_centre` gives
+            // a `Cell::Disk`, yet this arm offers only the centre — two arms of one supply reading
+            // differently, which this module exists to prevent. **Deliberately:** such a ring
+            // never sources an engine question in this corpus (`ring_own_circle`'s note), so the
+            // rim would be built for nobody; its centre answers as an interior witness, and that
+            // is enough for every row measured. The arm is also eager — `Option::map` runs
+            // `centre_of` before this iterator is polled, against "lazy on purpose" above — and
+            // folding both arms onto `rim_and_centre` fixes that in the same move.
             let centre = ring_own_circle(r).map(centre_of).into_iter();
             let pierce = r.iter().filter_map(|e| {
                 combinatorics::pierce_name(e.node).map(|_| Witness::On(Where::Named(e.node)))
@@ -441,8 +409,7 @@ fn ask(
             match inside {
                 Ok(true) => Said::In,
                 Ok(false) => Said::Out,
-                // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only
-                // this witness's circumstance is an abstention, and anything else is raised.
+                // What the road's refusal means is read in one place (`Said::of_ray_error`).
                 Err(e) => match Said::of_ray_error(
                     e,
                     rb.iter()
@@ -479,11 +446,10 @@ fn ask(
             // does. A `Sectioned` class reads the same: the chord it cuts from a disk lies on its
             // own arrangement, and the disk's cells on the arrangement of the class ⊥ the axis, so
             // a corner of such a cell that names the sectioned class comes from one of its faces.
-            // The argument reads «a corner named by the class lies on one of its faces», which a
-            // cell's corner keeps and a point off the class's faces does not; an alias that put the
-            // class into the name of a point off its faces would break it unseen. The gate's shared
-            // lines do fold such names — a point on a cylinder's rim into a three-plane name with a
-            // class of no world statement (`Aliases::record_shared_ruling`,
+            // The premise is «a corner named by the class lies on one of its faces»: an alias that
+            // put the class into the name of a point off its faces would break it unseen. The
+            // gate's shared lines do fold such names — a point on a cylinder's rim into a
+            // three-plane name with a class of no world statement (`Aliases::record_shared_ruling`,
             // `Aliases::record_graze_line`) — and what keeps this reading honest is the
             // representative: a point on a cylinder is represented by its pierce name, which the arm
             // abstains from above. A class proved `Beside` the cylinder needs no such premise and is
@@ -595,24 +561,22 @@ fn inside(
 /// **The arrangement's adapter onto [`cell_inside`]** — its cells arrive as indices into the
 /// walk's rings and circle defs, and two questions are settled before a witness is asked.
 ///
-/// **The indices are the caller's; the shapes are not.** [`Cell`] takes the shape itself
-/// rather than either road's container, and this adapter follows the same rule one level up: it
-/// is handed the exact statement of each circle, never the vessel the arrangement merged it in.
+/// **The indices are the caller's; the shapes are not** — [`Cell`]'s rule one level up: this is
+/// handed the exact statement of each circle, never the vessel the arrangement merged it in.
 ///
 /// `Ok(None)` is *not comparable*: two polygons that **share a node** touch rather than nest (a
 /// shared node is a split point, and that also excludes a contour's own `+1` partner, which
-/// carries the same ring). It is a **ring-ring** rule and stays one: the disk arms have never
-/// asked it, and the coplanar merge — the engine's other road — works with rings that do share
-/// nodes. Whether the asymmetry is right is an open question of its own.
+/// carries the same ring). It is a **ring-ring** rule and stays one: the disk arms do not ask it,
+/// and hoisting it into the engine would answer «not comparable» where they answer — and would
+/// change the coplanar merge, the engine's other road, whose rings do share nodes. Whether the
+/// asymmetry is right is an open question of its own.
 ///
 /// **The engine's precondition holds here structurally**: these cells are faces of one class's
 /// DCEL, and the split gave every crossing a vertex — so two of their loops cannot cross, they can
 /// only nest or share nodes.
 ///
-/// **Asked from two directions here and a third elsewhere.**
 /// `crate::arrangement::cells::nest_cells` asks it of (contour, `+1` cell) to find hosts and
-/// `innermost_host` of (host, host) to order them; the coplanar merge asks the same question of its
-/// own bounds, through this engine rather than a copy of this dispatch.
+/// `innermost_host` of (host, host) to order them.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cell_in_cell(
     jd: &Judge<'_, WorkingPlane>,
@@ -624,17 +588,11 @@ pub(crate) fn cell_in_cell(
     a: usize,
     b: usize,
 ) -> Result<Option<bool>, BoolError> {
-    // **Adjacency stays a ring–ring rule.** A shared node is a split
-    // point, so the two loops touch rather than one wrapping the other (that also excludes a
-    // contour's own `+1` partner, which carries the same ring). It is *not* asked of the disk arms
-    // today, and hoisting it into the engine would answer «not comparable» where they answer — and
-    // would change the merge road, whose rings do share nodes. The asymmetry is left where it is
-    // and written down; whether it is right is an open question.
     // **The route is one named decision.** Spelled as three fall-throughs with the instrument
-    // below sitting above all of them, **85% of its rows describe questions no witness is asked
-    // for** (measured: 189,662 rows against 28,000 engine questions over the lib suite). A row
-    // that says "the source had N witnesses" about a
-    // question answered by a shared node, or by two disks, is a lie the audit tests then read.
+    // below sitting above all of them, most of its rows describe questions no witness is asked
+    // for (`nesting_probe`'s note measures how many), and a row that says "the source had N
+    // witnesses" about a question answered by a shared node, or by two disks, is a lie the audit
+    // tests then read.
     let route = if circle_ix[a].is_none() && circle_ix[b].is_none() {
         let (ra, rb) = (&rings[a], &rings[b]);
         if ra.iter().any(|e| rb.iter().any(|f| f.node == e.node)) {
@@ -674,8 +632,7 @@ pub(crate) fn cell_in_cell(
             )
         };
         let (named, coords, pierce, chord, edge, circle) = inv(a);
-        // `inv` speaks a *ring's* vocabulary, so a disk reads all zeros there and
-        // **no row would describe the arm whose whole supply is its own**. Its rim is its
+        // `inv` speaks a *ring's* vocabulary, so a disk reads all zeros there; its rim is its
         // supply, so the row says how many it offered.
         let rim = match circle_ix[a] {
             Some(c) => rim_and_centre(jd, wc, circle_defs[c])
@@ -723,10 +680,9 @@ pub(crate) fn cell_in_cell(
             roads,
         });
     }
-    // **Two disks are not a witness question at all**: a disk lies inside another iff
-    // its rim does, and the rims of two classes never meet, so the radii and the distance between
-    // the axes decide it exactly ([`disk_in_disk`]). Answering `None` here leaves two disk cells unnested and *silently*
-    // keeps both operands' caps: a pin stacked on a boss fuses into **two** untouched bodies.
+    // **Two disks are not a witness question at all** (`disk_in_disk`). Answering `None` here
+    // leaves two disk cells unnested and *silently* keeps both operands' caps: a pin stacked on a
+    // boss fuses into **two** untouched bodies.
     match route {
         Route::SharedNode => Ok(None),
         Route::DiskPair { ca, cb } => {
@@ -749,9 +705,9 @@ pub(crate) fn cell_in_cell(
 pub(crate) enum Route {
     /// Two loops that share a node touch rather than nest: not comparable, no witness asked.
     SharedNode,
-    /// Two disks: radii and the distance between the axes decide, exactly ([`disk_in_disk`]). It carries the
-    /// two circle indices rather than letting the arm re-derive them — the decision already knows
-    /// them, and a second `let … else { unreachable!() }` would be the rule spelled twice.
+    /// Two disks ([`disk_in_disk`]). It carries the two circle indices rather than letting the arm
+    /// re-derive them — the decision already knows them, and a second
+    /// `let … else { unreachable!() }` would be the rule spelled twice.
     DiskPair { ca: usize, cb: usize },
     /// The witness engine ([`cell_inside`]).
     Engine,
@@ -761,23 +717,23 @@ pub(crate) enum Route {
 ///
 /// **A row is not a population, and for two reasons — both measured.**
 /// 1. **Most rows are about questions no witness was asked for.** This pushes from
-///    [`cell_in_cell`], which answers three ways ([`Route`]): a shared node, two disks, or the
-///    engine. Sampled over the lib suite at the moment the 28,000th engine question ran, the
-///    adapter had been entered **189,662** times — so roughly **six of every seven rows** describe
-///    an offer nobody read. Filter on [`Row::route`] before counting anything,
-///    and never read a raw row count as a population (the rule `reject_census` states for raises,
-///    one layer in).
+///    [`cell_in_cell`], which answers by [`Route`]: a shared node, two disks, or the engine.
+///    Sampled over the lib suite at the moment the 28,000th engine question ran, the adapter had
+///    been entered **189,662** times — so roughly **six of every seven rows** (85%) describe an
+///    offer nobody read. Filter on [`Row::route`] before counting anything, and never read a raw
+///    row count as a population (the rule `reject_census` states for raises, one layer in).
 /// 2. **The merge road is invisible.** `boolean` calls [`cell_inside`] directly, so those
 ///    questions never pass here at all — sampled at **~1% of engine questions in the lib suite and
 ///    ~3% in census**, which is why this is a footnote rather than the headline.
 ///
 /// **The defect this instrument watches for is invisible to a reject count**: a corpus that never
-/// puts a **ring with no three-plane corner** against a **disk** never fires an arm whose witness
-/// supply is truncated to that one kind. So the instrument measures the **population**: for each
+/// puts a **ring with no three-plane corner** against a **disk** never fires the truncated arm the
+/// `nesting` module doc describes. So the instrument measures the **population**: for each
 /// question, what the source cell had to offer and which road could answer.
 ///
-/// Recorded only for work a test asked to own (`ledger::owned`) — the road-agreement column runs
-/// *both* roads where both are available, which is work no ordinary test should pay for.
+/// Recorded only for work a test asked to own (`ledger::owned`): describing a question's **supply**
+/// is not cheap and the suite asks tens of thousands of questions, and the road-agreement column
+/// runs *both* roads where both are available — work no ordinary test should pay for.
 #[cfg(test)]
 pub(crate) mod nesting_probe {
     use crate::ledger::Ledger;
@@ -788,23 +744,21 @@ pub(crate) mod nesting_probe {
         pub a_disk: bool,
         pub b_disk: bool,
         pub b_mixed: bool,
-        /// `a`'s witnesses by kind. **The rule is one place**: `chord` and `edge` are
-        /// two arms of [`combinatorics::edge_interior_points`] rather than two producers chained by
-        /// four different spellings, and the breakdown is kept because a *count per kind* is not a
-        /// spelling of the rule.
+        /// `a`'s witnesses by kind. `chord` and `edge` are two arms of
+        /// [`combinatorics::edge_interior_points`], one rule; the breakdown is kept because a
+        /// *count per kind* is not a spelling of the rule.
         pub named: usize,
         pub coords: usize,
         pub pierce: usize,
         pub chord: usize,
         pub edge: usize,
         pub circle: bool,
-        /// A **disk's** supply, which the five ring counts above cannot describe: how many rim
+        /// A **disk's** supply, which the ring counts above cannot describe: how many rim
         /// witnesses it offered. `0` for a ring, including one that is a whole circle.
         pub rim: usize,
         /// **Which road answered.** Only [`super::Route::Engine`] rows have a witness asked of
-        /// them; the counts above describe an offer nobody read on the other two. 85% of the rows
-        /// this probe pushes are of that kind (189,662 against 28,000 engine questions, lib suite),
-        /// which is why a population read off them unfiltered is wrong.
+        /// them; the counts above describe an offer nobody read on the other two, which are most
+        /// rows (`nesting_probe`'s note), so a population read off rows unfiltered is wrong.
         pub route: super::Route,
         /// Where **both** roads could answer, what each said — the direct measurement of the
         /// engine's premise, that any witness gives the same answer.
@@ -814,8 +768,7 @@ pub(crate) mod nesting_probe {
     /// One row per question, owned by the test whose work asked it.
     pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
-    /// Whether to record here at all. A question is cheap; describing its **supply** is not, and
-    /// the suite asks tens of thousands of them, so only a test that came for these rows pays.
+    /// Whether to record here at all (the module note says why only an owning test does).
     pub(crate) fn on() -> bool {
         crate::ledger::owned_thread()
     }

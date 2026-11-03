@@ -1013,8 +1013,7 @@ fn the_gate_reads_the_arc_not_the_circle() {
     );
 }
 
-/// **The gate reads faces at every one of its four sites.** Three fixtures a gate reading
-/// *surfaces* would refuse, and one the gate refuses for a fact about faces — then three shapes
+/// Three fixtures a gate reading *surfaces* would refuse, and one the gate refuses for a fact about faces — then three shapes
 /// such a refusal hides from the arrangement: a solid with two
 /// coaxial cylinders sectioned by a wall (the annulus), a cap whose merged region is bounded by a
 /// circle (the stacked pin's cut), and a component with no vertex anywhere (the tube).

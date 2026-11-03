@@ -22,7 +22,7 @@ pub enum BoolError {
     /// ([`RejectWhere`]), `None` when the reason has no meaningful single location.
     ///
     /// Not `Unsupported`: that name would assert every reject is a coverage limit, which is false
-    /// for two of the three [`RejectClass`]es — `Impossible` (no milestone will build this input)
+    /// for two of the three [`RejectClass`]es — `Impossible` (no valid solid exists for this input)
     /// and `SuspectedDefect` (ours, not the caller's). The variant states what happened; *what
     /// kind* of answer it is lives in [`RejectReason::class`].
     Rejected {
@@ -68,26 +68,22 @@ pub enum RejectWhere {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RejectClass {
     /// **The kernel's current coverage ends here** — a fact about the kernel, and nothing is
-    /// judged about the input itself. Epistemically the same input *may* succeed at a later
-    /// milestone (the kernel cannot rule it out from where this class is assigned), but that is
+    /// judged about the input itself. Epistemically the same input *may* succeed once coverage
+    /// grows (the kernel cannot rule it out from where this class is assigned), but that is
     /// a possibility, not a promise: some members will only ever earn a more precise rejection.
     /// (The 45° fold is not an example: the whole-result judgement gives it its `Impossible`
     /// truth, `SelfTouchingResult`.)
     ///
-    /// Not `NotSupportedYet`: a "Yet" reads as a prediction that
-    /// support is coming, and a
-    /// deliberate refusal (the DNA: reject honestly rather than guess) is not an unfinished
-    /// feature. The name states the present fact.
+    /// Not `NotSupportedYet`: a "Yet" reads as a prediction that support is coming, and a
+    /// deliberate refusal is not an unfinished feature. The name states the present fact.
     NotSupported,
-    /// No valid solid exists for this input, at any milestone: the operands are not valid
-    /// 2-manifolds, or the requested combination pinches. A statement of fact, not advice —
-    /// which coincidence was unintended, and what the author does about it, is theirs
-    /// (the same rule [`RejectReason::SelfTouchingResult`]'s doc states: a diagnosis, not a
-    /// prompt).
+    /// No valid solid exists for this input: the operands are not valid 2-manifolds, or the
+    /// requested combination pinches. A statement of fact, not advice
+    /// ([`RejectReason::SelfTouchingResult`]'s doc says why).
     Impossible,
     /// An engine invariant broke: the arrangement built something malformed, or a backstop
-    /// that should be unreachable spoke. Reported rather than returned (DNA: never silently
-    /// wrong), and worth a bug report. Say "could not produce a valid result", not "your fault".
+    /// that should be unreachable spoke. Reported rather than returned, and worth a bug report.
+    /// Say "could not produce a valid result", not "your fault".
     ///
     /// The classification of variants that have never been observed to fire is provisional —
     /// tighten it once the reason census says which are reachable.
@@ -97,8 +93,11 @@ pub enum RejectClass {
 /// Which guard raised an [`BoolError::Rejected`].
 ///
 /// Named so a guard and the test that asserts it share one identifier — a renamed reason then
-/// cannot silently drift out of a test's expectation. `#[non_exhaustive]`: reasons are added
-/// and refined as coverage grows, so match with a wildcard arm and branch on [`Self::class`].
+/// cannot silently drift out of a test's expectation. Each name is one question: one label over
+/// several makes a reject name a dead end — it says the engine is unhappy without saying about
+/// what, and the census, which keys on the name, cannot tell two causes apart. `#[non_exhaustive]`:
+/// reasons are added and refined as coverage grows, so match with a wildcard arm and branch on
+/// [`Self::class`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RejectReason {
@@ -117,9 +116,8 @@ pub enum RejectReason {
     /// come back as such — handles are minted per output solid, so their contact is two edges of two
     /// uses each and there is nothing here to count. What is left is the case where the material
     /// **runs around** the contact: cut the pinch and one piece remains, so no pair of solids
-    /// exists to hand back and the reject is `Impossible` at any milestone. A square block with two
-    /// square voids meeting along a line is the smallest example
-    /// (`tests/probes/contact_separates.rs`).
+    /// exists to hand back and the reject is `Impossible`. A square block with two square voids
+    /// meeting along a line is the smallest example (`tests/probes/contact_separates.rs`).
     ///
     /// Two sampled boxes sharing exactly an edge are **not** this: those are answers,
     /// and the grid proptest scores them against inclusion-exclusion instead of skipping them.
@@ -128,33 +126,29 @@ pub enum RejectReason {
     /// does. An embedded boundary cannot do that — two pieces of it would occupy the same points —
     /// so what came back is not a solid, however plausible its volume.
     ///
-    /// **Two witnesses, one proposition.** The first is combinatorial: an *edge* of the
-    /// solid lies in the interior of one of that same solid's faces — a plane face, or a lateral
-    /// along whose ruling two of the solid's plane faces meet (a wedge's apex edge along the
-    /// solid's own bore wall). The second is curved
-    /// and has no edge at all: a **lateral tangent to one of the solid's own plane
-    /// faces along a line**. Nothing splits at such a contact, so there is no edge to count and no
-    /// vertex to link — the topology sees a perfectly ordinary solid — and it is caught instead by
-    /// asking what the material near the line is: three regions (the lens inside the cylinder, the
-    /// **two** wedges beside it, the far half-space), adjacent only `L–W2` and `F–W2`, so the kept
-    /// ones fall apart exactly when `(W2 ∧ ¬L ∧ ¬F)` or `(L ∧ F ∧ ¬W2)` — and the pieces land in
-    /// one body. See `assembly::tangency_reject`. The second disjunct is *not* a defect on its
-    /// own: two bodies touching along a line are two valid solids, and the kernel returns them.
+    /// **Two witnesses, one proposition.** The first is combinatorial: an *edge* of the solid lies
+    /// in the interior of one of that same solid's faces — a plane face, or a lateral along whose
+    /// ruling two of the solid's plane faces meet (a wedge's apex edge along the solid's own bore
+    /// wall). The second is curved and has no edge at all: a **lateral tangent to one of the
+    /// solid's own plane faces along a line**. Nothing splits at such a contact, so there is no
+    /// edge to count and no vertex to link — the topology sees a perfectly ordinary solid — and it
+    /// is caught instead by asking what the material near the line is: three regions (the lens
+    /// inside the cylinder, the **two** wedges beside it, the far half-space), adjacent only `L–W2`
+    /// and `F–W2`, so the kept ones fall apart exactly when `(W2 ∧ ¬L ∧ ¬F)` or `(L ∧ F ∧ ¬W2)` —
+    /// and the pieces land in one body. See `assembly::tangency_reject`. The second disjunct is
+    /// *not* a defect on its own: two bodies touching along a line are two valid solids, and the
+    /// kernel returns them.
     ///
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
-    /// twice") is **false** here: the face is not split at the contact, so every edge is still used
-    /// exactly twice and the topology count sees nothing — measured: on a tangent `Cut` the count
-    /// alone returns `Ok` with `validate` clean and every net silent, which is why the curved
-    /// witness
-    /// has a rule of its own. Both are `Impossible`, and both stay because each states a different
-    /// proposition about one solid's surface: an edge inside a face here, an edge four faces share
-    /// there.
+    /// twice") is **false** here — measured: on a tangent `Cut` the count alone returns `Ok` with
+    /// `validate` clean and every net silent, which is why the curved witness has a rule of its
+    /// own. Both are `Impossible`, and both stay because each states a different proposition about one solid's
+    /// surface: an edge inside a face here, an edge four faces share there.
     ///
     /// What produces it is two surfaces of the model meeting exactly, leaving the material between
     /// them no thickness at all: a pocket whose wedge tip lands on the far wall, a boss flush with
-    /// a neighbouring face. Parasolid refuses the same bodies
-    /// (`PK_FACE_state_bad_face_face_c`); other kernels name the condition "zero thickness
-    /// geometry".
+    /// a neighbouring face. Parasolid refuses the same bodies (`PK_FACE_state_bad_face_face_c`);
+    /// other kernels name the condition "zero thickness geometry".
     ///
     /// **This says what is wrong, not what to do about it.** Which coincidence was unintended —
     /// and whether the answer is a different dimension, a different operation, or two bodies
@@ -175,10 +169,6 @@ pub enum RejectReason {
     /// boolean in the suite fires it; a planted edge does.
     EdgeCarrierMismatch,
     // ---- the arrangement's own consistency checks ----
-    //
-    // Ten questions, ten names. One label over several questions makes a reject name a dead
-    // end: it says the engine is unhappy without saying about what, and a census cannot tell two
-    // causes apart. Each name below is one question, asked at one kind of place.
     /// **Two names of one point reach a road that keys points by name.** Three planes name a
     /// vertex, so two plane names for one point mean a **fourth** plane through it — the arrangement
     /// then holds an edge with no direction; the same substrate limit [`Self::FourPlane`] names,
@@ -191,7 +181,7 @@ pub enum RejectReason {
     /// A ring is shorter than a triangle, so it bounds nothing and has no winding to read.
     DegenerateRing,
     /// **A ring node with no side**: the edges meeting there run along one line, so the loop has
-    /// no left or right at it. Two places ask.
+    /// no left or right at it.
     ///
     /// * `combinatorics::loop_winding` — every passage of the ring through its extreme node is an
     ///   antenna (out and back along one carrier), so the region has no side there to read the
@@ -201,7 +191,7 @@ pub enum RejectReason {
     ///   the other. No fixture: with the naming scoped per solid, its one known subject (two
     ///   overlapping unit boxes, one turned 60° about Z) does not reach it, and the sweep over that
     ///   family — three axes, seventeen angles, four overlaps, all three kinds, 612 booleans —
-    ///   declines nowhere. The check stays wired: a corpus is not a proof.
+    ///   declines nowhere. The check stays wired, as [`Self::DegenerateWitness`]'s does.
     StraightAngle,
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
@@ -209,7 +199,7 @@ pub enum RejectReason {
     /// A line and an arc **tangent** at the vertex are not this when the arc
     /// leaves the other way (a fillet's smooth corner is a half turn, read by geometry). What is
     /// this: the same way — two edges tangent *and* co-directed, whose order is a matter of
-    /// **curvature** (two tangent circles, the shape M6b's cylinder pairs will bring).
+    /// **curvature** (two tangent circles).
     ///
     /// Their lines are then identical (parallel plus a shared point), which upstream is supposed
     /// to have already resolved: `merge_coincident` folds an edge traced twice, and `Aliases`
@@ -235,8 +225,7 @@ pub enum RejectReason {
     ///
     /// The second is not a stricter reading of the first. A walk can attach the wrong edges to
     /// the right number of contours: measured, one wrong sign in the arc turn merged four cells
-    /// into one eight-half-edge orbit and the contour count accepted it. Two numbers, two failure
-    /// modes, one proposition — this reason's.
+    /// into one eight-half-edge orbit and the contour count accepted it.
     RingOrientation,
     /// **A closed ring met a line an odd number of times.** Crossings of a closed curve with a
     /// line come in pairs, so the alternation `segment_meets_face` reads along that line —
@@ -279,7 +268,7 @@ pub enum RejectReason {
     NoOutwardShell,
     /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
     /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
-    /// a malformed solid and the boolean rejects rather than return it (DNA: never silently wrong).
+    /// a malformed solid and the boolean rejects rather than return it.
     /// This is the Euler-parity backstop for malformity that is *not* a pinch (see
     /// `NonManifoldVertex`); e.g. a dropped face. Rotation-independent. Checked post-assembly in
     /// `boolean`, per solid.
@@ -338,10 +327,10 @@ pub enum RejectReason {
     /// centroid. Vertex identity is normalised (names identify, structures carry geometry), and
     /// `coverage/rotation.rs` keeps the near misses around it building.
     ///
-    /// The guard remains, at one site: a run whose candidate handles are all parallel to
-    /// the line they must cut (`arrangement`). It has no reproduction. It stays because a
-    /// substrate that cannot name a point must say so rather than pick one of the names — and
-    /// because an unfired reject costs nothing, while a missing one costs a wrong solid.
+    /// The guard remains where a run's candidate handles are all parallel to the line they must
+    /// cut (`arrangement`). It has no reproduction. It stays because a substrate that cannot name a
+    /// point must say so rather than pick one of the names — and because an unfired reject costs
+    /// nothing, while a missing one costs a wrong solid.
     ///
     /// There is no **operand**-side guard — a vertex found on more than three plane classes
     /// (a gusset's apex landing on a wall's top edge) is not refused. A point's name is
@@ -351,9 +340,8 @@ pub enum RejectReason {
     /// **Exact, not toleranced.** Measured on that model: perturbing an operand coordinate by **one
     /// ULP** in either direction removed the concurrency. The judgement returned zero because the
     /// determinant *is* zero at 200 bits, not because it fell below the coincidence limit (~55
-    /// orders of magnitude lower). Exact rational input would produce the same concurrency — it is
-    /// not an artefact of `f64` construction, so exact rational construction (`crate::construct`)
-    /// leaves it exactly where it is.
+    /// orders of magnitude lower). Exact rational construction (`crate::construct`) would produce
+    /// the same concurrency — it is not an artefact of `f64` construction.
     FourPlane,
     /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **pierce
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
@@ -363,22 +351,19 @@ pub enum RejectReason {
     ///
     /// **Not [`Self::RingNaming`].** That one's sentence is "these names do not chain" — a fact
     /// about a *three-plane* naming that came out degenerate. A pierce point has no such name to
-    /// begin with, so reporting it there would put two causes under one label.
+    /// begin with.
     ///
     /// Its per-face sibling is `DeclineKind::PierceNode`: the tracer's decline structure carries
     /// a face handle, so the paths inside it say *where* instead of raising this.
     ///
-    /// **A ring may hold a pierce node; this refuses only the narrower case.**
-    /// `loop_winding` compares pierce coordinates through the quad tower
-    /// (`combinatorics::CoordKey`); what is left here is the narrower sentence — a pierce node
-    /// whose *cylinder* is not on any of the ring's own carriers, so the point cannot be re-solved
-    /// from its name. That arm has no fixture; it is recorded rather than hidden
-    /// (`DegenerateWitness` is the precedent: no fixture, written down, and not taken as licence
-    /// to delete the guard). The ray-cast one next to it (`combinatorics::every_ray`) fires on a
-    /// ring with a pierce corner cast against a class with a world statement — that road carries
-    /// no cylinder table to side one — and `nesting` reads that as the road declining
-    /// (`Said::Declines`): a witness further down answers, and this name never surfaces from
-    /// there.
+    /// **A ring may hold a pierce node** — `loop_winding` compares pierce coordinates through the
+    /// quad tower (`combinatorics::CoordKey`); this refuses only a pierce node whose *cylinder* is
+    /// not on any of the ring's own carriers, so the point cannot be re-solved from its name. That
+    /// arm has no fixture and stays, as `DegenerateWitness`'s guard does. The ray-cast one next to
+    /// it (`combinatorics::every_ray`) fires on a ring with a pierce corner cast against a class
+    /// with a world statement — that road carries no cylinder table to side one — and `nesting`
+    /// reads that as the road declining (`Said::Declines`): a witness further down answers, and
+    /// this name never surfaces from there.
     PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface none of the faces meeting at that vertex
     /// lies on — `validate`'s `VertexNamesAbsentSurface`. A vertex is where its faces meet, and
@@ -414,9 +399,8 @@ pub enum RejectReason {
     /// stronger and different — the gate promised that no class carries a closed trace it did not
     /// name (a circle across the axis, see [`crate::planes::class_carries_circle`], or an oblique
     /// section, [`crate::planes::CylRecord::Sections`]) and that one class carries the traces of
-    /// parallel axes only, and the promise did not hold. Sharing
-    /// [`Self::ObliqueCylinderCut`] would put two sentences under one label. The vessel-guard
-    /// precedent is [`Self::PartialCircleUncut`], and it takes the same class.
+    /// parallel axes only, and the promise did not hold. The vessel-guard precedent is
+    /// [`Self::PartialCircleUncut`], and it takes the same class.
     ///
     /// Nothing raises it today, and that is the point: the alternative at each of its sites in the
     /// arrangement is not a refusal but a **silently wrong answer** — a wall meeting the class along
@@ -432,23 +416,23 @@ pub enum RejectReason {
     /// names** — two cylinders that do not meet on a line
     /// ([`nacre_topo::EdgeDecline::TwoCylinders`]; the assembly never pairs two cylinders, and an
     /// operand with such an edge is refused at the entry as [`Self::CylinderPairEdge`]) or a circle
-    /// the truth states and the cache cannot build
-    /// ([`nacre_topo::EdgeDecline::Degenerate`]). A backstop: nothing raises it.
+    /// the truth states and the cache cannot build ([`nacre_topo::EdgeDecline::Degenerate`]). A
+    /// backstop: nothing raises it.
     EdgeCurveUnderived,
     /// Two cylinder classes **of different operands may share a face**: one surface stated by
     /// both (one handle with rows of both solids, or one surface under two handles — a
     /// `translate`d twin), or two cylinders whose side faces could not be proved apart — neither
     /// apart along a direction the pair states nor one lying inside the other cylinder. Where the
-    /// faces do meet, their intersection is a quartic curve, which is M6b's.
+    /// faces do meet, their intersection is a quartic curve, which the kernel does not build.
     ///
-    /// What clears a pair, so that the name stays true: axes further apart than the two radii
-    /// (skew or parallel — a drill crossing a bore with room to spare passes); for parallel axes,
-    /// one cylinder strictly inside the other; otherwise the **faces**, not the infinite
-    /// surfaces — a stud fused through a cube and a second stud across it have crossing axes,
-    /// though no face of one reaches the other; a filleted plate and a drill laid across it are
-    /// apart along the rulings' cross product; a pin nested crosswise inside a larger cylinder is
-    /// apart along no direction at all, its face lying inside the other cylinder. Pairs within one
-    /// solid (a plate's two fillets, a slot's two half cylinders) are not asked.
+    /// What clears a pair: axes further apart than the two radii (skew or parallel — a drill
+    /// crossing a bore with room to spare passes); for parallel axes, one cylinder strictly inside
+    /// the other; otherwise the **faces**, not the infinite surfaces — a stud fused through a cube
+    /// and a second stud across it have crossing axes, though no face of one reaches the other; a
+    /// filleted plate and a drill laid across it are apart along the rulings' cross product; a pin
+    /// nested crosswise inside a larger cylinder is apart along no direction at all, its face lying
+    /// inside the other cylinder. Pairs within one solid (a plate's two fillets, a slot's two half
+    /// cylinders) are not asked.
     ///
     /// Also raised where the arrangement proves two names to be one point that stands on two
     /// cylinders' surfaces: a point's names are its surfaces', so that point is where the two
@@ -464,43 +448,42 @@ pub enum RejectReason {
     /// rotated one) the gate could not prove clear of the cylinder, a cylinder on a chain that
     /// does not fold (its def is pre-motion) — or because a class's coefficients miss its own face.
     /// **Geometry, not width**: a description the world holds and `Rat` does not is
-    /// [`Self::WitnessNotRational`]. Conservative honest refusal, never a guess.
+    /// [`Self::WitnessNotRational`], whose doc says why the two stay apart.
     ///
     /// The gate's own name, and past the gate only where its record reaches: a class with no
     /// world name that the gate passed as silent about the cylinders (`WorkingCyl::is_silent`) and
     /// that a later road meets without the description it needs — the circle nesting, the ray
     /// that decides which result body lies inside which — refuses there by this name once no other
-    /// witness can answer, because the cause is the gate's. What the chart
-    /// cannot read it names by cause — two sides that disagree are [`Self::LabelConflict`], a
-    /// silent cell takes why its ends are silent (`cyl_chart::read_cell`), and a class table and
-    /// face rows that disagree are [`Self::CylinderStagesDisagree`].
+    /// witness can answer, because the cause is the gate's. What the chart cannot read it names by
+    /// cause — two sides that disagree are [`Self::LabelConflict`], a silent cell takes why its
+    /// ends are silent (`cyl_chart::read_cell`), and a class table and face rows that disagree are
+    /// [`Self::CylinderStagesDisagree`].
     CylinderGateUndecided,
     /// **A tangent line another class's face reaches, and not as an edge** — the population gate
     /// wrote a tangency row (a wall plane exactly `r` from a cylinder's axis, a wall face touching
     /// the line where a lateral face lies on it), a face on another plane class holding that line
     /// touches it there too, and the line is not an edge the wall face and a face on that class
-    /// both end on (`planes::Tangency::line_is_an_edge`). Such a plane is a secant, so around the line six
-    /// regions meet rather than the three the tangency's verdict (`assembly::tangency_reject`)
-    /// reads, and no road judges them — the gate refuses the pair before the arrangement runs.
+    /// both end on (`planes::Tangency::line_is_an_edge`). Such a plane is a secant, so around the
+    /// line six regions meet rather than the three the tangency's verdict
+    /// (`assembly::tangency_reject`) reads, and no road judges them — the gate refuses the pair
+    /// before the arrangement runs.
     ///
     /// **Not [`Self::CylinderGateUndecided`]**: nothing here failed to be computed — the gate
-    /// decided exactly that a third class's face reaches the line — and that name's sentence is false of
-    /// it. **Not [`Self::RulingBoundNotYet`]** either: the rulings split is not what cannot read
-    /// the shape — the verdict is.
+    /// decided exactly that a third class's face reaches the line — and that name's sentence is
+    /// false of it. **Not [`Self::RulingBoundNotYet`]** either: the rulings split is not what
+    /// cannot read the shape — the verdict is.
     ///
-    /// A line that passes through a wall face's hole or gap touches no face, writes no row, and
-    /// is not this name's. Fired by the half cylinder's flat edge with a
-    /// wall tangent across it and by an L-shaped tangent face (`tests/coverage/edge_on_a_ruling.rs`);
-    /// none in the census.
+    /// A line that passes through a wall face's hole or gap touches no face, writes no row, and is
+    /// not this name's. Fired by the half cylinder's flat edge with a wall tangent across it and by
+    /// an L-shaped tangent face (`tests/coverage/edge_on_a_ruling.rs`); none in the census.
     TangentLineInAnotherPlane,
     /// **The trace does not determine whether a lateral face is present over a sector.**
     ///
     /// A cell label says where *material* is; whether the cylinder's own face bounds it there is a
     /// different proposition, answered by the contributions covering the rim arc
     /// (`cyl_chart::read_cell`'s `face_spans`). This name is what that answer being *contradictory*
-    /// is called, and it has
-    /// two spellings — both of them "the evidence points both ways", which is why they share one
-    /// name rather than reporting the shape that produced it:
+    /// is called, and it has two spellings — both of them "the evidence points both ways", which is
+    /// why they share one name rather than reporting the shape that produced it:
     ///
     /// - The interval's **two rims disagree.** Every cut rim is a band boundary, so a sector
     ///   exists over an interval's whole height or over none of it; ends that disagree mean that
@@ -539,7 +522,7 @@ pub enum RejectReason {
     /// Sibling of [`Self::PrecisionBudget`], which is the same shortage seen before any work
     /// starts: that one is the whole model being too deep, this one is a single judgement being
     /// harder than the model's own depth suggested (a very thin witness). More bits would answer
-    /// it. Nothing is wrong with the model.
+    /// it.
     JudgeExhausted,
     /// **A judgement had no distance to measure.** Turning a determinant into a length means
     /// dividing by a cofactor, and this one came out exactly zero: a witness triangle that has
@@ -553,18 +536,18 @@ pub enum RejectReason {
     /// **Unfired across the suite.** The outwardness label is nesting parity, which asks
     /// containment — a question the substrate always answers. The one judgement the corpus has come
     /// back degenerate on is the sign of a rotated plane's normal, which a material/void test would
-    /// ask and this label does not. A sweep over three rotation axes, ten angles,
-    /// two operand shapes, four overlaps and all three kinds (720 booleans) found none, and none
-    /// of `JudgeExhausted` either. `undecided_reject` is still wired and still the right shape —
-    /// an undecided judgement must never reach the geometry as a zero — it simply has no fixture,
-    /// which is recorded rather than taken as licence to delete the guard.
+    /// ask and this label does not. A sweep over three rotation axes, ten angles, two operand
+    /// shapes, four overlaps and all three kinds (720 booleans) found none, and none of
+    /// `JudgeExhausted` either. `undecided_reject` is wired and the right shape — an undecided
+    /// judgement must never reach the geometry as a zero — and has no fixture, which is recorded
+    /// rather than taken as licence to delete the guard.
     ///
     /// What it stands between: a triple of three planes sharing a line (a four-plane operand
-    /// vertex named per face loop would produce one) makes the judge, asked that «point»
-    /// for a side, come back degenerate, and everything downstream would read the `0` as «on every
+    /// vertex named per face loop would produce one) makes the judge, asked that «point» for a
+    /// side, come back degenerate, and everything downstream would read the `0` as «on every
     /// class» — false alias sets, parallel planes taken for a shared line, one merged wall family,
-    /// every name folded onto a corner elsewhere. This reject is the only thing between that
-    /// and a solid with a vertex in the wrong place. No producer mints such a dependent name.
+    /// every name folded onto a corner elsewhere. This reject is the only thing between that and a
+    /// solid with a vertex in the wrong place. No producer mints such a dependent name.
     DegenerateWitness,
     /// Every candidate ray from a loop's nodes has a ring node on its line — or, in 3D, every node
     /// of a component grazes the boundary it is being classified against.
@@ -574,61 +557,52 @@ pub enum RejectReason {
     /// two directions, and half of them can be spoiled at once — `l_and_staple`'s loop and
     /// arc share both `y` planes, so only the `x` lines are clear there.
     ///
-    /// **The population that can reach it.** A component's
-    /// nesting depth is decided by `point_in_component` from one of that component's own nodes.
-    /// Contacts separate, so a touching void and its host are two components, and a void whose
-    /// *every* corner sits on a wall — a
-    /// diamond inscribed in a square block — leaves no candidate that does not graze. The retry
-    /// over the other nodes is what keeps ordinary contacts (a cube corner: one node of eight)
-    /// clear. Locked in `tests/probes/contact_separates.rs`.
+    /// **The population that can reach it.** A component's nesting depth is decided by
+    /// `point_in_component` from one of that component's own nodes. Contacts separate, so a
+    /// touching void and its host are two components, and a void whose *every* corner sits on a
+    /// wall — a diamond inscribed in a square block — leaves no candidate that does not graze. The
+    /// retry over the other nodes is what keeps ordinary contacts (a cube corner: one node of
+    /// eight) clear. Locked in `tests/probes/contact_separates.rs`.
     ///
-    /// **Raised only where the retries actually run out.** A single node
-    /// failing to decide is an *abstention*, not an error — `point_in_component` answers it as
-    /// one; saying it with this reason instead measured 122 of the whole suite's
-    /// 151 raises as that guard being caught and swallowed by
-    /// its own retry loop. What raises this reason today is the caller whose node supply is
-    /// exhausted (the 3D depth/cavity classification in `boolean`) — and, same shape one
-    /// dimension down, `point_in_ring`'s rayless case, the nesting engine's exhausted offer, and the
-    /// coplanar cleaning pass's own mirror of that road (`boolean`, which names the empty
-    /// list [`Self::RingHasNoWitness`] and the exhausted one this, as the arrangement's
-    /// `cell_in_cell` does; neither has a population there).
+    /// **Raised only where the retries actually run out.** A single node failing to decide is an
+    /// *abstention*, not an error — `point_in_component` answers it as one; saying it with this
+    /// reason instead measured 122 of the whole suite's 151 raises as that guard being caught and
+    /// swallowed by its own retry loop. What raises this reason is the caller whose node supply is
+    /// exhausted (the 3D depth/cavity classification in `boolean`) — and, same shape one dimension
+    /// down, `point_in_ring`'s rayless case, the nesting engine's exhausted offer, and the coplanar
+    /// cleaning pass's own mirror of that road (`boolean`, which names the empty list
+    /// [`Self::RingHasNoWitness`] and the exhausted one this, as the arrangement's `cell_in_cell`
+    /// does; neither has a population there).
     ///
     /// **What keeps its 3D population empty.** A wall boss's Common parted by a slab is two
     /// components of half-disc caps, a panel and a lateral, with no vertex among them: reading a
-    /// cut cap as the
-    /// disk it is (`combinatorics::face_circle`) gives every one of them a witness. The
-    /// **corner** families, whose axis stands on the plate's corner edge, have probes that meet a
-    /// **corner on the ray**: the half-open rule is spelled once and read by the mixed ring
-    /// parity as well as the planar roads, so their Fuse and Cut decide. In the corner
-    /// Commons parted by a slab,
-    /// measured per attempt, two of each probe's three rays meet the other half's **lateral**;
-    /// a lateral's boundary loops answer whether the crossing is on it on
-    /// the cylinder's own chart, and the crossing census raises this
-    /// reason nowhere. What can still exhaust a probe list is the probe on a ring or a tangent
-    /// ray — a root on the seam is the cyclic order's first point and decides like any other.
+    /// cut cap as the disk it is (`combinatorics::face_circle`) gives every one of them a witness.
+    /// The **corner** families, whose axis stands on the plate's corner edge, have probes that meet
+    /// a **corner on the ray**: the half-open rule is spelled once and read by the mixed ring
+    /// parity as well as the planar roads, so their Fuse and Cut decide. In the corner Commons
+    /// parted by a slab, measured per attempt, two of each probe's three rays meet the other half's
+    /// **lateral**; a lateral's boundary loops answer whether the crossing is on it on the
+    /// cylinder's own chart, and the crossing census raises this reason nowhere. What can still
+    /// exhaust a probe list is the probe on a ring or a tangent ray — a root on the seam is the
+    /// cyclic order's first point and decides like any other.
     ///
-    /// **Exhaustion is not emptiness.** A probe list that starts **empty** — a
-    /// ring cut out of a cylinder names its corners with the quadric and `three_plane_probes`
-    /// keeps only plane triples — is not a list of rays that were cast and blocked.
-    /// That fact has its own name ([`Self::RingHasNoWitness`]).
+    /// **Exhaustion is not emptiness**: a probe list that starts **empty** — a ring cut out of a
+    /// cylinder names its corners with the quadric and `three_plane_probes` keeps only plane
+    /// triples — is not a list of rays that were cast and blocked, and has its own name
+    /// ([`Self::RingHasNoWitness`], whose doc sets the three refusals side by side).
     ///
-    /// For the nesting question the two are told apart by one rule and not by which of
-    /// four spellings a caller happened to hold — see [`Self::RingHasNoWitness`].
-    ///
-    /// **A component is offered more than its corners.** A rounded outline under a quarter
-    /// turn (six of the
-    /// motion group's rotations) and a void whose every corner rides a wall are the supply
-    /// being thin, not the geometry being hard: given the points its **edges** name
+    /// **A component is offered more than its corners.** A rounded outline under a quarter turn
+    /// (six of the motion group's rotations) and a void whose every corner rides a wall are the
+    /// supply being thin, not the geometry being hard: given the points its **edges** name
     /// ([`crate::combinatorics::edge_interior_points`]) every one of those questions decides. The
     /// six rotations **build**, with one body, a clean `validate` and the exact volume; the void
-    /// gets the name its shape has one grazing corner down
-    /// ([`Self::SelfTouchingResult`]). The thin circular segments a wide boss shares with a
-    /// slotted block decide too — their probes' rays run through the boss's seam plane, and a
-    /// root there is the cyclic order's first point, not a tie
-    /// (`a_wide_boss_in_a_wall_gap_common_builds`). So does a cylinder's body whose every corner
-    /// lies on a line where it touches another body (a prism past both caps, tangent to it along a
-    /// ruling): its caps are each a closed arc from that corner back to itself, and the ring parity
-    /// reads a closed arc's span as the whole turn (`combinatorics::arc_span`).
+    /// gets the name its shape has one grazing corner down ([`Self::SelfTouchingResult`]). The
+    /// thin circular segments a wide boss shares with a slotted block decide too — their probes'
+    /// rays run through the boss's seam plane, and a root there is the cyclic order's first point,
+    /// not a tie (`a_wide_boss_in_a_wall_gap_common_builds`). So does a cylinder's body whose every
+    /// corner lies on a line where it touches another body (a prism past both caps, tangent to it
+    /// along a ruling): its caps are each a closed arc from that corner back to itself, and the
+    /// ring parity reads a closed arc's span as the whole turn (`combinatorics::arc_span`).
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from
@@ -637,45 +611,38 @@ pub enum RejectReason {
     /// vertices and, failing those, from its cut caps' interiors, and a thin segment of a disk can
     /// offer neither.
     ///
-    /// The three names beside each other, once: [`Self::NoClearRay`] is «every witness we had was
-    /// blocked», [`Self::WitnessNotRational`] is «a value we needed could not be formed
-    /// exactly», and this is «there was no witness to begin with». Reading the first for the
-    /// third sends a diagnosis to the wrong layer.
+    /// **The three refusals of the nesting question follow one rule**
+    /// ([`crate::nesting::cell_inside`]): a value that could not be **formed** exactly is
+    /// [`Self::WitnessNotRational`], an offer that was **empty** — no witness to begin with — is
+    /// this one, and an offer every member of which **abstained** — or whose road declined the
+    /// target — is [`Self::NoClearRay`], «every witness we had was blocked». Reading
+    /// [`Self::NoClearRay`] for this one sends a diagnosis to the wrong layer.
     ///
-    /// **Nothing in today's corpus raises it.** The three refusals of the nesting
-    /// question follow one rule ([`crate::nesting::cell_inside`]): a value that could not be
-    /// **formed** is
-    /// [`Self::WitnessNotRational`], an offer that was **empty** is this one, and an offer every
-    /// member of which **abstained** — or whose road declined the target — is
-    /// [`Self::NoClearRay`]. So this name means exactly what
-    /// it says — the cell had nothing to offer — and there is one supply. On the **component**
-    /// road, an offset boss's Common is a 0.2-deep segment prism whose halves
-    /// have pierce-named corners only and no cap candidate from the centre inside — so the
-    /// cut cap offers two points per **chord** (`ring_interior_candidates`). What would still
-    /// reach it is a segment cut again along its chord's normal line, in a multi-body result.
-    /// The remedy for every such shape at once is to widen the probe's **type** so a pierce
-    /// corner is itself a witness, as the plane classes' nesting already does.
+    /// **Nothing in today's corpus raises it**, and there is one supply. On the **component** road,
+    /// an offset boss's Common is a 0.2-deep segment prism whose halves have pierce-named corners
+    /// only and no cap candidate from the centre inside — so the cut cap offers two points per
+    /// **chord** (`ring_interior_candidates`). What would still reach it is a segment cut again
+    /// along its chord's normal line, in a multi-body result. The remedy for every such shape at
+    /// once is to widen the probe's **type** so a pierce corner is itself a witness, as the plane
+    /// classes' nesting already does.
     ///
-    /// **A disk answers the converse through its rim.**
-    /// [`crate::nesting`]'s reverse pass skips an interior witness without setting a flag, so a
-    /// `Cell::Disk` whose whole supply is its centre would offer nothing and fall straight to
-    /// this name, every time. Nothing in the corpus walks that road (the `== 0` above is an
-    /// emptiness of *this* corpus); the disk's rim witnesses close
-    /// it, and `a_disk_inside_a_disk_is_decided_by_its_rim` is that road's only coverage.
+    /// **A disk answers the converse through its rim.** [`crate::nesting`]'s reverse pass skips an
+    /// interior witness without setting a flag, so a `Cell::Disk` whose whole supply is its centre
+    /// would offer nothing and fall straight to this name, every time. Nothing in the corpus walks
+    /// that road; the disk's rim witnesses close it, and
+    /// `a_disk_inside_a_disk_is_decided_by_its_rim` is that road's only coverage.
     RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class whose world name is `Wide`, or a
-    /// coordinate or coefficient past `Rat`'s ceiling. (A class with no world statement at all is
-    /// geometry, [`Self::CylinderGateUndecided`]: refused at the gate unless proved clear of every
-    /// cylinder, and named so where a road meets such a class it cannot answer without one.)
+    /// coordinate or coefficient past `Rat`'s ceiling.
     ///
     /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
-    /// (`nesting::cell_inside`'s coordinate road), the order of two points on a meet line when one of
-    /// them has no exact description (`combinatorics::order_on`, and `combinatorics::order_located`
-    /// in the interval overlay), the arrangement's split passes and the cylinder chart's stations,
-    /// orders and ruling sides, where a point's own description — its `(line, s)` or its
-    /// `dir_sign` — could not be formed, and a ring's winding
+    /// (`nesting::cell_inside`'s coordinate road), the order of two points on a meet line when one
+    /// of them has no exact description (`combinatorics::order_on`, and
+    /// `combinatorics::order_located` in the interval overlay), the arrangement's split passes and
+    /// the cylinder chart's stations, orders and ruling sides, where a point's own description —
+    /// its `(line, s)` or its `dir_sign` — could not be formed, and a ring's winding
     /// (`combinatorics::arc_extremum_winding`), where an arc's minimum — the pierce point of its
     /// cap plane, a plane through the axis, and the cylinder — could not be solved.
     ///
@@ -689,15 +656,13 @@ pub enum RejectReason {
     /// means the arithmetic, and the gate raises it too where its descriptions are wider than
     /// `Rat`: a class with a `Wide` world name, a cylinder statement or a face corner that
     /// overflows on its way to the world, a meet with another class that overflows. Sharing one
-    /// name would put a width limit inside a geometric verdict — and would tell the user that the
-    /// placement is in doubt when the digits are.
+    /// name would tell the user that the placement is in doubt when the digits are.
     ///
-    /// **The chart half of that wall is closed**: the chart reads a **primitive** normal, so
-    /// a plain sub-millimetre model does not meet the width of its plane offset's denominator
-    /// squared by the chart's second axis. What is left under this name on that road is a
-    /// **primitive**
-    /// normal past ~2⁶³, and the corpus has none. It has raises but no frozen
-    /// *surfacing* fixture; `reject-trace` is what keeps it visible.
+    /// **The chart half of that wall is closed**: the chart reads a **primitive** normal, so a
+    /// plain sub-millimetre model does not meet the width of its plane offset's denominator squared
+    /// by the chart's second axis. What is left under this name on that road is a **primitive**
+    /// normal past ~2⁶³, and the corpus has none. It has raises but no frozen *surfacing* fixture;
+    /// `reject-trace` is what keeps it visible.
     WitnessNotRational,
     /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, not a stopper.
     ///
@@ -729,33 +694,30 @@ pub enum RejectReason {
     ///
     /// **Distinct from [`Self::ArcBoundNotYet`] and [`Self::RulingBoundNotYet`], which are the
     /// *assembly's*.** Those two name configurations the result side cannot **spell**; this one
-    /// names an operand the trace cannot **read**. Sharing either would put an input-side coverage
-    /// limit under an output-side name, and the census keys on these.
+    /// names an operand the trace cannot **read**.
     ///
-    /// **Two sites, and neither of them fires** — measured over the whole suite
-    /// (`--features reject-trace`, this one **absent**): a chained operand is read.
+    /// **Neither site fires** — measured over the whole suite (`--features reject-trace`, this
+    /// one **absent**): a chained operand is read.
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. A corner a cylinder makes is
     ///   **read exactly** (a pierce point carries one radicand and everything it is measured
     ///   against is rational), so what this name covers is only what the scan genuinely cannot
-    ///   spell: an **arc** edge — whose bulge breaks the
-    ///   convex-hull argument the scan rests on — and an `OnSeam` vertex, which pins a curve
-    ///   rather than a point. The gate's other failures are not this name: a statement it cannot
-    ///   put in the world wears [`Self::CylinderGateUndecided`], a width [`Self::WitnessNotRational`].
+    ///   spell: an **arc** edge — whose bulge breaks the convex-hull argument the scan rests on —
+    ///   and an `OnSeam` vertex, which pins a curve rather than a point. The gate's other failures
+    ///   are not this name: a statement it cannot put in the world wears
+    ///   [`Self::CylinderGateUndecided`], a width [`Self::WitnessNotRational`].
     /// * `combinatorics::loop_triples` — the road itself, **swallowed**: `trace_input` maps a
     ///   loop it cannot name to `None` and the tracer reports which *loop* failed
     ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
     ///   face has several. A test build's reject census still records the raise, so the cause is
     ///   in the ledger even where the surfaced label is the loop's.
     ///
-    ///   **That second site is a backstop with no firings, and deliberately so.** The ring
-    ///   naming restates an operand's pierce corner (`combinatorics::pierce_name_from_def`) and
-    ///   writes a curved carrier, so the curved rings of the corpus are **described** rather than
-    ///   declined — measured, zero raises from this site across the whole suite. What can
-    ///   reach it: a corner whose def is not `Pierce`, a plane with no *narrow* world
-    ///   description (a wide or rotated chain), a definition plane that is none of the corner's
-    ///   incident classes, and two laterals meeting at one corner (M6b's). Measured with the
-    ///   restatement switched off: the ring
+    ///   **That second site is a deliberate backstop.** The ring naming restates an operand's
+    ///   pierce corner (`combinatorics::pierce_name_from_def`) and writes a curved carrier, so the
+    ///   curved rings of the corpus are **described** rather than declined. What can reach it: a
+    ///   corner whose def is not `Pierce`, a plane with no *narrow* world description (a wide or
+    ///   rotated chain), a definition plane that is none of the corner's incident classes, and two
+    ///   laterals meeting at one corner. Measured with the restatement switched off: the ring
     ///   **declines by this name** and nothing panics, which is the whole reason the backstop is
     ///   under the road rather than trusted away.
     ///
@@ -769,15 +731,14 @@ pub enum RejectReason {
     /// **A circle and a ruling of one plane class cross** — two cylinders' curves crossing on one
     /// plane, at a point this kernel cannot name.
     ///
-    /// **Crossing, not merely meeting.** A tangency divides nothing — as for a
-    /// tangency at a vertex — so a curve that only touches another mints no
-    /// node and needs none. The name says so because reading it the other way refuses
-    /// valid parts.
+    /// **Crossing, not merely meeting.** A tangency divides nothing — as for a tangency at a
+    /// vertex — so a curve that only touches another mints no node and needs none. The name says
+    /// so because reading it the other way refuses valid parts.
     ///
     /// **A backstop.** Two cylinders whose side faces may meet are refused before this, as
     /// [`RejectReason::CylinderPairContact`]; this name is raised only if an edge the boolean drew
     /// reaches past the face it bounds. No input is known to raise it — one that does is a kernel
-    /// defect worth reporting. It is a refusal rather than a silently wrong solid on purpose.
+    /// defect worth reporting.
     ///
     /// Not [`RejectReason::CurvedOperandBoundary`] (the road behind can read these rings) and not
     /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch).
@@ -794,23 +755,20 @@ pub enum RejectReason {
     /// What raises it are **shapes the rulings split does not arrange**: a segment lying on the
     /// lateral along a line the gate did not record (`planes::SharedRuling` — the lines of two
     /// secant classes, of a secant and a tangent one of the other solid, or of a secant and a
-    /// sectioned class whose hinge it is, that lie on a lateral face), or on planes that degenerate against the cylinder there; a recorded line's segment
-    /// that shares a stretch with a ruling piece without matching one end for end. And a lateral
-    /// region whose boundary needs a vertical line at a θ the chart has none for over that
-    /// interval — an event where a rim is cut but no ruling stands (`cyl_chart::regions`): the
-    /// chart's vertical lines come from the ruling sweep, which states a piece only where the
-    /// lateral face is. Where the walk or the reader finds an earlier record broken, the name is
-    /// [`Self::CylinderStagesDisagree`].
+    /// sectioned class whose hinge it is, that lie on a lateral face), or on planes that
+    /// degenerate against the cylinder there; a recorded line's segment that shares a stretch with
+    /// a ruling piece without matching one end for end. And a lateral region whose boundary needs
+    /// a vertical line at a θ the chart has none for over that interval — an event where a rim is
+    /// cut but no ruling stands (`cyl_chart::regions`): the chart's vertical lines come from the
+    /// ruling sweep, which states a piece only where the lateral face is. Where the walk or the
+    /// reader finds an earlier record broken, the name is [`Self::CylinderStagesDisagree`].
     /// [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
-    /// **«A class carrying both circles and rulings» is not one of those guards**:
-    /// it would refuse a population it has no reason to, since the two only conflict when they
-    /// *meet*
-    /// and a meeting means two lateral faces share a point — which the cylinder-pair gate
-    /// refuses first, by `CylinderPairContact`.
+    /// **«A class carrying both circles and rulings» is not one of those guards**: it would refuse
+    /// a population it has no reason to — the two conflict only where they *meet*, and a meeting
+    /// means two lateral faces share a point, which the cylinder-pair gate refuses first, by
+    /// `CylinderPairContact`.
     RulingBoundNotYet,
-    /// **A loop's winding had to be read across a *curved* straight stretch.**
-    ///
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -841,19 +799,18 @@ pub enum RejectReason {
     /// wall's pieces do not tile, a cycle whose pieces do not chain or whose arc units are not
     /// whole turns), the chart and the assembly (a cut circle spelled whole), the cleaning pass
     /// and the assembly (a whole circle spelled for the other face kind — a cap's circle on a
-    /// lateral, a lateral's rim on a plane face), the planar
-    /// arrangement and the chart (an arc whose cap and lateral name different rim planes), the
-    /// split and the chart's cell reader (a present cell with no circle at an end, a
-    /// station the split placed that is no crossing of its wall, two chart lines on one rim node),
-    /// and a stored pierce definition and its own re-solved meet. Each guard stands where an
-    /// earlier stage already settled the fact, so what reaches one is an engine defect, never an
-    /// input this kernel does not build.
+    /// lateral, a lateral's rim on a plane face), the planar arrangement and the chart (an arc
+    /// whose cap and lateral name different rim planes), the split and the chart's cell reader (a
+    /// present cell with no circle at an end, a station the split placed that is no crossing of its
+    /// wall, two chart lines on one rim node), and a stored pierce definition and its own re-solved
+    /// meet. Each guard stands where an earlier stage already settled the fact, so what reaches one
+    /// is an engine defect, never an input this kernel does not build.
     ///
     /// One name for the class rather than one per guard: a coverage name
     /// (`CylinderGateUndecided`, `RulingBoundNotYet`, `ArcBoundNotYet`) would say something false
     /// of each, and none of the existing defect names says it — they state the planar machine's
-    /// own invariants. None has fired in the suite, the ignored sweep or the
-    /// census; a planted class with no face row does (`bands`' tests).
+    /// own invariants. None has fired in the suite, the ignored sweep or the census; a planted
+    /// class with no face row does (`bands`' tests).
     CylinderStagesDisagree,
     /// **The coplanar merge could not fold a group of same-class faces** — one of its defensive
     /// guards spoke (`assembly::coplanar`), or a result edge still has the same plane on both
@@ -883,9 +840,9 @@ pub enum DeclineKind {
     /// A ring vertex is a `plane ∩ plane ∩ cylinder` **pierce point**, and something on the
     /// tracer's road could not take it.
     ///
-    /// **Three sites, none exercised**: a walk with no exact side, a run whose body it
-    /// cannot place, an order it cannot form. Measured **0** across the workspace suite and the
-    /// ignored sweep — kept because each of the three can still say it.
+    /// **None exercised** — a walk with no exact side, a run whose body it cannot place, an order
+    /// it cannot form: measured **0** across the workspace suite and the ignored sweep, kept
+    /// because each can still say it.
     ///
     /// Distinct from [`Self::CollapsedTriple`] on purpose: that one's sentence is "two of its
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
@@ -899,8 +856,8 @@ pub enum DeclineKind {
     ///
     /// Distinct from [`Self::PierceNode`], which is about a *corner*. The two travel together on
     /// the population that produced them (a ruling's ends lie on the cylinder, so they are pierce
-    /// points), but they are different sentences, and a ring whose names are perfectly good while a
-    /// **carrier** is curved is a fact worth seeing on its own.
+    /// points), but a ring whose names are perfectly good while a **carrier** is curved is a
+    /// different fact.
     CurvedRingWall,
     /// The face's outer ring could not be named as plane triples.
     OuterRing,
@@ -912,8 +869,8 @@ pub enum DeclineKind {
     /// An on-plane run's bounding node has no nameable wall plane.
     ///
     /// (There is no sibling for a crossing edge's wall being unreadable from the endpoint
-    /// names: the tracer reads the wall the producer carries
-    /// (`NamedRing`), so there is no name derivation to fail.)
+    /// names: the tracer reads the wall the producer carries (`NamedRing`), so there is no name
+    /// derivation to fail.)
     RunName,
     /// An on-plane run's node lies on the cut plane yet is not named by it — four planes meet
     /// there. Raised as [`RejectReason::FourPlane`] rather than as a `TraceDeclined`, since the
@@ -939,7 +896,7 @@ pub enum DeclineKind {
     ///
     /// **A fact about the carrier the producer hands over**, not about the endpoint names: the
     /// face across this edge is in the same class as the face itself, which the coplanar merge
-    /// should have folded. One name, one proposition.
+    /// should have folded.
     ///
     /// Measured unexercised (`unreachable!()`, whole suite and ignored sweep green). The case is
     /// spellable only because the carrier is taken rather than derived from the endpoint names — a
@@ -963,14 +920,13 @@ pub enum DeclineKind {
     /// the substrate limit is the cause and the missing pin only its symptom. Where no such fact is
     /// in hand, saying the symptom is the honest answer.
     ///
-    /// Measured unexercised at **both** its sites: `third_on_l`'s ordinary arm, 0 of 1,622,692
-    /// calls where the lone off-line class fails the cut test; and the seated road's, by
-    /// `unreachable!()` with the whole suite and the ignored sweep green.
+    /// Measured unexercised: `third_on_l`'s ordinary arm, 0 of 1,622,692 calls where the lone
+    /// off-line class fails the cut test; and the seated road's, by `unreachable!()` with the whole
+    /// suite and the ignored sweep green.
     NoPinOnLine,
     /// A cylinder face could not state its shape exactly — a loop could not be named, a class has
-    /// no exact station, or its rims (closed, or split into arcs) are more than two or
-    /// not at the ends of its range (a panel and a chain rim are stated, not
-    /// declined).
+    /// no exact station, or its rims (closed, or split into arcs) are more than two or not at the
+    /// ends of its range (a panel and a chain rim are stated, not declined).
     CylSpan,
     /// **A lateral face has a hole here and this road could not *read* it.**
     ///
@@ -1009,15 +965,14 @@ pub enum DeclineKind {
     /// rather than contributed partially: a half-contributed rectangle leaves the class's
     /// 1-skeleton dangling.
     ///
-    /// Not its population: a class plane that holds a **tangent ruling** together with
-    /// the wall tangent there — a gusset's side plane exactly through a fillet's axis (`arcwalls
-    /// p1p3`), or a box face coplanar with a slot's tangent wall and running past the tangent
-    /// point (`rrect-box`). One line on two planes and the cylinder: the corner's names are
-    /// joined in the alias table before any trace
-    /// (`seed_from_operands` → `Aliases::record_on_cylinder`), the lateral states its own side of
-    /// the shared line as a graze segment in the plane vocabulary, and a crossing with a class
-    /// circle is a cut point only on an arc. Both populations build; what remains here is the
-    /// exact-arithmetic decline the variant is for.
+    /// Not its population: a class plane that holds a **tangent ruling** together with the wall
+    /// tangent there — a gusset's side plane exactly through a fillet's axis (`arcwalls p1p3`), or
+    /// a box face coplanar with a slot's tangent wall and running past the tangent point
+    /// (`rrect-box`). One line on two planes and the cylinder: the corner's names are joined in the
+    /// alias table before any trace (`seed_from_operands` → `Aliases::record_on_cylinder`), the
+    /// lateral states its own side of the shared line as a graze segment in the plane vocabulary,
+    /// and a crossing with a class circle is a cut point only on an arc. Both populations build;
+    /// what remains here is the exact-arithmetic decline the variant is for.
     Ruling,
     /// A lateral face's mark on a class **oblique** to its axis — the cylinder's section the class
     /// draws on its own arrangement ([`crate::planes::CylRecord::Sections`]) — in a shape this
@@ -1065,8 +1020,7 @@ impl std::fmt::Display for DeclineKind {
 }
 
 impl RejectReason {
-    /// The stable snake_case identifier — the same string the reject tags used, so logs and
-    /// issue reports do not change meaning across this refactor.
+    /// The stable snake_case identifier, so logs and issue reports keep their meaning.
     ///
     /// [`Self::TraceDeclined`] answers `"trace_declined"`; its [`DeclineKind`] carries the
     /// detail (and `Display` prints both).
@@ -1129,7 +1083,7 @@ impl RejectReason {
         }
     }
 
-    /// What kind of answer this is — see [`RejectClass`]. **Pierce on this, not on the variant.**
+    /// What kind of answer this is — see [`RejectClass`]. **Branch on this, not on the variant.**
     ///
     /// The split follows what each guard's own documentation says it detects: invalid operands
     /// (no valid solid exists) are `Impossible`, coverage limits are `NotSupported`, and
@@ -1142,7 +1096,7 @@ impl RejectReason {
             | Self::NonManifoldResultEdge
             | Self::SelfTouchingResult
             | Self::DegenerateFace => RejectClass::Impossible,
-            // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
+            // Coverage limits: quadrics, deeper nesting, rotated-chain witnesses, degenerate
             // arrangements the substrate cannot name yet.
             Self::TraceDeclined { .. }
             | Self::ThreePlanes
@@ -1154,9 +1108,8 @@ impl RejectReason {
             | Self::CylinderPairEdge
             | Self::CylinderGateUndecided
             | Self::TangentLineInAnotherPlane
-            // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
-            // that no answer exists — a wider rational would lift this.
-            // Likewise a frame past `i128`: a wider rational would lift it.
+            // A coordinate outside `Rat`'s range or a frame past `i128`: the *kernel* cannot
+            // represent it exactly, not that no answer exists — a wider rational would lift it.
             | Self::FrameOutOfRange
             // A cost limit, not a resolution one: more bits would answer it.
             | Self::PrecisionBudget { .. }
@@ -1260,10 +1213,9 @@ impl std::fmt::Display for Xyz {
 
 /// Build an `Rejected` carrying *which* guard raised it.
 ///
-/// Every `Rejected` in this crate is built here or in [`reject_at`] (this, with a location).
-/// The reason rides in the returned value, so a guard that is raised and then swallowed by an
-/// alternative path (several sites try another route on `Err`) can never be mistaken for the
-/// one that actually surfaced.
+/// Every `Rejected` in this crate is built here or in [`reject_at`] (this, with a location). Why
+/// the reason rides in the returned value — several sites try another route on `Err` — is
+/// [`BoolError::Rejected`]'s doc.
 ///
 /// The pair being the only funnel is also what makes a test build's `reject_census` possible:
 /// `#[track_caller]` here records *which* guard rang, at its own line, for every call site
