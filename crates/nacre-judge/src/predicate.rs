@@ -7,11 +7,16 @@
 //! stands, and otherwise the three exact [`WitnessPoint`] every witness carries
 //! ([`Witness::tri_pt3`], see [`plane_def`]), judged by the [`crate::kernel`] judges.
 //!
-//! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
-//! [`any_rotated`] of just the planes it touches: all named and unrotated, or all named and on one
-//! motion → the planes' names, exactly (never builds a `WitnessPoint`); otherwise → the kernel
-//! judge. So a mixed-rotation boolean keeps the axis-aligned operand's own predicates on the fast
-//! path, finer than a per-boolean flag.
+//! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper looks only at
+//! the planes it touches and asks the exact roads first. The name-integer road (`name_rows`, for
+//! the predicates that ask it): all named and none rotated ([`any_rotated`]), or all named and on
+//! one motion (`shared_motion`; [`Judge::cmp_coord`] takes the first only) → the planes' names,
+//! exactly (never builds a `WitnessPoint`). Some predicates have exact roads of their own —
+//! [`Judge::cmp_coord`]'s motion cancellation before the name road, [`Judge::planes_coplanar`]'s
+//! and [`Judge::planes_parallel`]'s world names and composed rotations; each one's doc says which.
+//! Otherwise → the kernel judge, except [`Judge::planes_parallel`], which answers `None` where its
+//! exact roads cannot say. So a mixed-rotation boolean keeps the axis-aligned operand's own
+//! predicates on the fast path, finer than a per-boolean flag.
 //!
 //! The caller (`nacre-ops`) provides the witnesses by implementing [`Witness`] (a face) and
 //! [`PlaneWitness`] (a plane class) on its own tables — the port keeps this crate free of the
@@ -855,9 +860,11 @@ impl<W: Witness> Judge<'_, W> {
     }
 }
 
-/// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
-/// must escalate to the kernel if **any** — not all — of its planes is irrational: a single
-/// rounded coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact.
+/// Whether any of the named planes is rotated ([`Witness::is_rotated`] — a moved plane, a
+/// translated or mirrored one included) — the name-integer road's signal. That road reads the names
+/// as world descriptions, so it is exact only when **none** is: one plane off the world can flip an
+/// f64 `orient3d`/`cmp`. A shared motion and some predicates' own roads still answer exactly where
+/// planes are rotated (the module doc); the rest goes to the kernel.
 pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     idx.iter().any(|&k| planes[k].is_rotated())
 }

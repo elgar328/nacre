@@ -43,7 +43,9 @@ impl Eq for WitnessPoint {}
 // result for its rounding, though, and some steps' operations do not round: adding an exact zero,
 // or multiplying by an exact `0` or power of two (`±1`, a frame's `2⁻ᵏ`). Charging those would
 // leave no model at tol `0` — a quadrantal turn about the origin, a reflection in a plane through
-// it, an axis-aligned frame — and tol `0` is what keeps such a model on the exact predicate path.
+// it, an axis-aligned frame — and tol `0` is what keeps the kernel's filter on such a model as
+// narrow as exact inputs allow. Which road a question takes is chosen by names and motions, not by
+// tol (`crate::predicate`).
 // So these three ask first; the facts hold in `f64`'s normal range, the premise `Bounded` rests on.
 // The value is still the `f64` operation's where the radius passes through — `0.0 + x` turns `−0.0`
 // into `+0.0` — because that value flows into the model's vertices, which the census hashes by bit.

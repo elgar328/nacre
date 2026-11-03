@@ -1,8 +1,8 @@
 //! The toleranced point + its `orient3d` judgment.
 //!
-//! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
-//! realization carries a **direction-wise xyz tol** that soundly bounds
-//! the error, accumulated step by step as the definition is carried through a
+//! A point whose truth is not an `f64` — a rational that does not fit, a turn off the quarter
+//! turns, a frame whose `1/√` is irrational — cannot be held exactly, but its f64 realization carries a **direction-wise xyz tol** that soundly
+//! bounds the error, accumulated step by step as the definition is carried through a
 //! chain of motions ([`MoveNode`]) — each step's tol is [`Bounded`]'s for its own
 //! arithmetic. [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
@@ -13,8 +13,9 @@
 //! the precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only** — wired into the boolean (`nacre-ops`' `tolerant`
 //! module is the seam). The plane-arrangement predicates are routed in [`crate::predicate`] by name
-//! and motion, not tol: what the planes' names answer exactly is answered there; the rest comes
-//! here, tol-0 points included. A direct `orient3d` the interval filter leaves open, whose four
+//! and motion, not tol: what the planes' names or a predicate's own exact shortcut answer is
+//! answered there; the rest comes here, tol-0 points included, except `planes_parallel`, which
+//! never comes here. A direct `orient3d` the interval filter leaves open, whose four
 //! points share one motion and whose bases are `f64`s, is answered exactly on the pre-motion
 //! coordinates (`shared_base`, `nacre_predicates::orient3d`).
 //!

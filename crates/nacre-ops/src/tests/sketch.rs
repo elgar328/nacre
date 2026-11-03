@@ -410,7 +410,8 @@ fn the_normal_form_dissolves_flat_corners_and_keeps_every_reportable_defect() {
 /// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
 /// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
 /// narrow-first), so this is the price of exactness-on-the-truth over f64 signs. Run it when
-/// `check` changes, in release and alone:
+/// `check` changes, in release, alone and with the machine idle (the gate's `top` line is the
+/// check):
 ///
 /// ```text
 /// cargo test -p nacre-ops --release --lib measure_profile_check_wall_clock -- --ignored --nocapture

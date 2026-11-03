@@ -1488,7 +1488,8 @@ fn a_wide_frame_s_tol_bounds_its_own_realization() {
 
 /// **A frame on an axis-aligned plane through the origin costs nothing at all** — the
 /// basis is a signed permutation, so every product and every sum is exact and `tol` stays a
-/// literal zero. That is what keeps such a sketch on the exact predicate path, and it is the
+/// literal zero. That is what keeps the kernel's filter on such a sketch as narrow as exact
+/// inputs allow, and it is the
 /// case [`WitnessPoint::frame`]'s `Bounded` products and sums carry exactly.
 #[test]
 fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {

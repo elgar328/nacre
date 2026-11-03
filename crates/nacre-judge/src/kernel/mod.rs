@@ -5,7 +5,6 @@
 //! astro-float from the exact point definitions, and one that still cannot separate from zero is
 //! turned into the **distance it stands for** and compared against the operation's coincidence
 //! limit ([`frame3::ProofStandard`]) — proved coincident, or said out loud ([`frame3::Decision`])
-//! rather than assumed. Pure numeric layer — depends only on `nacre-exact` (Rat/Angle/Orient) and
-//! astro-float, never on `nacre-math`/`nacre-topo`.
+//! rather than assumed. Pure numeric layer — never depends on `nacre-math`/`nacre-topo`.
 
 pub mod frame3;

@@ -43,7 +43,7 @@ fn flip_toward(model: &Model, plane: Handle<Surface>, toward: Orientation) -> Op
 }
 
 /// Name a [`SketchFrame`] as the [`nacre_topo::Motion::Frame`] node the sweep writes coordinates
-/// against — the one road from the frame value to a node, shared by the extrude and face paths.
+/// against — the one road from the frame value to a node.
 ///
 /// **`push_motion` interns**, so two sketches in one frame name the *same* node — which is
 /// what makes their surfaces intern too (a plane's `SurfaceKey::Name` is `(name, motion)`): two

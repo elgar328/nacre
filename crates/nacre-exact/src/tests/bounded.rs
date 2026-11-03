@@ -118,9 +118,10 @@ fn big(x: f64, prec: usize) -> BigFloat {
 ///
 /// **The 90°-family is included, not skipped, and that is the load-bearing part.** There
 /// `cos_sin_error_of` claims *exactly zero*, and `rotate_about` reads that zero to contribute
-/// no tolerance at all — which is what keeps a quadrantal origin rotation at tol 0 and keeps
-/// axis-aligned models on the exact predicate path. A claimed zero that was not really zero
-/// would not fail loudly; it would quietly move those models. Here it has to be real.
+/// no tolerance at all — which is what keeps a quadrantal origin rotation at tol 0, so the
+/// kernel's filter on such a model is as narrow as exact inputs allow. A claimed zero that was not
+/// really zero would make the tol unsound — a filter trusting it could return a wrong sign, and
+/// nothing would fail loudly. Here it has to be real.
 ///
 /// **It also reports the worst error, though nothing depends on it.** Charging a measured value
 /// means a worse realization fails nothing — it just escalates more and runs slower, invisibly.

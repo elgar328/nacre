@@ -130,8 +130,9 @@ fn cos_sin_f64_is_exact_where_the_true_value_is_representable() {
 /// `WitnessPoint::rotate_about` reads [`Angle::cos_sin_error_of`] to decide whether a rotation
 /// contributes any tolerance. For `cos`/`sin` in `{0, ±1}` the f64 values *are* the true ones,
 /// and every product and difference downstream is exact too — which is why a quadrantal origin
-/// rotation stays at tol 0 and an axis-aligned model never leaves the exact predicate path.
-/// A nonzero here would not fail loudly; it would quietly move those models.
+/// rotation stays at tol 0 and the kernel's filter on an axis-aligned model is as narrow as exact
+/// inputs allow. A nonzero here would widen that filter — more questions climb — and
+/// `quadrantal_origin_chain_is_tol_zero` would go red.
 ///
 /// Everything else must report *something* — but only where the true value is *not* representable.
 /// The realization is correctly rounded, so `cos 60°` really is `0.5` exactly, and the corpus below
@@ -753,7 +754,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
     }
     // **Exact is not the same as dyadic, and only dyadic earns the zero.** An
     // axis-aligned frame lands on `1`/`½` and must report a literal `0.0` — that is what keeps
-    // it on the exact predicate path. A Pythagorean one lands on `1/5` or `5/3`, which are
+    // its kernel filter as narrow as exact inputs allow. A Pythagorean one lands on `1/5` or `5/3`, which are
     // exactly rational and still not f64, so they must report the rounding that really
     // happened. Reporting `0` there (the shape the trig path can safely use) is the bug this
     // pair of assertions exists to keep out.

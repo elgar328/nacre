@@ -1,13 +1,15 @@
 //! Certified indirect predicates (CIP) — the toleranced sign layer for the nacre kernel.
 //!
-//! Two parts, both pure numeric (neither touches `nacre-topo`):
+//! Three parts, all pure numeric (none touches `nacre-topo`):
 //! - [`kernel`] — the toleranced-sign kernel: a rotated point ([`WitnessPoint`]) carries a sound
 //!   directional tol, and an orientation determinant is decided by an f64 filter → astro-float
 //!   escalation → a proved coincidence or an honest "undecided" ([`Decision`]). The
 //!   certified-toleranced twin of `nacre-predicates` (exact f64).
 //! - [`predicate`] — the plane-arrangement geometric predicates (`Judge::orient3d`, `Judge::cmp_coord`,
-//!   …) that route each query to its planes' names (`nacre-predicates`' filters, then
-//!   `nacre-exact`'s integer twins) or the kernel by whether its planes are rotated. The b-rep supplies witnesses through the
+//!   …), each routed by the names and motions of the planes it touches: to an exact road on the
+//!   planes' names (`nacre-predicates`' filters, then `nacre-exact`'s integer twins) or a
+//!   predicate's own exact shortcut, else to the kernel — or, for `planes_parallel`, to `None`
+//!   (the module doc). The b-rep supplies witnesses through the
 //!   [`Witness`](predicate::Witness) / [`PlaneWitness`](predicate::PlaneWitness) ports.
 //! - [`cylinder`] — the points where two planes meet a cylinder ([`cylinder::PiercePoint`]) and
 //!   the questions asked of them, over the same ports.
