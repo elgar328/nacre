@@ -464,8 +464,8 @@ enum ClassMeet {
     /// arrangement ([`CylRecord::Sections`]).
     Sections,
     /// An oblique plane not shown to miss the lateral faces whose section the class cannot draw:
-    /// a face of the class not shown apart from them — the section would bound it, and the
-    /// lateral's chart takes nothing from an oblique class — or the plane touching a rim.
+    /// a face of the class not shown apart from them — the section would bound it, leaving an edge
+    /// whose curve does not derive (`EdgeDecline::Oblique`) — or the plane touching a rim.
     Undrawable,
 }
 

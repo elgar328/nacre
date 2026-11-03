@@ -545,7 +545,8 @@ pub(crate) enum CylRecord {
     /// box, while its plane touches no rim ([`rim_against_plane`]). The class's own arrangement
     /// draws the cylinder's section truly — the ellipse, whole between a band's rims or cut into
     /// arcs where a rim, a ruling or a segment of the class crosses it — and nothing else: no face
-    /// of the class reaches a lateral face, so the lateral chart takes nothing from the class. The
+    /// of the class reaches a lateral face, so on the lateral chart the section is a line that splits
+    /// only cells the walk joins again (`arrangement::cyl_chart`'s module doc). The
     /// named twin of [`Silence::Sectioned`]: the class has world coefficients, so the roads that
     /// answer a silent class from its record ask those instead.
     Sections,

@@ -104,7 +104,7 @@ impl Ring2d {
     /// signed-area question over straight steps and quarter-turn arcs, answered in integers by
     /// [`nacre_exact::winding_sign_quarter_arcs`] on the profile's own coordinates (the author's
     /// decimals, not a lifted frame's widths). `None` for an arc that is not a quarter-turn
-    /// multiple. Reachable by type, unreached by any producer today: `Edge2d::arc_rat` accepts any
+    /// multiple. Reachable by type, unreached by any producer today: `sketch::arc_to_rat` accepts any
     /// angle, but its one production caller (the kit's fillet) only rounds axis-aligned corners,
     /// so every arc a profile brings here is a quarter-turn multiple. A `None` reaches
     /// `prism_rings_in` and is refused as `PlaneWithoutExactForm` — a wall with no one at it.
