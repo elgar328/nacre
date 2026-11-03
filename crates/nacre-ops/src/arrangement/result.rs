@@ -412,6 +412,11 @@ pub(super) fn trace_result_faces(
     // `PassThrough` would carry the planes across and leave the cylinder's own faces behind,
     // silently. The guard also keeps `VertexClasses::of` (which walks face slots and asks each
     // for its plane row) away from cylinder rows, so it does double duty.
+    // Two more stand on it. `reuse::class_plans` reads a plane that misses every vertex of a solid
+    // as missing the solid, which holds only while every face is planar; and a reused class makes
+    // no cells and no labels, while a band reads its membership off the disk labels an arranged
+    // class makes (pass B below). Taking reuse to inputs with cylinders is therefore a redesign of
+    // how a band reads its membership, not a performance step.
     let has_cyl = plane_ix.iter().any(|c| matches!(c, ClassIx::Cyl(_)));
     let reuse = if has_cyl {
         crate::reuse::ClassReuse::Off
@@ -589,6 +594,9 @@ pub(super) fn trace_result_faces(
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
         // its vertices falls back to arranging, so this can lose the shortcut but never the answer.
+        // Decided here, inside the closure, never by shrinking the range: a class that is not
+        // arranged keeps its index, so `try_map_range` still reports the lowest-index reject and
+        // the faces still come back in class order — the order `assemble_fuse_cut` mints handles in.
         let reused = match plans[wc] {
             crate::reuse::ClassPlan::Arrange => None,
             crate::reuse::ClassPlan::Empty => Some(Vec::new()),

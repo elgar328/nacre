@@ -13,6 +13,8 @@
 //! ones the dimensions were *written* as. Lifting the f64 with `try_from_f64` carries
 //! the binary drift in exactly, and exact arithmetic then reproduces it perfectly;
 //! [`Rat::from_decimal`] is what recovers `11/10 + 66/10 = 77/10`.
+//! No new storage carries this: the two paths reach the same rationals, so their planes intern
+//! by name onto one handle and their points realize to bit-identical `f64`s.
 //!
 //! **The frame has to be rational too, and often is not.** A world or axis-aligned
 //! plane has axes in `{0, ±1}`, exactly representable. A plane at 45° does not: its

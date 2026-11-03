@@ -46,6 +46,8 @@ pub enum BoolError {
 ///   positions realized at the raise site. Draw with them, report them — never judge with
 ///   them, and never compare them with `==` (use a distance against a tolerance; this type
 ///   has no `Eq` for the same reason [`Point3`] has none).
+///
+/// There is no face variant: a reason that needs a face as its witness opens one here.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RejectWhere {
     /// A single point — e.g. the pinch vertex of a non-manifold result.

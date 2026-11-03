@@ -512,11 +512,15 @@ pub(crate) fn boolean(
         )?;
         // **Every debug run answers the same boolean twice and requires the same answer.**
         //
-        // Not tracing a class is the one thing here that changes what the engine *knows*: a class
-        // never traced never reports the concurrencies it would have found, and 17% of the alias
-        // table is discovered only in classes the other operand cannot reach. That those names are
-        // wanted by nobody is an argument, so it is checked rather than believed — and at the
-        // whole-boolean level, because per class there is no arrangement to compare to.
+        // Both runs trace and split every class (pass A does not read the plans), so they build
+        // the same alias table and the same splits and part only in pass B: under
+        // `ClassReuse::Proved` a class `reuse::class_plans` proves the other operand cannot reach
+        // is restated by `reuse::pass_through`, or emits nothing (`ClassPlan::Empty`); under
+        // `ClassReuse::Off` every class is arranged. That the restatement is the face list the
+        // arrangement would emit is an argument, so it is checked rather than believed. A cylinder
+        // in the operands turns reuse off inside `trace_result_faces`, so there the two runs are
+        // one route. The check runs only when the reused run answers: its reject leaves through
+        // the `?` above.
         //
         // The reference gets its own `Notes`: evidence is a side effect `undecided_reject` reads,
         // and a second run must not double it.

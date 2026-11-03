@@ -1531,162 +1531,171 @@ STEP 출력, undo/replay.
 
 ## 연산 층 (`nacre-ops`) — 재계산 가능한 로그
 
+`ops/mod.rs`(`Operation`·`DatumDef`·`OpOutput`·`SketchFrame`), `ops/apply.rs`(`apply`·`replay`), `ops/datum.rs`(`datum_plane`),
+`ops/frame.rs`(`frame_toward`·`face_sketch_frame`·`push_frame_node`), `ops/prism.rs`(`extrude_on_frame`·`exact_frame`·`build_prism`),
+`ops/profile.rs`, `construct.rs`, `sketch.rs`, `error.rs`, `reject_census.rs`. 변종마다의 약속과 거절은 그 doc 이다.
+
 ```rust
 pub enum Operation {
-    // 모델이 **호출자가 이름 붙인 평면**을 드는 유일한 연산. 평면을 로그 **밖**에서 만들면
-    // 그 모델은 자기완결적이지 않으므로(replay 가 핸들을 재현해야 한다) 연산이어야 한다.
-    // 평면은 구성 시점 interning 대상이라 «이미 있으면 그 핸들»이 정답이다(아레나 안 자람).
     DatumPlane { def: DatumDef },  // Stated(SketchPlane) | Offset { frame, dist } | ThroughVertices([Handle<Vertex>; 3])
-    // 스케치 평면·프로파일 개념은 Extrude 인자로 흡수된다(별도 Sketch op 없음).
-    // 평면은 값으로 싣지 않고 `SketchFrame` 으로 «이름 부른다». `dist` 는 부호 있는 두께(음수는 ŵ 반대쪽), 0 은 거절.
-    Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },
+    Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },   // dist 는 부호 있는 두께, 0 은 거절; 스케치는 이 인자다(별도 Sketch op 없음)
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },   // BoolKind = Fuse | Cut | Common
-    // 강체 변환: `solid` 를 그 상(像)으로 대체한다. `Isometry` 가 정확한 정의(로그의 진실)이고
-    // 기하는 실현된 캐시다.
     Transform { solid: Handle<Solid>, isometry: Isometry },
-    // 좌표 평면 `axis = offset` 에 대한 반사(대체). 길이 보존·손지기 반전 — 음수 스케일이 아니다.
     Mirror { solid: Handle<Solid>, axis: Axis, offset: Rat },
-    // 제자리 복제, 원본은 live 로 남는다 — `live_solids` 에 빼지 않고 더하기만 하는 유일한 연산.
     Copy { solid: Handle<Solid> },
 }
-
-// nacre-ops 의 자유 함수다 — Model 의 메서드가 아니다. `impl Model` 은 inherent impl 이라
-// Model 이 정의된 nacre-topo 에만 놓을 수 있는데(coherence), replay 는 Operation 을 다루므로
-// topo 보다 위 레이어에 살아야 한다.
-///
-/// 로그를 처음부터 재생. 보장: 동일 로그 → 동일 모델(인덱스까지 재현).
-/// **6변종 전부**에서 성립한다 — replay 가 연산 하나마다 로그의 핸들을
-/// 인덱스로 재고정하기 때문이며(「인덱스 어휘」), 잠금은 `tests/invariants/replay.rs` 다.
-/// `apply` 는 재고정하지 않는다 — 그 모델은 호출자의 것이고, 거기서 조용히 재고정하면 진짜
-/// 남의 핸들을 세탁해 교차-모델 가드를 무력화한다.
-/// 로그 중간 파라미터를 수정한 재생은 v1 에서 미지원 — Operation 이 원시 Handle 을
-/// 참조하므로 상류 수정이 하류 Handle 번호를 밀어낸다(topological naming 문제).
 pub fn replay(ops: &[Operation]) -> Result<Model, OpError>;
 ```
 
-`replay` 는 진실 `Model` 만 돌려준다. 테셀레이션은 `nacre-tess` 가 모델에서 따로 유도하는 캐시이고(`TessConfig`), `nacre-ops` 는 제품 경로에서 `nacre-tess` 에 의존하지 않는다 — `Model` 이 tess 를 필드로 담지 않는 것과 같은 층 규칙이다.
+`replay` 는 `Model` 의 메서드가 아니라 nacre-ops 의 자유 함수다 — `impl Model` 은 inherent impl 이라 `Model` 이 정의된
+nacre-topo 에만 놓일 수 있는데(coherence), replay 는 `Operation` 을 다루므로 topo 위 층에 산다. 핸들의 재고정은 `replay`
+doc 과 「저장소와 동일성」의 «인덱스 어휘». `replay` 는 진실 `Model` 만 돌려주고, 테셀레이션은 `nacre-tess` 가 모델에서
+따로 유도하는 캐시다(`TessConfig`).
 
-**연산은 평면을 «이름 부른다».** `Extrude` 가 `SketchFrame`(평면 핸들 + 배치 + 쓰임새가 정한 `flip`)을 받으므로, 평면을 **값**으로 싣는 변종은 `DatumPlane` 의 `Stated` 하나뿐이다. 그래서 원칙 2 가 연산 어휘 전체에서 성립한다 — 평면은 아레나에 있고 연산은 그것을 가리킨다. 밑캡이 같은 평면의 두 번째 진술이 아니라 **공유된 핸들**이 되는 이유다.
+**연산은 평면을 «이름 부른다».** 평면을 값으로 싣는 변종은 `DatumPlane` 의 `Stated` 하나뿐이라 원칙 2 가 연산 어휘
+전체에서 성립하고, 밑캡은 같은 평면의 둘째 진술이 아니라 공유된 핸들이다(`Operation::Extrude` doc). 프레임의 문은 셋이다
+— 세계 평면 `SketchFrame::world`, 기존 면 `face_sketch_frame`, 그 밖의 평면은 `Operation::DatumPlane` 으로 먼저 진술하고
+돌려받은 프레임.
 
-| 무엇 | 어디서 |
-|---|---|
-| 세계 평면 위 스케치 | `SketchFrame::world(&m, Axis)` — 씨앗을 이름 부른다 |
-| 기존 면 위 스케치 | `face_sketch_frame(&m, face)` |
-| 그 밖의 평면 | `Operation::DatumPlane` 로 **먼저 진술**하고 돌려받은 프레임을 쓴다 |
+**ŵ 는 프레임의 것이고, «어느 쪽»은 `dist` 의 부호다.** `flip` 은 프레임을 만든 쪽이 진실에서 한 곳(`flip_toward`)에서
+정하므로 면의 프레임은 바깥을 향하고, «면에 그려 안쪽으로»는 같은 프레임의 음의 돌출이다 — `Operation::Extrude`·
+`SketchFrame`·`flip_toward` 의 doc(실현한 ŵ 의 내적으로 정하지 않는 까닭은 「가지 말 것」 «향 관계를 캐시 법선으로
+읽기»). 원통 축은 쓸기 부호와 무관하게 프레임의 법선이라 «datum −n 에 +d» 와 «datum +n 에 −d» 는 같은 원통을 두 진술로
+적는다 — 원통의 열쇠가 진술 그대로인 것(todo 「곡면 둘 이상이 만나는 점과 seam 담체」)과 같은 부류다. ZX 씨앗의 `+u`
+예외는 `SketchFrame::world` doc, 프레임 기저를 실현해서 되묻지 않는 까닭은 `RatFrame::of_plane_frame` doc.
 
-**ŵ 는 프레임의 것이고, «어느 쪽»은 `dist` 의 부호다.** `flip` 은 `frame_toward` **한 곳에서만** 정하므로 호출자가 뒤집힌 프레임을 진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 프레임을 뒤집으면 축까지 다시 유도되어(`flip` 은 계수의 부호를 먼저 바꾸고 `+u` 를 그 법선에서 짓는다) 같은 스케치가 거울상으로 떨어지므로, «면에 그려 안쪽으로»는 같은 프레임에서 ŵ 반대로 쓰는 **음의 돌출**이다. 밑캡은 어느 쪽이든 프레임의 평면 핸들이다. 원통 축은 쓸기 부호와 무관하게 프레임의 법선이라, «datum −n 에 +d» 와 «datum +n 에 −d» 는 같은 원통을 두 진술로 적는다 — 원통의 interning 열쇠가 진술 그대로인 것(todo 「곡면 둘 이상이 만나는 점과 seam 담체」의 원통 정체)과 같은 부류다.
+**datum 평면.** 평면을 만드는 연산은 `DatumPlane` 하나이고 불리언은 평면을 만들지 않는다(깊이 불변식,
+`a_boolean_mints_no_surface`). 진술의 향 `−(진술된 법선)` 과 함께 뒤집어야 하는 자리들은 `datum_plane` doc, 호출자의
+프레임을 함께 돌려주는 까닭은 `OpOutput::DatumPlane` doc, `Offset` 이 한 평면에 두 핸들을 막는 정규화는
+`DatumDef::Offset`·`OpError::ZeroOffset` doc 과 그 팔의 주석이다.
 
-- **방향은 `flip` 이 들고, 프레임을 만든 쪽이 진실에서 정한다.** 평면의 정준 이름에는 방향이 없고 평면은 interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**), 프레임이 방향을 담을 수 있는 자리는 `flip` 뿐이다. 답은 두 진실의 곱이다: 평면 자신의 좌표계에서 ŵ 가 평면의 향 쪽인가(`frame_normal_sense` — 이름 있는 평면은 이름 법선, 없는 평면은 판정 점의 순서로 프레임을 지으므로 `plane_name_sense`·`sense` 가 답한다) × 모션의 손방향(`motion_parity`) × 쓰임새가 향할 쪽 — datum 은 **호출자가 진술한 법선**(넣은 진술은 그 반대를 향하고, 문이 `flipped` 로 반대로 앉은 핸들을 알린다), 면은 **바깥**(`orientation`). 실현한 ŵ 와 f64 방향의 내적은 같은 물음을 두 반올림에 묻는다(「가지 말 것」 «향 관계를 캐시 법선으로 읽기»).
-- **`world_zx` 는 유도로 만들 수 없다**: arbitrary-axis 규약이 ZX 에 `+u = −x̂` 를 주는데 규약은 `+u = +ẑ` 다(`ŵ` 는 둘 다 `+ŷ`). `SketchFrame::world` 가 그 예외를 **한 곳에** 가둔다 — `canonical(씨앗 ZX)` 로 바꾸면 그 스케치들이 90° 돈다(음성 대조로 잠금).
-- **`dist` 는 부호 있는 두께다**(0 은 `ZeroDistance`). ŵ 와 스케치의 축은 프레임이, 몸이 평면의 어느 쪽에 서는지는 부호가 말한다 — `DatumDef::Offset` 의 부호 있는 변위와 같은 자리다. 반대편을 향하는 **스케치**(축까지 뒤집힌 것)가 필요하면 그 방향으로 평면을 진술한다.
-- **프레임의 기저는 유리수로 묻는다, 실현해서 되묻지 않는다.** `RatFrame::of_plane_frame` 이 `û = u_raw·inv_sqrt_rat(uu)` 로 답한다 — 실현한 축을 `Rat::from_decimal` 로 다시 들어올리면 정규화가 필요한 축(`(0.6,0.8,0)` → 원시 `(3,4,0)`, `uu=25`)이 `0.6000000000000001` 로 돌아와 직교정규가 깨지고, 그 평면이 **조용히 프레임-노드 도로로 옮겨간다**. `plane_frame_named` 가 `v̂` 에 대해 적어 둔 규칙과 같은 것이다.
+- **`ThroughVertices` 는 값 어휘로 말할 수 없는 하나다** — 핸들은 값 타입 `SketchPlane` 에 들어갈 수 없어 어휘가
+  `DatumDef` 의 변종으로 자란다. 좌표로 지으면 다른 평면이 되는 측정은 `tests/instruments/point_width.rs`, 정점 순서가
+  방향인 것과 원인별 거절은 `DatumDef::ThroughVertices` doc 과 `datum_plane` 의 그 팔, 점과 모션을 한 결정에서 내는 까닭은
+  `through_points_by_cause` doc, 이동이 그런 평면에 노드를 남기는 까닭은 `transform.rs` 의 `carry_of` doc.
+- **datum 은 솔리드 이동을 따라가지 않는다.** append-only 라 datum 이 가리키는 평면은 남고, 나중 `Transform` 은 새 평면을
+  만든다 — datum 은 독립적인 기준이다.
+- **쓰이지 않는 datum 은 어디에서도 새지 않는다**: `validate` 는 live 도달 집합만 세고 surface 는 경계 검사만 받으며(씨앗
+  셋이 이미 영구 orphan), `nacre-step`·`nacre-tess` 는 surface store 를 돌지 않는다(둘 다 면 경유).
 
-**datum 평면의 규칙.** 평면을 만드는 연산은 `DatumPlane` **하나**이고, 불리언은 평면을 만들지 않는다(깊이 불변식, `a_boolean_mints_no_surface`).
-
-**정점을 이름 부르는 datum.** `ThroughVertices([Handle<Vertex>; 3])` 는 값 어휘로는 말할 수 없는 하나다 — 발견 정점의 좌표는 반올림이라, 그 좌표로 평면을 지으면 **다른 평면**이 나온다(기울어진 인구 220/220, 축정렬 음성 대조 552/0; `tests/instruments/point_width.rs`). 진실 쪽은 `PlanePoints::Through` 로 **핸들을 든다**.
-
-- **어휘가 여기서만 자란다** — «새 공개 생성자 없음»은 *값으로 말할 수 있는 것*에 걸리는 원칙이고, 핸들은 순수 값 타입인 `SketchPlane` 에 들어갈 수 없다.
-- **정렬은 키에만, 방향은 호출자의 정점 순서.** `dist` 가 양수 전용이라 순서가 방향의 유일한 입구이고, 두 개를 바꾸면 «같은 핸들 + 반대 프레임»이다(`frame_toward` 가 `Stated` 와 같은 기계로 그 쪽을 향하게 한다).
-- **이동은 핸들을 그대로 두고 노드를 기록한다.** `transform_solid` 는 정점을 **복제**하므로 가리키던 datum 은 새 복사본을 안 따라간다; 정점이 base 를 정하고 모션이 옮기며 **더해질 뿐 곱해지지 않는다**. 대가로 그런 datum 위의 솔리드는 **정확한 강체 이동에도 노드를 얻는다**.
-- **거절은 원인별**(`VerticesInMixedFrames`·`CollinearVertices`·`DuplicateVertex`·`VertexNotThreePlane`)이고, 전부 **무엇이든 push 하기 전에** 일어난다. «담체 셋이 안 만난다»는 거절이 아니라 **단언**이다 — 그 정점이 존재한다는 것이 곧 만났다는 뜻이므로 불변식 위반이지 사용자 오류가 아니다.
-- 점과 모션은 `Offset` 처럼 **한 결정에서 함께** 나와야 한다 — «점이 어느 프레임에 적혔나»가 곧 모션이기 때문이다.
-
-datum 일반:
-
-- **평면 진술의 향은 `−(진술된 법선)`**(캐시도 그 향) — 씨앗과 모든 datum 이 따르는 규약. datum·씨앗 위 양의 extrude 의 밑캡이 그 향이라 `Forward` 로 들리고, `WorkingPlane::frame_sign`(저장 법선 vs 루트 면의 바깥 법선)이 그 밑캡에서 `+1` 이다. 쓰는 자리가 여럿이라 뒤집으려면 함께 뒤집는다 — 근거와 자리는 `ops::datum` 의 doc 이 든다.
-- **연산은 호출자의 프레임을 함께 돌려준다**(`OpOutput::DatumPlane { plane, frame }`) — 편의가 아니라 **정확성**이다. 호출자가 `SketchFrame::named` 로 다시 말하면 f64 를 거쳐 `Rat::from_decimal` 을 두 번 타고 계산값은 다른 유리수로 떨어질 수 있다. `Stated` 의 배치는 **무조건 `Named`**: ZX 평면의 정준 `+u` 는 `−x̂` 인데 규약은 `+ẑ` 라, 유도로 흉내내면 그 스케치들이 조용히 돈다.
-- **`Offset` 은 push 전에 정규화한다 — 셋 다 «한 평면에 두 핸들»을 막는 조항이다.** 신원은 `(평면, 부호 있는 거리)` 의 순수 함수여야 한다(배치의 원점·`+u` 는 평행 평면을 옮기지 않는다): ① `flip` 을 부호로 접고 **평면의 정준 프레임**에서 짓는다 ⇒ 한 평면의 다른 프레임을 든 두 호출자가 같은 핸들을 받는다. ② 정준 기저가 정확히 리프트되면 **세계로 말한다**(노드 생략 규칙을 실현된 기저에 적용) — 프레임 노드 아래 두면 키가 `(이름, Some(노드))` 라 상자 캡의 같은 평면과 **interning 되지 않는다**. ③ **`dist == 0` 은 이름 붙은 거절**(`ZeroOffset`): 기울어진 프레임의 밑 평면은 세계에서 유리수라 ②가 안 걸리므로, 0 만이 남는 충돌이다. 0 이 아닌 오프셋은 계수가 `c ∓ d·√(n·n)` 이라 무리수여서 경쟁 진술 자체가 없다. 세계 되당김이 넘치면 **조용히 노드 도로로 가지 않고** 거절한다 — 그 도로가 곧 중복이 생기는 자리다.
-- **datum 은 솔리드 이동을 따라가지 않는다.** append-only 라 datum 이 가리키는 평면은 남고, 나중 `Transform` 은 새 평면을 만든다(의도된 동작 — datum 은 독립적인 기준이다).
-- **쓰이지 않는 datum 은 어디에서도 새지 않는다**: `validate` 는 live 도달 집합만 세고 surface 는 경계 검사만 받으며(씨앗 셋이 이미 영구 orphan), `nacre-step`·`nacre-tess` 는 surface store 를 돌지 않는다(둘 다 면 경유).
+**파라메트릭 편집의 진화 경로 (계획: v2 이후, 기록만).** 연산이 원시 Handle 대신 계보 참조
+`OpRef { op: usize, output_slot: usize }`(«연산 N 이 만든 k번째 면»)를 담으면 상류 수정이 하류 Handle 번호를 밀어내도
+(topological naming) 참조가 의미로 풀려 편집-재생이 된다. v1 은 짓지 않되 로그 직렬화 포맷에 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. 인덱스 어휘는 이를
+밀어내지 않는다 — replay 안의 재고정 지점이 곧 `OpRef` 해석이 들어올 자리다(교체이지 경쟁이 아니다). 테셀레이션
+tolerance 도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 자랄 수 있다.
 
 ### 프로파일 — 다중 루프와 계약
 
-**다중 루프 프로파일 — 구멍 있는 스케치를 정확히 세운다.** `Profile2d { outer: Ring2d, holes: Vec<Ring2d> }` 가 외곽 링 하나와 구멍 링 N개(제한 없음)를 담고(`polygon`/`with_holes` 생성자, 필드는 비공개; `inners` 는 필드가 아니라 `with_holes(outer, inners)` 의 **인자** 이름이다), `build_prism` 이 구멍마다 벽을 세우고 두 캡에 내부 루프를 단다. **불리언으로 흉내낼 때와의 차이가 요점이다** — 잘라 만든 도넛은 모든 코너가 `Discovered`(측정된 tol)이지만, 프로파일을 쓸어 만든 도넛은 전부 `Constructed`(tol 없음)다. 원칙 4 가 요구하는 바로 그 차이다. 그래서 **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed` 였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance 는 발견된 교차에만)를 스스로 어긴다.
+`ops/profile.rs`(`Profile2d`·`Ring2d`·`Profile2d::check`), `ops/prism.rs`(`build_prism`·`oriented_ring`·`frame_rings`),
+`nacre-geom::intersect::flat_corner`; 시험은 `tests/coverage/sketch.rs`.
 
-**감김은 한 곳에서만 정한다.** `build_prism` 이 sweep 을 아는 유일한 자리이므로 외곽을 sweep 기준 CCW 로 정규화하고 구멍을 그 반대로 맞춘다. 타입은 링을 그대로 담는다 — 두 곳에서 정하면 음의 돌출처럼 sweep 이 외곽을 뒤집는 경로에서 둘이 갈린다. 이 설계는 그 버그 부류를 구조적으로 없앤다: "정규화된 외곽의 반대"와 "sweep 기준 CW"가 같은 규칙이 되기 때문이다.
+`Profile2d` 는 외곽 링 하나와 구멍 링 여럿을 담고, `build_prism` 이 구멍마다 벽을 세우고 두 캡에 내부 루프를 단다 — 구멍
+있는 스케치는 불리언 없이 한 번에 선다. 그것이 커널 몫인 까닭은 overview 「범위」의 «설탕 vs 커널 판별 기준»이다.
 
-검산: 도넛 각기둥은 V16 − E24 + F10 − L_i 2 = 0 = 2(S−G), genus 1 — **오일러의 `L_i` 항이 실제로 필요한 형상**이다.
-
-**프로파일 계약은 커널이 검사한다 — `Profile2d::check`.** 생성자(`polygon`/`with_holes`)는 **진실을 잡는다**: 각 좌표를 `Rat::from_decimal` 로 리프트해 `Ring2d` 의 유리수 정점으로 보관하고(십진 창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러), **공선 중간점을 소멸**시킨다(엄격 내부만 — 무손실 정규화; 중복점·스파이크는 생존해 제 이름의 에러로 보고된다. 이로써 모든 프리즘 코너가 3-평면 정의를 보유한다). *계약*(단순성·서로소·포함)은 생성자가 아니라 **프로파일을 소비하는 모든 연산이 먼저 `check()` 를 통과시킨다**(진입점은 `extrude_on_frame` 하나다). 계약은 넷: 모든 링이 **단순 다각형**, 링끼리 서로소, 구멍은 외곽 안, 구멍 속 구멍 없음(그건 섬이고 `from_rings` 가 갈라낸다). 판정은 전부 **저장된 유리수 진실 위**에서다 — f64 이진값의 정확 부호와 십진 진실의 부호는 퇴화 근처에서 실제로 갈리고(0.1·0.2·0.3 공선이 이진에선 굽음), 작성자가 쓴 수가 이긴다.
-
-**왜 "호출자의 약속"으로 둘 수 없는가.** 계약을 어긴 프로파일은 검사가 없으면 전부 `extrude` 성공 · `validate` 위반 0건 · STEP 내보내기 성공이다. 나비넥타이는 부피가 `NaN` 이지만, **구멍이 외곽 밖이면 12.0(정답 16), 구멍 속 구멍이면 20.0(짝-홀 정답 52)** — 눈치챌 단서가 없는 그럴듯한 숫자다. 조용히 틀린 답은 약속으로 둘 수 있는 종류가 아니다.
-
-부수적으로, 이 검사가 `oriented_ring` 의 전제를 세운다: 감김을 부호 있는 면적 벡터로 정하는데 면적이 0 이면 그 판정이 우연에 맡겨진다(대칭 나비넥타이는 두 엽이 정확히 상쇄해 0 이다). 단순 다각형은 면적이 0 일 수 없다.
-
-**단순성은 *작성된 입력*의 계약이지 커널 데이터의 불변식이 아니다.** 그리는 링의 안쪽은 단순성 위에서 짝-홀로 *정의되지만*, 불리언이 만드는 윤곽의 안쪽은 arrangement 가 이미 정했고 그쪽은 **비단순(figure-8 조임)이어도 정당하다**(`loop_winding`). 그래서 `validate` 에 면 단순성 검사를 넣으면 안 된다 — 미루는 게 아니라 정당한 결과를 거절하게 된다.
+- **감김은 sweep 을 아는 `build_prism` 한 곳에서 정한다** — `Profile2d`·`build_prism`·`frame_rings` 의 doc. 오일러의 `L_i`
+  항이 실제로 필요한 형상은 `a_donut_prism_is_a_valid_genus_one_solid`, 같은 도넛을 잘라 만든 것과의 대조는
+  `a_swept_hole_matches_the_same_shape_cut_out`.
+- **생성자는 진실을 잡고, 계약은 소비하는 연산이 검사한다.** 십진 리프트·평탄 코너 소멸(중복점·스파이크는 살아남아 제
+  이름으로 거절된다)과 계약 넷(단순성·서로소·포함·구멍 속 구멍 없음), 판정이 저장된 유리수 위에서인 까닭은
+  `Profile2d`·`Profile2d::check`·`flat_corner` 의 doc. 검사가 없으면 조용히 틀린 답이 나오는 측정은
+  `silently_wrong_profiles_are_refused`, 이 검사가 `oriented_ring` 의 전제(넓이 0 없음)를 세우는 것은 그 doc.
+- **단순성은 작성된 입력의 계약이지 커널 데이터의 불변식이 아니다** — 불리언이 만드는 윤곽의 안쪽은 배열이 정하고 그
+  윤곽은 figure-8 조임이어도 정당하다(`loop_winding`). 그래서 `validate` 에 면 단순성 검사를 넣지 않는다 — 정당한 결과를
+  거절하게 된다.
 
 ### 스케치 어휘 — 링 중첩·고리·호
 
-**링 중첩 판정 — `from_rings`.** 사용자는 닫힌 경로만 그리고 무엇이 구멍인지 말하지 않는다. `ops::sketch::from_rings(rings) -> Result<Vec<Profile2d>, SketchError>` 가 포함 **깊이**로 정해 **덩어리(섬)별 프로파일 목록**을 돌려준다: **짝수 = 재료, 홀수 = 구멍**(그래서 구멍 속 링은 다시 재료 = 섬이고 자기 몫의 profile 이 된다), 구멍은 **가장 깊은 포함자**(직계)에 붙는다. **채우기 규칙 인자는 없다** — 짝수-홀수가 유일한 규칙이고, 인자를 두면 그 규칙이 둘이 된다.
+`sketch.rs`(`from_rings`·`from_paths`·`Ring2d::new`·`arc_turns`·`arc_to_rat`·`SketchError`), `nacre-geom::{mixed, intersect}`
+(`Edge2d`, 링 술어), `nacre_exact::{orient2d_rat, winding_sign_quarter_arcs}`, `ops/prism.rs`(호 벽,
+`refuse_non_quarter_arcs`).
 
-**경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준)다. 그래서 `Extrude` 의 다중 바디 출력은 필요 없다. 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치는 코드-CAD 가 요구하는 것이다.
+사용자는 닫힌 경로만 그리고 무엇이 구멍인지 말하지 않는다 — `from_rings`/`from_paths` 가 포함 깊이의 짝홀로 섬별
+프로파일을 돌려주고(채우기 규칙 인자는 없다), 자기교차를 중첩보다 먼저 본다(`from_rings`·`classify`·`SketchError` 의 doc).
+커널 `Extrude` 1회는 연결된 덩어리 1개이고 섬마다 부르는 것은 편의 레이어라, `Extrude` 에 다중 바디 출력은 필요 없다.
 
-**분류 술어는 `geom::intersect` 에 있다**(격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). 각 워커에 **Rat 쌍둥이**(`_rat` 접미)가 같은 모듈에 나란히 살고, 프로파일 정규형이 묻는 평탄 코너 판정(`flat_corner`)도 여기 있다 — 부호 원시는 `nacre_exact::orient2d_rat`(narrow 우선 → BigInt 전역, 분모 청소로 부호 보존)이고, geom 은 exact 에 의존한다(최하단 토대라 순환 없음). f64 판은 tess·f64 폴백이 쓴다. ops 에는 **정책**(깊이 패리티, 정규형이 꼭짓점을 지우는 순서와 고정점)**과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet` 으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
+**커널의 문은 고리다** — 정점과 각 정점을 떠나는 변(`Ring2d::new`)이고, 커널은 «어떻게 그렸나»를 모른다(`sketch` 모듈
+doc). ops 에는 정책(깊이 패리티)과 문만 있고, 부호 술어는 `nacre-geom::mixed` 에 산다 — 호까지 ℚ(√c) 의 `QuadVal` 부호로,
+광선은 `intersect` 의 반열림 규칙을 옮겨 적고(그 모듈 doc), 다각형 링에서 `intersect` 의 술어와 답이 같음을
+`polygon_rings_answer_exactly_as_before` 가 잠근다. 부호 원시는 `nacre_exact::orient2d_rat`(그 doc). 끝점은 정확히 일치해야
+하고 스냅은 없다(원칙 4 — `mixed` 모듈 doc, `ArcEndOffCircle`·`ZeroLengthEdge`).
 
-**자기교차는 중첩 분류보다 먼저 본다** — 메시지 품질이 아니라 전제조건이다: `point_in_ring_2d` 는 짝-홀 패리티로 답하고, 그건 단순한 링에서만 "안쪽"을 뜻한다. 술어는 `geom::intersect::ring_self_intersection`(인접하지 않은 변은 접촉만으로 실격, 인접한 변은 공선-겹침일 때만 = 되짚는 스파이크, 인접은 **순환**으로 판정). 스케치 층은 `RingSelfIntersects { ring, at }` 로 **점**(걸린 두 변의 현 중점)을 돌려준다 — 점은 편집기가 표식을 놓을 수 있는 것이고 이 enum 의 다른 거절도 점을 든다.
-
-**커널의 문은 고리다**: `Ring2d::new(vertices, edges)`(정점 + 각 정점을 떠나는 변, 검증: 짝 맞음·영길이·호의 r²·다음 정점이 원 위) · `Ring2d::circle` · `Ring2d::polygon_decimal`, 그리고 `from_paths(Vec<Ring2d>)` 가 중첩을 분류한다. 커널은 «어떻게 그렸나»를 모른다 — 펜·제약 해석기·외부 데이터가 전부 같은 문으로 온다.
-
-**호와 원.** 조각 타입은 **하나** — `Edge2d { Line, Arc { center, r2, ccw } }`(`nacre-geom::mixed`) — 끝점은 고리의 정점이지 조각의 필드가 아니다. **반지름은 저장하지 않는다**: 진실은 `r2 = |start − center|²` 이고 그것은 언제나 유리수다(√2 반지름의 호도 담는다). 정확 술어는 r 을 제곱해서만 쓰고, r 자체는 f64 캐시에서 √ 한다. 회전각은 커널이 모르는 말이다: 끝점 표현이 각도 표현보다 **넓고**(무리수 도의 호도 끝점이 유리수면 정확), 90° 배수 회전은 단계 문이 `Rat` 으로 끝점을 계산해 준다(`arc_turns`·`arc_turns_rat` — (변, 끝점)을 돌려준다; 임의 끝점은 `arc_to_rat`). 링은 **정점 + 변 종류**(`Ring2d { vertices, edges: Vec<Edge2d> }`)라 끝점 중복이 타입에 없고, 정규형이 공선 중간점 제거 옆에서 **같은 원·같은 방향의 이웃 호를 병합**한다(필렛 둘이 만나면 반원, 호 둘로 그린 원은 원 하나; 정점 하나에 호 하나면 온전한 원이고 그 정점이 seam 이다). 분류 술어는 `geom::mixed`(선분–원·호–호·점-in-링을 ℚ(√c) 의 `QuadVal` 부호로, 광선 규칙은 배열의 반열림 철자를 옮겨 적음; 다각형 링에서 f64/Rat 술어와 답이 같음을 proptest 로 잠금). 프리즘 빌더는 호마다 원통 조각 벽을 세우고(축 = 프레임 법선 `w`, `ref_dir` = 프레임 `x̂`, 온전한 원만 시작점 방향), 직선–호 꼭짓점은 **`Vertex::Pierce`**(두 평면의 저장된 정준 이름을 핸들 오름차순으로 `plane_plane_cylinder` 에 — 접하는 벽은 `Double`), 감김은 `2·넓이 = a + b·π` 의 정확 부호(`winding_sign_quarter_arcs`, exact 의 BigInt). 옆면 방향 `Forward ⟺ 호의 ccw == 스윕이 +w`. 다른 원의 호–호 접합은 **`Vertex::CylinderPair`**(캡 + 두 원통, 순위는 `cylinders[0]` 둘레 — 만드는 쪽은 낮은 핸들을 거기 둔다, 「원통의 진실」 7)이고, 두 호 벽 사이의 옆 간선은 공유 룰링이다. 그런 솔리드를 받은 불리언은 입구에서 `CylinderPairEdge` 로 거절한다 — 차트는 옆면의 룰링이 평면이 자른 것이라고 읽는다. 이름 붙여 거절: 90° 배수 아닌 호(`ArcSweepNotQuarterTurn` — 어휘는 그런 호를 정확히 진술하지만 빌더의 감김이 `π/2` 배수를 요구한다).
-
-**끝점은 정확히 일치해야 한다.** 가까우면 붙여주는 스냅은 없다 — tolerance 는 커널이 *발견한* 교차의 것이지 호출자가 *구성한* 것의 몫이 아니다(원칙 4). 고리 문에서 그것은 «다음 정점이 호의 원 위에 있는가»(`ArcEndOffCircle`)·«직선의 두 끝이 같은가»(`ZeroLengthEdge`)로 나타난다.
-
-**파라메트릭 편집의 진화 경로 (계획: v2 이후, 기록만).** 연산이 원시 Handle 대신 계보 참조 `OpRef { op: usize, output_slot: usize }`("연산 N 이 만든 k번째 면")를 담으면, 상류 수정 후에도 참조가 의미로 해석(resolve)되어 편집-재생이 가능해진다. v1 에서는 구현하지 않되, 로그 직렬화 포맷을 설계할 때 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. 인덱스 어휘는 이를 **밀어내지 않는다** — 인덱스는 v1 의 참조 기계이고 `OpRef` 는 v2 의 것이며, replay 안의 재고정 지점이 곧 `OpRef` 해석이 들어올 자리다(교체이지 경쟁이 아니다). 테셀레이션 tolerance 도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 확장될 수 있다.
-
-OCCT 는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle 의 채점자뿐이다. 사다리의 각 단은 자기 커버리지 안에서 완전해야 하며, 밖은 조용히 틀리는 대신 에러로 거절한다.
+**호와 원.** 조각 타입은 `Edge2d { Line, Arc { center, r2, ccw } }` 하나이고 반지름은 제곱으로만 든다(`Edge2d` doc). 회전각은
+커널의 말이 아니다 — 사분각 문(`arc_turns`·`arc_turns_rat`)과 임의 끝점 문(`arc_to_rat`)이 끝점을 `Rat` 으로 준다(`sketch`
+모듈 doc). 같은 원·같은 방향 이웃 호의 병합은 `Ring2d` 의 정규형이다. 프리즘은 호마다 원통 조각 벽을 세우고(`wall_surfaces`
+— `ref_dir` 은 `Seg3::Arc` doc), 옆면의 향은 `push_walls` 의 주석, 감김은 `winding_sign_quarter_arcs` 라 사분각 배수 아닌
+호는 `ArcSweepNotQuarterTurn` 이다. 직선–호 꼭짓점 `Vertex::Pierce` 와 호–호 꼭짓점 `Vertex::CylinderPair` 의 이름은
+「원통의 진실」 6·7. 두 호 벽 사이의 옆 간선은 공유 룰링이고, 그런 솔리드를 받은 불리언은 입구에서 `CylinderPairEdge` 로
+거절한다 — 차트는 옆면의 룰링이 평면이 자른 것이라고 읽는다.
 
 ### 거절 분류
 
-**거절의 *이유*는 값에 실려 나간다.** `BoolError::Rejected { reason: RejectReason, at: Option<RejectWhere> }`. **소비자는 `RejectReason::class()` 로 분기한다** — `RejectClass` 는 셋이다: `NotSupported`(커널의 현재 커버리지 밖 — 입력 자체는 판정 안 됨; 「아직」이 아니다. 의도된 거절은 미완성 기능이 아니고, 일부는 영영 더 정확한 거절만 얻는다) / `Impossible`(어떤 마일스톤에서도 유효 솔리드가 없음 — 사실의 진술이지 조언이 아니다) / `SuspectedDefect`(엔진 불변식이 깨짐 — 버그 리포트 감이고 «당신 탓»이라 말하지 않는다). 한 번도 발화가 관측되지 않은 변종의 분류는 잠정이다. 변종 이름은 엔진 어휘라 로그·리포트용 안정 식별자로만 쓴다. 사람이 읽는 문장·현지화는 앱 몫이다. 파사드로 닿는 오류 타입은 모두 `std::error::Error + Send + Sync` 이고(파사드 시험이 목록으로 잠근다), `Display` 는 변종의 사실을 std 관례(소문자, 마침표 없음)로 말하는 **로그용 한 줄**이다 — `BoolError` 는 문장을 새로 짓지 않고 사유의 식별자를 클래스·위치와 싣는다(`boolean rejected, not supported: cylinder_pair_contact`). 작성자에게 보이는 문장은 kit 이 든다. 감싸기만 하는 변종(`OpError::Boolean`·`CacheDecline::Cannot`)은 안쪽의 줄과 `source` 를 그대로 넘기고, 다른 원인을 싸는 변종(`StepError::Io`)은 제 맥락만 말하고 원인을 `source()` 로 준다 — 안쪽을 `Display` 에 싣고 `source` 로도 주면 보고가 같은 말을 두 번 찍는다.
+`error.rs`(`BoolError`·`RejectReason`·`RejectClass`·`RejectWhere`·`DeclineKind`·`reject`/`reject_at`), `reject_census.rs`
+(`ReasonId`); 시험은 `tests/reject_census.rs`, 파사드의 `tests/facade.rs`.
 
-성장은 사유 어휘에서만 일어나므로 `RejectReason`(과 그 세부인 `DeclineKind`)만 `#[non_exhaustive]` 이고 `BoolError`·`RejectClass` 는 exhaustive 다(소비자가 모든 클래스에 대해 결정하도록 강제한다 — 사유는 자라고 클래스는 안 자란다). 트레이스가 불완전한 경우는 `TraceDeclined { kind: DeclineKind, face: Option<Handle<Face>> }` 가 **무엇을 못 했는지와 어느 피연산자 면에서인지**를 함께 싣는다(한 클래스가 여러 면을 기권할 수 있고, 이것은 첫째를 이름 댄다).
+**거절의 이유는 값에 실려 나가고, 소비자는 `RejectReason::class()` 로 분기한다.** 세 클래스의 뜻, 사유는 자라고 클래스는
+안 자라는 까닭(`#[non_exhaustive]` 의 자리), `TraceDeclined` 가 첫 면을 이름 대는 것은 `BoolError`·`RejectClass`·
+`RejectReason`·`DeclineKind` 의 doc. 위치(`at: Option<RejectWhere>`)는 사유 옆에 싣는 증인이다 — 범주와 측정을 가르는
+까닭, 결정적 최솟값, `Eq` 없음은 `RejectWhere` doc 이고, 위치를 싣는 사유는 `reject_at` 을 부르는 자리다.
 
-**«어디»는 사유 옆에 실려 나간다.** `at: Option<RejectWhere>`(`Point(Point3)` | `Segment([Point3; 2])`, 월드 f64)는 가드가 발화한 순간 보고 있던 **증인**이다(여럿이면 엔티티 자체 순서의 최솟값 — HashMap 순회로 뽑으면 실행마다 다른 좌표가 나온다). 위치를 `RejectReason` 변종 안에 넣지 않는 이유: 사유는 범주 어휘(census 키·테스트가 이름 대는 것, `Copy+Eq`·const-구성)이고 좌표는 측정값이다 — census 의 "측정값은 키 밖" 규칙의 오류-값 판. 좌표는 진단용 실현(캐시급)이라 `RejectWhere` 는 `Eq` 가 없고, 비교는 근사로만 한다(거절끼리 비교할 때는 `reason` 을 꺼내 비교한다). 표면화 사유 중 `self_touching_result`(위반 모서리, 없으면 위반 꼭짓점)·`non_manifold_result_edge`(위반 모서리)·`non_manifold_vertex`(핀치 정점)·`tangent_line_in_another_plane`(접선 위 한 점)이 싣고, `no_clear_ray`(분산적)·`precision_budget`(전-모델)·`cylinder_face_undecided`는 싣지 않는다(면이 증인인 사유가 필요해지면 `RejectWhere` 에 면 변종을 여는 것이 길이다).
+**오류의 `Display` 는 로그용 한 줄이다**(std 관례: 소문자, 마침표 없음). `BoolError` 는 문장을 새로 짓지 않고 사유의
+식별자를 클래스·위치와 싣고(`boolean rejected, not supported: cylinder_pair_contact`), 작성자에게 보이는 문장은 kit 이
+든다. 감싸기만 하는 변종(`OpError::Boolean`·`CacheDecline::Cannot`)은 안쪽의 줄과 `source` 를 그대로 넘기고, 다른 원인을
+싸는 변종(`StepError::Io`)은 제 맥락만 말하고 원인을 `source()` 로 준다 — 안쪽을 `Display` 에 싣고 `source` 로도 주면
+보고가 같은 말을 두 번 찍는다. 파사드로 닿는 오류 타입이 모두 `std::error::Error + Send + Sync` 인 것은
+`every_error_type_is_a_std_error` 가 목록으로 잠근다.
 
-**어떤 사유가 실제로 발화하는지는 상설 census 가 답한다 — `nacre-ops::reject_census`.** `reject()`/`reject_at()` 쌍이 크레이트의 모든 `Rejected` 를 짓는 유일한 깔때기라, 거기 `#[track_caller]` 하나씩이 모든 호출 지점을 한꺼번에 계측한다. 테스트 빌드의 계측이다(`test-util` — overview 「작업 스타일」의 계측의 문): 제품 빌드에는 표도, 기록하는 호출도, `reject` 의 `#[track_caller]` 도 없다.
-
-**두 열은 서로 다른 인구다.** 「울린 것(raise)」과 「밖으로 나간 것(surfaced)」을 따로 적는다. 호출자가 대안 경로로 재시도하며 삼키는 거절이 있으면 한 열 집계는 사용자가 보는 것에 대해 거짓을 말한다(`no_clear_ray` 가 울림의 82% 를 차지하면서 한 번도 표면화되지 않는 구성이 실제로 있었다). 그래서 `point_in_component` 의 «이 노드로는 못 정함»은 **기권**(`Said::Abstain`·`Said::Silent`)이지 삼켜질 오류가 아니다 — 두 열의 갭은 「남은 삼킴의 지표」이고 0 에 가까운 것이 목표 상태다(갭이 벌어지면 새 삼킴의 발견이다). 다만 census 는 **어느 사이트가 표면화했는지는 답하지 않는다** — 거절은 rayon 워커에서 울리고 메인 스레드에서 반환되므로 둘을 잇는 값싼 길이 없고, 「이 가드는 삼켜지는가」는 호출자를 읽으면 되는 **정적** 질문이라 필요도 없다.
-
-읽는 길 둘: **게이트**는 `tests/reject_census.rs` 의 얼린 코퍼스 7종이 `(사유, detail, 파일)` 집합을 박는다(줄 번호는 찍기만 — 거기 걸면 무관한 편집마다 빨개져 아무도 안 읽는다. 횟수도 안 건다: debug 는 트레이스를 두 번 돌리고 parallel 은 실패 입력의 나머지 클래스까지 평가한다). **전수**는 `--features reject-trace` 로 스위트 전체를 훑는다 — 테스트 바이너리 30여 개가 각각 별개 프로세스라 메모리 표가 프로세스와 함께 죽기 때문이고, 그래서 이 기능이 크레이트의 `deny(print_stderr)` 에 대한 유일한 예외다(기본 꺼짐, 제품 빌드엔 출력 코드가 아예 안 들어간다). 게이트의 인구는 그 7개 모양뿐이니 **원통 가드는 여기 안 걸린다** — 그건 전수 훑기가 손으로 메운다.
-
-census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **한 줄**에서 올라와, 이름과 위치만으로 키를 잡으면 한 행으로 뭉개진다 — census 가 잡으려는 결함을 census 가 재현하는 꼴이다. 규칙은 **키가 그 사유 자신의 어휘만큼 잘아야 한다**는 것.
+**어떤 사유가 실제로 발화하는지는 상설 census 가 답한다 — `nacre-ops::reject_census`.** `reject`/`reject_at` 이 모든
+`Rejected` 를 짓는 유일한 깔때기라 `#[track_caller]` 하나가 모든 호출 지점을 계측하고, 테스트 빌드의 계측이라 제품
+빌드에는 없다. 「울린 것」과 「밖으로 나간 것」은 다른 인구이고 그 갭이 남은 삼킴의 지표다 — 그래서 `point_in_component`
+의 «이 노드로는 못 정함»은 삼켜질 오류가 아니라 기권(`Said`)이다. 측정과 읽는 길 둘(얼린 코퍼스의 게이트, `reject-trace`
+전수 훑기)은 `reject_census` 모듈 doc, 게이트가 집합만 박고 줄 번호·횟수를 걸지 않는 까닭과 못 보는 것은
+`tests/reject_census.rs` 의 doc, 키가 `detail` 을 드는 까닭은 `ReasonId` doc.
 
 ### 구성 산술은 **사용자가 쓴 십진수**로 한다
 
-프리즘의 좌표는 곱 셋과 합 둘로 나온다 — `origin + x·u + y·v`, 그다음 `+ normal·dist`. f64 에서 이건 결합법칙을 안 지키므로 **정확히 일치해야 할 두 치수가 어긋난다**: `7.7` 로 한 번에 올린 블록과 `1.1` 다음 `6.6` 으로 올린 블록의 윗면이 1 ULP 떨어진다.
+`construct.rs`(모듈 doc, `RatFrame`), `ops/prism.rs`(`exact_frame`·`frame_rings`), `nacre_exact::Rat::{from_decimal, to_f64}`;
+잠금은 `tests/invariants/pipeline.rs` 의 `a_split_dimension_meets_the_undivided_one`.
 
-**쪼개지지도, 틀리지도 않는다 — 더러워진다.** 부피는 정확히 맞고 fuse 는 몸통 하나를 준다. 그 몸통이 넓이 `8.9e-16` 짜리 면과 형상에 없는 면 둘을 달고 있고, 이후 모든 불리언·STEP·메시가 그걸 끌고 다닌다. **거절도 오답도 아니라서 아무도 신고하지 않는다**.
+f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법칙을 지키지 않아, `7.7` 로 한 번에 올린 캡과 `1.1` 다음
+`6.6` 으로 올린 캡이 1 ULP 떨어진다 — 쪼개지지도 틀리지도 않고, 아무도 신고하지 않는 얇은 면을 끌고 다닌다(측정은 그
+시험). f64 를 `try_from_f64` 로 올리면 정확 산술이 이진 드리프트를 그대로 재현하므로, 복구하는 것은 사용자가 쓴 십진수다
+(`construct` 모듈 doc, `Rat::from_decimal` doc).
 
-**"API 를 `Rat` 으로 바꾸면 된다"가 답이 아니다.** f64 `1.1` 을 `try_from_f64` 로 *올리면* `11/10` 이 아니라 그 f64 가 담은 이진값이다. 정확한 산술을 해도 이진 드리프트가 그대로 재현될 뿐 일치가 **복구되지 않는다**. 복구하는 것은 사용자가 *쓴 십진수*다 — `11/10 + 66/10 = 77/10`, 그리고 그 실현이 정확히 `7.7`.
+**결정.** 공개 API 는 f64 그대로라 호출부·TS/JSON 경계가 바뀌지 않고, 커널이 받는 자리마다 `Rat::from_decimal` 로 왕복하는
+최단 십진수를 잡는다 — 프로파일 좌표(`ProfileOutsideDecimalWindow`), extrude·offset 거리(`DistOutsideDecimalWindow`),
+`SketchPlane` 의 생성자(`from_axes` 등), `SketchFrame::named`(`FrameOutsideDecimalWindow`). 커널이 실현한 기저는 리프트하지
+않는다(`realized_plane` doc). 전제는 `Rat::to_f64` 의 최근접 반올림이다(그 doc). 프레임의 세계 기저는 진실에서 유리수로
+묻고(`exact_frame`), 없으면 스케치를 프레임 노드 안에 프레임 좌표로 적는다 — 기울어진 면에서도 쪼갠 치수는 한 평면이다
+(`two_caps_reached_by_different_arithmetic_are_one_plane` — 두 캡이 한 평면으로 판정된다). 정확한 꼴이 없는 평면(축이
+십진 창 밖이거나 퇴화, 배치 산술의 `i128` 넘침 등 — 그 변종의 doc)은 조용히 f64 로 짓지 않고 `PlaneWithoutExactForm` 으로 거절한다.
 
-**결정:**
+**못 고치는 것 (비목표).**
 
-- **공개 API 는 f64 그대로.** 호출부·TS/JSON 경계가 안 바뀐다. 커널이 받자마자 각 치수를 `Rat::from_decimal` 로 **왕복하는 최단 십진수**로 잡는다. 이 규칙은 프로파일 좌표, extrude 거리(`DistOutsideDecimalWindow`), 스케치 평면의 축(`from_axes` — 정의는 점 셋 `[o, o+x, o+y]`, `PlaneDef` 는 점 셋 단일 필드로 origin·ref_dir·극성이 구조에서 유도)에 걸린다. 단 **커널이 실현한(반올림된) 기저는 리프트하지 않는다**(내부 `realized_plane` — 이미 정확한 정의를 가진 평면에 두 번째 진실을 만드는 것이 두-정확-기술 결함이다). 의도에 대한 *추측*이 아니라 **결정적 정규형**이다(왕복이 보장되므로 서로 다른 f64 는 서로 다른 유리수, 같은 f64 는 항상 같은 유리수). 십진수를 고르는 이유는 하나 — **사람은 십진수를 타이핑한다**.
-- **전제조건: `Rat::to_f64` 가 최근접 반올림이어야 한다.** 분자·분모를 각각 반올림한 뒤 나누면 유효숫자 17자리에서 1 ULP 가 어긋나고, 그러면 십진수 복원이 **무손실이 아니다** — 고치려던 것은 어긋난 누적뿐인데 멀쩡한 입력까지 움직인다. 정수 장제법으로 54비트 몫을 뽑아 **끝에서 한 번만** 반올림한다(`Ratio<i128>` 이라 두 항이 2¹²⁷ 미만인 게 모든 시프트를 닫는다).
-- **프레임이 유리수일 때만 이 경로를 탄다.** 축이 `{0, ±1}` 이면(world·축정렬 면) 정확하다. 회전된 면은 축이 무리수라 못 든다 — 성분을 십진수로 잡으면 **단위벡터가 아니게 되어** `normal·dist` 가 틀린 *길이*를 준다(고치려던 것보다 나쁜 오차). 그래서 진입점이 `x·x = y·y = 1`, `x·y = 0` 을 **정확히** 검사한다. 평면(또는 그것을 나르는 프레임 사슬)에 정확한 꼴이 없으면 — 축이 십진 창 밖이거나 퇴화했거나 배치 산술이 `i128` 을 넘치면 — 조용히 f64 로 짓지 않고 **이름 붙여 거절**한다(`PlaneWithoutExactForm`): f64 로 지은 프리즘은 정확한 점을 기록하지 못하고 모션을 견디지 못한다.
-- **새 저장 구조가 필요 없다.** 같은 유리수는 항상 같은 f64 로 실현되므로 두 경로의 좌표가 **비트 동일**해지고 평면 계수도 같아진다. provenance 를 새로 다는 일이 없다.
-
-**못 고치는 것 (비목표, 정직하게):**
-
-- **회전된 스케치 프레임.** 축이 무리수라 유리수로 들 수 없다. **f64 삼각함수를 거친 사분 회전도 마찬가지다** — `(90°).to_radians().sin_cos()` 가 `cos = 6.1e-17` 을 주므로 정확성은 이 층이 보기 전에 이미 사라졌다(커널의 정확한 사분 회전은 `Angle`/Niven 에서 온다). 그 경로의 건전성은 CIP 담당이다.
-- **스크립트가 계산해 넘긴 값.** `1.1 * 7` 을 f64 로 계산해 넘기면 커널은 `7.700000000000001` 을 받고, 그 최단 십진수는 `7.7` 이 아니다. **올바른 동작이다** — 스크립트가 실제로 다른 수를 계산했다. 고치는 것은 **커널 자신의 누적**이다.
-- **4-평면 동시성.** ±1 ULP 로 사라지는 정확한 0 이다. 유리수 입력에서도 생긴다(0.1·0.3 캡과 벽 `y = 3x`) — 구성 산술이 고칠 것이 아니라 판정이 진실에 물을 것이고, 판정은 평면의 이름으로 묻는다(`WorkingPlane`).
+- **스크립트가 계산해 넘긴 값.** 커널이 고치는 것은 자기 누적이고, 스크립트가 f64 로 계산한 값은 이미 다른 수다
+  (`Rat::from_decimal` doc).
+- **4-평면 동시성.** 유리수 입력에서도 생기는 정확한 0 이라 구성 산술이 고칠 것이 아니다 — `RejectReason::FourPlane` doc;
+  판정이 평면의 이름으로 묻는 것은 `every_answer_on_unmoved_named_planes_is_the_names_answer`.
 
 ### 불리언 엔진 — 평면당 셀 복합체
 
-불리언 경로는 **하나**다: `nacre-ops::arrangement` 의 평면 클래스 배열 엔진(`crate::boolean` 의 공개 `boolean` 이 여기에 위임한다). 글로벌 detector 도, regime 별 이중 경로도 없다. 기하가 평면 위에 놓이는 것은 퇴화가 아니라 **입력**이다.
+불리언 경로는 **하나**다: `nacre-ops::arrangement` 의 배열 엔진(`crate::boolean` 의 공개 `boolean` 이 위임한다) — 평면 클래스마다
+독립인 셀 복합체와, 원통 클래스마다 제 차트(「원통 — 밴드·게이트·차트·룰링」). 글로벌 detector 도, regime 별 이중 경로도 없다.
+평면 위에 놓인 기하는 퇴화가 아니라 **입력**이다(`arrangement` 모듈 doc). 결과 전체의 판정(자기접촉·닫힌 껍질)은 조립(`assembly`)이 한다.
 
-**단계.**
-
-1. **평면 클래스.** 두 솔리드의 면이 놓인 평면을 클래스로 묶는다. 이후의 일은 면당이 아니라 **평면 클래스당** 독립이다.
-2. **추적(trace).** 두 솔리드의 각 면을 모든 평면 클래스 위에 **선분**(닫힌 루프가 아니다)으로 추적한다. 면의 경우는 둘이다. **Seated** — 자기 클래스가 자르는 클래스인 면 — 은 통째로 그 평면에 놓이므로 경계 전체가 추적이다. **Transversal / mixed** — 평면을 가로지르는 면(모서리가 평면에 놓일 수도 있다) — 은 `L = W ∩ fp` 위의 2D 다각형-대-직선 클리핑이고, 3값(−/0/+) 스캔이 선 위의 모서리를 거절하지 않고 접는다. 추적을 못 한 면은 **면 단위 기록**(`declined`)이지 솔리드 전체의 중단이 아니다 — 비어 있지 않은 `declined` 는 "이 추적은 불완전하니 이것으로 결론 내지 말라"는 뜻이고, 밖으로는 `TraceDeclined { kind, face }` 로 나간다. **선 위의 추적은 스윕 하나다**(`sweep_line`) — 평면 면의 클래스 선과 옆면의 룰링이 같은 스윕을 쓰고, 각 도로는 자기 선 위의 정거장을 모으는 법만 갖는다. 정거장의 사건은 셋(가로지름 · 선 위 런의 시작 · 끝)이고, 한 정거장의 사건은 «런 끝 → 가로지름 → 런 시작» 순으로 한 번에 읽는다. 링이 한 점을 두 번 지나는 면(꼬집힌 면)은 그 점에 한 이름을 두 번 남기고 그것은 한 정거장이다. 한 정거장에 서로 다른 두 이름이 서면 한 점이다 — 순서의 0 은 정확하므로 그 동일성을 라운드의 표에 기록하고(`Aliases::record_same_point`) 정거장을 첫 이름으로 읽는다; 기록이 거절하는 동점은 한 쌍의 두 근(`CoincidentFeatures`)과 두 원통 위의 점(`CylinderPair`)이다.
-3. **교차 분할.** 추적된 선분을 서로의 교차점에서 자른다(`split_at_crossings`).
-4. **셀 추출·중첩.** 분할된 선분에서 셀을 뽑고, 구멍 셀을 host 셀에 중첩시킨다(`+1` 감김 셀만 host 다 — `−1` 셀은 어떤 host 의 구멍이거나 빈 뿌리다).
-5. **라벨.** 셀마다 피연산자별·쪽별 재료 라벨 `Label = [A_above, A_below, B_above, B_below]` 을 단다. 모서리를 건널 때 그 모서리의 마스크가 라벨을 뒤집고, 전파가 끝나면 **모든** 모서리(트리·비트리)에서 뒤집힘 관계를 검증한다(`UnreachedCell`·`LabelConflict`). **"above" 는 클래스의 *저장된* 평면 법선 쪽**이다 — 클래스의 정준 유리수 이름(절반의 클래스에서 반대를 향한다)도, 루트 면의 바깥 법선도 아니다(`frame_sign` 이 둘을 잇고, 방출의 `flip` 이 그것을 되접는다).
+1. **평면 클래스.** 두 솔리드의 면 평면을 클래스로 묶고, 이후의 일은 **평면 클래스당** 독립이다.
+2. **추적(trace).** 면을 모든 클래스 위에 **선분**으로 — Seated·Transversal 두 경우와 면 단위 기록 `declined`(밖으로는
+   `TraceDeclined { kind, face }`)는 `arrangement` 모듈 doc. **선 위의 추적은 스윕 하나다**(`sweep_line`): 평면 면의 클래스 선과
+   옆면의 룰링이 같은 스윕을 쓴다. 정거장의 사건 순서, 꼬집힌 면의 한 정거장, 두 이름의 동점을 라운드의 표에 기록하는 일
+   (`Aliases::record_same_point`)과 그 거절(`CoincidentFeatures`·`CylinderPair`)은 `sweep_line`·`LineEvent`·`record_same_point` 의 doc.
+3. **교차 분할.** `split_at_crossings`; 한 클래스의 골격은 `class_skeleton`.
+4. **셀 추출·중첩.** `+1` 감김 셀만 host 다(`nest_cells`, `emit_faces` 의 doc).
+5. **라벨.** `Label = [A_above, A_below, B_above, B_below]` 를 모서리 마스크(`edge_mask`)로 전파하고 **모든** 모서리에서 검증한다
+   (`label_cells`; `UnreachedCell`·`LabelConflict`). «above» 는 클래스의 **저장된** 법선 쪽이다 — `Label` doc(`frame_sign`, 방출의 `flip`).
 6. **생존 규칙·방출.** 아래.
-7. **청소·조립.** 엔진이 결과를 한 번 청소하고(`arrangement::whole_result_faces` — `unify_coplanar_faces` 의 병합, 옆면 방출, 결과 전체 위의 `dissolve_straight_angles`) `assembly` 의 `assemble_fuse_cut` 을 불러 껍질을 짓는다. 입력은 `NodeId` seam 삼중으로 이름 붙은 면당 출력 `draft::LocalFace` 다. `assemble_fuse_cut` 이 vertex handle 을 면의 first-appearance 로 배정한다.
+7. **청소·조립.** `arrangement::whole_result_faces`(`unify_coplanar_faces` → 옆면 방출 → 결과 전체의 `dissolve_straight_angles`)
+   → `assemble_fuse_cut` 이 vertex handle 을 면의 first-appearance 로 배정한다(「병렬 — 판정만 병렬, 순서는 고정」).
 
-**생존 규칙.** 규칙은 한 챔버(평면 한쪽의 공간)의 `(inA, inB)` 에 대한 술어 하나다:
+**생존 규칙.** 한 챔버(평면 한쪽의 공간)의 `(inA, inB)` 에 대한 술어 하나다(`draft::keep`):
 
 | `kind` | `keep(inA, inB)` |
 |---|---|
@@ -1694,88 +1703,88 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
 | `Cut` | `inA ∧ ¬inB` |
 | `Common` | `inA ∧ inB` |
 
-`+1` 셀은 **그 두 챔버(W 의 위·아래)가 `keep` 아래에서 갈릴 때** 결과의 면이다(한쪽은 재료, 한쪽은 빈 공간). 셀의 `−1` 구멍은 내부 링으로 따라간다. `flip = keep_above == (orient_sign(wc) > 0)` 하나가 어느 챔버가 재료인지를 나르고, 조립이 외곽과 내부 링을 함께 뒤집어 결과 법선이 남은 재료의 바깥을 향하게 한다.
+`+1` 셀은 두 챔버(W 의 위·아래)가 `keep` 아래에서 갈릴 때 결과의 면이고, `flip = keep_above == (frame_sign > 0)` 하나가 어느 쪽이
+재료인지를 나른다(`emit_faces` doc). 접촉면의 Requicha 식 표 — 연산 × 상대 법선 — 는 이 한 규칙의 귀결이다: Fuse/opp=`inP⊕inQ`,
+Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Common/same=`inP∧inQ`(`inP`·`inQ` 는 각 피연산자의 면이 그 셀을
+덮는가). 볼록성 항이 없어 비볼록·다중루프를 half-space 가정 없이 `point_in_ring` parity 로 정확히 처리한다.
 
-접촉면(두 피연산자가 같은 평면에 면을 가진 경우)에 대한 Requicha 식 표 — 연산 × 상대 법선 — 는 이 한 규칙의 귀결이다: Fuse/opp=`inP⊕inQ`, Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Common/same=`inP∧inQ`(`inP`·`inQ` 는 각 피연산자의 면이 그 셀을 덮는가). 볼록성 항이 없어 비볼록·다중루프를 half-space 가정 없이 `point_in_ring` parity 로 정확 처리한다.
+- **동일평면 병합은 필수 청소다** — 내부를 지우고 바깥을 꿰매지 않으며, 꼬집힌 점에서는 배열의 셀 걷기와 같은 순환 순서
+  (`dir_at`·`angular_order`)로 나가고, 못 하면 그룹을 그대로 내보내 기권한다. 기권이 안전한 까닭(«정돈일 뿐»이 아니라 «패스가
+  없던 자리»)과 그 뒤 전역 판정이 모양을 이름 대는 것은 `unify_coplanar_faces`·`merge_component` 의 doc. 평각 정점은 옆면이 붙은
+  뒤 결과 전체에서 한 번 녹인다 — `dissolve_straight_angles`·`whole_result_faces` 의 doc.
+- **45° 폴드의 거절은 갭이 아니라 «정답»이다** — 한 팔이 제 몸에 공면으로 닿는 두께 0 솔리드라 `SelfTouchingResult`(`Impossible`)
+  다. 잠금은 `tests/probes/rotation_sweep.rs` 의 `another_rejection_keeps_its_own_reason` 과 `tests/reject_census.rs` 의 `fold_45`.
+- **칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남) — 스침 결합은 홀짝이고(`edge_mask` 본문), 소식 없는 모서리는
+  골격에서 빠지되 룰링 위 칼날의 두 끝에서 룰링 조각을 먼저 자른다(`carries_news`·`class_skeleton` 의 doc; 「점의 이름」의 «선은
+  그 위의 모든 꼭짓점에서 잘린다»). 선·점으로만 닿는 두 몸통은 둘로 나오고, 핸들은 성분이 아니라 **출력 솔리드**(재료 성분 + 그
+  공동들) 단위로 배정된다 — `assembly::Grouping`·`NonManifoldResultEdge` 의 doc. 잠금: `tests/probes/contact_separates.rs`,
+  `tests/probes/knife_edge.rs`.
+- **4평면 동시성의 세 갈래** — 피연산자 꼭짓점의 동시성(`NamedRing::concurrencies` 로 추적 전에 표에 넣고, 런 꼭짓점을 지나는 넷째
+  평면은 `third_on_l` 이 본다), 선을 **가로지르는** 두 평면(`split_at_crossings` 의 동점), 선을 **담는** 평면(`Aliases::canon_wall` 의 기록을 그
+  선의 분할점마다 되읽는다 — `split_at_crossings` 본문). 놓치면 한 점이 두 이름으로 seam 표에 와 `SeamAlias`(`SuspectedDefect`) —
+  유효한 입력을 두고 커널이 자기를 탓한다. 잠금: `tests/probes/concurrent_line.rs`.
 
-**동일평면 병합은 순환 순서로 잇고, 못 하면 기권한다 — 전역 판정이 말한다.** `unify_coplanar_faces` 는 불리언 뒤의 **필수** 청소다: 한 평면 클래스·한 `flip` 의 결과 면들을 **모서리-연결 성분**별로 하나로 합친다. 평각 정점은 옆면이 붙은 뒤 결과 전체 위에서 한 번 녹인다(`dissolve_straight_angles`) — 규칙이 그 점을 지나는 **모든** 링에 대한 것이라, 평면 면만 보고 녹이면 옆면의 룰링 간선이 아직 쥔 점을 평면에서만 지워 한 번 쓰인 간선이 남는다. 방법은 «안쪽을 지우고, 바깥을 꿰매지 않는다» — 그룹의 모든 방향 링 모서리에서 마주보는 쌍(`a→b` 와 `b→a`)을 지우고 남은 것을 다시 꿴다. 그래서 한 규칙이 모서리 공유·이웃이 정확히 메운 구멍·여러 이웃이 메운 구멍과 그 연쇄를 다 덮는다. 같은 평면에 있어도 닿지 않는 면은 각자 살아남는다. 다시 꿸 때 나가는 모서리가 둘 이상인 정점은 영역이 그 점을 두 번 지나는 자리이고(꼬집힌 면), 들어온 모서리의 쌍둥이에서 시계 방향 첫 모서리로 나간다 — 영역을 진행의 왼쪽에 두는 길이고, 배열의 셀 걷기가 읽는 그 순환 순서(`dir_at`·`angular_order`)다. 두 면이 같은 방향 모서리를 주장하거나 그 순서를 읽을 수 없으면 병합은 **기권**하고 그룹을 그대로 내보낸다. 기권이 안전한 이유는 「병합은 정돈일 뿐」이 아니다 — 병합되지 않은 동일평면 면은 떨어진 벽 위의 코너가 결과에 면이 없는 평면을 이름 대게 만들어 조립이 불리언 전체를 거절한다. 안전한 이유는 더 좁다: 그대로 내보내면 파이프라인이 **이 패스가 돌기 전 자리**에 정확히 서므로, 패스 없이 나왔을 것 말고는 아무것도 나올 수 없다. 그 뒤 **결과 전체에 대한 판정**(`self_touch_reject`, 닫힌 껍질 가드, 모든 정점이 제 면들로 이름 지어졌는지 검사)이 자기 문장으로 — 그리고 **증인과 함께** — 그 모양을 이름 댄다. 스스로 닿는 영역도 꿰어지고, 그 자기접촉은 전역 판정이 이름 댄다(45° 폴드 → `SelfTouchingResult`).
+**결과 계약: 표면이 자기와 닿는 솔리드는 만들지 않는다.** 명제(모서리가 꼭짓점 아닌 점에서, 또는 꼭짓점이, 같은 솔리드의 자기가
+경계하지 않는 면의 닫힌 영역에 닿는가)와 단위(출력 솔리드)는 `assembly::self_touch::self_touch_reject` 의 doc 이고, 이런 몸체가 모든 위상
+계수와 `validate` 를 통과하는 까닭은 `SelfTouchingResult` doc 이다. 방향은 Parasolid 를 따르고 OCCT 는 받는다; 대가는 쐐기 포켓의
+끝이 마침 반대 벽에 닿는 모델링이 막히는 것 — `tests/probes/self_touch.rs` 모듈 doc. 거절은 «무엇이 잘못됐는지»만 말하고 사람이
+읽을 문장은 앱이 `RejectClass` 로 갈라 쓴다(`BoolReport`·`RejectClass`·`SelfTouchingResult` 의 doc).
 
-**45°/315° 폴드의 거절은 갭이 아니라 «정답»이다.** 그 각도에서 부품의 한 팔이 **자기 자신에** 공면으로 닿아 두께 0 인 솔리드가 나온다 — 존재할 수 없는 물건이고, `SelfTouchingResult`(`Impossible`)가 옳다.
-
-**칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남): `edge_mask` 의 스침 결합은 **홀짝**이다(같은 쪽 쌍 = 꼬집힘/노치 = 무소식), all-false 모서리는 골격에서 제외한다(`carries_news` — 한 점 접촉이 선분을 남기지 않는 것의 1D 판). 칼날이 그 클래스가 그리는 룰링 위에 놓이면 모서리는 가되 그 두 끝은 남는다 — 버리기 전에 룰링 조각을 그 끝에서 자른다(`class_skeleton`; 「점의 이름」의 «선은 그 위의 모든 꼭짓점에서 잘린다»). 모서리-만 접촉 fuse 는 **몸통 둘로 나온다**. 면을 잇는 것은 **다양체 접촉(정확히 두 면이 쓰는 링 모서리)뿐**이라, 선·점으로만 닿는 두 몸통은 서로 다른 성분에 놓이고 각자의 핸들을 받는다. 핸들을 가르는 단위는 성분이 아니라 **출력 솔리드**(재료 성분 + 그 공동들)여야 한다 — 공동이 host 껍질에 닿는 경우 성분별로 가르면 핀치가 셀 수 없어져 두께 0 솔리드가 조용히 통과한다. 자기와 닿는 «한» 몸통은 재료가 접촉을 돌아가므로 성분이 하나로 남아 거절이 그대로 발화한다(잠금: `tests/probes/contact_separates.rs`, `tests/probes/knife_edge.rs`).
-
-**4평면 동시성의 세 갈래.** 한 점에 평면 넷이 모이면 이름이 여러 개 생기고, 배열은 그것을 하나로 접는다(`Aliases`). 발견 경로는 셋이다: ① **입력 면의 꼭짓점**에서의 동시성 — 링을 걸으며 `third_on_l` 이 본다. ② 배열이 만든 점에서 **선을 가로지르는** 두 평면이 겹치는 경우 — `split_at_crossings` 가 「두 handle 이 같은 자리로 정렬된다」로 본다. ③ 배열이 만든 점에서 **그 선을 «담은»** 평면 — 그 평면은 선과 같은 방향 family 라 handle 이 되지 않으므로 ①②가 **구조적으로 못 본다**. 셋째는 따로 찾지 않는다: 벽 둘을 한 선으로 접었다는 기록이 곧 「두 번째 평면이 이 선을 담는다」는 진술이므로, 그 선 위 분할점마다 벽 family 를 되읽어 신고한다. 놓치면 한 점이 두 이름으로 seam 표에 도착해 `SeamAlias`(`SuspectedDefect`)로 거절되는데, **그건 유효한 입력을 두고 커널이 자기를 탓하는 것**이다. 잠금은 `tests/probes/concurrent_line.rs`.
-
-**결과 계약: 표면이 자기와 닿는 솔리드는 만들지 않는다.** 조립이 내놓은 결과 솔리드(바깥 껍질 + 공동)에 대해 *"이 솔리드의 모서리가 그것이 경계하지 않는 같은 솔리드의 면의 닫힌 영역과 꼭짓점 아닌 점에서 만나는가(면 안을 지나거나 곡선 경계에 접하거나), 또는 꼭짓점이 그것이 경계하지 않는 같은 솔리드의 면의 닫힌 영역 위에 있는가"* 를 묻고, 참이면 `SelfTouchingResult`(`Impossible`)로 거절한다. 이런 몸체는 연결돼 있고 부피가 맞고 **모든 위상 계수를 통과한다** — 접촉선(또는 접촉점)에서 면이 쪼개지지 않아 모든 모서리가 여전히 두 번씩 쓰이므로 `check_result_topology` 도 `validate` 도 보지 못한다. 방향은 Parasolid 기준이다: OCCT 는 이런 몸체를 받지만 따르지 않는다. **대가**는 자연스러운 모델링 동작 하나가 막히는 것이다(쐐기 포켓의 끝이 마침 반대 벽에 닿는 경우). 다른 커널이 *"zero thickness geometry"* 라 부르는 조건과 같다.
-
-**거절은 «무엇이 잘못됐는지»만 말한다.** 어느 일치가 의도치 않은 것이었는지, 답이 다른 치수인지 다른 연산인지 몸체를 둘로 나누는 것인지는 **작성자의 의도**이고 커널은 그걸 볼 수 없다 — 「치수를 조금 옮기라」는 그 의도에 대한 추측이다. `BoolReport` 가 같은 규칙을 적어 둔다: *"It is a diagnosis, not a prompt."* 커널은 사유 이름과 클래스만 내놓고 **사람이 읽을 문장은 앱의 몫**이다(`RejectClass` 로 분기, 변종 이름으로 분기하지 않는다).
-
-자기접촉 판정은 체 셋을 싼 것부터 통과시킨다 — ① 면 상자 대 간선 상자(두 끝의 도달 구간), 면을 상자의 격자에 넣어 간선 상자가 덮는 칸만 읽는다(성능 fold 전체에서 666,653 쌍 — 한 축으로 정렬한 창은 회전 fold 의 핀들이 모든 축에서 겹쳐 간선마다 면 120개쯤을 읽었다) ② 그중 두 끝이 그 면의 평면 위에 **정확히** 놓이는 것(`side_of`; 1,583 쌍) ③ 남은 것만 정확 판정. ②는 두 끝점 이름이 함께 가진 평면이 아니다 — 이름은 그 점을 지나는 평면 셋만 담고, 간선의 직선을 평면 셋이 품는 다발에서는 그중 둘을 클래스 번호가, 곧 피연산자 순서가 고른다. 면 상자는 링 정점의 도달 구간에 호가 놓인 원 전체의 조각 상자를 더하고(`arc_box_rat` 의 원 전체 — 후보를 버리는 체라 호의 방향을 들이지 않는다), 그 원을 진술할 수 없으면 무한이다. 상자를 부풀리는 것은 선택이 아니다: 상자는 반올림된 실현 좌표에서 나오고 정확 판정 **앞에서 후보를 버리는** 데 쓰이므로, 보수적이지 않으면 진짜 접촉이 조용히 사라진다.
-
-**③은 끝점이 아니라 «열린 구간»을 묻는다.** 끝점만 보면 **관통 슬롯**을 놓친다 — 쐐기를 끝까지 뚫으면 접촉선의 두 끝이 면의 링 «위»에 놓이고(링 위 = 내부 아님), 가운데만 내부를 지나는 **현**이 된다. `combinatorics::segment_meets_face` 가 면의 **모든 링**을 그 선에 대고 읽어 교차점을 모으고, 선을 따라 정렬해 칸이 **밖/안/밖/안…** 으로 번갈아 간다는 사실로 안팎을 읽고, 열린 구간과 겹치는 「안」 칸이 있는지 본다. 갈래가 없으므로 구멍(모든 경계를 한 자루 = 짝수-홀수 — 원은 그 원통과 선이 만나는 두 점이 뒤집는다)과 여러 칸을 저절로 처리하고, **끝점 판정을 흡수한다**. 바깥이 원인 면(캡 원판)도 같은 자루로 읽는다 — 원판의 상자는 그 원의 상자다. 바깥이 다각형인 면에서 구멍 원은 다각형 경계만으로 열린 구간과 겹치는 「안」 칸이 남을 때만 읽는다 — 구멍은 재료를 빼기만 하므로 «아니오»에는 구멍이 필요 없고, 원을 묻는 일은 답에 필요 없던 곳에서 실패할 수 있다; 바깥이 원인 면은 원을 다 읽는다. 간선의 다른 평면 `w` 가 그 원통에 대해 게이트가 침묵으로 통과시킨 클래스면 원을 묻지 않는다 — 원통 전체가 그 평면 한쪽에 있으면(`Beside`) 선이 원을 비켜 가고, 다른 침묵에서는 그 클래스의 면이 모든 옆면 상자 밖에 서고 원은 한 옆면 상자 안에 있어, 원의 교점은 구간 한쪽에서 두 번 뒤집을 뿐이다. **닫힌 영역은 접점까지다**: 선이 원이나 호(그 호의 열린 범위 안, `combinatorics::arc_touch`)에 접하는 점은 뒤집지 않지만 면의 닫힌 영역이고 어느 꼭짓점도 이름 짓지 않는다 — 열린 구간 안의 접점은 그대로 참이다. 캡 평면 위에 놓여 림에 한 점으로 접하는 같은 몸의 모서리가 그 모양이다(이 판정이 접점을 읽기 전: `Ok(n=1)`, 부피 맞음, `validate` 조용). 다각형 경계에는 꼭짓점 없는 접점이 없다 — 변 안의 점을 지나는 직선은 변을 따라가거나 면 안으로 들어가고, 모서리를 지나면 그 꼭짓점이 점 팔의 몫이다. 선 `q ∩ w` 의 `q` 와 `w` 는 둘 다 이름에서 얻지 않는다: `q` 는 위 ②의 면, `w` 는 **모서리 자신의 두 면**에서 — 링이 기록한 벽은 다발에서 `q` 를 가리킬 수 있고, 이름 삼중은 4평면에서 두 번째 평면을 안 담는다(31쌍에서 확인). 호 간선은 묻지 않는다: 호는 제 원의 평면에서만 평면 면 안에 놓일 수 있고, 거기서는 그 면이 호 자신의 면과 면적으로 겹친다(병합의 몫). 호가 꼭짓점 없는 점에서 평면 면에 닿으면 그 면의 곧은 간선이 호의 캡에 접하거나(위의 접점), 면이 룰링을 따라 접하는 벽 위에 있거나(접선 판정), 축에 비스듬하거나(`ObliqueCylinderCut`), 면의 경계가 다른 원통의 호다(`CylinderPairContact`) — 뒤의 둘은 게이트가 먼저 거절하는 데 기댄다. **원통이 깎은 링**(호·룰링·관통 꼭짓점이 있는 링 — 노치, 필렛 모서리)도 추적기와 같은 읽기(`combinatorics::ClassLine`)로 읽는다: 원통 표 전체를 건네 관통 꼭짓점의 쪽은 `side_of` 의 관통 팔이 답하고, 선 위 두 노드 사이에서 떠나는 호·호의 교차 수·교차점의 이름은 그 읽기가, run 의 끝은 `pin_for` 가 답한다. 간선 자신의 두 끝도 같은 규칙이 선 위에 고정한다 — 원통이 만든 끝도 세 평면 끝처럼 묻는다(옆면이 같은 몸의 평평한 면에서 끝나는 제 룰링 간선은 그 끝이 그 평면과 캡의 관통점이고, 캡이 선을 잘라 고정한다). 고정하지 못한 끝은 `RingNaming` 으로 담긴다 — 관통 끝은 늘 고정된다: 간선의 선을 평면 다발이 품어 관통 끝을 그 선 자신의 쌍이 아닌 쌍이 이름 지으면 그 쌍의 두 평면이 다 선을 품고, 그때 원통이 고정하며 끝은 제 쌍으로 풀린다(면의 순서가 어느 쌍을 주든 같은 점). 그 링의 어느 갈래도 게이트 뒤에 있다고 볼 수 없다 — 간선의 한 면이 면 평면 위에 반대 방향으로 놓일 수 있고(구멍 위로 떠 있는 상자 바닥과 판의 윗면), 그러면 다른 면이 축에 ∥ 일 수 있어 게이트를 지나며 선이 그 링의 호를 가로지른다.
-
-**곡면 팔: 룰링 위 간선 × 같은 솔리드의 옆면.** 옆면 안에 놓일 수 있는 간선은 솔리드의 두 평면 면이 그 원통의
-룰링을 따라 만나는 것뿐이다(쐐기의 꼭짓점 간선이 같은 몸의 보어 벽을 따라 놓이는 모양). 체는 게이트의 기록 —
-그 평면 쌍의 선이 피연산자 옆면 «면» 위에 있다(`WorkingCyl::shared_of`; 결과의 옆면은 피연산자 옆면 안에 있다) —
-이라 기록이 없는 불리언은 이 팔을 건너뛰고 census 는 어느 간선도 묻지 않는다. 정확 판정
-(`combinatorics::ruling_meets_lateral`)은 열린 구간을 옆면의 호·림 높이에서 자르고 조각마다 한 점을
-`loop_parity` 에 묻는다. 선은 기록의 점(`SharedRuling::at`)이 정해 두 벽의 계수를 읽지 않고, 조각의 점은 그 선을 따라
-원통에 접하는 평면이 그 높이의 림 평면과 만나는 접점이다. 끝점 높이는 이름의 평면이 **그 룰링**과 만나는 곳에서
-읽는다(축과 만나는 곳은 기울어진 평면이면 끝점과 무관하다). 두 몸이 그 선에서 닿으면 다른 성분이라 묻지 않고, 옆면이 그 선에서 끊긴 모양(slit)은
-그 선이 옆면의 경계라 기권하며 간선 사용 수 가드가 이름 댄다. **점 팔**은 꼭짓점을 그것이 경계하지 않는
-같은 솔리드의 평면 면에 묻는다 — 같은 체(상자, 그 평면 위에 정확히)를 지나고, 면 안 또는 경계 위(`named_point_in_face`)면
-자기접촉이다: 한 부분의 모서리 끝이 몸이 다른 데서 이어진 다른 부분의 면에 닿는 모양이고, 그 면 위에 놓인 간선이 없어
-간선 팔은 묻지 않는다. 경계 위도 센다 — 배열이 두 면 중 하나만 그 점에서 나눴든 둘 다 안 나눴든 표면은 거기서 닿는다;
-대가는 생산자가 만든 T자 이음도 이렇게 읽혀 `SuspectedDefect` 대신 `Impossible` 로 이름 붙는 것(스위트 인구 0).
-점 팔은 원판을 포함한 모든 평면 면에, 이름의 종류와 무관하게 모든 꼭짓점을 묻는다 — 별칭 표가 원통면 위라고 아는 점은 관통 이름이
-대표이고(원통면 위의 세 평면 코너도), 이름의 종류로 거르면 그런 꼭짓점이 제 몸의 면을 누르는 몸이 조용히 나간다(옆면 너머 원통면 위의
-꼭짓점이 판을 누르는 몸, 잰 것). 꼭짓점이 면의 어디에 있는지는 한 함수(`combinatorics::named_point_in_face`)가 그 점이 가진
-이름의 종류 없이 한 길로 읽는다: 원은 원통이 평면 한쪽이면 밖, 원판의 원통의 관통 이름이면 이름으로 원 위, 아니면 유리수 좌표;
-링은 점의 유리수 좌표가 있으면(세 평면의 만남, 또는 근이 유리수인 관통 이름) 좌표로(평범한 링은 경계까지 — `rational_ring_side`),
-없거나 좌표가 말하지 못하면 평범한 링은 그 이름의 평면마다 면의 평면과 만나는 선을 따라 광선으로(`every_ray` — 관통 이름의 쌍이
-면의 평면을 품지 않아도 같은 규칙; 원점이 링 위면 경계 위), 혼합 링은 모름. 읽지 못하면 기권하고, 점 팔은 기권을 버린다 — 혼합
-링 위의 무리수 관통 점, 혼합 링의 좌표 읽기가 링 위·접선에서 기권한 점. 남는 공백은 옆면이 한 점으로 닿는 접촉이다(todo
-「원통면 위 꼭짓점과 옆면의 한 점 접촉」). 세 팔 모두 거절 경로에서만 끝까지 훑는다: 증인은
-맞은 간선 가운데 이름(`NodeId` 쌍) 순서의 최솟값, 간선이 없으면 맞은 꼭짓점 가운데 최솟값이고, 정확 판정을 세울 수 없는 후보의 오류는 담아 두었다가 자기접촉이 하나도 없을 때만 낸다 — 증명이
-«못 셈»을 이긴다.
+- **체와 정확 판정** — 면 상자(도달 구간; 호는 그 원 전체 — 체라 호의 방향은 읽지 않는다 — 원을 진술 못 하면 무한)를 격자(`FaceGrid`)에 넣고, 두 끝이 면 평면
+  위에 정확히 놓인 것(`side_of`)만 정확 판정한다. 측정(666,653 쌍 → 1,583)과 상자를 부풀리는 까닭은 `self_touch_reject`·`FaceGrid`
+  의 doc; 후보 평면을 끝점 이름에서 고르지 않는다(「가지 말 것」).
+- **평면 팔** — 끝점이 아니라 **열린 구간**이 면의 «안» 칸과 겹치는가(`combinatorics::segment_meets_face`): 관통 슬롯, 모든 경계를
+  한 자루로 읽는 짝-홀, 구멍 원을 읽는 때와 침묵 클래스의 원, 닫힌 영역의 접점(`arc_touch`), 원통이 깎은 링(`ClassLine`·
+  `pin_for`), 간선 끝의 고정과 `RingNaming` 은 그 doc. 선 `q ∩ w` 의 `w` 를 간선 자신의 두 면에서 얻는 까닭은 `self_touch_reject` 본문.
+- **호 간선은 묻지 않는다** — 평면 면 안의 호는 병합의 몫이고, 꼭짓점 없는 점에서 평면 면에 닿는 호는 접점·접선 판정의 몫이거나
+  게이트가 먼저 거절하는 모양(`ObliqueCylinderCut`·`CylinderPairContact`)이다. 뒤의 둘은 이 판정이 게이트에 기대는 자리다
+  (`self_touch_reject` 본문의 «Three arms» 주석).
+- **곡면 팔** — 솔리드의 두 평면 면이 제 원통의 룰링을 따라 만나는 간선을 그 옆면에 묻는다: 체는 게이트의 기록
+  (`WorkingCyl::shared_of`), 정확 판정은 `combinatorics::ruling_meets_lateral`(선은 `SharedRuling::at`), 두 몸과 slit 에서의 기권은
+  `self_touch_reject` doc.
+- **점 팔** — 꼭짓점을, 그것이 경계하지 않는 같은 솔리드의 모든 평면 면에 이름의 종류와 무관하게 묻는다. 경계 위도 세는 대가
+  (생산자의 T자 이음)와 버리는 기권은 `self_touch_reject` 본문, 읽기는 `combinatorics::named_point_in_face` 한 함수. 남는 공백은
+  todo 「원통면 위 꼭짓점과 옆면의 한 점 접촉」.
+- 증인은 이름 순서의 최솟값이고, 세울 수 없는 정확 판정의 오류는 자기접촉이 하나도 없을 때만 낸다 — 증명이 «못 셈»을 이긴다
+  (`self_touch_reject` 본문).
 
 ### 병렬 — 판정만 병렬, 순서는 고정
 
-불리언 시간의 90% 는 **면당이 아니라 평면 클래스당** 독립인 두 루프에 있고(트레이스→병합→분할, 셀→중첩→라벨→방출), 나머지 지배항은 모델의 정밀도를 **점마다** 읽는 `standard_for` 다. 셋을 `nacre-ops::par` 의 헬퍼 둘(`map_range`·`try_map_range`)로 병렬화한다(`parallel` 피처, rayon).
+`nacre-ops::par` 의 헬퍼(`map_range`·`try_map_range`, `PARALLEL_FLOOR`; `parallel` 피처, rayon)가 평면 클래스당 독립인 두 루프
+(`trace_result_faces` 의 pass A 트레이스→병합→분할, pass B 셀→중첩→라벨→방출 — 잰 불리언 시간의 90%)와, 모델의 정밀도를
+**점마다** 읽는 `standard_for` 를 나눈다.
 
-**원칙: 판정만 병렬, 변이·순서는 단일 스레드 고정.** `assemble_fuse_cut` 이 vertex handle 을 면의 first-appearance 로 배정하므로 `Store::push` 순서 = handle 정체성 = 재생 결정론이다. 그래서 모든 헬퍼가 **인덱스 순서로 수집**하고, f64/BigFloat 를 병렬 reduce 하지 않는다(항목 내부 계산은 순차). 스케줄에 의존하는 답은 한 번 틀린 답이 아니라 **매번 다른 모델**이다.
-
-- **에러는 인덱스-최초.** 순차 루프는 가장 낮은 클래스에서 반환한다. rayon 의 `collect::<Result<_,_>>()` 는 단축평가라 *어느* 에러가 살아남을지 정해지지 않으므로 쓰지 않는다 — 전부 모은 뒤 순서대로 훑는다. 규칙은 `try_map_range` 안에 **한 번만** 산다.
-- **별칭 표는 라운드 스냅샷으로.** 클래스는 4-평면 동시성에서 점의 별칭을 발견한다. 각 클래스는 **라운드 시작 시점의 표 + 자기 발견**을 보고, 라운드 끝에 클래스 순서로 흡수한다. 순차 루프(각 클래스가 그때까지의 발견을 본다)와 같은 고정점에 이르는 이유는 스케줄이 아니라 `Aliases` 의 성질이다 — 병합 대표가 **최소 원소**(순위 — 이름 자신의 함수 — 다음 이름)라 최종 분할도 대표도 병합 순서와 무관하고(표의 열쇠는 선
-표로 다시 적은 이름이고, 선을 새로 배우면 묵은 열쇠를 그 다시 적은 이름과 합친다 — 선의 이름이 대표의 순서로 가장 작은 쌍이라
-다시 적은 이름은 늘 묵은 열쇠보다 작아, 묵은 열쇠는 대표가 되지 않는다), 발견이 단조 누적이라 늦게 알면 라운드가 하나 더 들 뿐이다(4-평면 모델에서 순차·병렬 모두 2라운드·별칭 36개로 동일).
-- **정밀도는 max 리덕션이라 안전하다.** 모델의 정밀도는 점당 `trial_bound` 와, 그 최댓값을 비트로 바꾸는 `precision_for` 로 쪼개져 있다. 결합이 **최댓값**이라 결합적·정확하다 — 부분 *합*이었다면 재결합이 다른 수를 만들어 이렇게 못 나눈다.
-- **대가: 거절 입력에서 일을 더 한다.** 순차는 첫 거절에서 나머지 클래스를 안 돌고 병렬은 전부 돈다. 답은 같고 비용만 오르지만, **뒤 클래스에 잠복한 패닉이 도달 가능**해진다 — 거절 코퍼스가 그래서 관문이다.
-- **임계값은 재서 넣는다.** `map_range` 는 항목이 점 하나의 실현이라 작은 모델(면 12장 ≈ 점 36개)에서 분배가 계산보다 비싸다(527→576µs). 측정된 크로스오버로 `PARALLEL_FLOOR = 64` 다(그 위는 fold 중간 불리언이 순차로 떨어져 큰 쪽이 손해). **비용 손잡이지 답 손잡이가 아니다** — 양쪽이 같은 값을 같은 순서로 낸다는 것을 테스트가 못박는다.
-
-**범위 밖: 브라우저.** 플레이그라운드는 `default-features = false` 의 wasm 빌드라 이 이득을 못 받는다. `wasm-bindgen-rayon` + `SharedArrayBuffer` + COOP/COEP 는 배포까지 얽히는 별도 작업이다. 되돌리는 길도 코드 밖에 있다 — 그 피처 한 줄을 끄는 것이 곧 순차 동작이다.
+- **판정만 병렬, 변이·순서는 단일 스레드 고정.** `Store::push` 순서 = handle 정체성 = 재생 결정론이라 헬퍼는 인덱스 순서로 모으고
+  병렬 reduce 하지 않는다 — `par` 모듈 doc. 에러는 인덱스-최초(rayon 의 `collect::<Result<_,_>>()` 를 쓰지 않는다)이고, 거절
+  입력에서 뒤 클래스에 잠복한 패닉이 닿게 되는 대가는 `try_map_range` doc. 문턱은 재서 넣은 비용 손잡이다 — `PARALLEL_FLOOR`
+  doc 의 측정 표와 그 시험.
+- **별칭 표는 라운드 스냅샷으로.** 클래스는 라운드 시작의 표와 제 발견을 보고, 순차와 같은 고정점에 이르는 까닭은 스케줄이 아니라
+  `Aliases` 의 성질(최소 대표·단조 누적)이다 — `trace_result_faces` 본문의 라운드 주석. 별칭 36개가 두 라운드에 서는 4평면 모델을
+  한 스레드와 여럿이 같게 푸는 것은 `src/tests/suite/parallel.rs`.
+- **정밀도는 max 리덕션이라 안전하다** — `trial_bound`·`standard_for_points` 의 doc.
+- **브라우저는 순차 빌드다** — 그 까닭과 거기서 병렬에 드는 것은 `par` 모듈 doc.
 
 ### 상대가 닿을 수 없는 평면은 소식을 나르지 않는다
 
-불리언은 *"이 평면들 전부의 배열이 무엇인가"* 를 풀지만, 답하는 질문은 *"`b` 가 `a` 를 어떻게 바꾸는가"* 다. 증분 fold 에서 둘은 거의 전부만큼 다르다 — 80핀 fold 의 마지막 fuse 는 평면 클래스 **169개를 배열하는데 새 핀이 닿는 것은 27개**이고, 나머지 142개에서는 **누적 솔리드가 이미 가진 면을 처음부터 다시 유도**한다. 그 불리언 시간의 **59%** 다.
+`nacre-ops::reuse` 한 모듈이다: 상대 솔리드와 떨어져 있음이 **증명된** 평면 클래스(`class_plans` → `ClassPlan::{PassThrough, Empty}`)는
+셀 패스(pass B)를 돌지 않고 자기 솔리드의 면을 배열의 어휘로 다시 적어 낸다(`pass_through`, `VertexClasses`). `trace_result_faces` 의
+출력은 그대로 `Vec<LocalFace>` 라 하류(조립·병합·seam 표·검증기)는 이 지름길을 모른다. 왜 필요한가(80핀 fold 의 마지막 fuse 는 169
+클래스를 배열하는데 새 핀이 닿는 것은 27)와 증명이 설계의 전부인 까닭(`WorkingPlane::misses` → `nacre_judge::orient3d_filter`, `None`
+은 «배열하라» — 증명 실패는 속도만 잃고 톨러런스가 들어오지 않는다)은 `reuse` 모듈 doc 과 `orient3d_filter` doc.
 
-그래서 **상대 솔리드와 떨어져 있음이 증명된 평면 클래스**는 배열하지 않고, 자기 솔리드의 면을 **배열 엔진의 어휘(평면 클래스 삼중항)로 다시 적어** 낸다. `nacre-ops::reuse` 한 모듈이고, `trace_result_faces` 의 출력 타입은 그대로 `Vec<LocalFace>` 라 **하류(조립·동일평면 병합·seam 표·검증기)는 이 지름길을 모른다**.
-
-- **건너뛰기는 추정이 아니라 정리(theorem)다.** 분리는 `nacre-judge::orient3d_filter` 로 **증명**한다 — 오차 한계가 0 을 넘길 때만 부호를 답하고, 아니면 `None`. `None` 은 "그냥 배열하라"이고 그건 이 모듈이 없을 때의 동작이다. ⇒ **증명 실패는 속도만 잃고 답은 못 바꾸며, 톨러런스가 들어오지 않는다.**
-- **필터는 새 술어가 아니라 기존 술어의 절반이다.** `orient3d_judge` 는 f64 필터 → 공유-모션 정확 경로 → 상승의 3단이고, 앞 두 단이 정확히 여기서 원하는 것이다. 그것이 `orient3d_filter` 이고 **판정이 그것을 호출한다**. 오차 예산을 아는 곳이 둘이 되지 않으므로, 건전성은 검사할 성질이 아니라 **같은 코드라는 사실의 귀결**이다.
-- **정점만 봐도 되는 이유, 그리고 그 전제.** 평면까지의 부호거리는 아핀이라 모든 정점이 한쪽이면 **볼록껍질 전체**가 한쪽이고, 평면 다각형은 (비볼록이어도) 자기 정점의 껍질 안에 있다. **이 논증은 모든 면이 평면일 때만 성립한다.** 논증을 떠받치는 것은 **"원통 클래스가 하나라도 있으면 reuse 를 통째로 끈다"**는 가드(`trace_result_faces` 진입)다 — 그래서 reuse 가 도는 동안에는 "모든 면이 평면"이 참이다. 곡면이 있는 입력에서 이 지름길을 쓰려면 껍질이 아니라 **곡면의 경계**를 봐야 한다.
-- **그 가드는 삼중 임무다 — reuse 를 만지기 전에 읽을 것.** ① 위 논증(평면 전제)을 살려 두고, ② `pass_through` 가 **평면 클래스 단위**로만 면을 옮기므로(어떤 클래스가 PassThrough 면 원통 측면이 **조용히 사라진다**) 그것을 막고, ③ **원통 밴드가 배열의 라벨을 읽을 수 있게** 한다(원통 밴드 절 — 라벨은 *배열된* 클래스에만 존재하고, PassThrough 클래스는 셀도 라벨도 만들지 않는다). 즉 원통 인구에 reuse 를 되살리는 일은 성능 작업이 아니라 **밴드의 소속 판정을 다시 설계하는 일**이다.
-- **정점 이름은 솔리드가 이미 갖고 있다.** 배열은 정점을 정렬된 삼중 `[w, f, third]` — 그 점에서 만나는 세 평면 클래스 — 로 부른다. 솔리드의 정점은 자기 주위 면들의 클래스를 정확히 만나므로, **술어 하나 없이 같은 이름이 나온다**. 넷 이상이면 그건 동시성이고 별칭 표가 이름을 고르는 문제라 재현할 수 없으므로 그 클래스는 배열한다.
-- **규칙표에 기하가 남지 않는다.** 상대가 못 닿는 평면은 모든 점이 상대 **바깥**이므로 `keep` 이 접힌다: `Fuse` 는 양쪽 다 통과, `Cut` 은 `a` 쪽만 통과·`b` 쪽은 비움, `Common` 은 둘 다 비움. 양쪽이 다 면을 가진 클래스(동일평면 접촉)는 언제나 배열한다.
-- **두 패스를 모두 건너뛴다 — 그리고 그게 이 설계의 유일한 베팅이다.** 셀 패스(pass B)를 건너뛰는 것은 안전하다(면이 맞는지만 문제고, 그건 아래 차등 검사가 답한다). **추적 패스(pass A)까지 건너뛰면 엔진이 *아는 것*이 달라진다** — 추적되지 않은 클래스는 자기가 발견했을 동시성을 보고하지 않고, 커버리지 코퍼스에서 **별칭의 17% 가 분리된 클래스에서만** 발견된다. "그 이름을 아무도 안 쓴다"(건드려진 클래스의 교차점이면 그 클래스가 스스로 찾는다)는 **논증이지 측정이 아니므로**, 믿지 않고 검사한다.
-- **차등 검사가 영구히 남는다 — 불리언 전체 수준에서.** 디버그 빌드는 같은 불리언을 `ClassReuse::{Off, Proved}` 두 번 풀어 **같은 면을 요구**한다(`Off` 는 폴백이 아니라 기준이다). 비교는 링 회전·면 순서에 무관한 정규형으로 한다 — 배열의 링은 DCEL 순회가 시작한 곳에서, 솔리드의 링은 저장된 곳에서 시작하므로 그대로 비교하면 차이가 아닌 것을 차이로 읽는다. 클래스 단위로는 비교할 배열이 없기 때문이고, 별칭 질문에 직접 답하는 것도 이 수준뿐이다. 참조 실행은 **자기 `Notes`** 를 받는다 — 증거는 `undecided_reject` 가 읽는 부작용이라 두 번 쌓이면 안 된다.
-- **건너뛰기는 클로저 *안에서* 한다.** 범위를 줄이면 안 된다 — 인덱스 공간이 유지되어야 `try_map_range` 의 "최저 인덱스 거절 보고"와 방출 순서(=핸들)의 결정성이 지켜진다.
-
-**두 검사 모두 공허하지 않다**(음성 대조): `flip` 을 뒤집으면 커버리지 **4건**이, 분리 증명 없이 소유 클래스를 전부 통과시키면 **167건**이 즉시 실패한다.
-
-**왜 두 패스를 다 건너뛰는가 — 숫자.** pass A·B 를 모두 건너뛰면 순차 실행이 회전 fold 80 에서 **2.02배**(9.66s → 4.78s), 허브먼저 ring 80 에서 1.95배, 축정렬 fold 80 에서 1.85배 빨라진다; pass B 만 건너뛰면 9.66s → 7.69s 에 그친다. 80핀 fold 에서 클래스 방문 8800회 중 **7021회가 지름길**을 탄다. 결과는 두 피처 조합에서 비트 동일하다.
-
-**병렬은 값을 치른다, 그리고 그게 이 설계의 값이다.** 남은 일이 169개 중 **27개 클래스에 몰려서** 병렬 효율이 약 4.1배에서 2.3배로 떨어진다(회전 fold 80 병렬: 2.38s → 2.09s, pass B 만일 때의 1.98s 보다 5% 나쁘다) — 총 일은 훨씬 더 줄지만 병렬은 그 폭을 못 따라온다. **순차를 택한 이유는 브라우저가 단일 스레드이고, 이 비용을 문제 삼는 자리가 브라우저이기 때문이다.** 병렬 효율 회복은 정확성이 아니라 스케줄링 문제다.
+- 정점만 봐도 되는 까닭(평면 다각형은 제 정점의 껍질 안), 정점 이름을 솔리드에서 읽는 법(넷 이상은 동시성이라 배열한다), 규칙표가
+  접히는 모양(양쪽이 면을 가진 클래스는 늘 배열)은 `class_plans`·`VertexClasses` 의 doc.
+- **원통 클래스가 하나라도 있으면 reuse 를 통째로 끈다**(`trace_result_faces` 진입의 가드) — 껍질 논증의 평면 전제, 평면 클래스
+  단위로만 면을 옮기는 `pass_through`, 밴드가 읽는 원판 라벨이 모두 그 가드에 선다(그 자리 주석). 원통 입력에 reuse 를 되살리는
+  일은 성능 작업이 아니라 **밴드의 소속 판정**(「밴드와 라벨」)을 다시 설계하는 일이다.
+- **추적 패스(pass A)는 모든 클래스에 돈다** — `PassThrough` 가 정점에 이름을 못 붙이면 배열로 물러나고 그 배열은 그 클래스의
+  분할을 읽는다(`trace_result_faces` 본문; 건너뛰기는 「가지 말 것」). pass B 를 건너뛰는 결정은 `try_map_range` 의 클로저 안에서
+  한다 — 그 자리 주석.
+- **차등 검사가 영구히 남는다** — 디버그 빌드는 같은 불리언을 `ClassReuse::{Off, Proved}` 로 두 번 풀어 같은 면을 요구한다(`Off` 는
+  폴백이 아니라 기준이다; 정규형 `reuse::canonical`, 참조 실행의 제 `Notes`) — `arrangement::boolean` 본문과 `ClassReuse`·`canonical`
+  의 doc. 음성 대조(잰 것): 분리 증명 없이 소유 클래스를 전부 통과시키면 커버리지 167건이 실패한다.
+- **잰 값.** 회전 fold 80 순차 9.66 → 7.48 s(1.29×), 병렬 2.38 → 1.97 s(1.21×). 80핀 fold 에서 클래스 방문 8800회 중 7021회가
+  지름길을 탄다.
 
 ## 원통 — 밴드·게이트·차트·룰링 (`nacre-ops::{bands, arrangement::cyl_chart}`)
 
@@ -2622,6 +2631,7 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | push 하는 쪽(ops)이 «topo 가 진실에서 답하나»를 push 전에 미리 판정하기 | 같은 이름 계산을 두 번 하고(사분각 회전 2000번 build 122 → 147 ms) 그 판정의 철자가 둘이 된다. topo 의 유도가 자기 길로 못 낼 때만 push 하는 쪽에 묻는다(간선은 `EdgeGiven` 닫힘, 곡면은 push 한 뒤 올리기) | 첫 시안, 되돌림(`784a35f2` 본문) |
 | 링 감김(`loop_winding`)에서 링 평면이 고정하는 축을 사전식 비교에서 건너뛰기 | 링의 모든 노드가 그 평면 위라 그 축의 비교는 늘 0 이지만, 판정자가 공유 평면 항등식을 들면 더 주는 것이 없다 — perf.rs 순차 명령어 항등식만 −10.0%, 항등식 + 건너뛰기 −9.6%, 건너뛰기만 −3.9%. 0 은 묻는 쪽이 아니라 판정자가 안다(링 평면 밖의 공유 벽도 같은 0 을 낸다) | 실험, 되돌림 |
 | `plane_pair_dir_sign` 에 «같은 사슬의 평행한 두 평면»(같은 핀의 마주 보는 두 벽) 항등식 | 참이고 불린다(기울인 핀 24 fold 의 «일치» 782 → 606, perf 에 남은 «일치»의 27%) — 그러나 질문마다 두면 이름 정수 외적이 perf.rs 순차 명령어를 +5.8%(축정렬 fold 80 1.02 → 1.79 s) 늘리고, 상승 직전에만 두면 기준선끼리의 흔들림(0.6%) 안이다. 남은 «일치»는 수는 많아도 시간을 거의 안 쓴다 | 실험, 되돌림 |
+| 상대가 닿을 수 없다고 증명된 클래스의 추적 패스(pass A)까지 건너뛰기 | 순차는 더 빨랐다 — 회전 fold 80 9.66 → 4.78 s(2.02배; pass B 만이면 7.69 s), 허브먼저 ring 80 1.95배, 축정렬 fold 80 1.85배. 그러나 건전하지 않다: pass B 의 `PassThrough` 가 네 평면이 모이는 정점에 이름을 못 붙이면 배열로 물러나는데, 그 배열이 읽는 `splits[wc]` 가 비어 클래스의 면이 사라진다. 상대가 못 닿는 자리에 동시성이 있는 모델이 코퍼스에 없어 차등 검사(`ClassReuse::{Off, Proved}`)도 울릴 수 없었다. 클래스 단위 차등(`flip` 을 뒤집으면 커버리지 4건이 실패했다)은 추적하지 않은 클래스에 비교할 배열이 없어 불리언 전체 차등으로 올라갔다(census 130 행은 두 피처 조합에서 비트 동일). 남은 일이 169 클래스 중 27 에 몰려 병렬은 5% 나빠졌다(pass B 만일 때 1.98 s → 2.09 s, 효율은 pass B 만일 때 약 3.9배에서 2.3배로). pass A 는 모든 클래스에 돈다(`trace_result_faces`) | `059ef1c1`, 되돌림 `496ec741` |
 
 ### 정밀도·판정
 

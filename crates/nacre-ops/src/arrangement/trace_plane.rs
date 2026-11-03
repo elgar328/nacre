@@ -508,12 +508,12 @@ fn trace_transversal_face(
 /// is `−t·d`, so material points along `n_out(fp) × (−t·d)`. Since `fp` is coplanar with its class
 /// root, `n_out(fp) = σ·n_s(fc)`, and the triple product collapses to
 /// `−t·σ·(1 − (n_s(fc)·n_s(wc))²)` — whose bracket is positive because the two planes are not
-/// parallel. Hence `body_above = (t·σ < 0)`. Note `orient_sign(wc)` **cancels**: the ordering
-/// direction and the label frame are defined by the same stored normal.
+/// parallel. Hence `body_above = (t·σ < 0)`. Note `planes[wc].frame_sign` **cancels**: the
+/// ordering direction and the label frame are defined by the same stored normal.
 ///
-/// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
-/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`]
-/// relies on. Everything else here is exact.
+/// `σ` is the class's `frame_sign` times the judged facing of `fp` against `fc`
+/// ([`crate::planes::face_facing_noted`] — the two are one plane class, so it is `±1`). Everything
+/// here is exact.
 #[allow(clippy::too_many_arguments)]
 fn run_body_above(
     jd: &Judge<'_, WorkingPlane>,

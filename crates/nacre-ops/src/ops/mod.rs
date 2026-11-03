@@ -247,29 +247,13 @@ pub enum OpError {
     /// where a straight wall meets an arc wall, or a corner where two arcs meet. A datum through
     /// vertices is built from the planes that meet at each one, and these have none to give.
     VertexNotThreePlane,
-    /// **The named vertices' carriers do not all share one motion**, so no single frame holds a
-    /// rational coordinate for them: reaching the world means realizing a rotation, and cos/sin
-    /// are irrational.
+    /// A datum named a vertex that lies on a **nameless datum**: one of the vertex's three planes
+    /// has no exact name, so the datum asked for would be judged on a plane that is itself judged.
     ///
-    /// This is not a caller mistake. The dominant shape is not two solids combined by hand but a
-    /// **single boolean result**: a cut between a turned operand and a still one leaves corners
-    /// where an unmoved wall meets two turned ones, and measured, 12 of that solid's 20 vertices
-    /// are in that state (`tests/instruments/point_width.rs`,
-    /// `a_datum_on_straddling_carriers_has_no_name`).
-    ///
-    /// **What opens this is not the judging layer.** The homogeneous lift
-    /// does not open the population. Such
-    /// a plane has **no exact name**, and from there:
-    ///
-    /// ```text
-    /// no name → frame_chain declines → no SketchFrame → never a base cap → never in a plane table
-    /// ```
-    ///
-    /// so it never gets as far as being judged. What would open it is a **frame for a nameless
-    /// plane** — a realization that takes the plane's coefficients as intervals at a precision
-    /// rather than as exact rationals or `BigInt`s, which is what `MoveNode::Frame` and
-    /// `FrameWide` both require today;
-    /// `a_plane_with_no_name_cannot_host_a_sketch` runs the chain.
+    /// Frames alone do not refuse. Three vertices exact in different frames, or a vertex whose own
+    /// planes lie in two frames (a cut between a turned operand and a still one leaves such
+    /// corners), give a datum with no name whose frame is judged from the vertices' planes. A
+    /// vertex on such a datum is one judged level deeper, and that depth is refused here.
     ///
     /// It is named separately so that "how much does this cost us today" stays countable.
     VerticesInMixedFrames,
@@ -372,7 +356,7 @@ impl std::fmt::Display for OpError {
                 f.write_str("the datum names a vertex that is not a three-plane point")
             }
             Self::VerticesInMixedFrames => {
-                f.write_str("the datum's vertices' carriers do not share one motion")
+                f.write_str("the datum names a vertex on a nameless datum")
             }
             Self::ThroughFrameUndecided => f.write_str("the datum's frame could not be decided"),
             Self::LogHandleOutOfRange { cell, index } => {
@@ -431,12 +415,14 @@ pub enum DatumDef {
     /// **The order is the direction.** The three are sorted before they are stored — the same
     /// vertices are the same plane in any order — but the caller's order fixes a normal by the
     /// right-hand rule, and `flip` is measured against it exactly as it is for a stated plane.
-    /// Reversing two of them returns *the same handle with the opposite frame*, which is the only
-    /// way a caller can choose a side (`dist` is positive-only).
+    /// Reversing two of them returns *the same handle with the opposite frame*: the order chooses
+    /// which way the frame's `ŵ` faces, and the sign of a later `dist` chooses the side
+    /// ([`Operation::Extrude`]).
     ///
     /// Rejects by cause rather than by one blanket failure, because the causes have different
-    /// futures: [`OpError::VerticesInMixedFrames`] waits on a frame for a nameless plane (see
-    /// there), and the rest are the caller's. (Width is not a cause:
+    /// futures: [`OpError::VerticesInMixedFrames`] waits on judging a datum through a vertex of a
+    /// nameless datum (see there), [`OpError::ThroughFrameUndecided`] on the judged frame's fixed
+    /// precision, and the rest are the caller's. (Width is not a cause:
     /// a meet wider than `Rat` names its plane through `plane_name_from_meets`.)
     ThroughVertices([Handle<Vertex>; 3]),
     /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame

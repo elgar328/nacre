@@ -1633,15 +1633,15 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     );
 }
 
-/// **The mixed-frame cause that is not the caller's doing — one solid, one vertex, carriers in
-/// two frames.**
+/// **The straddling vertex the kernel itself makes — one solid, one vertex, carriers in two
+/// frames — is accepted.**
 ///
-/// `a_datum_through_vertices_refuses_by_cause` fires `VerticesInMixedFrames` by combining two
-/// *solids*, which a caller chooses to do. The population that actually dominates is the other one:
-/// a boolean between a turned operand and a still one hands back **one** solid whose corners are
-/// the meeting of an unmoved wall and two turned ones, so a single vertex straddles. Measured, **8
-/// of that solid's 20 vertices** are in that state (`tests/instruments/point_width.rs`); this is
-/// its fixture, beside the caller-error shape that fires the same label.
+/// `a_datum_through_vertices_refuses_by_cause` builds its straddler by fusing two *solids* turned
+/// about different axes, which a caller chooses to do. The population that actually dominates is
+/// the other one: a boolean between a turned operand and a still one hands back **one** solid
+/// whose corners are the meeting of an unmoved wall and two turned ones, so a single vertex
+/// straddles. Measured, **8 of that solid's 20 vertices** are in that state
+/// (`tests/instruments/point_width.rs`); this is its fixture.
 ///
 /// **The control is the minimal difference**: three vertices that solve, and the same triple with
 /// one of them swapped for a straddler. Nothing else about the model changes, so the swap is the

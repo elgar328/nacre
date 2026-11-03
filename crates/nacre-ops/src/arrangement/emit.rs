@@ -6,7 +6,7 @@ use super::*;
 /// (`winding == -1`) — exactly the `LocalFace.inner` contract ("kept material on the loop's left"),
 /// so both are emitted verbatim; `flip` alone carries the chamber and `assemble_fuse_cut` reverses
 /// outer and inner together, making the result normal point out of the kept solid:
-/// `flip = keep_above == (orient_sign(wc) > 0)`.
+/// `flip = keep_above == (planes[wc].frame_sign > 0)`.
 ///
 /// Only `+1` cells are hosts — a `-1` cell is either a hole (emitted as some host's inner ring) or
 /// the void root — so `-1` cells are skipped, never emitted as their own face.

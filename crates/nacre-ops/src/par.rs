@@ -17,6 +17,12 @@
 //! (`Arc<OnceLock>` vs `Rc<OnceCell>`) — which is why the two bodies below need different
 //! bounds, and why **both feature combinations have to be built**. `cargo` will not check
 //! the one you are not using.
+//!
+//! **The browser runs the serial build.** The playground's wasm crate depends on `nacre` with
+//! `default-features = false`, so `parallel` is off there and these helpers run on one thread.
+//! Threads in the browser need `wasm-bindgen-rayon`, `SharedArrayBuffer` and COOP/COEP headers,
+//! which reach into how the app is served. Going back is the same switch: with the feature off the
+//! boolean is the serial build.
 
 // The parallel build calls rayon here and nowhere else (clippy.toml); the serial one calls none, so
 // the expectation holds where rayon is.

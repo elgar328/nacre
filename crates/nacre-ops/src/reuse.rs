@@ -4,6 +4,8 @@
 //! answering is "how does `b` change `a`?". Those differ by everything the second operand cannot
 //! touch — and in an incremental fold that is nearly all of it: folding eighty fins onto a hub,
 //! the eightieth boolean arranges 169 plane classes of which the incoming fin reaches 27.
+//! Arranged anyway ([`ClassReuse::Off`]), the 142 it does not reach are 59% of that boolean's
+//! time (measured).
 //!
 //! So this module answers the other 142 without arranging them. A class whose plane is **proved**
 //! disjoint from the other solid contributes exactly the faces its own solid already has there,
@@ -33,9 +35,10 @@ use std::collections::HashMap;
 /// Whether a boolean may take the shortcut this module exists for.
 ///
 /// **`Off` is not a fallback, it is the reference.** Debug builds run the boolean both ways and
-/// require the same answer, which is the only check that can see the one thing skipping the trace
-/// pass changes: the alias table. Keeping the switch permanent means the shortcut stays falsifiable
-/// after the engine around it moves on.
+/// require the same plane faces. Both routes trace every class, so what the comparison sees is
+/// exactly what the shortcut changes: the faces of a class it restates or empties instead of
+/// arranging. Keeping the switch permanent means the shortcut stays falsifiable after the engine
+/// around it moves on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClassReuse {
     Off,

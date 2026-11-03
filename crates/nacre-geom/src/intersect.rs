@@ -154,10 +154,11 @@ pub enum RingSide {
 /// the ray from being counted twice.
 ///
 /// The ring is assumed **simple** (no self-intersections); for such a ring parity and winding
-/// agree, so this needs no fill rule. A self-intersecting ring is out of contract, and the
-/// callers enforce that rather than assume it: `sketch::from_rings` runs
-/// [`ring_self_intersection`] over every ring before it classifies containment, and
-/// `Profile2d::check` does the same before an operation consumes a profile.
+/// agree, so this needs no fill rule. A self-intersecting ring is out of contract and nothing here
+/// checks it — run [`ring_self_intersection`] first. This is the `f64` twin of
+/// [`point_in_ring_2d_rat`], held to the same answers on integer coordinates by
+/// `the_rational_walkers_answer_what_the_f64_walkers_do`; a sketch or profile is judged on its
+/// rational truth instead ([`crate::mixed::point_in_mixed_ring`]).
 pub fn point_in_ring_2d(p: Point2, ring: &[Point2]) -> RingSide {
     let n = ring.len();
     if n < 3 {
@@ -348,9 +349,10 @@ fn on_segment_2d(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> bool {
 //
 // A profile's truth is the rational the author's decimal spelled (`Rat::from_decimal`), and the
 // f64 realization can carry a *different sign*: three points collinear in decimal land a hair off
-// the line in binary. `Profile2d::check` and `sketch::from_rings` therefore judge the truth, and
-// these are the predicates they do it with — verbatim ports of the f64 versions above (which stay:
-// tessellation and the f64 fallback path still consume them), with `orient2d` swapped for the
+// the line in binary. `Profile2d::check` and `sketch::from_rings` therefore judge the truth, through
+// `mixed`'s arc-bearing ports of these; the twins serve `combinatorics::in_faces` and are what
+// `mixed` is held to — verbatim ports of the f64 versions above (which stay
+// as the side the integer-lattice proptest compares these against), with `orient2d` swapped for the
 // total `nacre_exact::orient2d_rat` and f64 comparisons for `Rat`'s exact `Ord`. Everything
 // else in the originals is comparison, min/max, and array equality, so nothing changes meaning.
 // ---------------------------------------------------------------------------

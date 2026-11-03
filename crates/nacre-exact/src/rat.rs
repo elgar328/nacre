@@ -100,6 +100,10 @@ impl Rat {
     /// significant digits — `1e-22` below; a short decimal reaches down to `1e-38`.
     /// CAD dimensions live nowhere near either edge.
     ///
+    /// It recovers what was *written*: a value a script computed in `f64` is already another
+    /// number — `1.1 * 7.0` arrives as `7.700000000000001`, and its shortest decimal is that, not
+    /// `7.7`. Pass the literal, or compute exactly in `Rat`.
+    ///
     /// [`try_from_f64`]: Rat::try_from_f64
     pub fn from_decimal(x: f64) -> Option<Self> {
         if !x.is_finite() {

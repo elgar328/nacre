@@ -134,8 +134,9 @@ struct Tally {
     unnamed_carrier: usize,
     /// A carrier's name is `Wide` — invisible to `three_planes_rat`, solvable by the twin.
     wide_carrier: usize,
-    /// The three carriers do not share one motion — a **structural** limit of the exact road,
-    /// nothing to do with width. Counted apart so it cannot be read as "does not fit".
+    /// The door places the vertex in no one frame and its carriers do not all share one motion —
+    /// a straddle: a **structural** limit of the exact road, nothing to do with width. Counted
+    /// apart so it cannot be read as "does not fit".
     mixed_motion: usize,
     /// `three_planes_big` declined: the determinant is zero, no unique point.
     singular: usize,
@@ -917,9 +918,9 @@ fn how_wide_a_discovered_coordinate_is() {
 
 /// **How much of the datum vocabulary the frame wall costs — in the unit a caller picks.**
 ///
-/// The vertex-level number (12 of 20 mixed on `boolean_rotated`) cannot answer this: a datum needs
-/// **three** vertices and `through_points_rat`'s two conditions differ in kind — carriers sharing
-/// one motion is *per vertex*, the three vertices sharing one frame is *pairwise*. So the
+/// The vertex-level number (8 of 20 straddling on `boolean_rotated`) cannot answer this: a datum
+/// needs **three** vertices and `through_points_rat`'s two conditions differ in kind — carriers
+/// sharing one motion is *per vertex*, the three vertices sharing one frame is *pairwise*. So the
 /// all-pure combination count is only an upper bound, and `pure_frames` is what says whether it is
 /// reached.
 ///

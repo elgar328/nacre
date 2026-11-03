@@ -195,10 +195,10 @@ impl Census {
     }
 }
 
-// The crate denies printing outside tests. This is the one exception, and it is the whole point of
-// the `reject-trace` feature: an in-memory table dies with its process, and the population worth
-// sweeping is spread over ~30 test binaries. Off by default, so a product build compiles no
-// printing at all.
+// The crate denies printing outside tests. This is an exception behind a feature, as
+// `tangency-trace`'s lines in `planes::cyl_gate` are, and printing is the whole point of
+// `reject-trace`: an in-memory table dies with its process, and the population worth sweeping is
+// spread over ~30 test binaries. Off by default, so a product build compiles no printing at all.
 #[cfg(feature = "reject-trace")]
 #[allow(clippy::print_stderr)]
 fn trace_raise(reason: RejectReason, site: &RaiseSite) {

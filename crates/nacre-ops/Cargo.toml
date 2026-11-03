@@ -39,9 +39,10 @@ num-bigint = "0.4"
 default = ["parallel"]
 parallel = ["dep:rayon", "nacre-judge/parallel"]
 # Print every reject as it is raised and as it surfaces (`src/reject_census.rs`). Off by default,
-# so a product build compiles no printing at all — this is the one exception to the crate's
-# `deny(clippy::print_stderr)`. It exists because the in-memory census dies with its process and
-# the population worth sweeping is spread over ~30 test binaries:
+# so a product build compiles no printing at all — like `tangency-trace` below, it is an exception
+# to the crate's `deny(clippy::print_stderr)` that only its own feature turns on. It exists
+# because the in-memory census dies with its process and the population worth sweeping is spread
+# over ~30 test binaries:
 #   cargo test --workspace --features nacre-ops/reject-trace -- --nocapture 2>&1 | grep '^RAISE '
 # It prints only where the census exists — `test-util`, which every test build has through the
 # self dev-dependency below; it does not turn `test-util` on itself, so it never opens the test

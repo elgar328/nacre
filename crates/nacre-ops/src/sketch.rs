@@ -4,8 +4,7 @@
 //! islands inside holes is **not** declared by the author but decided from containment, the way
 //! every CAD sketcher does it. The classification itself (is this point inside that ring? do two
 //! rings meet?) is a robustness-sensitive sign question and lives in `nacre-geom` (the design
-//! isolates that — [`nacre_geom::intersect`] for polygons, [`nacre_geom::mixed`] once arcs are
-//! in); what is here is the policy — depth parity — and the doors.
+//! isolates that — [`nacre_geom::mixed`], polygons and arcs alike); what is here is the policy — depth parity — and the doors.
 //!
 //! **The door is the ring, not the pen.** The kernel takes what every way of drawing ends in — an
 //! ordered ring of exact vertices with the step leaving each ([`Ring2d::new`]) — and knows nothing
@@ -18,6 +17,10 @@
 //! quarter-turn arc is the start rotated in `Rat`, never an f64 that was rounded on the way. The
 //! f64 doors take what the author *wrote* (their decimals become the rationals they spell); the
 //! `Rat` doors take what a caller computed exactly.
+//!
+//! **No angle in the vocabulary.** An arc's ends say more than its angle: an arc of an
+//! irrational number of degrees is exact when its ends are rational (a `3-4-5` lens), and a quarter
+//! turn — the one angle a door turns for the caller ([`arc_turns`]) — is computed into its end.
 
 use crate::{Profile2d, Ring2d};
 use nacre_exact::Rat;
