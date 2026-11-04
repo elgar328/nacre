@@ -152,8 +152,8 @@ impl ChartCorner {
 /// cells of the crossing census were exactly that abstention exhausting every probe.
 ///
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
-/// across the ray, at an arc root inside the arc's closed span), a tangent ray, a horizontal
-/// tangent at an arc end the root lands on, checked-`Rat` overflow — and its one reader takes it as
+/// across the ray, at an arc root inside the arc's closed span), a tangent ray, checked-`Rat`
+/// overflow, among them — and its one reader takes it as
 /// one: the coordinate reading of a ring ([`rational_ring_side`]) as what it cannot say,
 /// [`Said::Abstain`]. A root
 /// on the seam is none of them: the seam point is the cyclic order's first ([`arc_span`]).
@@ -357,7 +357,10 @@ pub(crate) fn point_in_mixed_ring(
                     // With the end on the ray and right of the probe, that sign is the virtual
                     // tangent step's `side` too (`t × (q − E) = ty·(Ex − qx)`), so the call is
                     // `ray_step_crossing(Zero, ty, ty)` and no second cross product is spelled.
-                    // A tangent along the ray (`ts` zero) is the genuine second-order tie.
+                    // A `Pair` root is a simple root, so the ray crosses the section there and `ts`
+                    // is not zero — a ray tangent to the section is a `Tangent` meet, abstained on
+                    // above; the `?` guards that argument, and takes overflow and a class along the
+                    // axis too.
                     let departs_across = |end: &(MeetLine, QuadVal), ccw: bool| -> Option<bool> {
                         let ts = nacre_exact::quad::ccw_tangent_side(
                             &[wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]],

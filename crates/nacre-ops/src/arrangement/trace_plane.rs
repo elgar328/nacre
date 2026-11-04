@@ -303,11 +303,9 @@ fn trace_transversal_face(
                 declined = Some(DeclineKind::AllOnPlane);
                 break;
             }
-            // Not "a corner a cylinder made" — the walk reads those. This is the
-            // walk's own `None`: a side it could not form exactly, an arc between two on-line
-            // nodes tangent to the class at its end, or an arc whose crossings could not be
-            // counted (`arc_crossings`' `None`, or a count its ends make impossible). Measured
-            // 0 raises across the suite; the name is kept because the walk can still say it.
+            // Not "a corner a cylinder made" — the walk reads those. This is the walk's own
+            // refusal, whose causes `RingWalk::Unnameable` lists. Measured 0 raises across the
+            // suite; the name is kept because the walk can still say it.
             combinatorics::RingWalk::Unnameable => {
                 declined = Some(DeclineKind::PierceNode);
                 break;

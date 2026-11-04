@@ -500,7 +500,10 @@ pub(crate) fn arc_departure(
     let def = &cyls.get(cyl)?.def;
     // A class with no world statement carries no oblique section — the gate records one only on
     // a named class (`planes::CylRecord::Sections`) — so an arc on it is a circle and its normal is
-    // the axis: the answer the circle's own formula gives.
+    // the axis: the answer the circle's own formula gives. It reaches its end only for an arc that
+    // leaves across the line (leaving along it needs the centre, which needs the class's plane);
+    // over the suite, the census, the ignored sweep and nacre-kit no call with an exact meet in hand
+    // comes here on such a class.
     let np = jd
         .world_rat(p)
         .map_or_else(|| def.dir(), |w| [w[0], w[1], w[2]]);

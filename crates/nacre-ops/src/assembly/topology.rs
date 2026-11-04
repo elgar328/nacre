@@ -2,7 +2,7 @@ use super::*;
 /// The first topological defect in a boolean's output, checked **per solid** so one bad piece is
 /// never masked by another (a sum-of-all Euler parity misses two odd-χ solids; a global count
 /// misses much), or `None` if every result solid is a valid closed 2-manifold. In one pass per
-/// solid it builds the reverse-index maps (`edge_uses`, `vertex_edges`) and the `V/E/F/L/S` counts,
+/// solid it builds each edge's using faces (`edge_uses`), the vertex set and the `V/E/F/L/S` counts,
 /// then, most-specific first:
 ///  1. a **non-manifold vertex** (pinch) — [`nacre_topo::nonmanifold_vertices`]; sound for any
 ///     number of pinches (unlike Euler parity, which a second pinch flips back to even);
@@ -23,9 +23,8 @@ pub(crate) fn check_result_topology(
         let solid = model.solid(sh);
         let mut shells: HashSet<Handle<Shell>> = HashSet::new();
         let mut faces: HashSet<Handle<Face>> = HashSet::new();
-        let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
-        let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
-        let mut edges_seen: HashSet<Handle<Edge>> = HashSet::new();
+        let mut edge_uses: HashMap<Handle<Edge>, Vec<Handle<Face>>> = HashMap::new();
+        let mut vertices: HashSet<Handle<Vertex>> = HashSet::new();
         let mut inner_loops: i64 = 0;
         for &shell_h in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
             if !shells.insert(shell_h) {
@@ -39,12 +38,8 @@ pub(crate) fn check_result_topology(
                 inner_loops += face.inner.len() as i64;
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
-                        edge_uses.entry(he.edge).or_default().push((fh, he.forward));
-                        if edges_seen.insert(he.edge) {
-                            let [va, vb] = model.edge(he.edge).vertices;
-                            vertex_edges.entry(va).or_default().push(he.edge);
-                            vertex_edges.entry(vb).or_default().push(he.edge);
-                        }
+                        edge_uses.entry(he.edge).or_default().push(fh);
+                        vertices.extend(model.edge(he.edge).vertices);
                     }
                 }
             }
@@ -95,7 +90,7 @@ pub(crate) fn check_result_topology(
         // An edge with other than two uses is the shell guard's to name.
         let mut disagreeing: Vec<Handle<Edge>> = Vec::new();
         for (&eh, uses) in &edge_uses {
-            let [(f0, _), (f1, _)] = uses[..] else {
+            let [f0, f1] = uses[..] else {
                 continue;
             };
             let stated = model.edge(eh).surfaces;
@@ -120,7 +115,7 @@ pub(crate) fn check_result_topology(
             ));
         }
         let (v, e, f) = (
-            vertex_edges.len() as i64,
+            vertices.len() as i64,
             edge_uses.len() as i64,
             faces.len() as i64,
         );

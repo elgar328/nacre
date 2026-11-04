@@ -1442,8 +1442,8 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
             on_boundary > 0,
             "the grid meets the boundary: {on_boundary}"
         );
-        // Recorded rather than bounded: every abstention here is the tangent ray (the rows
-        // `y = 15, 25` graze the circle — measured: 160 of 160, no corner among
+        // Recorded rather than bounded: every abstention here is the tangent ray (the columns
+        // `x = 35, 45` graze the circle — measured: 160 of 160, no corner among
         // them), and its count is a property of this grid, not of the rule.
         assert!(abstained > 0, "abstentions: {abstained}");
         assert!(
