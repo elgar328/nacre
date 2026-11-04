@@ -226,8 +226,8 @@ impl Ring {
     /// carries, in the engine's own vocabulary.
     ///
     /// A wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the class
-    /// table's def - the same clone convention every producer follows; its `plane` stays behind,
-    /// the predicates reading the circle off the cylinder and the ring's own plane; a
+    /// table's def - the same clone convention every producer follows - and its `plane`, which
+    /// gives the arc its height on a lateral's chart; a
     /// `Wall::Ruling`'s, the plane its `side` was measured against, is carried on), a pierce end
     /// on a plane edge by `pin_for` (its cylinder when both planes of its pair hold the edge's
     /// line) and elsewhere by its cylinder, and a three-plane end by `pin_on_line` - so a mixed
@@ -285,10 +285,11 @@ impl Ring {
                 let wall = &self.walls[i];
                 let carrier = match wall {
                     Wall::Plane(c) => combinatorics::Carrier::plane(*c),
-                    Wall::Arc { cyl, ccw, .. } => {
+                    Wall::Arc { cyl, ccw, plane } => {
                         combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
                             cyl: *cyl,
                             def: def_of(*cyl)?,
+                            plane: *plane,
                             ccw: *ccw,
                         }))
                     }

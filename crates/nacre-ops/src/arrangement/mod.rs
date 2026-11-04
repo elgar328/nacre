@@ -293,6 +293,7 @@ impl Piece {
                 combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
                     cyl: *cyl,
                     def: cyls[*cyl].def.clone(),
+                    plane: wc,
                     ccw: forward,
                 }))
             }

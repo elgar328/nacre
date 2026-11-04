@@ -702,12 +702,14 @@ fn yz_prism_face(tri: [(f64, f64); 3]) -> (Model, Handle<Face>, [Rat; 4]) {
     (m, face, name)
 }
 
-/// **A face meeting the line at a single corner does not touch it.** The line `x = 0, y = 1` along
-/// `z`, read over `0 < z < 2` on the plane `x = 0`: a triangle with one corner on it at `z = 1.75`
-/// and the rest at `y > 1` meets it at that point alone — no positive length, so it does not touch
-/// (`LineContact::touches`); a triangle with an edge on it over `1 ≤ z ≤ 1.5` touches there, along
-/// its boundary, never through its interior. The corner's other two steps both cross the line at
-/// `1.75` under the reading that counts a piece on it as above, so the parity stays even.
+/// **A face meeting the line at a single corner does not touch it, and the contact is where the
+/// face meets the line.** The line `x = 0, y = 1` along `z`, read over `0 < z < 2` on the plane `x
+/// = 0`: a triangle with one corner on it at `z = 1.75` and the rest at `y > 1` meets it at that
+/// point alone — no positive length, so it does not touch (`LineContact::touches`) and its contact
+/// is empty; a triangle with an edge on it over `1 ≤ z ≤ 1.5` touches there, along its boundary,
+/// never through its interior, and its contact is that edge; a triangle the line crosses runs
+/// through it over `0.5 ≤ z ≤ 1.5`, its contact. The corner's other two steps both cross the line
+/// at `1.75` under the reading that counts a piece on it as above, so the parity stays even.
 #[test]
 fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
@@ -724,7 +726,7 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
             }),
             "the corner (0, {y}, {zz})"
         );
-        line_runs_through_face(
+        let c = line_runs_through_face(
             &m,
             m.face(face),
             &coeffs,
@@ -732,22 +734,25 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
             &[z(0), z(0), z(1)],
             [z(0), z(2)],
         )
+        .expect("the face reads");
+        let contact: Vec<[Rat; 2]> = c
+            .contact
+            .iter()
+            .map(|p| p.map(|x| x.as_rat().expect("a rational end")))
+            .collect();
+        (c.touches, c.runs_through, c.contact_at, contact)
     };
     assert_eq!(
         read([(1.0, 1.75), (2.5, 1.2), (2.5, 2.5)]),
-        Some(LineContact {
-            touches: false,
-            runs_through: false,
-            contact_at: None,
-        })
+        (false, false, None, vec![])
     );
     assert_eq!(
         read([(1.0, 1.0), (1.0, 1.5), (2.5, 1.25)]),
-        Some(LineContact {
-            touches: true,
-            runs_through: false,
-            contact_at: Some(r(5, 4)),
-        })
+        (true, false, Some(r(5, 4)), vec![[z(1), r(3, 2)]])
+    );
+    assert_eq!(
+        read([(1.0, 1.5), (0.5, 0.5), (1.5, 0.5)]),
+        (true, true, Some(z(1)), vec![[r(1, 2), r(3, 2)]])
     );
 }
 

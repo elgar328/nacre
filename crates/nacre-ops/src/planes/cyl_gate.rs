@@ -1073,6 +1073,16 @@ pub(crate) struct Tangency {
     /// open, and a face flush with the cap planes still has its interior inside it (the frozen
     /// `bore-slab` shape).
     pub(crate) runs_through: bool,
+    /// **Where on the line the wall face meets this lateral face** — the closed pieces `[lo, hi]`,
+    /// in the axis parameter ([`axis_param_of_plane`]'s scale), over which the closed wall face
+    /// meets the line within the lateral's open stretches in positive length, through its interior
+    /// or along its boundary ([`line_runs_through_face`]); a row whose stretches could not be read
+    /// claims every stretch, as `runs_through` reads it. This is the ground the row speaks for:
+    /// a point of the lateral the self-touch check finds on the line is this verdict's question
+    /// exactly there (`assembly::self_touch_reject`'s tangent hand-off), and anywhere else on the
+    /// line — a corner meeting it at one point, a face reaching it beyond the lateral's span — no
+    /// row speaks, and the contact is a point's.
+    pub(crate) contact: Vec<[nacre_exact::QuadVal; 2]>,
     /// **A face on another plane class holding this tangent line touches it** over this lateral
     /// face's stretches of the line ([`line_runs_through_face`] on that class's plane; a face or a
     /// stretch that could not be read touches). Such a plane is a *secant*: substituting
@@ -1416,18 +1426,29 @@ fn tangency_rows(
                 v.iter()
                     .find(|(_, c)| c.runs_through)
                     .or_else(|| v.iter().find(|(_, c)| c.touches))
-                    .copied()
+                    .map(|(sp, c)| (*sp, c.contact_at))
             });
             let contact = match &per_stretch {
                 Some(v) => LineContact {
                     touches: v.iter().any(|(_, c)| c.touches),
                     runs_through: v.iter().any(|(_, c)| c.runs_through),
-                    contact_at: chosen.and_then(|(_, c)| c.contact_at),
+                    contact_at: chosen.and_then(|(_, at)| at),
+                    contact: v
+                        .iter()
+                        .flat_map(|(_, c)| c.contact.iter().copied())
+                        .collect(),
                 },
+                // Read as a contact through the interior — over every stretch of this lateral, the
+                // ground that reading claims.
                 None => LineContact {
                     touches: true,
                     runs_through: true,
                     contact_at: None,
+                    contact: stretches
+                        .iter()
+                        .flatten()
+                        .map(|sp| sp.map(nacre_exact::QuadVal::from_rat))
+                        .collect(),
                 },
             };
             if !contact.touches {
@@ -1478,6 +1499,7 @@ fn tangency_rows(
                 lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side,
                 cyl_orient: cf.orient_sign,
                 runs_through: contact.runs_through,
+                contact: contact.contact,
                 line_on_another_face: *held,
                 undecided,
                 across: across.clone(),
@@ -1497,7 +1519,7 @@ fn tangency_rows(
 
 /// **What the tangent line meets of one wall face, over one lateral face's axis span** — the
 /// answer [`line_runs_through_face`] gives when it could read the face.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct LineContact {
     /// The closed face meets the open stretch of the line in positive length — through its
     /// interior or along its boundary. Without this the face touches nothing a row could speak of.
@@ -1508,6 +1530,10 @@ struct LineContact {
     /// there is one, else along the boundary — when that stretch has rational ends: the row's
     /// witness, which then sits on the contact.
     contact_at: Option<nacre_exact::Rat>,
+    /// **Where** the closed face meets the open stretch in positive length — the closed pieces
+    /// `[lo, hi]` of the line, in the axis parameter, that make `touches` true, through the
+    /// interior or along the boundary alike ([`Tangency::contact`]).
+    contact: Vec<[nacre_exact::QuadVal; 2]>,
 }
 
 /// How one loop of the wall face meets the tangent line.
@@ -1728,6 +1754,7 @@ fn line_runs_through_face(
             touches: false,
             runs_through: false,
             contact_at: None,
+            contact: Vec::new(),
         });
     }
     let holes: Vec<LoopOnLine> = face
@@ -1787,6 +1814,7 @@ fn line_runs_through_face(
         touches: false,
         runs_through: false,
         contact_at: None,
+        contact: Vec::new(),
     };
     for pair in sorted.windows(2) {
         let (lo, hi) = (pair[0], pair[1]);
@@ -1806,6 +1834,9 @@ fn line_runs_through_face(
                 .zip(hi.as_rat())
                 .and_then(|(a, b)| a.checked_add(b)?.checked_mul(Rat::new(1, 2)?))
         };
+        if reading[0] || reading[1] {
+            out.contact.push([lo, hi]);
+        }
         if (reading[0] || reading[1]) && !out.touches {
             out.touches = true;
             out.contact_at = middle();

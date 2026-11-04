@@ -729,8 +729,14 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             &mut crate::realize::PlaneMemo::default(),
         )
         .expect("seam");
-        let named = crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls)
-            .expect("the naming stages run");
+        let named = crate::assembly::name_result_vertices(
+            &jd,
+            &seam,
+            &faces,
+            cyls,
+            &crate::assembly::Tangencies::none(),
+        )
+        .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         // Completeness: every ring node has a definition.
         let mut missing = Vec::new();
@@ -870,8 +876,14 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             &mut crate::realize::PlaneMemo::default(),
         )
         .expect("seam");
-        let named = crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls)
-            .expect("the naming stages run");
+        let named = crate::assembly::name_result_vertices(
+            &jd,
+            &seam,
+            &faces,
+            cyls,
+            &crate::assembly::Tangencies::none(),
+        )
+        .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         let mut uses: std::collections::HashMap<
             (crate::combinatorics::NodeId, crate::combinatorics::NodeId),
@@ -1298,8 +1310,14 @@ fn the_grouping_joins_across_a_cut_rim() {
             &mut crate::realize::PlaneMemo::default(),
         )
         .expect("the seam realizes pierce nodes");
-        let named = crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls)
-            .expect("the naming runs");
+        let named = crate::assembly::name_result_vertices(
+            &jd,
+            &seam,
+            &faces,
+            cyls,
+            &crate::assembly::Tangencies::none(),
+        )
+        .expect("the naming runs");
         let g = named
             .grouping
             .as_ref()

@@ -21,7 +21,7 @@ pub(crate) fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
-    let named = name_result_vertices(jd, seam, faces, cyls);
+    let named = name_result_vertices(jd, seam, faces, cyls, &tangencies);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
     // itself stands at the assembly's very end below.
     let Named {

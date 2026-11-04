@@ -1279,7 +1279,7 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
         ("the square beside it", square(x2, x3), RingSide::Outside),
     ] {
         assert_eq!(
-            named_point_in_face(&jd, &cyls, top, n, &face).expect("decided"),
+            named_point_in_face(&jd, &cyls, n, &face).expect("decided"),
             Some(want),
             "{what}"
         );
@@ -1310,7 +1310,7 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
         ("the square beside it", square(x2, x3), RingSide::Outside),
     ] {
         assert_eq!(
-            named_point_in_face(&jd, &cyls, top, other, &face).expect("decided"),
+            named_point_in_face(&jd, &cyls, other, &face).expect("decided"),
             Some(want),
             "{what}, named by the other pair"
         );

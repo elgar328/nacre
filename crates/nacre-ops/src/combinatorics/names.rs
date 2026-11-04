@@ -697,6 +697,9 @@ pub(crate) struct ArcCarrier {
     /// comparison and not a geometric one.
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
+    /// The plane class the arc lies on — the `Wall::Arc`'s `plane`. The arc's height is that
+    /// plane's, and it has one only where the plane is across the axis (`rim_height`).
+    pub plane: usize,
     /// `true` when travel is counter-clockwise about the cylinder's axis — the convention the
     /// `Wall` doc states for `ccw`.
     pub ccw: bool,

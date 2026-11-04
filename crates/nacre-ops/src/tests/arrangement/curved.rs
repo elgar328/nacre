@@ -335,6 +335,7 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
                 carrier: combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
                     cyl: 0,
                     def: def.clone(),
+                    plane: top,
                     ccw,
                 })),
                 from_h: combinatorics::EndPin::Cylinder,
@@ -675,14 +676,257 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
         for root in &roots {
             let got = combinatorics::loop_parity(&jd, &def, loops, &line, root);
             match plane_side(&px, &line, root) {
-                Orient::Positive => assert_eq!(got, None, "{name}: (1, 0, 2) is on the ruling"),
+                Orient::Positive => assert_eq!(
+                    got,
+                    Some(nacre_geom::intersect::RingSide::OnBoundary),
+                    "{name}: (1, 0, 2) is on the ruling"
+                ),
                 _ => assert!(
-                    got.is_some(),
+                    matches!(
+                        got,
+                        Some(
+                            nacre_geom::intersect::RingSide::Inside
+                                | nacre_geom::intersect::RingSide::Outside
+                        )
+                    ),
                     "{name}: (−1, 0, 2) is no ruling of this face: {got:?}"
                 ),
             }
         }
     }
+}
+
+/// **A lateral face is asked as a plane face is: a point on it, an edge across it.** The band of
+/// the cylinder `r = 1` about `z` between its rims `z = 1` and `z = 3`, read through `comp_face` as
+/// the self-touch arms read it, against points and lines named by a staircase of three boxes
+/// (planes `x = 0, 1`, `y = −1, 0, 1, 3/2, 2`, `z = 0 … 3`). The truth is the band's: a point of the
+/// cylinder between the rims is on the face, a point on a rim its boundary, a point beside or above
+/// it off the face, a point off the surface off it whatever its height. The line `x = 1, z = 2`
+/// touches the cylinder at `(1, 0, 2)`, inside the band: the segment from `y = −1` to `y = 1`
+/// holds the touch, the one from `y = 1` to `y = 2` does not; the line `y = 0, z = 2` meets the
+/// surface at `x = ±1`, and the segment from the axis to `x = 1` meets it only at its end, which is
+/// the vertex's question.
+#[test]
+fn a_lateral_face_is_asked_for_points_and_edges_as_a_plane_face_is() {
+    use crate::combinatorics::{Canon3, QuadRoot, named_point_in_face, segment_meets_lateral};
+    use nacre_exact::Rat;
+    use nacre_geom::intersect::RingSide;
+    let mut m = Model::new();
+    let a = crate::fixtures::cuboid(&mut m, [0.0, -1.0, 0.0], [1.0, 2.0, 1.0]);
+    let b = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 1.0], [1.0, 1.5, 2.0]);
+    let c = crate::fixtures::cuboid(&mut m, [0.0, -1.0, 2.0], [1.0, 1.0, 3.0]);
+    let ab = crate::boolean(&mut m, crate::BoolKind::Fuse, a, b).unwrap()[0];
+    let stair = crate::boolean(&mut m, crate::BoolKind::Fuse, ab, c).unwrap()[0];
+    let boss = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        5.0,
+    );
+    let surf = m.face(boss.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def: def.clone(),
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let rows = crate::planes::collect_planes(&m, stair).expect("the staircase's face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    // The class whose plane is `n · x = d / k` — read off its own coefficients.
+    let class = |n: [i128; 3], d: i128, k: i128| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                let i = (0..3).find(|&i| n[i] != 0).expect("a normal");
+                (0..3).all(|j| w[j].checked_mul(ri(n[i])) == w[i].checked_mul(ri(n[j])))
+                    && w[3].checked_mul(ri(n[i]).checked_mul(ri(k)).unwrap())
+                        == w[i].checked_mul(ri(-d))
+            })
+            .expect("the staircase holds that plane")
+    };
+    let x = |v: i128| class([1, 0, 0], v, 1);
+    let y = |v: i128, k: i128| class([0, 1, 0], v, k);
+    let z = |v: i128| class([0, 0, 1], v, 1);
+    let face = LocalFace {
+        surf: crate::planes::ClassIx::Cyl(0),
+        outer: crate::draft::Bound::Rim {
+            plane: z(1),
+            ccw: true,
+        },
+        inner: vec![crate::draft::Bound::Rim {
+            plane: z(3),
+            ccw: false,
+        }],
+        flip: false,
+    };
+    let cf = crate::assembly::comp_face(&jd, &cyls, &face).expect("a component face");
+    let at = |p: [usize; 3]| NodeId::three_planes(Canon3::three(p));
+    for (what, p, want) in [
+        ("on the band", [x(1), y(0, 1), z(2)], RingSide::Inside),
+        (
+            "on the lower rim",
+            [x(1), y(0, 1), z(1)],
+            RingSide::OnBoundary,
+        ),
+        (
+            "on the upper rim",
+            [x(1), y(0, 1), z(3)],
+            RingSide::OnBoundary,
+        ),
+        (
+            "on the cylinder below the band",
+            [x(1), y(0, 1), z(0)],
+            RingSide::Outside,
+        ),
+        ("on the axis", [x(0), y(0, 1), z(2)], RingSide::Outside),
+        (
+            "outside the cylinder",
+            [x(1), y(1, 1), z(2)],
+            RingSide::Outside,
+        ),
+    ] {
+        assert_eq!(
+            named_point_in_face(&jd, &cyls, at(p), &cf).expect("a lateral reads no error"),
+            Some(want),
+            "{what}"
+        );
+    }
+    let crate::combinatorics::BoundEdges::Lateral(loops) = &cf.outer else {
+        panic!("a lateral's loops, got {:?}", cf.outer)
+    };
+    use crate::combinatorics::EdgeOnLateral;
+    // The touch itself is the line's double root, the point the arm reads.
+    let touch = NodeId::pierce(x(1), z(2), 0, QuadRoot::Double);
+    for (what, line, ends, want) in [
+        (
+            "a tangent line's segment over the touch",
+            [x(1), z(2)],
+            [at([x(1), y(-1, 1), z(2)]), at([x(1), y(1, 1), z(2)])],
+            EdgeOnLateral::AtRoots(vec![(touch, RingSide::Inside)]),
+        ),
+        (
+            "a tangent line's segment beside it",
+            [x(1), z(2)],
+            [at([x(1), y(1, 1), z(2)]), at([x(1), y(2, 1), z(2)])],
+            EdgeOnLateral::Clear,
+        ),
+        (
+            "a segment ending on the surface",
+            [y(0, 1), z(2)],
+            [at([x(0), y(0, 1), z(2)]), at([x(1), y(0, 1), z(2)])],
+            EdgeOnLateral::Clear,
+        ),
+    ] {
+        assert_eq!(
+            segment_meets_lateral(&jd, &cyls, 0, loops, line, ends),
+            Some(want),
+            "{what}"
+        );
+    }
+    assert_eq!(
+        named_point_in_face(&jd, &cyls, touch, &cf).unwrap(),
+        Some(RingSide::Inside)
+    );
+}
+
+/// **An arc on a slanted plane has no height** — a lateral ring of one closed arc on the plane
+/// `z − x = 1`, slanted to the axis `z` of the cylinder `r = 1`, its node where that plane meets the
+/// cap plane `z = 1` on the cylinder. The arc is a section: it climbs from that node, so no one
+/// height places it, and the loops cannot say which side of it a point of the cylinder is on — the
+/// answer is `None`. Read off its node's name instead, it would stand at the cap's `z = 1`, and the
+/// point `(1, 0, 2)` would get a confident answer. The planes come from a wedge whose faces lie on
+/// `z = 1`, `x = 1` and the slanted plane.
+#[test]
+fn an_arc_on_a_slanted_plane_has_no_height() {
+    use crate::combinatorics::{Carrier, EndPin, LateralLoop, QuadRoot, RingEdge, loop_parity};
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, QuadVal, plane_plane_cylinder};
+    let mut m = Model::new();
+    let profile = crate::Profile2d::polygon(
+        [(1.0, 0.0), (1.0, 1.0), (2.0, 1.0)]
+            .map(|(u, v)| nacre_math::Point2::from_array([u, v]))
+            .to_vec(),
+    )
+    .expect("a triangle");
+    let frame = SketchFrame::world(&m, Axis::Y);
+    let crate::OpOutput::Extrude { solid: wedge, .. } = crate::apply(
+        &mut m,
+        &crate::Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    )
+    .expect("the wedge extrudes") else {
+        unreachable!()
+    };
+    let boss = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        4.0,
+    );
+    let surf = m.face(boss.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let rows = crate::planes::collect_planes(&m, wedge).expect("the wedge's face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    let class = |n: [i128; 3], d: i128| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                let i = (0..3).find(|&i| n[i] != 0).expect("a normal");
+                (0..3).all(|j| w[j].checked_mul(ri(n[i])) == w[i].checked_mul(ri(n[j])))
+                    && w[3].checked_mul(ri(n[i])) == w[i].checked_mul(ri(-d))
+            })
+            .expect("the wedge holds that plane")
+    };
+    let (cap, slant) = (class([0, 0, 1], 1), class([-1, 0, 1], 1));
+    let node = crate::combinatorics::NodeId::pierce(slant, cap, 0, QuadRoot::Lo);
+    let ring = vec![RingEdge {
+        node,
+        to: node,
+        carrier: Carrier::Arc(Box::new(crate::combinatorics::ArcCarrier {
+            cyl: 0,
+            def: def.clone(),
+            plane: slant,
+            ccw: true,
+        })),
+        from_h: EndPin::Cylinder,
+        to_h: EndPin::Cylinder,
+    }];
+    let (x1, z2) = ([ri(1), ri(0), ri(0), ri(-1)], [ri(0), ri(0), ri(1), ri(-2)]);
+    let CylinderMeet::Tangent { line, s } =
+        plane_plane_cylinder(&x1, &z2, &def.origin(), &def.dir(), def.r2()).unwrap()
+    else {
+        panic!("the line x = 1, z = 2 touches the cylinder")
+    };
+    assert_eq!(
+        loop_parity(
+            &jd,
+            &def,
+            &[LateralLoop::Ring(ring)],
+            &line,
+            &QuadVal::from_rat(s)
+        ),
+        None,
+        "a section's arc is read at no height"
+    );
 }
 
 /// **A lateral face answers the crossing question by the same parity, on its own chart**
@@ -828,19 +1072,31 @@ fn lateral_lattice(staircase: bool) {
         for root in &s {
             let x_side = plane_side(&x40, &line, root);
             let seam = station && plane_side(&y20, &line, root) == Orient::Negative;
-            let want = truth(x_side, z0);
+            use nacre_geom::intersect::RingSide;
+            // The truth's `None` is the boundary: every root here is one the loops can read.
+            let want = Some(truth(x_side, z0).map_or(RingSide::OnBoundary, |inside| {
+                if inside {
+                    RingSide::Inside
+                } else {
+                    RingSide::Outside
+                }
+            }));
             let got = combinatorics::loop_parity(&jd, def, loops, &line, root);
             assert_eq!(
                 got, want,
                 "staircase {staircase} z0 {z0:?} side {x_side:?} station {station} seam {seam}"
             );
-            match (got, station, seam) {
-                (Some(true), false, _) => n[0] += 1,
-                (Some(false), false, _) => n[1] += 1,
-                (None, false, _) => n[2] += 1,
-                (Some(_), true, true) if z0 < n_lo => n[6] += 1,
-                (None, true, _) => n[4] += 1,
-                (Some(_), true, _) => n[5] += 1,
+            match (
+                got.expect("asserted equal to a decided truth"),
+                station,
+                seam,
+            ) {
+                (RingSide::Inside, false, _) => n[0] += 1,
+                (RingSide::Outside, false, _) => n[1] += 1,
+                (RingSide::OnBoundary, false, _) => n[2] += 1,
+                (RingSide::Inside | RingSide::Outside, true, true) if z0 < n_lo => n[6] += 1,
+                (RingSide::OnBoundary, true, _) => n[4] += 1,
+                (_, true, _) => n[5] += 1,
             }
         }
     };

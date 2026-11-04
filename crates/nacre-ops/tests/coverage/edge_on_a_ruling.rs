@@ -780,7 +780,7 @@ fn a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name() {
 /// across the line and the line is an edge of the walls alone. Where that edge's body is the
 /// lateral's own, joined elsewhere — a wedge across the bore into the plate beyond, a C-shaped
 /// prism round the cylinder through it — the edge lies inside the solid's own face, and the result
-/// is refused (`SelfTouchingResult`, the self-touch verdict's curved arm,
+/// is refused (`SelfTouchingResult`, the self-touch verdict's lateral arms,
 /// `combinatorics::ruling_meets_lateral`). Where it is another body — a short wedge inside the
 /// bore, a corner touching the cylinder — the answer is the two bodies. Each refusal sits beside
 /// a twin that must build, as the self-touch propositions do (`tests/probes/self_touch.rs`): a

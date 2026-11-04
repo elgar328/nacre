@@ -24,6 +24,7 @@ pub(crate) fn name_result_vertices(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    tg: &super::Tangencies<'_>,
 ) -> Result<Named, BoolError> {
     // **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
     // The arrangement cannot do this: a pierce point needs the cylinder, and the neighbouring
@@ -190,7 +191,7 @@ pub(crate) fn name_result_vertices(
         for (i, lf) in faces.iter().enumerate() {
             by_comp_lf[g.labels[i]].push(lf);
         }
-        self_touch_reject(jd, cyls, seam, &body_comps, &by_comp_lf)?;
+        self_touch_reject(jd, cyls, seam, &body_comps, &by_comp_lf, tg)?;
     }
     // **A result vertex is named by the faces that meet it.**
     //

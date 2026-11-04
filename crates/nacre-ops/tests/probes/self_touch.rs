@@ -13,8 +13,8 @@
 //!
 //! The propositions here are paired: every fixture that must reject sits next to one that must
 //! build, because a check that rejects the wedge by rejecting *everything* would pass half of them.
-//! The curved arm's pairs — an edge along a ruling inside the solid's own lateral, beside two
-//! bodies touching on that line — run over both frames with the other ruling families
+//! The lateral arms' ruling pairs — an edge along a ruling inside the solid's own lateral, beside
+//! two bodies touching on that line — run over both frames with the other ruling families
 //! (`coverage/edge_on_a_ruling.rs`, `a_body_touching_itself_along_a_ruling_is_refused`).
 
 use crate::common::{datum_frame, rot30, xf};

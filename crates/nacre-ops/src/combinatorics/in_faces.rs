@@ -402,6 +402,83 @@ pub(crate) fn named_point_in_disk(
         .map(|p| point_in_disk(&p, def))
 }
 
+/// **Where the point named `n` is against the lateral face `loops` bound on `def`** — the lateral
+/// arm of [`named_point_in_face`]: `Outside` off the cylinder's surface, otherwise the loops'
+/// parity at the point ([`loop_parity`]); `None` where the point cannot be stated on the chart.
+fn named_point_on_lateral(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+    def: &nacre_topo::CylinderDef,
+    loops: &[LateralLoop],
+) -> Option<RingSide> {
+    match named_point_in_disk(jd, cyls, n, def)? {
+        RingSide::OnBoundary => {}
+        RingSide::Inside | RingSide::Outside => return Some(RingSide::Outside),
+    }
+    let (meet, s) = point_on_cylinder(jd, cyls, n, def)?;
+    loop_parity(jd, def, loops, &meet, &s)
+}
+
+/// **A point of the cylinder `def` as the chart reads it** — a line and a root on it
+/// ([`loop_parity`]'s `(meet, s)`). A pierce name of this cylinder is its own meet
+/// ([`pierce_meet`]); any other point with rational coordinates is where the plane touching the
+/// cylinder along its ruling meets the plane across the axis at its height — a tangent meet,
+/// whose one root is rational because the point lies on the cylinder. `None` where the point has
+/// neither, or the arithmetic runs out.
+fn point_on_cylinder(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+    def: &nacre_topo::CylinderDef,
+) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
+    if let Some((_, c, _)) = pierce_name(n)
+        && cyls.get(c).is_some_and(|cy| cy.def == *def)
+    {
+        return pierce_meet(jd, c, def, n)?.into_exact();
+    }
+    let p = node_coords_rat(jd, n).or_else(|| pierce_coords_rat(jd, cyls, n))?;
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let mut w = [Rat::from_int(0); 3];
+    for i in 0..3 {
+        w[i] = p[i].checked_sub(o[i])?;
+    }
+    let touching = nacre_exact::plane_from_point_normal(nacre_exact::off_axis_rat(&w, &m)?, p)?;
+    let mm = nacre_exact::dot3_rat(&m, &m)?;
+    let t = nacre_exact::dot3_rat(&m, &w)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    match nacre_exact::quad::plane_plane_cylinder(&touching, &rim_plane(def, t)?, &o, &m, r2)? {
+        CylinderMeet::Tangent { line, s } => Some((line, QuadVal::from_rat(s))),
+        _ => None,
+    }
+}
+
+/// **Where along the axis the point named `n` stands, `n` a point of the cylinder `def`** — its
+/// axis parameter `(x − o)·m / (m·m)` ([`crate::planes::axis_param_of_plane`]'s scale), off the
+/// point as [`point_on_cylinder`] states it. `None` where that statement is missing or the
+/// arithmetic runs out.
+pub(crate) fn axis_param_on_cylinder(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+    def: &nacre_topo::CylinderDef,
+) -> Option<nacre_exact::quad::QuadVal> {
+    use nacre_exact::quad::QuadVal;
+    use nacre_exact::{Rat, dot3_rat};
+    let (meet, s) = point_on_cylinder(jd, cyls, n, def)?;
+    let (o, m) = (def.origin(), def.dir());
+    let base = meet.base();
+    let mut rel = [Rat::from_int(0); 3];
+    for k in 0..3 {
+        rel[k] = base[k].checked_sub(o[k])?;
+    }
+    let mm = dot3_rat(&m, &m)?;
+    let inv = Rat::new(mm.denom(), mm.numer())?;
+    QuadVal::from_rat(dot3_rat(&rel, &m)?.checked_mul(inv)?)
+        .checked_add(&s.checked_mul_rat(dot3_rat(&meet.dir(), &m)?.checked_mul(inv)?)?)
+}
+
 /// [`lateral_face_crossings`] for a probe ray named by three plane classes: it states the ray's
 /// two planes and the "behind" cut plane from the class table and hands them over.
 ///
@@ -467,6 +544,23 @@ fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacr
     Some([m[0], m[1], m[2], d0])
 }
 
+/// **The height of a rim or an arc on class `c`, as an axis parameter** — the curve's own plane
+/// gives it, and only a plane across the axis ([`crate::planes::class_carries_circle`]) does: on a
+/// slanted plane the curve is a section, which has no one height, and the answer is `None`, as it
+/// is for a class with no world statement or arithmetic out. Not its ends' heights: a section's
+/// end on a rim stands at the rim's height, and the section does not.
+fn rim_height(
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<nacre_exact::Rat> {
+    let w = jd.world_rat(c)?;
+    if !crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
+        return None;
+    }
+    crate::planes::axis_param_of_plane(&w, def)
+}
+
 /// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
 /// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)`.
 ///
@@ -481,16 +575,17 @@ fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacr
 /// its own carrier (`plane_side(plane) == 0 ∧ ruling_side_signed(plane) == side`, against the
 /// plane its side was measured against — the predicate `crossing_on_ruling` names stations with).
 ///
-/// `None` = `x` on the boundary (a rim, an arc, a ruling), a zero-span
-/// arc inside `arc_span`, a loop the road cannot read (a tilted arc, a plane carrier), or checked
-/// arithmetic running out. `z` is asked before `θ`: an arc below `x` needs no order.
+/// `OnBoundary` = `x` on a rim, an arc or a ruling of the face. `None` = a zero-span arc inside
+/// `arc_span`, a loop the road cannot read (a rim or an arc on a plane slanted to the axis — a
+/// section — or a plane carrier), or checked arithmetic running out. `z` is asked before `θ`: an
+/// arc below `x` needs no order.
 pub(crate) fn loop_parity(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
     meet: &nacre_exact::quad::MeetLine,
     s: &nacre_exact::quad::QuadVal,
-) -> Option<bool> {
+) -> Option<RingSide> {
     use nacre_exact::Orient;
     use nacre_exact::quad::plane_side;
     let above =
@@ -499,21 +594,19 @@ pub(crate) fn loop_parity(
     for lp in loops {
         match lp {
             LateralLoop::Rim(c) => {
-                let t = crate::planes::axis_param_of_plane(&jd.world_rat(*c)?, def)?;
+                let t = rim_height(jd, *c, def)?;
                 match above(t)? {
                     // `z_x < t`: the rim is above the point, and the ray up the axis crosses it.
                     Orient::Negative => crossings += 1,
                     Orient::Positive => {}
-                    Orient::Zero => {
-                        return None;
-                    }
+                    Orient::Zero => return Some(RingSide::OnBoundary),
                 }
             }
             LateralLoop::Ring(edges) => {
                 for e in edges {
                     match &e.carrier {
                         Carrier::Arc(arc) => {
-                            let t = pierce_axis_param(jd, def, e.node)?;
+                            let t = rim_height(jd, arc.plane, def)?;
                             let side = above(t)?;
                             if side == Orient::Positive {
                                 continue; // the arc is below the point
@@ -539,7 +632,7 @@ pub(crate) fn loop_parity(
                                 if span == ArcSpan::Outside {
                                     continue;
                                 }
-                                return None;
+                                return Some(RingSide::OnBoundary);
                             }
                             // Half-open `[lo, hi)`: a closed arc's node is its `lo`, counted once.
                             if matches!(span, ArcSpan::Inside | ArcSpan::AtLo | ArcSpan::AtBothEnds)
@@ -567,7 +660,7 @@ pub(crate) fn loop_parity(
                             if plane_side(&w, meet, s) == Orient::Zero
                                 && ruling_side_signed(&w, def, (meet, s))? == rl.side
                             {
-                                return None;
+                                return Some(RingSide::OnBoundary);
                             }
                         }
                         Carrier::Plane { .. } => {
@@ -578,7 +671,11 @@ pub(crate) fn loop_parity(
             }
         }
     }
-    Some(crossings % 2 == 1)
+    Some(if crossings % 2 == 1 {
+        RingSide::Inside
+    } else {
+        RingSide::Outside
+    })
 }
 
 /// **Where the line `line[0] ∩ line[1]` crosses one lateral face, and how many of those lie on
@@ -630,9 +727,9 @@ pub(crate) fn lateral_face_crossings(
         match loop_parity(jd, def, loops, &meet, s) {
             // On the boundary, a zero-span arc, an unreadable loop, arithmetic out: this ray
             // cannot count this face — the banded arm's `Graze` on a rim, generalized.
-            None => return Some(CurvedHit::Graze),
-            Some(false) => continue,
-            Some(true) => match nacre_exact::quad::plane_side(half, &meet, s) {
+            None | Some(RingSide::OnBoundary) => return Some(CurvedHit::Graze),
+            Some(RingSide::Outside) => continue,
+            Some(RingSide::Inside) => match nacre_exact::quad::plane_side(half, &meet, s) {
                 Orient::Zero => return Some(CurvedHit::Graze),
                 Orient::Negative => count += 1,
                 Orient::Positive => {}
@@ -662,7 +759,8 @@ pub(crate) fn lateral_face_crossings(
 /// where a plane of each end's name crosses **this ruling**, not the axis (a plane naming the end
 /// may be slanted, and where it meets the axis says nothing of the end; ☐ no input names one so —
 /// over the suite's 1,108 ends the two readings agree, and the census asks none) — while the cut heights,
-/// read off the arcs' corners as [`loop_parity`] reads them, only decide which points are asked:
+/// the face's rims and arcs read off their planes as [`loop_parity`] reads them (`rim_height`), only
+/// decide which points are asked:
 /// wrong there, a touch can be missed, never invented. ☐ No input yet where the cut changes the
 /// answer — an arc of the face crossing the edge's line meets the two walls there too, and the
 /// arrangement makes that point a vertex, so the edge already ends at it; asking a piece at a time
@@ -706,13 +804,11 @@ pub(crate) fn ruling_meets_lateral(
     let mut ts = vec![lo, hi];
     for lp in loops {
         match lp {
-            LateralLoop::Rim(c) => {
-                ts.push(crate::planes::axis_param_of_plane(&jd.world_rat(*c)?, def)?)
-            }
+            LateralLoop::Rim(c) => ts.push(rim_height(jd, *c, def)?),
             LateralLoop::Ring(edges) => {
                 for e in edges {
-                    if matches!(e.carrier, Carrier::Arc(_)) {
-                        ts.push(pierce_axis_param(jd, def, e.node)?);
+                    if let Carrier::Arc(arc) = &e.carrier {
+                        ts.push(rim_height(jd, arc.plane, def)?);
                     }
                 }
             }
@@ -733,23 +829,123 @@ pub(crate) fn ruling_meets_lateral(
             return None;
         };
         match loop_parity(jd, def, loops, &line, &QuadVal::from_rat(s)) {
-            Some(true) => return Some(true),
-            Some(false) => {}
-            None => abstained = true,
+            Some(RingSide::Inside) => return Some(true),
+            Some(RingSide::Outside) => {}
+            Some(RingSide::OnBoundary) | None => abstained = true,
         }
     }
     (!abstained).then_some(false)
 }
 
+/// **How an edge meets a lateral face** — [`segment_meets_lateral`]'s answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum EdgeOnLateral {
+    /// The open segment does not meet the face's closed region.
+    Clear,
+    /// The segment runs along a ruling the gate recorded, and a piece of it is inside the face.
+    AlongRuling,
+    /// The segment's line meets the face at these points, strictly between the edge's ends: the
+    /// roots of the line on the cylinder, named on the edge's two planes, each with where it lies —
+    /// inside the face or on its boundary. Never empty.
+    AtRoots(Vec<(NodeId, RingSide)>),
+}
+
+/// **Does the open segment `(u, v)` of the line `p ∩ w` meet the closed region of the lateral face
+/// `loops` bound on cylinder `cyl`?** — the self-touch question for a straight edge and a lateral
+/// face of one solid the edge does not bound, `p` and `w` the edge's two plane faces.
+///
+/// One question, read by how the line meets the cylinder. A line the gate recorded on the cylinder
+/// (a [`crate::planes::SharedRuling`] of the two planes) runs along a ruling and is asked piece by
+/// piece ([`ruling_meets_lateral`]). Any other line meets the surface at its roots — two, or one
+/// for a tangent line — and a root counts when it lies strictly between the edge's ends (an end on
+/// the face is the vertex's question, [`named_point_in_face`]) and on the face or its boundary
+/// ([`loop_parity`]); the roots that count are the answer, so the caller can say which of them are
+/// another question's. A line that misses the cylinder meets nothing.
+///
+/// `None` is what cannot be read and found no root that counts: a line on the surface the gate did
+/// not record, a pair without a world statement or past `Rat`, an end the line does not pin
+/// ([`end_on_line`]), a root that cannot be ordered against the ends or placed by the loops — a
+/// root that cannot be read leaves the other one asked.
+pub(crate) fn segment_meets_lateral(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cyl: usize,
+    loops: &[LateralLoop],
+    [p, w]: [usize; 2],
+    [u, v]: [NodeId; 2],
+) -> Option<EdgeOnLateral> {
+    use nacre_judge::cylinder::LineMeet;
+    let cy = cyls.get(cyl)?;
+    if let Some(sr) = cy.shared_of(p, w) {
+        return ruling_meets_lateral(jd, &cy.def, loops, sr, [u, v]).map(|meets| {
+            if meets {
+                EdgeOnLateral::AlongRuling
+            } else {
+                EdgeOnLateral::Clear
+            }
+        });
+    }
+    let roots = match jd.line_meet(p, w, &cy.def, false) {
+        LineMeet::Pair(_) => vec![QuadRoot::Lo, QuadRoot::Hi],
+        LineMeet::Tangent(..) => vec![QuadRoot::Double],
+        LineMeet::Miss | LineMeet::AxisParallelMiss => return Some(EdgeOnLateral::Clear),
+        LineMeet::CoincidentPlanes
+        | LineMeet::ParallelPlanes
+        | LineMeet::OnRuling(_)
+        | LineMeet::Undecided
+        | LineMeet::Wide
+        | LineMeet::Overflow => return None,
+    };
+    let (hu, hv) = (end_on_line(jd, p, w, u)?, end_on_line(jd, p, w, v)?);
+    let mut abstained = false;
+    let mut on_face = Vec::new();
+    for root in roots {
+        let at = NodeId::pierce(p, w, cyl, root);
+        let here = PointOn::Pierce(at);
+        let (Some(a), Some(b)) = (
+            order_on(jd, cyls, p, w, hu, here),
+            order_on(jd, cyls, p, w, here, hv),
+        ) else {
+            abstained = true;
+            continue;
+        };
+        // Strictly between the ends: the same nonzero order on both sides.
+        if a == 0 || a != b {
+            continue;
+        }
+        let Some((meet, s)) = point_on_cylinder(jd, cyls, at, &cy.def) else {
+            abstained = true;
+            continue;
+        };
+        match loop_parity(jd, &cy.def, loops, &meet, &s) {
+            Some(side @ (RingSide::Inside | RingSide::OnBoundary)) => on_face.push((at, side)),
+            Some(RingSide::Outside) => {}
+            None => abstained = true,
+        }
+    }
+    if !on_face.is_empty() {
+        Some(EdgeOnLateral::AtRoots(on_face))
+    } else {
+        (!abstained).then_some(EdgeOnLateral::Clear)
+    }
+}
+
 /// A component as its faces, each boundary already carrying its edges' walls.
 pub(crate) type ComponentFaces = Vec<CompFace>;
 
-/// **Where the point named `n` is against the plane face `f` on class `q`** — inside it, outside
-/// it, or on its boundary; `None` where a bound could not tell. `n` lies on `q` and its name need
-/// not carry `q`. The self-touch point arm asks every vertex here, whatever kind its name is, and
-/// [`point_in_component`] its probe triples.
+/// **Where the point named `n` is against the face `f`** — inside it, outside it, or on its
+/// boundary; `None` where a bound could not tell. On a plane face `n` lies on the face's class and
+/// its name need not carry it. The self-touch point arm asks every vertex here, whatever kind its
+/// name is, of plane and lateral faces alike, and [`point_in_component`] its probe triples (plane
+/// faces only — it counts a lateral by its own arm, `curved_count`).
 ///
-/// **One reading, by what the point carries, whatever kind its name is.**
+/// **A lateral face** — the point is on it when it lies on the cylinder's surface
+/// ([`named_point_in_disk`]'s radius reading says `OnBoundary`) and inside or on the boundary of
+/// the face's loops ([`loop_parity`]), the point stated on the chart as
+/// [`point_on_cylinder`] states it. Off the surface is `Outside`; a point the reading cannot state
+/// is `None`.
+///
+/// **On a plane face, one reading by what the point carries, whatever kind its name is.**
 /// - **A circle** — [`named_point_in_disk`].
 /// - **A ring** — the point's rational coordinates, where it has them (a three-plane meet, or a
 ///   pierce name's rational root — [`pierce_coords_rat`]), by the one coordinate reading of a ring
@@ -767,10 +963,21 @@ pub(crate) type ComponentFaces = Vec<CompFace>;
 pub(crate) fn named_point_in_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    q: usize,
     n: NodeId,
     f: &CompFace,
 ) -> Result<Option<RingSide>, BoolError> {
+    // The face's surface picks the reading, not the shape of its bound: a plane face can carry a
+    // rim placeholder (`BoundEdges::Lateral` with no loops), which the loops would read as a
+    // confident «outside».
+    let q = match &f.surf {
+        CompSurf::Plane(q) => *q,
+        CompSurf::Cylinder(def) => {
+            let BoundEdges::Lateral(loops) = &f.outer else {
+                return Ok(None);
+            };
+            return Ok(named_point_on_lateral(jd, cyls, n, def, loops));
+        }
+    };
     let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
         match b {
             BoundEdges::Ring(r) => {
@@ -798,7 +1005,7 @@ pub(crate) fn named_point_in_face(
                 }
             }
             BoundEdges::Circle(def) => Ok(named_point_in_disk(jd, cyls, n, def)),
-            // Loops bound a cylinder, never a plane — a producer error, not an input.
+            // Loops on a plane face are the rim placeholder; they say nothing about the plane.
             BoundEdges::Lateral(_) => Ok(None),
         }
     };
@@ -860,7 +1067,7 @@ pub(crate) fn point_in_component(
             // Inside `q`'s material at the point `x`: inside the outer bound, outside every hole.
             // On the face's boundary is no answer here — a non-generic probe is abandoned.
             let material = |x: [usize; 3]| {
-                named_point_in_face(jd, cyls, q, NodeId::three_planes(Canon3::three(x)), f)
+                named_point_in_face(jd, cyls, NodeId::three_planes(Canon3::three(x)), f)
                     .map(decided)
             };
             if jd.plane_pair_dir_sign(a, b, q) == 0 {

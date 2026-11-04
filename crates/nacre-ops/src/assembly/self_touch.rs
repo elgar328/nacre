@@ -236,25 +236,28 @@ pub(crate) fn assemble_fuse_cut(
 /// face**: `Ring::edges` spends an exact predicate per node, and building them for every result
 /// face is the same unconditional cost that put 12x on the star when the void label did it.
 ///
-/// **The curved arm** asks the same proposition of a **lateral** face, for the one edge family
-/// that can lie inside it: an edge two of the solid's plane faces share along a ruling of that
-/// cylinder. The sieve is the gate's record of such lines (`WorkingCyl::shared_of` — a line on
-/// a lateral *face* of an operand, which every result lateral lies within), so a boolean whose
-/// cylinders record none skips the arm, and the census asks it of no edge at all. The exact test is
-/// [`combinatorics::ruling_meets_lateral`]. The shapes it refuses are ones no other guard can
-/// see — each one body whose counts, `validate` and volume are all right: a plate's bore with a
-/// wedge whose apex edge lies along the bore wall and that crosses the hole into the plate beyond,
-/// and a cylinder with a C-shaped prism touching it from outside and running through it
-/// elsewhere. A test whose exact question cannot be formed is held, not raised — a self-touch
-/// found elsewhere is still the answer. Two bodies touching on that line
-/// are two groups and are not asked; the line a lateral's own slit cut is its boundary, which the
-/// test abstains on, and the edge-use guard names that shape.
+/// **The lateral arms** ask the same proposition of a **lateral** face: a vertex of the solid on
+/// its closed region ([`combinatorics::named_point_in_face`]'s lateral reading) and a straight
+/// edge meeting it away from the edge's ends ([`combinatorics::segment_meets_lateral`]) — along a
+/// ruling the gate recorded (`WorkingCyl::shared_of`, asked by
+/// [`combinatorics::ruling_meets_lateral`]) or at the roots of the edge's line on the cylinder. The
+/// shapes they refuse are ones no other guard can see — each one body whose counts, `validate` and
+/// volume are all right: a plate's bore with a wedge whose apex edge lies along the bore wall and
+/// that crosses the hole into the plate beyond, a cylinder with a C-shaped prism touching it from
+/// outside and running through it elsewhere, a corner resting on a boss's side, an edge tangent to
+/// it. A point on the stretch of a tangent line a tangency row speaks for, which a result face on
+/// the row's wall covers, is a point of that line contact, the tangency verdict's (`tangent_hand`);
+/// an edge meeting the lateral's boundary where a face it bounds shares that curve with the lateral
+/// is that face's two bounds meeting, its pinch (`shares_a_curve`). Two bodies touching there are
+/// two groups and are not asked; the line a lateral's own slit cut is its boundary, which the
+/// reading abstains on, and the edge-use guard names that shape.
 pub(super) fn self_touch_reject(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     seam: &[SeamVertex],
     groups: &[Vec<usize>],
     by_comp_lf: &[Vec<&LocalFace>],
+    tg: &Tangencies<'_>,
 ) -> Result<(), BoolError> {
     // Per node: the coordinate a reject names as its witness, and the reach the sieve reads.
     let pt: HashMap<NodeId, (Point3, crate::planes::CacheReach)> = seam
@@ -285,31 +288,29 @@ pub(super) fn self_touch_reject(
             held = Some((e, err));
         }
     };
-    let any_shared = cyls.iter().any(|c| !c.shared.is_empty());
     for g in groups {
-        // **Three arms, one proposition** — "an edge or a vertex of this solid meets the closed
+        // **The arms, one proposition** — "an edge or a vertex of this solid meets the closed
         // region of one of its own faces it does not bound". The planar arm asks an edge of every
-        // plane face, through boxes and exact plane membership. The curved arm asks it of a
-        // lateral face, for the edges two of the solid's plane faces share along a ruling of that
-        // cylinder (the gate's record, `WorkingCyl::shared_of`) — a wedge's apex edge lying along
-        // the solid's own bore wall, say ([`combinatorics::ruling_meets_lateral`]). The point arm
-        // below asks a vertex against every plane face. What none asks abstains rather than
-        // pretends, each for a reason written down — or is a gap the reason names. An arc edge:
+        // plane face, through boxes and exact plane membership; the point arm below asks a vertex
+        // against every plane face; the lateral arms after it ask both of every lateral face. What
+        // none asks abstains rather than pretends, each for a reason written down. An arc edge:
         // where it lies in a plane face the faces overlap in area (the coplanar merge's), and where
         // it touches one at a point no vertex names, a straight edge of that face touches the arc's
         // own cap there (the planar arm's touch), or the face lies on a wall tangent along the
         // ruling (the tangency verdict), or it is slanted to the axis (`ObliqueCylinderCut`), or the
         // face's bound is another cylinder's arc (`CylinderPairContact`) — the last two lean on the
-        // gate refusing first. What is not asked: a lateral face touched at a single point — a
-        // vertex inside one, an edge tangent to one — a gap, not an abstention; the shapes
-        // measured that make one are slanted to the axis, and the gate refuses them first
-        // (`ObliqueCylinderCut`). A vertex resting on a rim is not that touch: the arrangement
-        // cuts the rim's two faces at it, so it bounds both, and the result check names the pinch
-        // (`NonManifoldVertex`). And a vertex the point arm's reading cannot place, whose
-        // abstention is dropped — a point with no rational coordinates against a mixed ring, and a
-        // point the mixed ring's coordinate walk abstains on: over the suite, the census, the
-        // ignored sweep and nacre-kit, 722 such pairs, every one off the face when read
-        // approximately.
+        // gate refusing first. A vertex resting on a rim: the arrangement cuts the rim's two faces
+        // at it, so it bounds both, and the result check names the pinch (`NonManifoldVertex`). A
+        // point of a lateral on the stretch of a tangent line a tangency row speaks for, a result
+        // face of the row's wall covering it: a point of that line contact, which the tangency
+        // verdict judges (`tangent_hand`). An edge meeting a lateral's boundary where a face it
+        // bounds shares that curve with the lateral: that face's two bounds meeting, its pinch
+        // (`shares_a_curve`). And what a reading cannot place, dropped — the point arm's (a point
+        // with no rational coordinates against a mixed ring, and a point the mixed ring's
+        // coordinate walk abstains on: over the suite, the census, the ignored sweep and nacre-kit,
+        // 722 such pairs, every one off the face when read approximately) and the lateral arms'
+        // (over the same corpus, 44 vertices and 73 edges at a root, beside the 100 edges
+        // the ruling reading drops; these are not read approximately).
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -380,15 +381,12 @@ pub(super) fn self_touch_reject(
         }
         let grid = FaceGrid::new(&boxes);
         let mut near_buf = NearFaces::new(faces.len());
-        // Does node `n` lie on plane `q`? Exact, asked afresh: neither the answers nor the
-        // node's implicit point pay for a table (measured over the perf folds: 932k distinct
-        // (node, plane) pairs of 1.33M asks; a table of implicit points, to share a turned
-        // class's Cramer parts, cost more in hashing than it saved).
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "a point question: does result node `n` lie on face plane `q`"
-        )]
-        let on = |n: NodeId, q: usize| combinatorics::side_of(jd, cyls, n, q) == Some(0);
+        // Which side of plane `q` node `n` lies on, `0` on it, `None` unread. Exact, asked afresh:
+        // neither the answers nor the node's implicit point pay for a table (measured over the
+        // perf folds: 932k distinct (node, plane) pairs of 1.33M asks; a table of implicit points,
+        // to share a turned class's Cramer parts, cost more in hashing than it saved).
+        let side = |n: NodeId, q: usize| node_side(jd, cyls, n, q);
+        let on = |n: NodeId, q: usize| node_side(jd, cyls, n, q) == Some(0);
         let reach_of = |n: NodeId| {
             pt.get(&n)
                 .map_or(([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]), |&(_, r)| r)
@@ -491,7 +489,7 @@ pub(super) fn self_touch_reject(
                         }
                     }
                 }
-                match combinatorics::named_point_in_face(jd, cyls, q, n, &read[&j]) {
+                match combinatorics::named_point_in_face(jd, cyls, n, &read[&j]) {
                     Ok(Some(RingSide::Inside | RingSide::OnBoundary)) => {
                         found_at(Touch::Point(n));
                         break;
@@ -501,34 +499,158 @@ pub(super) fn self_touch_reject(
                 }
             }
         }
-        if laterals.is_empty() || !any_shared {
+        // **The lateral arms** — the same proposition asked of each lateral face of this solid:
+        // a vertex it does not bound on its closed region, and a straight edge (two plane faces,
+        // so it bounds no lateral) meeting that region away from its ends. The readings are
+        // `named_point_in_face`'s lateral arm and `segment_meets_lateral` — the second reads an
+        // edge along a ruling the gate recorded as the ruling question
+        // ([`combinatorics::ruling_meets_lateral`]), any other line at its roots. A point the
+        // lateral is met at is then asked whose question it is (`tangent_hand`): on the stretch of
+        // a tangent line where a tangency row says the wall face meets this lateral, and covered
+        // by a result face on that wall's class, it is a point of a line contact, which the
+        // tangency verdict judges; anywhere else it is a touch at a point. An edge meeting the
+        // lateral's boundary where a face it bounds shares that curve is asked nothing here: the
+        // point is that face's two bounds meeting (`shares_a_curve`). A lateral face whose
+        // bounds the road cannot read holds its failure for the candidates those bounds decide —
+        // a point on the cylinder's surface, an edge whose line meets it — as the planar arms hold
+        // theirs past their plane test; and a reading that cannot answer is dropped, as the point
+        // arm drops its abstentions. The bounds are read at the first candidate past the sieve,
+        // which is the lateral's box: the hull of the whole circles its bounds lie on, which holds
+        // the face; with no exact circle it holds everything.
+        if laterals.is_empty() {
             continue;
         }
-        // The lateral's loops, read once per face and only for a face some edge is asked against;
-        // one the loops road cannot read (`RingNaming`) abstains like every other unreadable case.
-        let mut loops_of: HashMap<usize, Option<Vec<combinatorics::LateralLoop>>> = HashMap::new();
-        'ruling_edges: for (&[u, v], own) in &owners {
-            // Two faces on one plane (or one face passing the edge twice) find no record: the gate
-            // records a line of two classes, never of one with itself.
-            let [f, h] = own[..] else { continue };
-            let w = [faces[f].surf.plane(), faces[h].surf.plane()];
-            for (li, &(k, lf)) in laterals.iter().enumerate() {
-                let Some(sr) = cyls[k].shared_of(w[0], w[1]) else {
-                    continue;
+        let mut nodes: Vec<NodeId> = visits.iter().map(|&(n, _)| n).collect();
+        nodes.sort_unstable();
+        nodes.dedup();
+        for &(k, lf) in &laterals {
+            let mut cf: Option<Result<combinatorics::CompFace, BoolError>> = None;
+            let (mut bl, mut bh) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            let mut grow = |plane: usize, cyl: usize| {
+                let (cl, ch) = match cyls.get(cyl).and_then(|c| {
+                    combinatorics::arc_box_rat(jd, plane, &c.def, crate::planes::Theta::Whole)
+                }) {
+                    Some([cl, ch]) => (
+                        cl.map(|x| outward(x.to_f64(), -1.0)),
+                        ch.map(|x| outward(x.to_f64(), 1.0)),
+                    ),
+                    None => ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
                 };
-                let loops =
-                    loops_of.entry(li).or_insert_with(|| {
-                        match super::grouping::comp_face(jd, cyls, lf).ok()?.outer {
-                            combinatorics::BoundEdges::Lateral(loops) => Some(loops),
-                            _ => None,
+                for i in 0..3 {
+                    bl[i] = bl[i].min(cl[i]);
+                    bh[i] = bh[i].max(ch[i]);
+                }
+            };
+            let mut own: std::collections::HashSet<NodeId> = Default::default();
+            // A lateral is bounded by rims and rings; a circle bound is a cap's, which no lateral
+            // carries — read as a box that holds everything rather than one that drops a candidate.
+            let mut unbounded = false;
+            for b in std::iter::once(&lf.outer).chain(&lf.inner) {
+                match b {
+                    Bound::Rim { plane, .. } => grow(*plane, k),
+                    Bound::Ring(r) => {
+                        own.extend(r.nodes.iter().copied());
+                        for w in &r.walls {
+                            if let Wall::Arc { cyl, plane, .. } = *w {
+                                grow(plane, cyl);
+                            }
                         }
-                    });
-                let Some(loops) = loops else { continue };
-                if combinatorics::ruling_meets_lateral(jd, &cyls[k].def, loops, sr, [u, v])
-                    == Some(true)
+                    }
+                    Bound::Circle { .. } => unbounded = true,
+                }
+            }
+            if unbounded {
+                (bl, bh) = ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]);
+            }
+            let near =
+                |(l, h): ([f64; 3], [f64; 3])| (0..3).all(|i| l[i] <= bh[i] && h[i] >= bl[i]);
+            for &n in &nodes {
+                if own.contains(&n) || !near(reach_of(n)) {
+                    continue;
+                }
+                let cf = match cf.get_or_insert_with(|| super::grouping::comp_face(jd, cyls, lf)) {
+                    Ok(cf) => &*cf,
+                    // Held only where the bounds decide: a point off the cylinder's surface is
+                    // off the face whatever they are.
+                    Err(err) => {
+                        if !matches!(
+                            combinatorics::named_point_in_disk(jd, cyls, n, &cyls[k].def),
+                            Some(RingSide::Inside | RingSide::Outside)
+                        ) {
+                            hold(Touch::Point(n), *err);
+                        }
+                        continue;
+                    }
+                };
+                if !matches!(
+                    combinatorics::named_point_in_face(jd, cyls, n, cf),
+                    Ok(Some(RingSide::Inside | RingSide::OnBoundary))
+                ) {
+                    continue;
+                }
+                match tangent_hand(jd, cyls, &faces, &mut read, tg.rows, &side, k, n, &[]) {
+                    Hand::Touch => found_at(Touch::Point(n)),
+                    Hand::Tangency => {}
+                    Hand::Held(err) => hold(Touch::Point(n), err),
+                }
+            }
+            for (&[u, v], owned) in &owners {
+                // An edge of two faces on one plane (or one face passing it twice) has no line of
+                // two planes; an arc is no straight edge.
+                let [f, h] = owned[..] else { continue };
+                let w = [faces[f].surf.plane(), faces[h].surf.plane()];
+                if w[0] == w[1] || arc_edges.contains(&[u, v]) {
+                    continue;
+                }
+                let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));
+                let el: [f64; 3] = core::array::from_fn(|i| ul[i].min(vl[i]));
+                let eh: [f64; 3] = core::array::from_fn(|i| uh[i].max(vh[i]));
+                if !near((el, eh)) {
+                    continue;
+                }
+                let loops = match cf.get_or_insert_with(|| super::grouping::comp_face(jd, cyls, lf))
                 {
-                    found_at(Touch::Edge([u, v]));
-                    continue 'ruling_edges;
+                    Ok(combinatorics::CompFace {
+                        outer: combinatorics::BoundEdges::Lateral(loops),
+                        ..
+                    }) => &*loops,
+                    Ok(_) => continue,
+                    // Held only where the bounds decide: a line that misses the cylinder meets
+                    // no face of it.
+                    Err(err) => {
+                        if !matches!(
+                            jd.line_meet(w[0], w[1], &cyls[k].def, false),
+                            nacre_judge::cylinder::LineMeet::Miss
+                                | nacre_judge::cylinder::LineMeet::AxisParallelMiss
+                        ) {
+                            hold(Touch::Edge([u, v]), *err);
+                        }
+                        continue;
+                    }
+                };
+                match combinatorics::segment_meets_lateral(jd, cyls, k, loops, w, [u, v]) {
+                    Some(combinatorics::EdgeOnLateral::AlongRuling) => {
+                        found_at(Touch::Edge([u, v]));
+                    }
+                    Some(combinatorics::EdgeOnLateral::AtRoots(roots)) => {
+                        for (at, on_lateral) in roots {
+                            // On the lateral's boundary, where a face this edge bounds shares a
+                            // curve with the lateral: that face's two bounds meeting, its pinch.
+                            if on_lateral == RingSide::OnBoundary
+                                && owned.iter().any(|&o| shares_a_curve(faces[o], lf, k))
+                            {
+                                continue;
+                            }
+                            match tangent_hand(
+                                jd, cyls, &faces, &mut read, tg.rows, &side, k, at, owned,
+                            ) {
+                                Hand::Touch => found_at(Touch::Edge([u, v])),
+                                Hand::Tangency => {}
+                                Hand::Held(err) => hold(Touch::Edge([u, v]), err),
+                            }
+                        }
+                    }
+                    Some(combinatorics::EdgeOnLateral::Clear) | None => {}
                 }
             }
         }
@@ -553,6 +675,158 @@ pub(super) fn self_touch_reject(
         return Err(err);
     }
     Ok(())
+}
+
+/// Whose question a point the lateral arms found on a lateral is — [`tangent_hand`]'s answer.
+enum Hand {
+    /// A touch at a point: the self-touch check's.
+    Touch,
+    /// A point of a line contact a tangency row speaks for: the tangency verdict's.
+    Tangency,
+    /// The point touches the lateral, and whose question it is could not be read.
+    Held(BoolError),
+}
+
+/// **Is the point `n`, found on a lateral of cylinder `k`, a point of a line contact the tangency
+/// verdict judges?** — it lies on a tangent line on the stretch where a row says the wall face
+/// meets that lateral (`planes::Tangency::contact`, closed), and a result face on the wall's class
+/// covers it (a node of the face's rings, or read inside it or on its boundary). The row's
+/// stretch is the verdict's ground, so the two ask one population: a corner meeting the line at a
+/// point, a face reaching the line past the lateral's span, a wall tangent to its own solid's
+/// cylinder — no row speaks for those, and the point is a touch. The row is the operands'; the
+/// result face is asked too, because where the boolean cut the wall face away around `n` the
+/// lateral is met there by something else.
+///
+/// Whatever cannot be read — which side of the wall's plane `n` lies on, its height, a face's
+/// reading — holds its failure: the touch is proved, only its owner is unknown, and a proof
+/// elsewhere still wins. A reading with no error of its own holds `WitnessNotRational`, the name
+/// for a point those readings have no statement of (none over the suite, the census, the ignored
+/// sweep and nacre-kit).
+#[allow(clippy::too_many_arguments)]
+fn tangent_hand(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[&LocalFace],
+    read: &mut HashMap<usize, combinatorics::CompFace>,
+    rows: &[crate::planes::Tangency],
+    side: &impl Fn(NodeId, usize) -> Option<i8>,
+    k: usize,
+    n: NodeId,
+    own: &[usize],
+) -> Hand {
+    use core::cmp::Ordering;
+    let unread = || reject(RejectReason::WitnessNotRational);
+    let mut held = None;
+    let mut height = None;
+    for t in rows.iter().filter(|t| t.cyl == k) {
+        match side(n, t.wall) {
+            Some(0) => {}
+            Some(_) => continue,
+            None => {
+                held = Some(unread());
+                continue;
+            }
+        }
+        let Some(v) = *height.get_or_insert_with(|| {
+            combinatorics::axis_param_on_cylinder(jd, cyls, n, &cyls[k].def)
+        }) else {
+            held = Some(unread());
+            continue;
+        };
+        let mut within = Some(false);
+        for [lo, hi] in &t.contact {
+            match (lo.cmp_value(&v), v.cmp_value(hi)) {
+                (Some(a), Some(b)) if a != Ordering::Greater && b != Ordering::Greater => {
+                    within = Some(true);
+                    break;
+                }
+                (Some(_), Some(_)) => {}
+                _ => within = None,
+            }
+        }
+        match within {
+            Some(true) => {}
+            Some(false) => continue,
+            None => {
+                held = Some(unread());
+                continue;
+            }
+        }
+        // A point inside an edge of a face is on that face; a node of a face's rings is too.
+        if own.iter().any(|&o| faces[o].surf.plane() == t.wall) {
+            return Hand::Tangency;
+        }
+        for (j, lf) in faces.iter().enumerate() {
+            if lf.surf.plane() != t.wall {
+                continue;
+            }
+            if rings_of(lf).any(|r| r.nodes.contains(&n)) {
+                return Hand::Tangency;
+            }
+            if let std::collections::hash_map::Entry::Vacant(slot) = read.entry(j) {
+                match super::grouping::comp_face(jd, cyls, lf) {
+                    Ok(face) => {
+                        slot.insert(face);
+                    }
+                    Err(err) => {
+                        held = Some(err);
+                        continue;
+                    }
+                }
+            }
+            match combinatorics::named_point_in_face(jd, cyls, n, &read[&j]) {
+                Ok(Some(RingSide::Inside | RingSide::OnBoundary)) => return Hand::Tangency,
+                Ok(Some(RingSide::Outside)) => {}
+                Ok(None) => held = Some(unread()),
+                Err(err) => held = Some(err),
+            }
+        }
+    }
+    held.map_or(Hand::Touch, Hand::Held)
+}
+
+/// Which side of plane class `q` the result node `n` lies on — `0` on it, `None` unread.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a point question: where a result node lies against a face's plane"
+)]
+fn node_side(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+    q: usize,
+) -> Option<i8> {
+    combinatorics::side_of(jd, cyls, n, q)
+}
+
+/// **Do the plane face `g` and the lateral `lat` of cylinder `k` share a curve** — a bound of the
+/// lateral on `g`'s plane (a rim, or an arc on it) and a bound of `g` on the cylinder (its circle,
+/// or an arc of it)? Every point of a lateral's boundary is a point of the face across it, so an
+/// element of that face meeting the lateral's boundary meets another bound of its own face there —
+/// the face's pinch, which the surface takes (a pinched face is a valid solid), and which the
+/// planar arms do not ask of a face's own bounds either.
+fn shares_a_curve(g: &LocalFace, lat: &LocalFace, k: usize) -> bool {
+    let p = g.surf.plane();
+    fn bounds(lf: &LocalFace) -> impl Iterator<Item = &Bound> {
+        std::iter::once(&lf.outer).chain(&lf.inner)
+    }
+    let lateral_on_p = bounds(lat).any(|b| match b {
+        Bound::Rim { plane, .. } => *plane == p,
+        Bound::Ring(r) => r
+            .walls
+            .iter()
+            .any(|w| matches!(*w, Wall::Arc { cyl, plane, .. } if cyl == k && plane == p)),
+        Bound::Circle { .. } => false,
+    });
+    let g_on_k = bounds(g).any(|b| match b {
+        Bound::Circle { cyl } => *cyl == k,
+        Bound::Ring(r) => r
+            .walls
+            .iter()
+            .any(|w| matches!(*w, Wall::Arc { cyl, .. } if cyl == k)),
+        Bound::Rim { .. } => false,
+    });
+    lateral_on_p && g_on_k
 }
 
 /// A face's rings, outer first.
