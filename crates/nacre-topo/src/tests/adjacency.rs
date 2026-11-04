@@ -3,90 +3,150 @@ use crate::topology::{Edge, Face, HalfEdge, Loop};
 use crate::{Handle, Model, Orientation, PointCache, Shell, Solid, Vertex};
 use nacre_geom::Plane;
 use nacre_math::Point3;
-use std::collections::HashMap;
 
-/// The pinch detector is per-vertex: a single face-fan at a vertex is manifold, two+ fans is a
-/// pinch — and **every** pinch is flagged independently, so an *even* number of them is caught
-/// (which an Euler-parity count cannot: two pinches flip χ back to even). Builds the reverse-index
-/// maps directly with minted handles (the detector reads only the maps, never the stores).
-#[test]
-fn nonmanifold_vertices_flags_each_pinch_even_count() {
-    let mut m = Model::new();
-    let r = nacre_exact::Rat::from_int;
-    let surface = m.push_plane_unregistered(
-        Plane::from_point_normal(
-            Point3::origin(),
-            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-        )
-        .unwrap(),
-        [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
-        Orientation::Forward,
-    );
-    // Hand-built cells: the def names the three world seeds — real, distinct planes the
-    // detector never dereferences (it reads only the maps).
-    let mk_v = |m: &mut Model| {
+/// Hand-built cells for the pinch detector, which reads only the faces' loops and their edges'
+/// endpoints — never a surface or a coordinate, so one dummy plane carries every face and edge.
+struct Cells {
+    m: Model,
+    surface: Handle<crate::Surface>,
+}
+
+impl Cells {
+    fn new() -> Cells {
+        let mut m = Model::new();
+        let r = nacre_exact::Rat::from_int;
+        let surface = m.push_plane_unregistered(
+            Plane::from_point_normal(
+                Point3::origin(),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+            [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
+            Orientation::Forward,
+        );
+        Cells { m, surface }
+    }
+
+    fn vertex(&mut self) -> Handle<Vertex> {
         let def = crate::Vertex::ThreePlane([
-            m.seeded_plane(nacre_exact::Axis::Z),
-            m.seeded_plane(nacre_exact::Axis::X),
-            m.seeded_plane(nacre_exact::Axis::Y),
+            self.m.seeded_plane(nacre_exact::Axis::Z),
+            self.m.seeded_plane(nacre_exact::Axis::X),
+            self.m.seeded_plane(nacre_exact::Axis::Y),
         ]);
-        m.push_vertex(
+        self.m.push_vertex(
             def,
             PointCache::Unrealized {
                 coord: Point3::origin(),
             },
         )
-    };
-    let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
-    let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
-    // Add one triangular face-fan (3 edges from `apex`, 3 faces cyclically joining them).
-    let add_fan =
-        |m: &mut Model,
-         apex: Handle<Vertex>,
-         vertex_edges: &mut HashMap<Handle<Vertex>, Vec<Handle<Edge>>>,
-         edge_uses: &mut HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>>| {
-            let e: Vec<Handle<Edge>> = (0..3)
-                .map(|_| {
-                    let other = mk_v(m);
-                    // The detector reads only the maps — a self-pair of the one dummy
-                    // surface is enough (never dereferenced as adjacency here; a raw
-                    // `edges.push` skips the curve cache, which nothing here reads).
-                    m.edges.push(Edge {
-                        surfaces: [surface, surface],
-                        vertices: [apex, other],
-                    })
-                })
-                .collect();
-            vertex_edges
-                .entry(apex)
-                .or_default()
-                .extend(e.iter().copied());
-            for i in 0..3 {
-                let f = m.faces.push(Face {
-                    surface,
-                    outer: Loop { half_edges: vec![] },
-                    inner: vec![],
-                    orientation: Orientation::Forward,
-                });
-                edge_uses.entry(e[i]).or_default().push((f, true));
-                edge_uses.entry(e[(i + 1) % 3]).or_default().push((f, true));
-            }
-        };
-    // Manifold apex: one fan. Two pinched apexes: two fans each.
-    let ok = mk_v(&mut m);
-    add_fan(&mut m, ok, &mut vertex_edges, &mut edge_uses);
-    let pinch1 = mk_v(&mut m);
-    add_fan(&mut m, pinch1, &mut vertex_edges, &mut edge_uses);
-    add_fan(&mut m, pinch1, &mut vertex_edges, &mut edge_uses);
-    let pinch2 = mk_v(&mut m);
-    add_fan(&mut m, pinch2, &mut vertex_edges, &mut edge_uses);
-    add_fan(&mut m, pinch2, &mut vertex_edges, &mut edge_uses);
+    }
 
-    let mut got = nonmanifold_vertices(&vertex_edges, &edge_uses);
-    got.sort_unstable_by_key(|h| h.index());
-    let mut want = vec![pinch1, pinch2];
-    want.sort_unstable_by_key(|h| h.index());
-    assert_eq!(got, want, "both pinches flagged, the manifold fan is not");
+    fn edge(&mut self, a: Handle<Vertex>, b: Handle<Vertex>) -> Handle<Edge> {
+        self.m.edges.push(Edge {
+            surfaces: [self.surface, self.surface],
+            vertices: [a, b],
+        })
+    }
+
+    /// A face with one loop of `(edge, forward)` half-edges.
+    fn face(&mut self, hes: &[(Handle<Edge>, bool)]) -> Handle<Face> {
+        self.m.faces.push(Face {
+            surface: self.surface,
+            outer: Loop {
+                half_edges: hes
+                    .iter()
+                    .map(|&(edge, forward)| HalfEdge { edge, forward })
+                    .collect(),
+            },
+            inner: vec![],
+            orientation: Orientation::Forward,
+        })
+    }
+
+    /// A closed fan of three triangles about `apex` — `apex → o_i → o_{i+1} → apex`.
+    fn fan(&mut self, apex: Handle<Vertex>, faces: &mut Vec<Handle<Face>>) {
+        let o: Vec<Handle<Vertex>> = (0..3).map(|_| self.vertex()).collect();
+        let spoke: Vec<Handle<Edge>> = o.iter().map(|&v| self.edge(apex, v)).collect();
+        let rim: Vec<Handle<Edge>> = (0..3).map(|i| self.edge(o[i], o[(i + 1) % 3])).collect();
+        for i in 0..3 {
+            faces.push(self.face(&[
+                (spoke[i], true),
+                (rim[i], true),
+                (spoke[(i + 1) % 3], false),
+            ]));
+        }
+    }
+
+    fn pinches(&self, faces: &[Handle<Face>]) -> Vec<Handle<Vertex>> {
+        nonmanifold_vertices(&self.m, faces.iter().copied())
+    }
+}
+
+/// **The detector is per vertex**: one fan of faces at a vertex is manifold, two fans a pinch — and
+/// every pinch is flagged on its own, so an *even* number of them is caught (an Euler-parity count
+/// is not: two pinches flip χ back to even).
+#[test]
+fn nonmanifold_vertices_flags_each_pinch_even_count() {
+    let mut c = Cells::new();
+    let mut faces = Vec::new();
+    let ok = c.vertex();
+    c.fan(ok, &mut faces);
+    let pinch1 = c.vertex();
+    c.fan(pinch1, &mut faces);
+    c.fan(pinch1, &mut faces);
+    let pinch2 = c.vertex();
+    c.fan(pinch2, &mut faces);
+    c.fan(pinch2, &mut faces);
+    assert_eq!(
+        c.pinches(&faces),
+        vec![pinch1, pinch2],
+        "both pinches flagged, the manifold fan is not"
+    );
+}
+
+/// **A closed edge is two ends of the link.** A whole rim `[v, v]` bounds a disk cap on one side and
+/// a lateral on the other: the two faces join the rim's two ends at `v`, one component, manifold.
+/// A fan of other faces meeting `v` as well — a box whose corner rests on the rim — is a second
+/// component: a pinch, where a link read in *edges* sees a face using one edge at `v` and cannot
+/// say.
+#[test]
+fn a_fan_meeting_a_closed_rim_at_its_vertex_is_a_pinch() {
+    let mut c = Cells::new();
+    let v = c.vertex();
+    let rim = c.edge(v, v);
+    let mut faces = vec![c.face(&[(rim, true)]), c.face(&[(rim, false)])];
+    assert_eq!(
+        c.pinches(&faces),
+        vec![],
+        "a cap and its lateral are one fan"
+    );
+    c.fan(v, &mut faces);
+    assert_eq!(
+        c.pinches(&faces),
+        vec![v],
+        "a second fan at the rim's vertex"
+    );
+}
+
+/// **A face passing a vertex twice in one loop reads as its two corners.** The loop
+/// `w →a→ v →rim→ v →b→ w` takes a closed edge between two others — a plate's top whose ring runs
+/// round a hole's rim at the point a boss's corner touches it. With the lateral on the rim's other
+/// side and a face closing `a` and `b`, the link at `v` is one cycle through the four ends: manifold.
+/// Reading the ends' slots the wrong way round splits `v` into two components — the rim's two
+/// ends, and `a`'s and `b`'s — a false pinch.
+#[test]
+fn a_closed_edge_inside_a_longer_loop_is_read_by_its_ends() {
+    let mut c = Cells::new();
+    let (v, w) = (c.vertex(), c.vertex());
+    let (a, rim, b) = (c.edge(w, v), c.edge(v, v), c.edge(v, w));
+    let mut faces = vec![
+        c.face(&[(a, true), (rim, true), (b, true)]),
+        c.face(&[(rim, false)]),
+        c.face(&[(b, false), (a, false)]),
+    ];
+    assert_eq!(c.pinches(&faces), vec![], "one fan at v, one at w");
+    c.fan(v, &mut faces);
+    assert_eq!(c.pinches(&faces), vec![v], "a second fan at v");
 }
 
 /// Two triangles sharing edge v0–v1, wound so the shared edge is used once

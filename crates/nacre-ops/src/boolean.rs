@@ -70,8 +70,11 @@ pub fn boolean_with_report(
         }
     };
     // Topological self-check on the assembled result (DNA: never return a malformed solid). Reject
-    // rather than return. Valid results always pass, so this never false-rejects; the traversal
-    // reads the topology stores directly (no adjacency rebuild, no coordinates).
+    // rather than return. A valid result passes: the arrangement and the coplanar merge emit a face
+    // that passes one vertex twice as one loop, the premise the pinch check reads loops under
+    // (`nacre_topo::nonmanifold_vertices`) — a bored plate whose top ring passes a boss's corner on
+    // the rim twice is read manifold (`a_crossing_on_a_segments_endpoint_is_inside_it`). The
+    // traversal reads the topology stores directly (no adjacency rebuild, no coordinates).
     if let Some((t, at)) = check_result_topology(model, &result) {
         model.restore_live(snapshot);
         return Err(surfacing(match at {

@@ -89,64 +89,74 @@ fn uf_union(parent: &mut [usize], a: usize, b: usize) {
     }
 }
 
-/// The vertices whose surface **link is not a single circle** — non-manifold "pinch" points where
-/// two or more face-fans meet at one vertex (two cubes touching only at a corner; a cut whose tool
-/// corner lands on a target's concave corner). Pure combinatorics on the reverse index, no
-/// coordinates:
+// How it reads: the link's nodes are edge ends, its arcs are the loops' corners. An end is an edge
+// and one of its two endpoint slots (`vertices[0]` or `vertices[1]`); a corner is two consecutive
+// half-edges of a loop, and joins the end the first arrives by to the end the second leaves by. At
+// each vertex the ends meeting there fall into connected components: one is a manifold vertex, two
+// or more a pinch. A closed edge `[v, v]` — a whole rim — is two ends at `v`, so a disk cap and the
+// lateral beside it make one component through the rim's two ends, and a fan of other faces meeting
+// the rim's vertex is a second. Two premises make the components the fans: every edge has two uses,
+// so the link is 2-regular; and two consecutive half-edges of a loop bound one angular sector of
+// their face — a face meeting a vertex with two separate loops loses which ends pair into sectors,
+// and no reading of loops alone gets them back. A corner whose two half-edges do not meet at one
+// vertex (an open loop) joins nothing.
+/// The vertices of `faces` where two or more fans of faces meet — non-manifold "pinch" points (two
+/// cubes touching only at a corner; a cut whose tool corner lands on a target's concave corner; a
+/// box whose corner rests on a cap's rim beside it), in handle order. Read off the faces' loops; no
+/// coordinates.
 ///
-/// At a vertex `V`, each incident face contributes its two `V`-edges as an arc of the link (a face
-/// using edge `e` at `V` has `V` as an endpoint of `e`, and `e` is one of the two loop edges the
-/// face turns through at `V`). Union those arcs over `V`'s edges and count connected components. A
-/// manifold vertex's link is one cycle → **one component**; a pinch is **≥2 components** (or a face
-/// using ≠2 edges at `V` — a pinched face passing through `V` twice).
-///
-/// **Soundness** rests on the caller's edges being manifold (every edge used by exactly two faces —
-/// the boolean's closed-shell guard, and what a closed solid always satisfies): the link is then
-/// 2-regular, so its components are exactly its cycles (fans).
-///
-/// **Scope — planar (polyhedral) topology.** A polyhedral corner uses exactly two of its vertex's
-/// edges per face; the function **abstains** (treats the vertex as manifold) at any vertex where a
-/// face uses a different number — a cylinder's circular cap or lateral rim (one closed edge,
-/// `[v, v]`). These are parametric artifacts
-/// this link analysis cannot classify (M6 quadrics), never a *planar* pinch, so real planar pinches
-/// are unaffected. (A genuinely pinched *face* — a loop through `V` twice — is thus not flagged
-/// here; the M5 boolean never emits one, and the edge check covers non-manifold edges.)
+/// The faces must use every edge exactly twice, and a face must pass a vertex twice in **one**
+/// loop, a ring through the point twice. A face that meets one vertex with two separate loops — a
+/// hole's whole rim as one loop and a footprint through the rim's vertex as another — is reported
+/// at that vertex although its surface is a 2-manifold there.
 pub fn nonmanifold_vertices(
-    vertex_edges: &HashMap<Handle<Vertex>, Vec<Handle<Edge>>>,
-    edge_uses: &HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>>,
+    model: &Model,
+    faces: impl IntoIterator<Item = Handle<Face>>,
 ) -> Vec<Handle<Vertex>> {
-    let mut out = Vec::new();
-    for (&v, raw_edges) in vertex_edges {
-        // Distinct edges at `v` (a self-loop `[v, v]` is listed twice by the caller).
-        let mut seen = std::collections::HashSet::new();
-        let edges: Vec<Handle<Edge>> = raw_edges
-            .iter()
-            .copied()
-            .filter(|e| seen.insert(*e))
-            .collect();
-        let idx: HashMap<Handle<Edge>, usize> =
-            edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
-        // face → the local indices of the `V`-edges it uses (its corner at `V`).
-        let mut face_edges: HashMap<Handle<Face>, Vec<usize>> = HashMap::new();
-        for &e in &edges {
-            for &(f, _) in edge_uses.get(&e).map(Vec::as_slice).unwrap_or(&[]) {
-                face_edges.entry(f).or_default().push(idx[&e]);
+    let mut index: HashMap<(Handle<Edge>, usize), usize> = HashMap::new();
+    let mut at: Vec<Handle<Vertex>> = Vec::new();
+    let mut parent: Vec<usize> = Vec::new();
+    let mut node = |end: (Handle<Edge>, usize), v: Handle<Vertex>, parent: &mut Vec<usize>| {
+        *index.entry(end).or_insert_with(|| {
+            at.push(v);
+            parent.push(parent.len());
+            parent.len() - 1
+        })
+    };
+    for fh in faces {
+        let face = model.face(fh);
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            let k = lp.half_edges.len();
+            for i in 0..k {
+                let (a, b) = (lp.half_edges[i], lp.half_edges[(i + 1) % k]);
+                // A forward half-edge runs `vertices[0] → vertices[1]`: it arrives by slot 1 and
+                // leaves by slot 0.
+                let (sa, sb) = (usize::from(a.forward), usize::from(!b.forward));
+                let (va, vb) = (
+                    model.edge(a.edge).vertices[sa],
+                    model.edge(b.edge).vertices[sb],
+                );
+                if va != vb {
+                    continue;
+                }
+                let (na, nb) = (
+                    node((a.edge, sa), va, &mut parent),
+                    node((b.edge, sb), vb, &mut parent),
+                );
+                uf_union(&mut parent, na, nb);
             }
         }
-        // Abstain on non-polyhedral corners (see scope note).
-        if face_edges.values().any(|es| es.len() != 2) {
-            continue;
-        }
-        let mut parent: Vec<usize> = (0..edges.len()).collect();
-        for es in face_edges.values() {
-            uf_union(&mut parent, es[0], es[1]);
-        }
-        let components: std::collections::HashSet<usize> =
-            (0..edges.len()).map(|i| uf_find(&mut parent, i)).collect();
-        if components.len() > 1 {
-            out.push(v);
-        }
     }
+    let mut roots: HashMap<Handle<Vertex>, std::collections::HashSet<usize>> = HashMap::new();
+    for (i, &v) in at.iter().enumerate() {
+        let r = uf_find(&mut parent, i);
+        roots.entry(v).or_default().insert(r);
+    }
+    let mut out: Vec<Handle<Vertex>> = roots
+        .into_iter()
+        .filter(|(_, r)| r.len() > 1)
+        .map(|(v, _)| v)
+        .collect();
     out.sort_unstable_by_key(|h| h.index());
     out
 }

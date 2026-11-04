@@ -51,7 +51,7 @@ pub(crate) fn check_result_topology(
         }
         // The returned list is sorted by handle index, so the first entry is a deterministic
         // witness (one of possibly several pinch vertices).
-        if let Some(&vh) = nacre_topo::nonmanifold_vertices(&vertex_edges, &edge_uses).first() {
+        if let Some(&vh) = nacre_topo::nonmanifold_vertices(model, faces.iter().copied()).first() {
             return Some((
                 RejectReason::NonManifoldVertex,
                 Some(crate::RejectWhere::Point(model.vertex_point(vh))),

@@ -87,7 +87,8 @@ pub enum Violation {
 
     /// A vertex whose surface link is not a single circle — a non-manifold "pinch" where two or
     /// more face-fans meet at one point (two solids touching only at a corner), even though every
-    /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`].
+    /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`], which reads a face's loops:
+    /// a face meeting one vertex with two separate loops is reported here too.
     NonManifoldVertex { vertex: Handle<Vertex> },
 
     /// A vertex definition whose carrier kinds contradict its variant: a `ThreePlane`
@@ -723,10 +724,11 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
             }
         }
     }
-    // Non-manifold *vertices* (pinch points) — every edge can be manifold yet two face-fans meet
-    // at one vertex. `adj` is already reachable-scoped (rebuilt fresh), so every returned vertex is
-    // live.
-    for vertex in nacre_topo::nonmanifold_vertices(&adj.vertex_edges, &adj.edge_uses) {
+    // Non-manifold *vertices* (pinch points) — every edge can be manifold yet two fans of faces
+    // meet at one vertex. Read off the live faces' loops, so every returned vertex is live.
+    let mut faces: Vec<_> = reach.faces.iter().copied().collect();
+    faces.sort_unstable_by_key(|h| h.index());
+    for vertex in nacre_topo::nonmanifold_vertices(m, faces) {
         out.push(Violation::NonManifoldVertex { vertex });
     }
 }

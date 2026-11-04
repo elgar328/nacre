@@ -1415,3 +1415,164 @@ fn a_body_whose_vertex_on_a_cylinder_surface_touches_its_own_face_is_refused() {
         }
     }
 }
+
+/// **A body resting a corner on its own rim is a pinch** — refused as `NonManifoldVertex`, the name
+/// the same contact gets between flat faces.
+///
+/// A box's bottom face lies on a cap's plane and its corner on the cap's rim, or on a bored plate's
+/// top with its corner on the hole's rim from inside; a column of its own on the plate joins the
+/// box to the body elsewhere. The two faces on that plane touch at the corner only, and the plane's
+/// arrangement cuts both rings there: the corner becomes a vertex of the cap (or the plate's top),
+/// of the cylinder's lateral and of the box at once, so it bounds every face it touches and no
+/// face-reading check can see it — it is where two fans of faces meet at one vertex. Each row's
+/// twins: raised 0.5, one body; with no column, two bodies. On the world frame and a 3-4-5 one, in
+/// either operand order.
+#[test]
+fn a_body_resting_a_corner_on_its_own_rim_is_a_pinch() {
+    type Quad = [[f64; 2]; 4];
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Quad {
+        [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+    }
+    fn disk() -> Profile2d {
+        nacre_ops::from_paths(vec![
+            nacre_ops::Ring2d::circle(Point2::from_array([0.0, 0.0]), 5.0).expect("a circle"),
+        ])
+        .expect("a disk")
+        .remove(0)
+    }
+    fn vol(m: &Model, s: Handle<Solid>) -> f64 {
+        nacre_props::mass_props(m, s).expect("props").volume
+    }
+    // A plate with a boss of radius 5 up to 4 above it, and a box over `top` from the cap's plane
+    // up 2 (raised `lift`), carried by a column over `post` when `joined`.
+    fn on_a_boss(
+        m: &mut Model,
+        base: SketchFrame,
+        top: Quad,
+        post: Quad,
+        lift: f64,
+        joined: bool,
+    ) -> (Handle<Solid>, Handle<Solid>) {
+        let floor = offset_of(m, base, -2.0);
+        let plate = prism_on(m, floor, &rect(-10.0, -10.0, 12.0, 12.0), 2.0);
+        let boss = extrude_on(m, base, disk(), 4.0);
+        let a = boolean(m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
+        let level = offset_of(m, base, 4.0 + lift);
+        let mut b = prism_on(m, level, &top, 2.0);
+        if joined {
+            let column = prism_on(m, base, &post, 4.0 + lift);
+            b = boolean(m, BoolKind::Fuse, b, column).expect("the arm")[0];
+        }
+        (a, b)
+    }
+    // A plate 5 thick with a blind hole of radius 5, 3 deep, and a box over `top` on the plate's
+    // top (raised `lift`), carried by a column from the hole's floor when `joined`.
+    fn over_a_hole(
+        m: &mut Model,
+        base: SketchFrame,
+        top: Quad,
+        post: Quad,
+        lift: f64,
+        joined: bool,
+    ) -> (Handle<Solid>, Handle<Solid>) {
+        let floor = offset_of(m, base, -5.0);
+        let plate = prism_on(m, floor, &rect(-10.0, -10.0, 12.0, 12.0), 5.0);
+        let deep = offset_of(m, base, -3.0);
+        let cutter = extrude_on(m, deep, disk(), 4.0);
+        let a = boolean(m, BoolKind::Cut, plate, cutter).expect("the hole")[0];
+        let level = if lift == 0.0 {
+            base
+        } else {
+            offset_of(m, base, lift)
+        };
+        let mut b = prism_on(m, level, &top, 2.0);
+        if joined {
+            let column = prism_on(m, deep, &post, 3.0 + lift);
+            b = boolean(m, BoolKind::Fuse, b, column).expect("the box")[0];
+        }
+        (a, b)
+    }
+    type Build =
+        fn(&mut Model, SketchFrame, Quad, Quad, f64, bool) -> (Handle<Solid>, Handle<Solid>);
+    let rows: [(&str, Build, Quad, Quad, [f64; 3]); 3] = [
+        (
+            "a box corner on the boss's rim at (3, 4)",
+            on_a_boss,
+            rect(3.0, 4.0, 10.0, 10.0),
+            rect(8.0, 8.0, 10.0, 10.0),
+            [3.0, 4.0, 4.0],
+        ),
+        (
+            "a box corner on the boss's rim at (4, 3)",
+            on_a_boss,
+            rect(4.0, 3.0, 10.0, 10.0),
+            rect(8.0, 8.0, 10.0, 10.0),
+            [4.0, 3.0, 4.0],
+        ),
+        (
+            "a box corner on the hole's rim at (3, 4), from inside",
+            over_a_hole,
+            rect(-1.0, 0.0, 3.0, 4.0),
+            rect(0.0, 1.0, 1.0, 2.0),
+            [3.0, 4.0, 0.0],
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (row, build, top, post, corner) in rows {
+        for tilted in [false, true] {
+            for (lift, joined) in [(0.0, true), (0.5, true), (0.0, false)] {
+                for swapped in [false, true] {
+                    let at = format!(
+                        "{row}, tilted = {tilted}, lift = {lift}, joined = {joined}, \
+                         swapped = {swapped}"
+                    );
+                    let mut m = Model::new();
+                    let (base, _) = base_frame(&mut m, tilted);
+                    let (a, b) = build(&mut m, base, top, post, lift, joined);
+                    let want = vol(&m, a) + vol(&m, b);
+                    let (x, y) = if swapped { (b, a) } else { (a, b) };
+                    let got = boolean(&mut m, BoolKind::Fuse, x, y);
+                    let pinch = lift == 0.0 && joined;
+                    match (pinch, got) {
+                        (
+                            true,
+                            Err(BoolError::Rejected {
+                                reason: RejectReason::NonManifoldVertex,
+                                at: Some(nacre_ops::RejectWhere::Point(p)),
+                            }),
+                        ) => {
+                            let off = p
+                                .as_array()
+                                .iter()
+                                .zip(corner)
+                                .any(|(g, w)| (g - w).abs() > 1e-9);
+                            if !tilted && off {
+                                wrong.push(format!("{at}: witness {p:?}"));
+                            }
+                        }
+                        (false, Ok(solids)) => {
+                            let n = if joined { 1 } else { 2 };
+                            let got: f64 = solids.iter().map(|&s| vol(&m, s)).sum();
+                            if solids.len() != n
+                                || !nacre_validate::validate(&m).is_empty()
+                                || (got - want).abs() > 1e-6
+                            {
+                                wrong.push(format!(
+                                    "{at}: {} bodies, volume {got} (want {want})",
+                                    solids.len()
+                                ));
+                            }
+                        }
+                        (_, other) => wrong.push(format!("{at}: {other:?}")),
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} cells:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
