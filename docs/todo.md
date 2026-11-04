@@ -21,7 +21,8 @@
 묻지 않는다») — 게이트를 열 때 그 판정도 함께 연다.
 
 **인구는 축이 직교하는 쌍이다.** 쌍 규칙까지 온 쌍을 축의 관계로 가른 값(스위트·census·무시된 스윕·kit; 비스듬한
-평면 가운데 짓지 않는 것이 낀 입력은 `ObliqueCylinderCut` 이 먼저 거절해 여기 들지 않는다):
+평면이 낀 입력 가운데 게이트가 이름으로 먼저 거절하는 것 — 그리지 못하는 단면, 축이 평행하지 않은 두 원통을 자르는 클래스 — 은
+여기 들지 않는다; 마개가 거절하는 입력은 쌍 규칙을 지난 뒤다):
 
 - **kit 은 전부 직교다** — 필렛 × 가로 드릴(축이 비껴감, 거리 2~5)과 반지름이 같은 십자 구멍. 평행 쌍은 0 이다.
 - **census 거절 18 가운데 9 로 가장 많고, 일반 4차곡선은 없다**: `roundplate`(사용자의 둥근 판 스크립트에서 파생한
@@ -198,53 +199,41 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 
 ### 비스듬한 평면 × 원통 — `ObliqueCylinderCut`
 
-원통 축에 비스듬한 평면(교선이 타원)은 그 평면 위의 면이 모두 옆면 상자에서 떨어져 있고 평면이 어느 림 원에도 한 점으로
-접하지 않을 때 짓는다 — 그 클래스의 배열이 단면(온전한 타원, 또는 림·룰링·다른 면의 선분이 자른 호)을 그리고, 옆면 차트에서
-단면은 선이되 그것이 가르는 칸을 걷기가 다시 잇는다(`cyl_chart` 모듈 doc, design 「인구 게이트」·「원·호·조각」, 점수판
-`src/tests/suite/oblique_sections.rs`). 그 밖은 거절이다. 이 길에 드는 것은 세계 이름 있는 비스듬한 평면(스케치의 비스듬한
-변, 세 점 datum, 3-4-5 축)뿐이다 — 사분각 밖 회전은 `CylinderGateUndecided` 다(「세계 진술 없는 클래스가 낀 원통 불리언」).
-census 는 0 이다 — 코퍼스에 원통을 비스듬히 자르는 배치가 없다는 뜻이지, 사용자가 안 만난다는 뜻이 아니다.
+원통 축에 비스듬한 평면(교선이 타원)은 그 평면이 옆면 경계의 어느 원(span 끝의 림, 구멍·패널의 호)에도 한 점으로 접하지 않을 때
+게이트를 지나고, 그 클래스의 배열이 단면(온전한 타원, 또는 림·룰링·다른 면의 선분이 자른 호)을 그리며 옆면 차트는 단면을 칸을
+가르는 선으로 읽는다(`cyl_chart` 모듈 doc, design 「인구 게이트」·「원·호·조각」, 점수판 `src/tests/suite/oblique_sections.rs`).
+결과 면이 단면을 따라 경계 지어지면 결과에 타원 간선이 남고, 그 면이 서는 자리(`per_class`)의 마개가 `ObliqueCylinderCut` 으로
+거절한다 — 그래서 짓는 것은 결과 면이 단면을 경계로 들지 않는 배치(면이 옆면에서 떨어지거나 고체에 닿기만 하는 것)뿐이다. 이 길에 드는 것은 세계 이름
+있는 비스듬한 평면(스케치의 비스듬한 변, 세 점 datum, 3-4-5 축)뿐이다 — 사분각 밖 회전은 `CylinderGateUndecided` 다(「세계 진술
+없는 클래스가 낀 원통 불리언」). census 는 0 이다 — 코퍼스에 원통을 비스듬히 자르는 배치가 없다는 뜻이지, 사용자가 안 만난다는
+뜻이 아니다.
 
-타원의 점은 모두 평면 둘과 원통의 관통점(근호 하나)이고 타원은 θ 에 대해 단조라, 수 기계는 있다. 남은 사다리(앞의 것이
-뒤의 것의 바닥):
+타원의 점은 모두 평면 둘과 원통의 관통점(근호 하나)이고 타원은 θ 에 대해 단조라, 수 기계는 있다. 마개가 덮는 실패는 오늘 타원
+간선의 곡선 유도 하나다(`refused_at_the_ellipse` 가 보어를 가로지르는 거싯·슬롯이 난 보어·기운 원통에서 잠근다). 남은 사다리(앞의
+것이 뒤의 것의 바닥):
 
-- **단면 위의 접점과 남은 꼭짓점** — 평면이 림 원에 접하면 게이트가 거절한다(`rim_against_plane`). 추적기가 읽는 꼭짓점과
-  기권하는 갈래는 `section_on_class` 의 doc 이다; 기권의 예 — 면 안에서 닿는 오목 꼭짓점, 체인 링의 호–호, 곧게 지나는 이름 있는 꼭짓점의 룰링–룰링,
-  가로지름이 없고 θ 범위가 한 바퀴를 도는 띠 아닌 면(계단 체인 림, 무리수 꼭짓점이라 범위를 진술하지 못한 사분원 — 볼록
-  꼭짓점에 닿기만 해도 이 갈래다). 비스듬한 클래스의
-  꼭짓점 run 은 스위트·무시 스윕·census·kit 의 debug 실행에서 가로지름 64(kit 16)·볼록 닿음 36 이 전부이고(참조 실행이 배열을
-  한 번 더 돈 수까지) 기권하는 조합은 0 이다. 가로지름 없이 덜어낼 것이 없는 면은 림 둘인 띠 120 과 각을 비운 사분원 36 이
-  전부이고 여기서도 기권은 0 이다. 단면 클래스가 공유 룰링과 만나는 점은 다른 클래스처럼 접힌다(`record_shared_ruling` — 그
-  선을 자르는 이름 있는 클래스). 스침선(`GrazeLine`)과 만나는 점은 축을 가로지르는 클래스만 접는다 — 스침선에는 유리수 점이
-  없어 비스듬한 클래스가 그 선을 만나는 높이를 정확히 물을 수 없다. 추적기의 기권은 모두 `DeclineKind::ObliqueSection`,
-  거절 이름은 `ObliqueCylinderCut`.
-- **호 변의 면도 떨어진다** — `faces_apart` 가 곡선 간선을 거절해, 비스듬한 클래스의 면이 원판이면(비스듬한 원통의 캡)
-  단면 갈래에 못 든다(`wall_faces.rs` 의 `an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes`, z = 2.4).
-- **차트 위 비스듬한 절단** — 게이트가 면이 옆면에 닿는 비스듬한 클래스를 들이고(`faces_apart` 의 요구), 룰링이 단면에서
-  끝나며(`ruling_sweep` 의 유리수 정거장), 단면을 따라 끝나는 옆면 칸이 선다 — 그 칸이 남기는 타원 간선의 거절은
-  `reconstruct.rs` 의 `EdgeDecline::Oblique`(백스톱 `ObliqueCircleClass`)에서 커버리지의 이름 `ObliqueCylinderCut` 으로
-  옮긴다. `per_class` 의 백스톱(방출된 면이 단면에 닿음 — `CylinderStagesDisagree`)도 이 단에서 옮긴다. 차트가 단면 선의
-  딱지를 읽는 위아래 부호(`plus_t_is_above` — 비스듬한 클래스에서도 `n·m` 의 부호 하나)는 아직 아무것도 잠그지 않는다:
-  단면이 현존 칸에서 투명해 그 부호를 뒤집어도 스위트가 초록이다(잰 것) — 단면을 따라 끝나는 칸이 서면 그것이 첫 잠금이다.
-  잰 것(게이트의 `faces_apart` 요구와 `per_class` 백스톱의 비스듬한 절반을 끈 시험판, 커밋 안 함): 보어를 가로지르는 거싯 6
-  불리언은 배열·차트를 지나 재구성의 `EdgeDecline::Oblique` 에서만 멈추고, 그 시험판에서 차트의 부호를 뒤집으면 6 이
-  `LabelConflict` 다(잠긴다). 스위트의 나머지·무시 스윕·census·kit 에 바뀐 답은 그 세 가족뿐이고(접선 모서리의 셋째 평면, 구멍
-  림에 꼭짓점이 닿는 거싯, 홈 입구의 쐐기) 셋 다 여섯 칸이 지어진다(validate 0, 부피는 접촉뿐인 합). 이 단이 함께 하는 것:
-  백스톱의 비스듬한 절반은 지우지 말고 결과 단계의 마개 소켓(`result.rs` 의 «the stopper socket»)에 `ObliqueCylinderCut`
-  으로 꽂는다 — 자기접촉 판정(`naming.rs`)이 재구성보다 먼저 돌아 다른 이름이 먼저 나갈 수 있다; 룰링이 단면에서 끝나는 길
-  (`pierce_axis_param` 은 축을 가로지르는 평면이 없는 이름에 `None` — `rulings.rs` 의 `body_side`·`per_class.rs`·`in_faces.rs`)을
-  보어 + 비스듬한 거싯 + 보어를 자르는 축 벽 픽스처로 잰다. 이 단이 함께 여는 것은 자기접촉 판정의 옆면 공백이다 — 옆면에 한
-  점으로 닿는 접촉(옆면 «안»의 꼭짓점, 옆면에 접하는 간선)을 묻는 팔이 없다(`self_touch_reject` 본문의 «What is not asked»). 같은
-  시험판에서 비스듬한 프리즘의 꼭짓점이 옆면 중간 (3,4,2)에 닿는 몸과 쐐기의 꼭짓점 간선이 옆면 (5,0,2)에 접하는 몸이 `Ok n=1` 이다.
-  묻는 길: 꼭짓점이 원통 위인가는 `named_point_in_disk` 의 반지름 판독이고, 옆면의 닫힌 영역은 `loop_parity` 가 읽되 경계 위와 못 읽음을
-  한 `None` 으로 내므로 둘을 갈라야 한다. 림 위의 접촉은 이 팔의 몫이 아니다 — 「가지 말 것」의 옆면 점 팔 행. 점 팔이 혼합 링에서
-  버리는 기권(무리수 관통 점, 그리고 혼합 링의 좌표 읽기가 기권한 점 — `point_in_mixed_ring` 은 링 위와 접선 광선을 한 `None` 으로
-  낸다)은 비스듬한 단면이 늘릴 수 있다; 오늘의 수는 `self_touch_reject` 본문. 비스듬한 절단이 옆면의 두 림을 한 점에서 맞닿게 하면
-  그 옆면의 철자 — 두 림 루프가 꼭짓점을 나누는가, 한 루프인가(한 루프는 감김 0 이라 tess 의 두 림 전제와 부딪힌다) — 와 집힘
-  검사의 전제(`nacre_topo::nonmanifold_vertices` 는 한 면이 한 꼭짓점을 두 루프로 지나면 그 자리를 집힘으로 읽는다)를 함께 정한다.
-  오늘 그 철자는 validate 가 보는 모델과 불리언 결과에서 0 이고, 나오면 χ 가 홀수라 `EulerParity` 도 함께 울린다.
-- **기하·위상** — `nacre_geom::Curve` 에 타원이 없고 `derive_edge_curve` 가 `EdgeDecline::Oblique` 를 낸다; `realize.rs` 의
-  `seam_point_stated` 는 비스듬한 평면에서 평면 밖의 점이고, `pierce_point` 는 캡 × 비스듬한 평면을 실현하지 못한다.
+- **단면 위의 접점과 남은 꼭짓점** — 평면이 옆면 경계의 원에 한 점으로 접하면 게이트가 거절한다(`rim_against_plane`, 원마다).
+  추적기가 읽는 꼭짓점과 기권하는 갈래는 `section_on_class` 의 doc 이다; 기권의 예 — 면 안에서 닿는 오목 꼭짓점, 체인 링의 호–호,
+  곧게 지나는 이름 있는 꼭짓점의 룰링–룰링, 가로지름이 없고 θ 범위가 한 바퀴를 도는 띠 아닌 면(계단 체인 림, 무리수 꼭짓점이라
+  범위를 진술하지 못한 사분원 — 볼록 꼭짓점에 닿기만 해도 이 갈래다). 게이트가 면이 옆면에 닿는 클래스를 들이므로 기권하는 조합이
+  코퍼스에 나오는지 잰다. 단면 클래스가 공유 룰링과 만나는 점은 다른 클래스처럼 접힌다(`record_shared_ruling` — 그 선을
+  자르는 이름 있는 클래스). 스침선(`GrazeLine`)과 만나는 점은 축을 가로지르는 클래스만 접는다 — 스침선에는 유리수 점이 없어
+  비스듬한 클래스가 그 선을 만나는 높이를 정확히 물을 수 없다. 추적기의 기권은 모두 `DeclineKind::ObliqueSection`, 거절 이름은
+  `ObliqueCylinderCut`.
+- **비스듬한 원통의 캡** — 캡 평면은 제 원통의 원과 다른 원통의 단면을 함께 들어 게이트가 거절한다(`carries_unnested` — 원판
+  둘의 중첩은 축이 평행할 때만 답한다; `wall_faces.rs` 의 `an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes`,
+  z = 2.4).
+- **기하·위상** — `nacre_geom::Curve` 에 타원이 없고 `derive_edge_curve` 가 `EdgeDecline::Oblique` 를 낸다(마개가 덮는 실패);
+  `realize.rs` 의 `seam_point_stated` 는 비스듬한 평면에서 평면 밖의 점이고, `pierce_point` 는 캡 × 비스듬한 평면을 실현하지
+  못한다. 이 단이 함께 정할 것: 호 간선의 열쇠가 평면을 드는 것(`EdgeKey::Arc` — 캡의 원과 단면이 끝을 나눈다)의 첫 잠금 —
+  오늘은 같은 결과의 다른 타원 간선이 먼저 실패해 심기가 물지 않는다; 룰링이 단면에서 끝나는 정거장의 높이(`pierce_axis_param`
+  은 축을 가로지르는 평면이 없는 이름에 `None` — `rulings.rs` 의 `body_side`·`per_class.rs`·`in_faces.rs`); 비스듬한 절단이 옆면의
+  두 림을 한 점에서 맞닿게 할 때의 철자 — 두 림 루프가 꼭짓점을 나누는가, 한 루프인가(한 루프는 감김 0 이라 tess 의 두 림 전제와
+  부딪힌다) — 와 집힘 검사의 전제(`nacre_topo::nonmanifold_vertices` 는 한 면이 한 꼭짓점을 두 루프로 지나면 그 자리를 집힘으로
+  읽는다; 오늘 그 철자는 validate 가 보는 모델과 불리언 결과에서 0 이고, 나오면 χ 가 홀수라 `EulerParity` 도 함께 울린다); 단면을
+  경계로 든 옆면을 읽는 `loop_parity` 의 갈래(오늘은 단면의 림·호를 못 읽는다고 `None` — `rim_height`); 자기접촉 점 팔이 혼합 링에서 버리는 기권
+  (무리수 관통 점, `point_in_mixed_ring` 이 링 위와 접선 광선을 한 `None` 으로 내는 것 — 오늘의 수는 `self_touch_reject` 본문)이
+  비스듬한 단면으로 느는지.
 - **소비자** — tess `cylinder_chart`·`interior_nodes`(호가 수평이라는 전제), props `lateral_moments`(호의 z 가 상수),
   STEP `build_edge`(쓰기 라이브러리 `brep-to-step` 는 `ELLIPSE` 를 든다), validate `loop_winding`. 이 넷이 서야 결과에 타원
   간선이 남는 인구(reject_census `cylinder-oblique` 등)가 열린다.
@@ -254,14 +243,16 @@ census 는 0 이다 — 코퍼스에 원통을 비스듬히 자르는 배치가 
 
 원통 게이트와 그 면 판독기는 클래스·꼭짓점·원통의 **좁은** 세계 서술(`Rat`)을 읽는다. 그래서 `Wide` 이름의
 평면(기울어진 부품의 꼭짓점 셋으로 잡은 datum)이 원통과 한 모델에 있으면, 기하의 답이 무엇이든 폭으로 거절한다 —
-같은 모양의 좁은 이름 판은 `ObliqueCylinderCut`(비스듬함)을 받는데 Wide 판은 `WitnessNotRational` 을 받는다
+기둥이 판에서 먼 배치에서 좁은 이름 판은 빌드되는데 Wide 판은 기둥이 어디 서든 `WitnessNotRational` 을 받는다
 (`wide_datum_cost.rs` 의 `a_wide_datum_beside_a_cylinder_is_refused_for_its_width`). census 0 — 코퍼스에 그런
 배치가 없다. 다음 단계는 게이트 산술을 폭에서 자유롭게 하는 것(부호 질문을 BigInt 로 total 하게 만든 원칙을 서술
 읽기까지). 같은 일로 사라질 자리:
 
 - 게이트 안의 checked 산술이 «통과 못 함»으로 접히는 곳(`laterals_clear_plane`·`lateral_reach`, 단면 판정의
-  `sections_apart` — `lateral_box`·`sqrt_at_least`·`rim_against_plane` 과 `faces_apart` 의 `Rat::try_from_f64`) — 넘침이
-  `ObliqueCylinderCut` 으로 나갈 수 있다(잰 인구 0).
+  `oblique_section_meet` — `rim_against_plane`·`lateral_circle_heights`) — 넘침이 `ObliqueCylinderCut` 으로 나갈 수
+  있다(잰 인구 0).
+- 좁은 이름이라도 계수가 큰 비스듬한 평면은 게이트를 지난 뒤 분할의 선 만남(`circle_crossings` 의 `LineMeet::Overflow`, checked
+  `i128`)에서 `WitnessNotRational` 이다 — `wide_datum_cost.rs` 의 좁은 판이 기둥을 자르는 배치.
 - 접선 행의 `undecided` 는 원인이 섞여 있다 — 면이 자기 세계 이름을 안 든 것(이름 짓기)과 checked 산술(폭)이 한
   이름으로 나간다(잰 인구 0).
 - topo 의 `EdgeDecline::Unstated`(`plane_cylinder_relation` 의 `None` — 넘침 포함)가 `reconstruct.rs` 에서
