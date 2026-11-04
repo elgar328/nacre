@@ -738,7 +738,8 @@ pub(crate) fn dissolve_straight_angles(
     // is lost) and the assembly cannot build it. `closed` is the one place both the take-back and
     // the conversion read, so "can it close" and "how" cannot part. An arc wall that disagrees with
     // its face — the cap's plane, the lateral's cylinder — closes nothing: the ring stays as its
-    // producer wrote it, for the assembly's arc check to judge.
+    // producer wrote it, the assembly mints that arc as an edge of its own (`draft::EdgeKey`'s
+    // plane), and the closed-shell guard names the open shell it leaves (`OpenResultShell`).
     let closed = |ring: &Ring, surf: ClassIx| -> Option<Bound> {
         let Wall::Arc { cyl, ccw, plane } = *ring.walls.first()? else {
             return None;

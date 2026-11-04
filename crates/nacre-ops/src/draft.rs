@@ -171,15 +171,25 @@ pub(crate) struct Ring {
 /// unordered endpoint pair — a plane-pair line and a ruling alike: two points bound one straight
 /// segment, so a line one face states in the plane vocabulary and the face across states as a
 /// ruling (a tangent wall ending on a cylinder's ruling) is one edge, and its carriers are read
-/// off the faces that use it, not off the key. Between one pair of pierce vertices a circle
-/// offers **two** complementary pieces, so the endpoints alone cannot name an arc — the key
-/// carries them **in CCW order about the axis** (`from → to`), and the two complementary arcs
-/// get the two orders. The minted edge stores its vertices in that same order, which is what the
-/// `[A, B]`-CCW convention means downstream (`Model::derive_edge_curve`'s circle arm).
+/// off the faces that use it, not off the key. An arc is the curve its cylinder and plane meet in,
+/// between two ends, so the key names all four: the **plane** — a cap's circle and an oblique
+/// class's section through the same two pierce vertices are two curves, and so are two sections —
+/// and the ends **in CCW order about the axis** (`from → to`), because between one pair of ends a
+/// curve offers two complementary pieces, which get the two orders. The minted edge stores its
+/// vertices in that same order, which is what the `[A, B]`-CCW convention means downstream
+/// (`Model::derive_edge_curve`'s circle arm). Two faces that state one arc on different planes
+/// would mint two edges, each used once, and the closed-shell guard would name the open shell; no
+/// input reaches that — a result whose arcs sit on a section is refused at its elliptical edge's
+/// curve first, and that is why no test locks the key's plane yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum EdgeKey {
     Line((usize, usize)),
-    Arc { cyl: usize, from: usize, to: usize },
+    Arc {
+        cyl: usize,
+        plane: usize,
+        from: usize,
+        to: usize,
+    },
 }
 
 impl Ring {

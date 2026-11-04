@@ -541,14 +541,15 @@ pub(crate) enum CylRecord {
     /// roads that would ask the class's coefficients about this cylinder answer from the record
     /// instead.
     Silent(Silence),
-    /// A named class oblique to the axis whose faces all stand apart from every lateral face's
-    /// box, while its plane touches no rim ([`rim_against_plane`]). The class's own arrangement
-    /// draws the cylinder's section truly — the ellipse, whole between a band's rims or cut into
-    /// arcs where a rim, a ruling or a segment of the class crosses it — and nothing else: no face
-    /// of the class reaches a lateral face, so on the lateral chart the section is a line that splits
-    /// only cells the walk joins again (`arrangement::cyl_chart`'s module doc). The
-    /// named twin of [`Silence::Sectioned`]: the class has world coefficients, so the roads that
-    /// answer a silent class from its record ask those instead.
+    /// A named class oblique to the axis whose plane touches none of the circles the lateral
+    /// faces' boundaries ride ([`rim_against_plane`]). The class's own arrangement draws the
+    /// cylinder's section truly — the ellipse, whole between a band's rims or cut into arcs where a
+    /// rim, a ruling or a segment of the class crosses it — and on the lateral chart the section is
+    /// a line like any other (`arrangement::cyl_chart`'s module doc). A face of the class bounded
+    /// along it would leave an elliptical edge, which the arrangement refuses where the face is made
+    /// (`ObliqueCylinderCut`, `per_class`'s stopper). The named twin of [`Silence::Sectioned`]: the
+    /// class has world coefficients, so the roads that answer a silent class from its record ask
+    /// those instead.
     Sections,
     /// A named class whose plane stands exactly `r` from the axis and has a face that does not
     /// clear the lateral faces' strip (`cyl_gate::class_meet`'s tangent arm): it touches the

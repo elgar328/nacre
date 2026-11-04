@@ -206,10 +206,23 @@ pub(crate) fn census(
                         }
                     }
                     ends.emitted_faces = w.faces.len();
-                    // **No face is bounded along an oblique section** — the gate admits one only
-                    // where its class's faces stand apart from the lateral, so the lateral never
-                    // ends there. Such a boundary would leave an edge whose curve does not derive
-                    // (`EdgeDecline::Oblique`), a road no input has reached.
+                    // **A face bounded along an oblique section has its partner across it** — a
+                    // face of the section's class bounded by the same cylinder's curve there. An
+                    // edge has two faces; a lateral ending along a section with nothing on the
+                    // section's class is the two stages disagreeing about where the solid ends.
+                    let partner = |c: usize| {
+                        plane_faces.iter().any(|lf| {
+                            lf.surf == crate::planes::ClassIx::Plane(c)
+                                && std::iter::once(&lf.outer).chain(&lf.inner).any(|b| match b {
+                                    crate::draft::Bound::Circle { cyl } => *cyl == k,
+                                    _ => b.ring().is_some_and(|r| {
+                                        r.walls.iter().any(|w| {
+                                            matches!(*w, crate::combinatorics::Wall::Arc { cyl, .. } if cyl == k)
+                                        })
+                                    }),
+                                })
+                        })
+                    };
                     let on_oblique = |c: usize| {
                         chart
                             .lines
@@ -219,18 +232,27 @@ pub(crate) fn census(
                     };
                     for f in &w.faces {
                         for b in std::iter::once(&f.outer).chain(&f.inner) {
-                            let along = match b {
-                                crate::draft::Bound::Rim { plane, .. } => on_oblique(*plane),
-                                _ => b.ring().is_some_and(|r| {
-                                    r.walls.iter().any(|w| {
-                                        matches!(*w, crate::combinatorics::Wall::Arc { plane, .. } if on_oblique(plane))
-                                    })
+                            let sections: Vec<usize> = match b {
+                                crate::draft::Bound::Rim { plane, .. } => vec![*plane],
+                                _ => b.ring().map_or(Vec::new(), |r| {
+                                    r.walls
+                                        .iter()
+                                        .filter_map(|w| match *w {
+                                            crate::combinatorics::Wall::Arc { plane, .. } => {
+                                                Some(plane)
+                                            }
+                                            _ => None,
+                                        })
+                                        .collect()
                                 }),
                             };
-                            assert!(
-                                !along,
-                                "a lateral face is bounded along an oblique section: cyl {k}"
-                            );
+                            for c in sections.into_iter().filter(|&c| on_oblique(c)) {
+                                assert!(
+                                    partner(c),
+                                    "a lateral face is bounded along an oblique section no face \
+                                     of its class is bounded along: cyl {k}, class {c}"
+                                );
+                            }
                         }
                     }
                 }
@@ -242,26 +264,7 @@ pub(crate) fn census(
                 }
             }
         }
-        for (ci, r) in reads.iter().enumerate() {
-            // **An oblique section is transparent where a face is** — its label reads the same on
-            // both its sides there, so the lines it adds split cells the walk joins again.
-            if r.present {
-                for (e, end) in r.ends.iter().enumerate() {
-                    if !oblique(cells[ci].lines[e]) {
-                        continue;
-                    }
-                    let label = match end {
-                        End::Disk(l) => l,
-                        End::Arc(a) => &a.label,
-                        End::Uncovered | End::NoCircle => continue,
-                    };
-                    assert_eq!(
-                        read_bits(label, side, true),
-                        read_bits(label, side, false),
-                        "an oblique section parts a present cell: cyl {k}"
-                    );
-                }
-            }
+        for r in &reads {
             for e in &r.ends {
                 match e {
                     End::Disk(_) => ends.end_disk += 1,

@@ -1005,6 +1005,54 @@ enum Want {
     Refused(RejectReason),
 }
 
+/// **Refused as an oblique cut at the curve, and only there** — every kind in both orders is
+/// refused `ObliqueCylinderCut`, and in each the stopper covered one failure kind, the result
+/// edge on the section whose curve does not derive (`ObliqueCircleClass`, raised in the assembly).
+/// So the arrangement and the chart built the faces bounded along the section and the assembly
+/// got as far as the edge: a wrong label or a chart that disagrees would be covered under its own
+/// name, in this class or another, and this says which. What it cannot see is a failure the edge's
+/// curve shadows — the arc key merging two curves fails no sooner than another elliptical edge of
+/// the same result, so that key's first lock is the stage that builds ellipses. Run in the test's
+/// own pool so the probe rows are its own (`crate::ledger`).
+fn refused_at_the_ellipse(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>) + Sync) {
+    use crate::error::stopper_probe::{COVERED, RAISED};
+    crate::ledger::owned(|| {
+        for swap in [false, true] {
+            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                let mut m = Model::new();
+                let (a, b) = build(&mut m);
+                let (x, y) = if swap { (b, a) } else { (a, b) };
+                let (c0, r0) = (COVERED.len(), RAISED.len());
+                match boolean(&mut m, kind, x, y) {
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::ObliqueCylinderCut,
+                        ..
+                    }) => {}
+                    other => panic!("{kind:?} swap={swap}: want ObliqueCylinderCut, got {other:?}"),
+                }
+                let covered = COVERED.mine_since(c0);
+                assert!(
+                    !covered.is_empty()
+                        && covered
+                            .iter()
+                            .all(|&r| r == RejectReason::ObliqueCircleClass),
+                    "{kind:?} swap={swap}: the stopper covered {covered:?}"
+                );
+                let sites: Vec<&str> = RAISED
+                    .mine_since(r0)
+                    .into_iter()
+                    .filter(|&(r, _)| r == RejectReason::ObliqueCircleClass)
+                    .map(|(_, f)| f)
+                    .collect();
+                assert!(
+                    sites.iter().all(|f| f.ends_with("assembly/reconstruct.rs")),
+                    "{kind:?} swap={swap}: the curve's refusal raised at {sites:?}"
+                );
+            }
+        }
+    });
+}
+
 /// **Every kind, both orders** — `want` is one cell for each of `[Fuse, Cut, Common]` with the
 /// operands as built, then swapped. `build` makes the two operands in a fresh model (a boolean
 /// consumes its inputs). A cell that builds is held to its body count and its analytic volume

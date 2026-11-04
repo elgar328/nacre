@@ -1120,20 +1120,21 @@ fn the_gate_reads_faces_at_every_site() {
         "plate − holes + gusset: {v} vs {want}"
     );
 
-    // (c) Negative control: the same gusset moved so its slanted plane runs through a hole's
-    // lateral (at z ∈ [0, 1] the plane sits at y ∈ [−2.6, −2], inside the hole's y ∈ [−3, −1]).
-    // Where a plane meets a lateral obliquely the curve is an ellipse the kernel does not build,
-    // and the name still says so.
+    // (c) The same gusset moved so its slanted plane runs through a hole's lateral (at z ∈ [0, 1]
+    // the plane sits at y ∈ [−2.6, −2], inside the hole's y ∈ [−3, −1]) while the gusset itself
+    // stands on the plate's top over the hole: the section lies on the class, no face of the result
+    // is bounded along it, and the fuse is the plate plus the gusset.
     let mut m = Model::new();
     let a = plate(&mut m);
     let b = gusset(&mut m, [1.5, -2.0, 0.0]);
-    assert!(matches!(
-        boolean(&mut m, BoolKind::Fuse, a, b),
-        Err(BoolError::Rejected {
-            reason: RejectReason::ObliqueCylinderCut,
-            ..
-        })
-    ));
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the gusset stands over the hole");
+    assert_eq!(out.len(), 1);
+    clean(&m);
+    let v = volume(&m, out[0]);
+    assert!(
+        (v - want).abs() < 1e-9,
+        "plate − holes + gusset over a hole: {v} vs {want}"
+    );
 
     // (d) An annulus (one solid, two coaxial cylinders) and a box whose walls section both: the
     // annular cap's chord on a wall class is **two pieces**, carved by the bore — the disk outer

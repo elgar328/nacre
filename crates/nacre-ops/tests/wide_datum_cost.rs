@@ -520,40 +520,43 @@ fn a_second_generation_boolean_on_world_names_never_climbs() {
 }
 
 /// **A width the gate cannot carry is refused for its width, not as a doubt about placement.**
-/// The slice of [`sliced_by_a_datum`], cut by a cylinder column standing inside it. The narrow
-/// slice's plane is oblique to the column's axis, and the gate says so (`ObliqueCylinderCut` — an
-/// ellipse). The wide slice is the same geometry, but its world name is `Wide`: the gate reads
-/// narrow coefficients, so it stops before the geometry is asked — and says why,
-/// `WitnessNotRational`, rather than `CylinderGateUndecided`, whose sentence is about the
-/// placement. The narrow arm is the control: without it, a gate that refused everything here by
-/// the width name would pass.
+/// The slice of [`sliced_by_a_datum`], cut by a cylinder column. The wide slice's world name is
+/// `Wide`: the gate reads narrow coefficients, so it stops before the geometry is asked — and says
+/// why, `WitnessNotRational`, rather than `CylinderGateUndecided`, whose sentence is about the
+/// placement — wherever the column stands. The narrow slice is the control: with the column far
+/// off the slice, the gate reads its plane's geometry and the cut builds, so a gate that refused
+/// everything here by the width name would fail. With the column standing inside the slice the
+/// narrow one reaches the arrangement and is refused for width there: its segments' line against
+/// the column overflows checked arithmetic (`LineMeet::Overflow`).
 #[test]
 fn a_wide_datum_beside_a_cylinder_is_refused_for_its_width() {
     let _line = one_at_a_time();
-    let refused_for = |want_wide: bool| {
+    let cut = |want_wide: bool, base: [f64; 3]| {
         let (mut m, sliced) =
             sliced_by_a_datum(want_wide).expect("the wf family offers a slice of this width");
         let column = nacre_ops::fixtures::cylinder(
             &mut m,
-            Point3::from_array([1.5, 1.5, -2.0]),
+            Point3::from_array(base),
             Vector3::from_array([0.0, 0.0, 1.0]),
             0.75,
             7.0,
         )
         .solid;
-        match boolean(&mut m, BoolKind::Cut, sliced, column) {
-            Err(nacre_ops::BoolError::Rejected { reason, .. }) => reason,
-            other => panic!("the column cut is refused, got {other:?}"),
-        }
+        boolean(&mut m, BoolKind::Cut, sliced, column).map_err(|e| match e {
+            nacre_ops::BoolError::Rejected { reason, .. } => reason,
+            other => panic!("the column cut fails outside the vocabulary: {other:?}"),
+        })
     };
-    assert_eq!(
-        refused_for(false),
-        nacre_ops::RejectReason::ObliqueCylinderCut,
-        "the narrow slice meets the column at a slant"
+    let (inside, far) = ([1.5, 1.5, -2.0], [500.5, 500.5, -2.0]);
+    assert!(
+        cut(false, far).is_ok(),
+        "the narrow slice is read for its geometry"
     );
-    assert_eq!(
-        refused_for(true),
-        nacre_ops::RejectReason::WitnessNotRational,
-        "the wide slice stops at the gate for its width"
-    );
+    for (wide, base) in [(true, far), (true, inside), (false, inside)] {
+        assert_eq!(
+            cut(wide, base).map(|v| v.len()),
+            Err(nacre_ops::RejectReason::WitnessNotRational),
+            "wide = {wide}, column at {base:?}"
+        );
+    }
 }

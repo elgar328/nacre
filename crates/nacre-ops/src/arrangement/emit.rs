@@ -42,7 +42,7 @@ pub(super) fn emit_faces(
         }
         // `Ring.walls` is a carrier (`combinatorics::Wall`), so an arc half-edge states its
         // cylinder class, its rim's plane and which way this side travels — what the assembly
-        // mints it by (`EdgeKey::Arc`, the ordered circle key).
+        // mints it by (`EdgeKey::Arc` — cylinder, plane and the ends in order).
         crate::draft::Bound::Ring(crate::draft::Ring::new(
             cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges

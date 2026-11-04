@@ -12,13 +12,17 @@
 //! The plane arrangement decides one plane class at a time; a cylinder's wall is not a plane, so
 //! it is decided here instead — and it is decided *coarsely*, because in this population it can
 //! be. The gate admits only ⊥ cuts, ∥ walls whose **faces** stand clear of the lateral surface,
-//! and oblique planes that miss every lateral face or whose faces stand beyond every lateral face's
-//! box, and those facts together give the **uniform-slab theorem**:
+//! and oblique planes, and for ⊥ cuts and ∥ walls those facts give the **uniform-slab theorem**:
 //!
 //! > Between two consecutive ⊥ cuts, the other operand's boundary does not meet the open
-//! > cylinder slab at all — the ⊥ faces are the cuts themselves, and every ∥ wall **face** and
-//! > every oblique face misses the lateral. So membership in the other operand is **uniform** over
-//! > that slab, and one witness decides the whole band.
+//! > cylinder slab at all — the ⊥ faces are the cuts themselves, and every ∥ wall **face** misses
+//! > the lateral. So membership in the other operand is **uniform** over that slab, and one witness
+//! > decides the whole band.
+//!
+//! An oblique plane the gate passes touches no circle of a lateral's boundary, and where its faces
+//! meet the lateral they meet it along the plane's section, which the chart reads as one more line
+//! (`cyl_chart`'s module doc): the uniform ground is then the chart's cell between that line and
+//! the cuts, and the cell is what one witness decides.
 //!
 //! **Faces, because that is what a boundary is made of.** Testing each ∥ wall's infinite *plane*
 //! instead is a cheaper sufficient condition and reads almost the same — but it refuses bodies

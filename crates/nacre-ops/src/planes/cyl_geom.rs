@@ -111,8 +111,9 @@ pub(crate) fn trace_band(
 /// oblique pair whose lateral faces cannot be *proved* to miss the plane is refused
 /// ([`crate::RejectReason::ObliqueCylinderCut`]) unless it is recorded as the class's section of
 /// the cylinder ([`crate::planes::CylRecord::Sections`]) — drawn on the class's own arrangement,
-/// whole or in arcs, with no face of the class reaching a lateral face, so no result face is
-/// bounded by an ellipse. The seated producer has a second, stronger
+/// whole or in arcs, which the roads above ask this of before they read a circle; and a result face
+/// bounded along that section would carry an elliptical edge, which the class's stopper refuses
+/// where the face is made (`arrangement::per_class`). The seated producer has a second, stronger
 /// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
 /// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
 /// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
@@ -148,13 +149,9 @@ pub(crate) fn across_axis_plane(
         .find(|w| class_carries_circle(&[w[0], w[1], w[2]], &m))
 }
 
-/// A lateral face's axis-parameter span, read off its rim carrier planes.
-///
-/// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
-/// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
-/// ⊥-ness guarantees `n·m ≠ 0`). Two distinct rim planes give the span; anything else (a
-/// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
-/// and the consumer declines the face.
+/// A lateral face's axis-parameter span — the lowest and highest of
+/// [`lateral_circle_heights`]; `None` where those cannot be read or are fewer than two, and the
+/// consumer declines the face.
 ///
 /// **Every loop, not the outer one.** A band's upper rim is an inner loop: read off the outer
 /// loop alone, the span of a lateral over `[0, 4]`
@@ -165,6 +162,23 @@ pub(super) fn lateral_t_range(
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_exact::Rat; 2]> {
+    let ts = lateral_circle_heights(model, face, def)?;
+    let (lo, hi) = (ts.iter().min()?, ts.iter().max()?);
+    (lo < hi).then_some([*lo, *hi])
+}
+
+/// **The heights of every circle a lateral face's boundary rides** — its rims and the arcs of its
+/// holes and panels, each once, as axis parameters.
+///
+/// Each such edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
+/// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
+/// ⊥-ness guarantees `n·m ≠ 0`). A carrier parallel to the axis is a ruling's wall and gives no
+/// height. `None` where a carrier has no world description or the arithmetic runs out.
+pub(super) fn lateral_circle_heights(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Option<Vec<nacre_exact::Rat>> {
     use nacre_exact::Rat;
     let m = def.dir();
     let mut ts: Vec<Rat> = Vec::new();
@@ -190,8 +204,7 @@ pub(super) fn lateral_t_range(
             ts.push(t);
         }
     }
-    let (lo, hi) = (ts.iter().min()?, ts.iter().max()?);
-    (lo < hi).then_some([*lo, *hi])
+    Some(ts)
 }
 
 /// **The angular extent of a lateral face** — the union of the arcs its outer loop's rim
@@ -204,8 +217,9 @@ pub(super) fn lateral_t_range(
 /// loop is a wrapping rim, and that rim's arcs alone close the circle.
 ///
 /// **The extent is never narrower than the face.** A lateral face on this road is bounded on its
-/// chart by arcs and rulings alone — the gate refuses an oblique class whose face reaches a
-/// lateral (`ObliqueCylinderCut`) and two cylinders whose faces meet (`CylinderPairContact`) — so at every
+/// chart by arcs and rulings alone — a boolean refuses a result with a face bounded along an
+/// oblique section (`ObliqueCylinderCut`) and two cylinders whose faces meet (`CylinderPairContact`),
+/// so no operand carries anything else — so at every
 /// angle it covers, its upper and lower boundaries are arcs: the face's angular projection is the
 /// union of its arcs'. What the extent does not see is a **hole** in the face, the conservative
 /// side. Every reader of a face's angle leans on this — the reaches ([`arc_extent`]), the box, the

@@ -209,6 +209,9 @@ struct Wall {
 /// but **"does each field have a consumer"** — and the `cfg(test)` says which consumer, since that
 /// second one is an instrument (`ClassAudit`, `#[cfg(test)]` like everything it touches).
 struct Staged {
+    /// This class's stopper — the refusal of a result face bounded along an oblique section
+    /// ([`per_class`](fn@per_class)), raised at the assembly's end.
+    stopper: Option<BoolError>,
     #[cfg(test)]
     cells: Vec<Cell>,
     #[cfg(test)]
@@ -495,8 +498,9 @@ pub(crate) fn boolean(
         );
         // `disk_labels`: per (cylinder class, plane class), the four bits of that circle's disk
         // cell — what the band pass reads instead of casting a witness ray.
-        // `deferred`: an arc class's stopper reject, made per class and raised below **after** the
-        // seam stretch, so the seam's pierce arm runs before the population is refused.
+        // `deferred`: a class's stopper (`per_class` — a face bounded along an oblique section),
+        // raised at the assembly's end, **after** the seam stretch, so the stages past the fact run
+        // before the population is refused.
         let (faces, curved, deferred) = trace_result_faces(
             model,
             kind,
@@ -567,16 +571,14 @@ pub(crate) fn boolean(
                 Err(e) => panic!("reuse turned a {e:?} into a result"),
             }
         }
-        // **The seam stretch, held as one closed result — the deferred stopper's second
-        // interception layer.** Everything from the cleaning pass to the seam table runs even for
-        // an arc input (that is the point: the seam's pierce arm is exercised), and then the
-        // deferred reject wins over whatever the stretch produced, `Ok` *or* `Err`. Without the
-        // `Err` half, an arc input would carry out whichever of the stretch's five fallible
-        // steps — `unify_coplanar_faces`, `cyl_rows`, `emit_lateral`, the seam fill, the
-        // `SeamAlias` scan — happened to fail first, and the population's name would depend on
-        // how far the pipeline got: the same property the per-class `deferred.unwrap_or(e)` in
-        // `arrange` protects, one level down. (`SeamAlias` is the sharp case: its class says
-        // "report a bug".)
+        // **The seam stretch, held as one closed result — the stopper's second interception
+        // layer.** Everything from the cleaning pass to the seam table runs even for a refused
+        // input (that is the point: the stages past the fact are exercised), and then the stopper
+        // wins over whatever the stretch produced, `Ok` *or* `Err`. Without the `Err` half, a
+        // refused input would carry out whichever of the stretch's five fallible steps —
+        // `unify_coplanar_faces`, `cyl_rows`, `emit_lateral`, the seam fill, the `SeamAlias` scan
+        // — happened to fail first, and the population's name would depend on how far the
+        // pipeline got. (`SeamAlias` is the sharp case: its class says "report a bug".)
         // One result's carrier planes are realized once for the corners (the seam table) and the
         // edges (`reconstruct`) alike (`realize::PlaneMemo`).
         let mut memo = crate::realize::PlaneMemo::default();
@@ -593,10 +595,10 @@ pub(crate) fn boolean(
             Ok((faces, seam, rims))
         };
         // The raise is at `reconstruct`'s very end; what is here is the interception — a stretch
-        // failure on an arc input still carries the stopper's name out, not its own.
+        // failure on a refused input still carries the stopper's name out, not its own.
         let (faces, seam, rims) = match stretch() {
             Ok(x) => x,
-            Err(e) => return Err(deferred.unwrap_or(e)),
+            Err(e) => return Err(crate::yield_to(deferred, e)),
         };
 
         timed!(

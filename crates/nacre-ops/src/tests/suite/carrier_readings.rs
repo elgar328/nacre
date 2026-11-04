@@ -698,17 +698,35 @@ fn slab_with_a_wedge_on_the_line(m: &mut Model) -> (Handle<Solid>, Handle<Solid>
     (a, unit_cylinder(m))
 }
 
-/// **A third plane's face meeting the tangent line at a corner is refused as oblique.** The
-/// wedge's face on `x = 0` meets the line `x = 0, y = 1` at one corner on the lateral; the corner's
-/// other edges leave it neither along the axis nor level, so the faces across them lie on planes
-/// slanted to the axis through that point of the lateral, and the gate refuses those before any
-/// tangency row is read — every operation, either order. (How the face itself reads against the
-/// line is the reader's own test, `a_face_meeting_the_line_at_a_corner_does_not_touch_it`.)
+/// **A third plane's face meeting the tangent line at a corner builds.** The wedge's face on
+/// `x = 0` meets the line `x = 0, y = 1` at one corner on the lateral; the corner's other edges
+/// leave it neither along the axis nor level, so the faces across them lie on planes slanted to
+/// the axis through that point of the lateral. Their sections bound no result face, so the slab
+/// and the cylinder, touching along the tangent line, come out as the two bodies of a line contact
+/// — every operation, either order. (How the face itself reads against the line is the reader's own
+/// test, `a_face_meeting_the_line_at_a_corner_does_not_touch_it`.)
 #[test]
-fn a_third_plane_face_meeting_the_tangent_line_at_a_corner_is_refused_as_oblique() {
+fn a_third_plane_face_meeting_the_tangent_line_at_a_corner_builds() {
+    let (va, vb) = {
+        let mut m = Model::new();
+        let (a, b) = slab_with_a_wedge_on_the_line(&mut m);
+        let vol = |s| nacre_props::mass_props(&m, s).expect("props").volume;
+        (vol(a), vol(b))
+    };
     every_kind(
         slab_with_a_wedge_on_the_line,
-        refused(RejectReason::ObliqueCylinderCut),
+        [
+            [
+                Want::Built(2, va + vb),
+                Want::Built(1, va),
+                Want::Built(0, 0.0),
+            ],
+            [
+                Want::Built(2, va + vb),
+                Want::Built(1, vb),
+                Want::Built(0, 0.0),
+            ],
+        ],
     );
 }
 

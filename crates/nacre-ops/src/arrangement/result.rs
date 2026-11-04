@@ -203,10 +203,10 @@ pub(crate) struct Curved {
 /// every producer's figure does.
 ///
 /// A named function rather than a block for the same reason `per_class` is one: the arc fence
-/// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
-/// stretch this runs in, so a failure *here* never reaches an arc population's caller — which
-/// means no reject name can testify that the pierce arm works, and only a direct second consumer
-/// can (measured: with the arm disabled wholesale, every boolean-level fence stays green).
+/// calls it on the very faces production feeds it. A stopper intercepts the whole stretch this runs
+/// in, so in a refused population a failure *here* never reaches the caller under its own name —
+/// which means no reject name can testify that the pierce arm works, and only a direct second
+/// consumer can (measured: with the arm disabled wholesale, every boolean-level fence stays green).
 pub(crate) fn seam_table(
     model: &Model,
     faces: &[LocalFace],
@@ -521,9 +521,9 @@ pub(super) fn trace_result_faces(
     // Pass B is independent per class — it reads `splits[wc]` and the judging context, and
     // returns owned faces — so it is evaluated across cores. `try_map_range` is what keeps
     // that from being observable: the faces are consumed in class order, so the handles
-    // `assemble_fuse_cut` mints are the ones a single thread would have minted, and a class
-    // that declines surfaces the same rejection the sequential loop returned (the lowest
-    // index, not whichever worker got there first).
+    // `assemble_fuse_cut` mints are the ones a single thread would have minted. Every class is
+    // evaluated, in both builds, and the refusal is chosen in class order below (a stopper first,
+    // then the lowest index), not by whichever worker got there first.
     // The vertex→class map of each operand, built once and only if some class needs it.
     let vc_a = plans
         .contains(&crate::reuse::ClassPlan::PassThrough(SolidSide::A))
@@ -532,13 +532,12 @@ pub(super) fn trace_result_faces(
         .contains(&crate::reuse::ClassPlan::PassThrough(SolidSide::B))
         .then(|| crate::reuse::VertexClasses::of(model, faces, plane_ix, n_a..faces.len()));
 
-    let per_class = crate::par::try_map_range(splits.len(), |k| {
+    let one_class = |k: usize| {
         let wc = work[k];
         let (split, circles, rulings) = &splits[k];
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
-        // off), the cut rims, and the **stopper socket's** deferred reject (empty
-        // — see the socket note below).
+        // off), the cut rims, and the class's stopper (see the socket note below).
         type ClassOut = (
             Vec<LocalFace>,
             Vec<(usize, Label)>,
@@ -557,32 +556,20 @@ pub(super) fn trace_result_faces(
                 C_SPLIT,
                 ClassEdges::of(jd, cyls, faces, wc, split, circles, rulings, &aliases)
             )?;
-            // **A stopper is *made* here — and only made.** A stopper lives in
-            // this socket: built where the class-level fact lives, raised inside `reconstruct`
-            // at the assembly's very end, intercepting every stage between via the
-            // `deferred.unwrap_or(e)` below — so a refused population carries one name out
-            // however far the pipeline gets. The arc population is supported and the socket holds
-            // `None`; the ladder stays for the next out-of-coverage class.
+            // **The stopper socket.** A class's stopper is made in `per_class`, where the fact it
+            // states is — a face of the class bounded along an oblique section, an elliptical edge
+            // the kernel does not build — and raised inside `reconstruct` at the assembly's very
+            // end; every stage between hands its failure to [`crate::yield_to`], so the refused
+            // population carries one name out however far the pipeline gets — another class's
+            // failure included (the fold below). A failure where no class has made the fact — no
+            // stopper anywhere, its split or its stages before the faces failing — keeps its own
+            // name: the fact is not known.
             //
             // `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
             // *with* the boolean, so it stays green when both slide to the same wrong name; asking
             // it about interception measures the proposition next door.
-            let staged = per_class(jd, cyls, kind, wc, &edges);
-            // **The stopper socket.** A stopper is made here — per class, raised at
-            // the assembly's very end, intercepting every stage between (seven layers of
-            // `deferred.unwrap_or` down the whole pipeline). The arc population is supported,
-            // so the socket holds `None`; the next out-of-coverage class plugs its own deferred
-            // reject in here and inherits the entire interception ladder instead of re-plumbing
-            // it. An oblique section a segment crosses is not one: the split refuses it before
-            // any stage that could fail under another name (`split_circles`).
-            let deferred: Option<BoolError> = None;
-            let s = match staged {
-                Ok(s) => s,
-                // The socket is empty, so clippy sees a literal `None` being unwrapped — the
-                // yield's *shape* is the point (a plugged stopper wins here), kept as is.
-                #[allow(clippy::unnecessary_literal_unwrap)]
-                Err(e) => return Err(deferred.unwrap_or(e)),
-            };
+            let mut s = per_class(jd, cyls, kind, wc, &edges)?;
+            let deferred = s.stopper.take();
             Ok((
                 s.faces,
                 s.disk_labels,
@@ -617,15 +604,39 @@ pub(super) fn trace_result_faces(
             Some(f) => Ok((f, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None)),
             None => arrange(wc),
         }
-    })?;
+    };
+    // Every class's outcome is kept, its failure included (`Infallible`: the map itself cannot
+    // fail), so the fold below can let a later class's stopper answer for an earlier class's
+    // failure.
+    let per_class = crate::par::try_map_range(splits.len(), |k| {
+        Ok::<_, core::convert::Infallible>(one_class(k))
+    })
+    .unwrap_or_else(|never| match never {});
+    // **The stopper answers for every class.** The lowest-index class with a stopper, else the
+    // lowest-index failure — read in `work` order, so the parallel and serial builds choose alike.
+    // Every failing class yields to the stopper, so each covered failure is the stopper's to
+    // answer for, not only the first.
+    if let Some(stopper) = per_class
+        .iter()
+        .find_map(|r| r.as_ref().ok().and_then(|out| out.5))
+        && per_class.iter().any(Result::is_err)
+    {
+        return Err(per_class
+            .into_iter()
+            .filter_map(Result::err)
+            .fold(stopper, |d, e| crate::yield_to(Some(d), e)));
+    }
+    let per_class = per_class
+        .into_iter()
+        .collect::<Result<Vec<_>, BoolError>>()?;
     let mut curved = Curved {
         disk_labels: HashMap::new(),
         arc_labels: HashMap::new(),
         split_rims: HashMap::new(),
         rulings: HashMap::new(),
     };
-    // The first arc class's deferred reject, in `work` order — the map above may run its classes
-    // in parallel, but this fold reads the vec in order, so the choice is deterministic.
+    // The first class's stopper, in `work` order — the map above may run its classes in parallel,
+    // but this fold reads the vec in order, so the choice is deterministic.
     let mut deferred: Option<BoolError> = None;
     for (k, (faces, labels, arcs, rims, ruls, d)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);

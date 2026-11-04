@@ -614,11 +614,11 @@ fn curved_wall(
             // `near`, or another plane through the same line where the end is a corner on three
             // planes, named by the pair its definition chose — does not enter.
             //
-            // **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
-            // parallel to the axis or perpendicular to it — the gate admits an oblique class only
-            // after proving it misses every lateral face, so no pierce vertex names one
-            // — and a parallel plane cannot cut a ruling. So both cutting planes are caps, and
-            // distinct caps cross the axis at distinct parameters. The strict `>` therefore
+            // **The two parameters cannot tie**: each is where the plane ⊥ to the axis through its
+            // end crosses the axis — that end's height on the ruling — and an edge's two ends are
+            // two points of the ruling. An end with no ⊥ plane among its names (a ruling ending on
+            // an oblique section, which a result keeps only in a body its stopper refuses) has no
+            // parameter, and the boundary is read as curved (`curved`). The strict `>` therefore
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
             let axial_param = |v: Handle<Vertex>| -> Option<nacre_exact::Rat> {

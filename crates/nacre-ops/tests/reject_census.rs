@@ -235,12 +235,12 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 /// digits, so its exact rational has a ~10²³ denominator and the gate's `(n·o+d)² vs r²|n|²`
 /// squares it past `i128`.
 ///
-/// **Chosen from the algebra, not the story** (measured): a *tilted* wide axis cannot test this — a
-/// real tilt makes the box's planes oblique and the gate rejects for that first — and a unit-scale
-/// box with a wide radius does not overflow at all (`0.5000000000000001²` fits). Smallness with
-/// full digits is the property that bites. With predicates that are not total this fixture would
-/// answer `CylinderGateUndecided`: the arithmetic would run out, and the reject would name the
-/// symptom instead of the geometry (measured).
+/// **Chosen from the algebra, not the story**: a *tilted* wide axis tests another road — a real
+/// tilt makes the box's planes oblique to the axis, the oblique sections' road — and a unit-scale
+/// box with a wide radius does not overflow at all (measured: `0.5000000000000001²` fits).
+/// Smallness with full digits is the property that bites. With predicates that are not total this
+/// fixture would answer `CylinderGateUndecided`: the arithmetic would run out, and the reject would
+/// name the symptom instead of the geometry (measured).
 ///
 /// The **radius** is a short decimal: a sketched circle carries `r²` as a `Rat`, so a full-digit
 /// sub-micron radius is refused before any solid exists (`SketchError::Undecidable`). The
@@ -530,14 +530,23 @@ const CORPUS: [Fixture; 14] = [
     Fixture {
         name: "cylinder-oblique",
         // A tilted axis against an axis-aligned box: its planes are neither ⊥ nor ∥ to `(0,3,4)` —
-        // ellipses.
+        // ellipses. The box's faces bound the sections, so the arrangement refuses where it makes
+        // them (the stopper), and the assembly behind it fails at the elliptical edge's curve —
+        // the failure the stopper covers.
         expect: Some(RejectReason::ObliqueCylinderCut),
         run: cylinder_oblique,
-        raised: &[(
-            "oblique_cylinder_cut",
-            None,
-            "crates/nacre-ops/src/planes/cyl_gate.rs",
-        )],
+        raised: &[
+            (
+                "oblique_circle_class",
+                None,
+                "crates/nacre-ops/src/assembly/reconstruct.rs",
+            ),
+            (
+                "oblique_cylinder_cut",
+                None,
+                "crates/nacre-ops/src/arrangement/per_class.rs",
+            ),
+        ],
         surfaced: &[("oblique_cylinder_cut", None)],
     },
     Fixture {
@@ -700,9 +709,9 @@ fn the_reject_census() {
 fn instrument_answers_for_itself() {
     // `#[track_caller]` on `reject()` must report the *guard's* line, not `reject`'s own. Nothing
     // else in this file would notice if that attribute were dropped, and every row of the table
-    // would silently collapse onto one line in `error.rs`. The oblique cut, not the tangent wall:
-    // the tangency's reason comes from the *assembly* (`assembly/self_touch.rs`), and what this
-    // checks is that a **gate** guard names its own line.
+    // would silently collapse onto one line in `error.rs`. The oblique cut: its refusal is raised
+    // where the arrangement makes a face bounded along the section (`arrangement/per_class.rs`),
+    // and what this checks is that the guard names its own line, not `reject`'s.
     let mut m = Model::new();
     let _ = cylinder_oblique(&mut m);
     let c = reject_census::take();
@@ -713,7 +722,7 @@ fn instrument_answers_for_itself() {
         .map(|(s, _)| *s)
         .expect("the cylinder guard rang");
     assert!(
-        site.file.ends_with("planes/cyl_gate.rs"),
+        site.file.ends_with("arrangement/per_class.rs"),
         "the raise site is reported as {}:{} — `#[track_caller]` is naming `reject()` itself, \
          not the guard",
         site.file,

@@ -297,20 +297,21 @@ pub(super) fn self_touch_reject(
         // where it lies in a plane face the faces overlap in area (the coplanar merge's), and where
         // it touches one at a point no vertex names, a straight edge of that face touches the arc's
         // own cap there (the planar arm's touch), or the face lies on a wall tangent along the
-        // ruling (the tangency verdict), or it is slanted to the axis (`ObliqueCylinderCut`), or the
-        // face's bound is another cylinder's arc (`CylinderPairContact`) — the last two lean on the
-        // gate refusing first. A vertex resting on a rim: the arrangement cuts the rim's two faces
-        // at it, so it bounds both, and the result check names the pinch (`NonManifoldVertex`). A
-        // point of a lateral on the stretch of a tangent line a tangency row speaks for, a result
-        // face of the row's wall covering it: a point of that line contact, which the tangency
-        // verdict judges (`tangent_hand`). An edge meeting a lateral's boundary where a face it
-        // bounds shares that curve with the lateral: that face's two bounds meeting, its pinch
-        // (`shares_a_curve`). And what a reading cannot place, dropped — the point arm's (a point
-        // with no rational coordinates against a mixed ring, and a point the mixed ring's
-        // coordinate walk abstains on: over the suite, the census, the ignored sweep and nacre-kit,
-        // 722 such pairs, every one off the face when read approximately) and the lateral arms'
-        // (over the same corpus, 44 vertices and 73 edges at a root, beside the 100 edges
-        // the ruling reading drops; these are not read approximately).
+        // ruling (the tangency verdict), or it is slanted to the axis — its plane touches the arc's
+        // circle at that point, which the gate refuses for every circle a lateral's boundary rides
+        // (`ObliqueCylinderCut`) — or the face's bound is another cylinder's arc
+        // (`CylinderPairContact`); the last two lean on the gate refusing first. A vertex resting on
+        // a rim: the arrangement cuts the rim's two faces at it, so it bounds both, and the result
+        // check names the pinch (`NonManifoldVertex`). A point of a lateral on the stretch of a
+        // tangent line a tangency row speaks for, a result face of the row's wall covering it: a
+        // point of that line contact, which the tangency verdict judges (`tangent_hand`). An edge
+        // meeting a lateral's boundary where a face it bounds shares that curve with the lateral:
+        // that face's two bounds meeting, its pinch (`shares_a_curve`). And what a reading cannot
+        // place, dropped — the point arm's (a point with no rational coordinates against a mixed
+        // ring, and a point the mixed ring's coordinate walk abstains on: over the suite, the
+        // census, the ignored sweep and nacre-kit, 722 such pairs, every one off the face when read
+        // approximately) and the lateral arms' (over the same corpus, 72 vertices and 82 edges at a
+        // root, beside the 100 edges the ruling reading drops; these are not read approximately).
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())

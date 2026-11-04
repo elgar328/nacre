@@ -363,38 +363,36 @@ fn every_producer_states_its_side_in_the_label_frame() {
 
 /// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder stands on a
 /// tilted rational frame (`pythagorean_frame`, normal `(0.64, −0.48, 0.6)`), so none of the box's
-/// planes is either ⊥ or ∥ to its axis and its
-/// lateral face **meets** them. Every crossing is an ellipse — the population
-/// this door still names. The oblique arm asks the faces first, so the fixture
-/// has to be one whose faces the planes actually cross — this one's base rim straddles `z = 0` —
-/// and stated on a Pythagorean frame: a frame with no rational unit basis rides a frame node, and
-/// a class with no world description is `CylinderGateUndecided`, an honest but different fact.
+/// planes is either ⊥ or ∥ to its axis and its lateral face **meets** them. Every crossing is an
+/// ellipse, and the box's faces bound the sections, so every operation in either order is refused
+/// at the elliptical edge's curve — the arrangement and the chart build the faces
+/// ([`refused_at_the_ellipse`]). Stated on a Pythagorean frame: a frame with no rational unit basis
+/// rides a frame node, and a class with no world description is `CylinderGateUndecided`, an honest
+/// but different fact.
 #[test]
-fn common_rejects_an_oblique_cylinder() {
-    let mut m = Model::new();
-    let a = crate::fixtures::cuboid(&mut m, [0.0; 3], [2.0; 3]);
-    let frame = pythagorean_frame(&mut m, Point3::from_array([1.0, 1.0, 0.0]));
-    let profile = stated(vec![circle(
-        nacre_math::Point2::from_array([0.0, 0.0]),
-        0.5,
-    )])
-    .unwrap()
-    .remove(0);
-    let OpOutput::Extrude { solid: cyl, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame,
-            profile,
-            dist: 2.0,
-        },
-    )
-    .expect("a tilted cylinder on a rational frame") else {
-        unreachable!()
-    };
-    assert_rejects(
-        || boolean_one(&mut m, BoolKind::Common, a, cyl),
-        RejectReason::ObliqueCylinderCut,
-    );
+fn every_kind_with_an_oblique_cylinder_is_refused_at_its_ellipse() {
+    refused_at_the_ellipse(|m: &mut Model| {
+        let a = crate::fixtures::cuboid(m, [0.0; 3], [2.0; 3]);
+        let frame = pythagorean_frame(m, Point3::from_array([1.0, 1.0, 0.0]));
+        let profile = stated(vec![circle(
+            nacre_math::Point2::from_array([0.0, 0.0]),
+            0.5,
+        )])
+        .unwrap()
+        .remove(0);
+        let OpOutput::Extrude { solid: cyl, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 2.0,
+            },
+        )
+        .expect("a tilted cylinder on a rational frame") else {
+            unreachable!()
+        };
+        (a, cyl)
+    });
 }
 
 proptest! {

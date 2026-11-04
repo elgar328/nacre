@@ -696,6 +696,73 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     );
 }
 
+/// **A pinch behind a stopper is the stopper's** — the notch of
+/// [`a_boss_tangent_in_a_notch_pinches_the_block_it_joins`] with the block's top slanted
+/// (`z = 2 + x/10`, over `z ∈ [2, 2.6]`): the boss crosses that top, so the result would carry an
+/// elliptical edge and the slanted class's stopper refuses it (`ObliqueCylinderCut`); the pinch
+/// the tangency verdict finds behind it yields to the stopper like every stage after it, recorded
+/// as covered. With the top level the pinch is the answer.
+#[test]
+fn a_pinch_behind_the_stopper_yields_to_it() {
+    use crate::error::stopper_probe::COVERED;
+    crate::ledger::owned(|| {
+        for slanted in [true, false] {
+            let mut m = Model::new();
+            let outer = if slanted {
+                let pts = [(0.0, 0.0), (0.0, 6.0), (2.6, 6.0), (2.0, 0.0)]
+                    .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+                let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a trapezoid");
+                let profile = crate::from_paths(vec![ring])
+                    .expect("one profile")
+                    .remove(0);
+                // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
+                let frame = crate::SketchFrame::world(&m, nacre_exact::Axis::Y);
+                let Ok(crate::OpOutput::Extrude { solid, .. }) = crate::apply(
+                    &mut m,
+                    &crate::Operation::Extrude {
+                        frame,
+                        profile,
+                        dist: 6.0,
+                    },
+                ) else {
+                    panic!("the block extrudes")
+                };
+                solid
+            } else {
+                crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [6.0, 6.0, 2.0])
+            };
+            let notch = crate::fixtures::cuboid(&mut m, [2.0, 2.6, -0.5], [6.5, 3.4, 2.7]);
+            let block = crate::boolean(&mut m, BoolKind::Cut, outer, notch).expect("notch")[0];
+            let boss = crate::fixtures::cylinder_with_seam(
+                &mut m,
+                Point3::from_array([2.5, 3.0, -0.5]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                Vector3::from_array([0.0, -1.0, 0.0]),
+                0.5,
+                3.5,
+            )
+            .solid;
+            let c0 = COVERED.len();
+            let err = crate::boolean(&mut m, BoolKind::Fuse, block, boss).expect_err("refused");
+            let want = if slanted {
+                RejectReason::ObliqueCylinderCut
+            } else {
+                RejectReason::SelfTouchingResult
+            };
+            assert!(
+                matches!(err, BoolError::Rejected { reason, .. } if reason == want),
+                "slanted = {slanted}: {err:?}"
+            );
+            let covered = COVERED.mine_since(c0);
+            assert_eq!(
+                covered.contains(&RejectReason::SelfTouchingResult),
+                slanted,
+                "slanted = {slanted}: the stopper covered {covered:?}"
+            );
+        }
+    });
+}
+
 /// **A tangent wall through a window in the lateral does not touch it.** The slab's face
 /// `x = 1` is tangent to [`crate::fixtures::windowed_boss`]'s cylinder along `x = 1, y = 0`, but
 /// only over `z ∈ [1.7, 2.3]`, inside the window where the lateral face is absent — so cutting the

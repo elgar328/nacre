@@ -1130,9 +1130,9 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
 /// green and the arms unread, so a change to the sieve measures this again by breaking the arms.
 ///
 /// No row here touches: for the line to cross a ruling, the edge's faces must be one ⊥ to the axis
-/// and one on the wall's plane facing the other way (a face slanted to the axis passes a point of
-/// the cylinder, which the gate refuses — the wedge below), and that face fits only where the wall
-/// is not, so the edge never runs over the wall's inside.
+/// and one on the wall's plane facing the other way, and that face fits only where the wall is not,
+/// so the edge never runs over the wall's inside. The wedge below has both faces slanted to the
+/// axis: it rests on the wall by its edge across the groove and stays a second body.
 #[test]
 fn an_edge_at_a_grooves_mouth_builds() {
     let disk = std::f64::consts::PI * 0.25 / 2.0;
@@ -1182,7 +1182,8 @@ fn an_edge_at_a_grooves_mouth_builds() {
         }
     }
     // A wedge along the wall whose edge lies on it at `z = −3` across the groove, both faces
-    // leaning off it: slanted to the axis through the groove's side.
+    // leaning off it: slanted to the axis through the groove's side, and touching the block along
+    // that edge only — two bodies.
     let mut m = Model::new();
     let (base, _) = base_frame(&mut m, false);
     let block = trimmed_block(&mut m, base, Trim::Groove);
@@ -1195,7 +1196,8 @@ fn an_edge_at_a_grooves_mouth_builds() {
         &[[-11.0, -3.0], [-11.8, -2.4], [-11.6, -2.2]],
         6.0,
     );
-    let want = Want::Refused(RejectReason::ObliqueCylinderCut);
+    let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
+    let want = Want::Built(2, vol(&m, a) + vol(&m, wedge));
     expect_fuse(&mut m, a, wedge, want, true, "a wedge leaning off the wall");
 }
 
@@ -1583,4 +1585,184 @@ fn a_body_resting_a_corner_on_its_own_rim_is_a_pinch() {
         wrong.len(),
         wrong.join("\n")
     );
+}
+
+/// **A body touching its own lateral face at one point is refused** — the lateral arms: a vertex on
+/// the side of the boss, and an edge tangent to it, of a part that joins the body through the
+/// plate.
+///
+/// The plate `[−10, 12]² × [−2, 0]` carries a boss of radius 5 about `z` up to `z = 4`. A slanted
+/// prism's corner rests on the boss's side at `(3, 4, 2)`, every edge from it leaving the cylinder
+/// outward, and a column carries it to the plate; and a wedge's apex edge, along `(0, 0.8, 0.6)`
+/// through `(5, 0, 2)`, is tangent to the side, the wedge carried by its own column. Each touches
+/// the lateral at that point only and the body is one through the plate, so its surface touches
+/// itself there. Each row's twin, the part moved off the side by 0.5, is one body. In either
+/// operand order.
+#[test]
+fn a_body_touching_its_own_lateral_at_a_point_is_refused() {
+    let stated = |m: &mut Model, o: [f64; 3], u: [f64; 3], v: [f64; 3]| {
+        datum_frame(
+            m,
+            nacre_ops::SketchPlane::from_axes(
+                Point3::from_array(o),
+                Vector3::from_array(u),
+                Vector3::from_array(v),
+            ),
+        )
+    };
+    let rect = |x0: f64, y0: f64, x1: f64, y1: f64| [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    for row in ["a corner on the side", "an edge tangent to the side"] {
+        for lift in [0.0, 0.5] {
+            for swapped in [false, true] {
+                let at = format!("{row}, lift = {lift}, swapped = {swapped}");
+                let mut m = Model::new();
+                let world = SketchFrame::world(&m, Axis::Z);
+                let floor = offset_of(&mut m, world, -2.0);
+                let plate = prism_on(&mut m, floor, &rect(-10.0, -10.0, 12.0, 12.0), 2.0);
+                let disk = nacre_ops::from_paths(vec![
+                    nacre_ops::Ring2d::circle(Point2::from_array([0.0, 0.0]), 5.0)
+                        .expect("a circle"),
+                ])
+                .expect("a disk")
+                .remove(0);
+                let boss = extrude_on(&mut m, world, disk, 4.0);
+                let a = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
+                let (part, column) = if row == "a corner on the side" {
+                    let p = [3.0 + 0.6 * lift, 4.0 + 0.8 * lift, 2.0];
+                    let f = stated(&mut m, p, [0.8, -0.6, 0.0], [0.36, 0.48, -0.8]);
+                    let w = prism_on(&mut m, f, &[[0.0, 0.0], [1.0, 2.0], [-1.0, 2.0]], 2.0);
+                    (w, prism_on(&mut m, world, &rect(3.6, 4.9, 4.4, 5.7), 1.6))
+                } else {
+                    let f = stated(
+                        &mut m,
+                        [5.0 + lift, -1.6, 0.4],
+                        [1.0, 0.0, 0.0],
+                        [0.0, 0.6, -0.8],
+                    );
+                    let w = prism_on(&mut m, f, &[[0.0, 0.0], [1.0, 0.5], [1.0, -0.5]], 4.0);
+                    let col = rect(5.6 + lift, -2.2, 7.0 + lift, -0.8);
+                    (w, prism_on(&mut m, world, &col, 1.0))
+                };
+                let b = boolean(&mut m, BoolKind::Fuse, part, column).expect("the part");
+                assert_eq!(b.len(), 1, "{at}: the part is one body");
+                let b = b[0];
+                let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
+                let want = if lift == 0.0 {
+                    Want::Touches
+                } else {
+                    Want::Built(1, vol(&m, a) + vol(&m, b))
+                };
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                expect_fuse(&mut m, x, y, want, false, &at);
+            }
+        }
+    }
+}
+
+/// **A part on a plane tangent to the boss is asked where it meets the side** — the tangent
+/// hand-off: a point of the lateral a tangency row's stretch holds is the tangency verdict's, and
+/// any other point the part meets the side at is a touch.
+///
+/// The plate and boss of [`a_body_touching_its_own_lateral_at_a_point_is_refused`] (radius 5 about
+/// `z`, up to `z = 4`), and a triangular prism with its face on the tangent plane `x = 5`, extruded
+/// outward to `x = 6`, carried to the plate by a column or standing apart. Four ways its face meets
+/// the tangent line `x = 5, y = 0`:
+/// - **a corner on the line** at `(5, 0, 2)`, the face beside it: the face meets the line at that
+///   point only, so no row speaks, and the joined body touches its own side there;
+/// - **a face along the line** over `2 ≤ z ≤ 3.5`: a line contact inside the lateral's span, which
+///   the tangency verdict judges, and the joined body pinches along it;
+/// - **a corner on the top rim** at `(5, 0, 4)`, the face above it: the lateral ends there, so the
+///   face meets no stretch of it;
+/// - **an edge along the top rim's tangent**, the face above it: its edge meets the rim at
+///   `(5, 0, 4)` only.
+///
+/// Joined, each touches itself; moved off the side by 0.5, or standing apart, it builds — one body
+/// or two. In either operand order.
+#[test]
+fn a_part_on_a_tangent_plane_is_asked_where_it_meets_the_side() {
+    let stated = |m: &mut Model, o: [f64; 3], u: [f64; 3], v: [f64; 3]| {
+        datum_frame(
+            m,
+            nacre_ops::SketchPlane::from_axes(
+                Point3::from_array(o),
+                Vector3::from_array(u),
+                Vector3::from_array(v),
+            ),
+        )
+    };
+    let rect = |x0: f64, y0: f64, x1: f64, y1: f64| [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    // Each row: the face's frame (origin on the line, `u`, `v` — the normal `u × v` is `+x`), its
+    // triangle, and the column `[x0, y0, x1, y1]` and its height.
+    #[allow(clippy::type_complexity)]
+    let rows: [(&str, [[f64; 3]; 3], [[f64; 2]; 3], [f64; 4], f64); 4] = [
+        (
+            "a corner on the line",
+            [[5.0, 0.0, 2.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            [[0.0, 0.0], [2.0, -1.0], [2.0, 1.0]],
+            [5.3, 1.5, 5.9, 1.9],
+            2.6,
+        ),
+        (
+            "a face along the line",
+            [[5.0, 0.0, 2.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]],
+            [[0.0, 0.0], [1.5, -1.0], [1.5, 1.0]],
+            [5.3, 0.3, 5.9, 0.6],
+            3.2,
+        ),
+        (
+            "a corner on the top rim",
+            [[5.0, 0.0, 4.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]],
+            [[0.0, 0.0], [1.0, -0.5], [1.0, 0.5]],
+            [5.3, 0.1, 5.9, 0.3],
+            4.8,
+        ),
+        (
+            "an edge along the top rim's tangent",
+            [[5.0, 0.0, 4.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]],
+            [[0.0, -1.0], [0.0, 1.0], [0.5, 0.0]],
+            [5.3, 0.3, 5.9, 0.6],
+            4.1,
+        ),
+    ];
+    for (row, [o, u, v], tri, col, h) in rows {
+        for joined in [true, false] {
+            for lift in [0.0, 0.5] {
+                for swapped in [false, true] {
+                    let at =
+                        format!("{row}, joined = {joined}, lift = {lift}, swapped = {swapped}");
+                    let mut m = Model::new();
+                    let world = SketchFrame::world(&m, Axis::Z);
+                    let floor = offset_of(&mut m, world, -2.0);
+                    let plate = prism_on(&mut m, floor, &rect(-10.0, -10.0, 12.0, 12.0), 2.0);
+                    let disk = nacre_ops::from_paths(vec![
+                        nacre_ops::Ring2d::circle(Point2::from_array([0.0, 0.0]), 5.0)
+                            .expect("a circle"),
+                    ])
+                    .expect("a disk")
+                    .remove(0);
+                    let boss = extrude_on(&mut m, world, disk, 4.0);
+                    let a = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss")[0];
+                    let f = stated(&mut m, [o[0] + lift, o[1], o[2]], u, v);
+                    let part = prism_on(&mut m, f, &tri, 1.0);
+                    let b = if joined {
+                        let c = rect(col[0] + lift, col[1], col[2] + lift, col[3]);
+                        let column = prism_on(&mut m, world, &c, h);
+                        let b = boolean(&mut m, BoolKind::Fuse, part, column).expect("the part");
+                        assert_eq!(b.len(), 1, "{at}: the part is one body");
+                        b[0]
+                    } else {
+                        part
+                    };
+                    let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
+                    let want = match (joined, lift == 0.0) {
+                        (true, true) => Want::Touches,
+                        (true, false) => Want::Built(1, vol(&m, a) + vol(&m, b)),
+                        (false, _) => Want::Built(2, vol(&m, a) + vol(&m, b)),
+                    };
+                    let (x, y) = if swapped { (b, a) } else { (a, b) };
+                    expect_fuse(&mut m, x, y, want, false, &at);
+                }
+            }
+        }
+    }
 }

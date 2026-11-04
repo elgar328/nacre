@@ -20,16 +20,16 @@
 //! the axis. The chart's **lines** are such sections, and all it asks of two of them is which is
 //! higher on a generator ([`combinatorics::line_order`] — one comparator); a slab's order and a
 //! generator's heights hold the answers ([`Chart::slabs`], [`Event::height`]). The population gate
-//! (`planes`) sorts every `(plane class, cylinder class)` pair into five, and only two leave a mark
+//! (`planes`) sorts every `(plane class, cylinder class)` pair into five, and three leave a mark
 //! on the lateral:
 //!
 //! | plane vs axis | distance | on the lateral | suite |
 //! |---|---|---|---|
-//! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 1128 |
-//! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
-//! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | — |
-//! | `n ⊥ m` | `d > r` | nothing | 1494 |
-//! | oblique | — | a **section** — a line of the chart, crossing others: the class's faces stand apart from every lateral face, so it splits only cells the walk joins again, and the class draws it on its own arrangement (`CylRecord::Sections`); otherwise refused, `ObliqueCylinderCut` | 2 |
+//! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 22,220 |
+//! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 4,616 |
+//! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | 2,062 |
+//! | `n ⊥ m` | `d > r`, or no face reaching the lateral | nothing | 24,661 |
+//! | oblique | — | a **section** — a line of the chart, crossing others, which the class draws on its own arrangement (`CylRecord::Sections`) wherever the plane touches none of the lateral's circles; a cell it bounds on one side only is a face with an elliptical edge, refused where it is made (`ObliqueCylinderCut`) | 298 |
 //!
 //! So the chart's lines are the sections the arrangement traced on this cylinder — every class with
 //! a label or a cut rim of it — and its events the rulings' stations,
@@ -37,25 +37,26 @@
 //! between two lines and a cut circle is arcs, so the cells are what those leave between the
 //! lines — a slab crossed with a gap.
 //!
-//! The gate is the reason, so when the gate changes this does too; the counts above were
-//! measured without the offset and tangent walls. The **offset** wall (`0 < d < r`) adds
-//! vertical lines at *irrational* θ; the chart never reads a θ **value**, only an order, so
-//! nothing breaks. The **tangent** wall (`d = r`)
-//! adds nothing at all: a grazing line stands at no event, so the gate records no
-//! crossing and this table's third row is «nothing», not «one vertical». The row's
-//! other half: a fillet's or a slot's wall is tangent to its **own** cylinder, and that ruling is
-//! not a crossing but the face's edge — a station of `side = 0` carrying no label (the seated
-//! face states the piece itself, `SegKind::Tangent`), which the cell reader takes as «the face
-//! ends here» and the vertical-answer assertion exempts. And a third reading: when the
-//! *other* solid's plane runs through the axis, one of its two verticals **is** that tangent
-//! ruling — a line two planes and the cylinder share. Its ends have one name (the alias table's,
-//! seeded from the operands, which every name the chart reads already wears), and the line is
-//! stated in the plane vocabulary by both faces that touch it — the
-//! tangent wall's run and the lateral's own graze — so the ruling vocabulary states nothing there.
-//! The same holds on the *other* solid's tangent wall where the face's own edge lies on its
-//! tangent ruling (a half cylinder's flat edge): the flat and the lateral each state their side of
-//! the plane-pair line on that wall's class (`rulings::lateral_half_of_plane_pair_lines`), and the
-//! chart takes nothing from it.
+//! The gate is the reason, so when the gate changes this does too. The counts above are the gate's
+//! verdicts over the nacre-ops unit suite, one per (named plane class, cylinder) pair each
+//! boolean's gate sorts — the oblique row's are sections, beside 115 oblique classes with no face
+//! reaching the lateral and 16 the gate refuses as sections no road draws. The **offset** wall (`0
+//! < d < r`) adds vertical lines at *irrational* θ; the chart never reads a θ **value**, only an
+//! order, so nothing breaks. The **tangent** wall (`d = r`) adds nothing at all: a grazing line
+//! stands at no event, so the gate records no crossing and this table's third row is «nothing», not
+//! «one vertical». The row's other half: a fillet's or a slot's wall is tangent to its **own**
+//! cylinder, and that ruling is not a crossing but the face's edge — a station of `side = 0`
+//! carrying no label (the seated face states the piece itself, `SegKind::Tangent`), which the cell
+//! reader takes as «the face ends here» and the vertical-answer assertion exempts. And a third
+//! reading: when the *other* solid's plane runs through the axis, one of its two verticals **is**
+//! that tangent ruling — a line two planes and the cylinder share. Its ends have one name (the
+//! alias table's, seeded from the operands, which every name the chart reads already wears), and
+//! the line is stated in the plane vocabulary by both faces that touch it — the tangent wall's run
+//! and the lateral's own graze — so the ruling vocabulary states nothing there. The same holds on
+//! the *other* solid's tangent wall where the face's own edge lies on its tangent ruling (a half
+//! cylinder's flat edge): the flat and the lateral each state their side of the plane-pair line on
+//! that wall's class (`rulings::lateral_half_of_plane_pair_lines`), and the chart takes nothing
+//! from it.
 //!
 //! ## What is here, and what is not
 //!

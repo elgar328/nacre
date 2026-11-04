@@ -5,12 +5,12 @@ use super::*;
 //
 // These five are the seated population. What actually makes a
 // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
-// edge on a plane (parallel to the axis → the wall rule, oblique → asked to miss every lateral
-// face, else `ObliqueCylinderCut`) or another cylinder's rim (→ proved apart per
-// face pair, else `CylinderPairContact`). The wall rule is not a *fence*:
-// it records a crossing or a tangency and the roads behind it answer, so
-// what still stands at the end of this block is the oblique cut that does meet a face and the
-// cylinder pair whose faces do meet.
+// edge on a plane (parallel to the axis → the wall rule, oblique → asked to touch no circle of a
+// lateral's boundary, else `ObliqueCylinderCut`, and a result face bounded along its section is
+// refused by that name too) or another cylinder's rim (→ proved apart per face pair, else
+// `CylinderPairContact`). The wall rule is not a *fence*: it records a crossing or a tangency and
+// the roads behind it answer, so what still stands at the end of this block is the oblique cut
+// that bounds a face along its section and the cylinder pair whose faces do meet.
 //
 // **A seated-cap refusal standing before the wall and curved-depth rules would refuse all seven of
 // these as a seating problem — the two fences included (measured).** It would answer for those

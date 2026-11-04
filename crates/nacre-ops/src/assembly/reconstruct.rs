@@ -31,7 +31,7 @@ pub(crate) fn reconstruct(
         defs: def_triple,
     } = match named {
         Ok(n) => n,
-        Err(e) => return Err(deferred.unwrap_or(e)),
+        Err(e) => return Err(crate::yield_to(deferred, e)),
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
     // The per-solid straight-angle pass may have dropped nodes of its own — per solid, so a rim
@@ -42,8 +42,11 @@ pub(crate) fn reconstruct(
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
     // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
     // question "do these two lumps share a solid" is only askable of a grouping that answered.
-    if let Ok(g) = &grouping {
-        tangency_reject(&tangencies, g)?;
+    // Its refusal yields to the deferred stopper like every stage's here.
+    if let Ok(g) = &grouping
+        && let Err(e) = tangency_reject(&tangencies, g)
+    {
+        return Err(crate::yield_to(deferred, e));
     }
 
     // Vertices (deterministic: first appearance across faces in order).
@@ -110,7 +113,7 @@ pub(crate) fn reconstruct(
     // The materialization's failure yields to the deferred stopper like the naming's above; the
     // raise itself stands at the assembly's very end below.
     if let Err(e) = materialized {
-        return Err(deferred.unwrap_or(e));
+        return Err(crate::yield_to(deferred, e));
     }
 
     // **The rim table**: a whole circle has no node and no triple, so it is not welded through
@@ -189,7 +192,7 @@ pub(crate) fn reconstruct(
     })();
     // A rim's failure yields to the deferred stopper like every stage before it.
     if let Err(e) = rims_built {
-        return Err(deferred.unwrap_or(e));
+        return Err(crate::yield_to(deferred, e));
     }
 
     // **An edge's carriers are the two faces that use it — read off the whole result, not
@@ -265,21 +268,18 @@ pub(crate) fn reconstruct(
                 // skips arc edges for the same reason).
                 //
                 // **Not the face's surface**: a lateral's is its cylinder, and an arc stated off
-                // it would be `[cyl, cyl]`. The wall names the rim's plane on a cap and a lateral
-                // alike, so whichever face mints the arc states one pair — and the second face to
-                // walk it must name the plane the edge already carries, or the planar arrangement
-                // and the cylinder chart disagree about which rim the arc lies on.
+                // it would be `[cyl, cyl]`. The wall names the arc's plane on a cap and a lateral
+                // alike, so whichever face mints the arc states one pair, and the key holds the
+                // plane (`EdgeKey`'s note): a second face naming another plane mints another edge.
                 let (from, to) = if ccw { (va, vb) } else { (vb, va) };
                 let key = EdgeKey::Arc {
                     cyl,
+                    plane,
                     from: from.index() as usize,
                     to: to.index() as usize,
                 };
                 let rim_plane = planes[plane].surf;
                 if let Some(&e) = edge_of.get(&key) {
-                    if !model.edge(e).surfaces.contains(&rim_plane) {
-                        return Err(reject(RejectReason::CylinderStagesDisagree));
-                    }
                     return Ok(e);
                 }
                 let e = crate::realize::push_edge_realized(
@@ -500,7 +500,7 @@ pub(crate) fn reconstruct(
     // raise itself stands at the assembly's very end below (an incomplete face set has no
     // shell to count, so an assembly failure still stops here).
     if let Err(e) = assembled {
-        return Err(deferred.unwrap_or(e));
+        return Err(crate::yield_to(deferred, e));
     }
     // Closed-shell guard: a 2-manifold b-rep uses every edge exactly twice (once from each of the
     // two faces that share it). A reconstruction that emits a face set with a dangling edge (use
@@ -530,13 +530,19 @@ pub(crate) fn reconstruct(
             .min_by_key(|e| e.index())
         {
             let [va, vb] = model.edge(eh).vertices;
-            return Err(deferred.unwrap_or(crate::reject_at(
-                RejectReason::NonManifoldResultEdge,
-                crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
-            )));
+            return Err(crate::yield_to(
+                deferred,
+                crate::reject_at(
+                    RejectReason::NonManifoldResultEdge,
+                    crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
+                ),
+            ));
         }
         if uses.values().any(|&n| n != 2) {
-            return Err(deferred.unwrap_or(reject(RejectReason::OpenResultShell)));
+            return Err(crate::yield_to(
+                deferred,
+                reject(RejectReason::OpenResultShell),
+            ));
         }
     }
     // **The grouping decided at the top of this function, raised here.** What it says:
@@ -554,7 +560,7 @@ pub(crate) fn reconstruct(
         ..
     } = match grouping {
         Ok(g) => g,
-        Err(e) => return Err(deferred.unwrap_or(e)),
+        Err(e) => return Err(crate::yield_to(deferred, e)),
     };
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
@@ -607,12 +613,12 @@ pub(crate) fn reconstruct(
             })
         })
         .collect());
-    // **The deferred stopper's raise — the very end of the assembly.** The socket is empty
-    // today, but the interception ladder it crowns is architecture: seven
-    // layers (per-class → seam stretch → naming → vertex materialization → face loop → shell
-    // guard → grouping and the solid assembly) all yield to `deferred`, so the next
-    // out-of-coverage class that plugs a stopper into `arrange`'s socket carries one name out
-    // however far this pipeline gets.
+    // **The stopper's raise — the very end of the assembly.** A class's stopper (`per_class`: a
+    // face bounded along an oblique section) crowns an interception ladder — the per-class map
+    // (other classes' failures included), the seam stretch, the naming, the vertex
+    // materialization, the rims, the face loop, the shell guard, the grouping and the solid
+    // assembly all yield to it (`crate::yield_to`) — so the refused population carries one name
+    // out however far this pipeline gets.
     //
     // **An arc reject therefore leaves a complete garbage solid in the store —
     // deliberately.** Vertices, edges, faces, shells and the solid itself: cells outside the
@@ -691,8 +697,10 @@ pub(crate) fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
 }
 
 /// **What an edge the assembly asked for and could not have means here** — one reject per
-/// [`nacre_topo::EdgeDecline`] cause. Every edge the assembly pushes joins two distinct nodes
-/// on classes the gate admitted, so each cause is a broken promise, named for the promise.
+/// [`nacre_topo::EdgeDecline`] cause. Every edge the assembly pushes joins two distinct nodes on
+/// classes the gate admitted. An oblique edge is the elliptical edge of a result a class's stopper
+/// already refuses (`ObliqueCylinderCut`), so its name here is what the stopper covers; every other
+/// cause is a broken promise, named for the promise.
 fn edge_refused(d: nacre_topo::EdgeDecline) -> crate::BoolError {
     use nacre_topo::EdgeDecline::*;
     reject(match d {

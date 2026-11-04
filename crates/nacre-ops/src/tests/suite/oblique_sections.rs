@@ -7,8 +7,9 @@
 //! section of the cylinder — and what the boolean answers, by kind and in both operand orders
 //! ([`every_kind`]). Volumes are derived, not copied. The section is a whole ellipse or arcs of one
 //! — cut by a rim, by a fillet's rulings, by another face of the class — and either way it closes
-//! the class's own arrangement; what stays refused is a face of the class reaching a lateral face,
-//! and a class sectioning two cylinders whose axes are not parallel.
+//! the class's own arrangement; what stays refused is a result face bounded along the section (the
+//! class's stopper), a plane touching a circle of a lateral's boundary at one point (the gate), and
+//! a class sectioning two cylinders whose axes are not parallel.
 //!
 //! The geometry, shared by the families: the bored plate of [`plate_with_bore`] (`[0,40]²×[0,10]`,
 //! a bore of radius 2 about `(10, 10)`), and a gusset — a triangle in the `yz` plane extruded one
@@ -159,15 +160,14 @@ pub(crate) fn gusset(m: &mut Model, tri: Sketch, x0: f64) -> Handle<Solid> {
     solid
 }
 
-/// [`gusset`] with its coordinates permuted (`X = z`, `Y = x`, `Z = y`): a triangle in the `zx`
+/// [`gusset`] with its coordinates permuted (`X = z`, `Y = x`, `Z = y`): a polygon in the `zx`
 /// plane, `(z, x)` corners counter-clockwise, extruded over `y ∈ [y0, y0 + 1]`.
-fn gusset_zx(m: &mut Model, tri: Sketch, y0: f64) -> Handle<Solid> {
+fn gusset_zx(m: &mut Model, pts: &[(f64, f64)], y0: f64) -> Handle<Solid> {
     let p2 = |(u, v): (f64, f64)| nacre_math::Point2::from_array([u, v]);
-    let edges = vec![
-        line(p2(tri[0]), p2(tri[1])),
-        line(p2(tri[1]), p2(tri[2])),
-        line(p2(tri[2]), p2(tri[0])),
-    ];
+    let n = pts.len();
+    let edges = (0..n)
+        .map(|i| line(p2(pts[i]), p2(pts[(i + 1) % n])))
+        .collect();
     let profile = stated(edges).unwrap().remove(0);
     let frame = SketchFrame::world(m, Axis::Y);
     let OpOutput::Extrude { solid, .. } = apply(
@@ -441,7 +441,7 @@ fn a_gusset_whose_other_faces_cut_a_bore_along_x() {
             12.0,
         );
         let plate = op(m, BoolKind::Cut, plate, bore);
-        let g = gusset_zx(m, SUNK, 30.0);
+        let g = gusset_zx(m, &SUNK, 30.0);
         let block = crate::fixtures::cuboid(m, [4.0, 11.0, 9.0], [6.5, 31.0, 15.0]);
         (plate, op(m, BoolKind::Fuse, g, block))
     };
@@ -605,7 +605,7 @@ fn a_gusset_whose_plane_runs_through_a_bores_seam_vertex() {
     let build = |m: &mut Model| {
         (
             plate_with_bore(m),
-            gusset_zx(m, [(1.0, 14.0), (4.0, 14.0), (4.0, 26.0)], 30.0),
+            gusset_zx(m, &[(1.0, 14.0), (4.0, 14.0), (4.0, 26.0)], 30.0),
         )
     };
     gate(build, Ok(1));
@@ -754,14 +754,55 @@ fn a_gusset_whose_plane_sections_two_crossing_bores_is_refused() {
 }
 
 /// A gusset straddling the bore — `x ∈ [9.5, 10.5]`, corners `(6, 4)`, `(14, 4)`, `(14, 6)` on the
-/// same plane: its slanted face crosses the lateral, the cut the chart does not take.
+/// same plane: its slanted face crosses the lateral, so the result has an edge on the ellipse. The
+/// gate records the section; the arrangement and the chart build the faces bounded along it, and
+/// the result is refused at that edge's curve ([`refused_at_the_ellipse`]).
 #[test]
-fn a_gusset_across_the_bore_is_refused() {
+fn a_gusset_across_the_bore_is_refused_at_its_ellipse() {
     let build = |m: &mut Model| {
         (
             plate_with_bore(m),
             gusset(m, [(6.0, 4.0), (14.0, 4.0), (14.0, 6.0)], 9.5),
         )
+    };
+    gate(build, Ok(1));
+    refused_at_the_ellipse(build);
+}
+
+/// The bore cut by a slot through it (walls `x = 9` and `x = 11`, `y ∈ [7, 13]`), and the same
+/// gusset at `x ∈ [10.5, 11.5]`: the slot's wall `x = 11` cuts the lateral in a ruling that ends
+/// on the section, and the result is refused at the ellipse's curve, not on the way to it.
+#[test]
+fn a_gusset_across_a_slotted_bore_is_refused_at_its_ellipse() {
+    refused_at_the_ellipse(|m: &mut Model| {
+        let p = plate_with_bore(m);
+        let slot = crate::fixtures::cuboid(m, [9.0, 7.0, -1.0], [11.0, 13.0, 11.0]);
+        let a = op(m, BoolKind::Cut, p, slot);
+        (a, gusset(m, [(6.0, 4.0), (14.0, 4.0), (14.0, 6.0)], 10.5))
+    });
+}
+
+/// **A slanted face touching a circle inside a lateral's span is refused at the gate.** A boss
+/// `r = 2` about `z` with a window `[1, 3] × [−1, 1] × [3, 6]` cut through its side, and a prism
+/// bent over its top whose slanted face `20x − z = 34` touches the window's top arc at
+/// `(2, 0, 6)`: the plane touches that circle at one point, where no crossing names it, so the
+/// section cannot be drawn — the same reading as at a span's end rim. Unrefused, the union is one
+/// body touching itself there and the arc edges are not asked by the self-touch check.
+#[test]
+fn a_slanted_face_touching_a_windows_arc_is_refused() {
+    let build = |m: &mut Model| {
+        let c = z_cylinder(m, [0.0, 0.0, 0.0], 2.0, 10.0);
+        let w = crate::fixtures::cuboid(m, [1.0, -1.0, 3.0], [3.0, 1.0, 6.0]);
+        let a = op(m, BoolKind::Cut, c, w);
+        let bent = [
+            (4.0, 1.9),
+            (8.0, 2.1),
+            (8.0, 1.0),
+            (9.0, 1.0),
+            (9.0, 2.5),
+            (4.0, 2.5),
+        ];
+        (a, gusset_zx(m, &bent, -0.5))
     };
     gate(build, Err(RejectReason::ObliqueCylinderCut));
     every_kind(build, REFUSED);

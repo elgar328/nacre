@@ -390,16 +390,14 @@ pub enum RejectReason {
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose meet with the
     /// cylinder — an ellipse, or arcs of one — the kernel does not build there. A slanted plane
     /// that runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes.
-    /// So does one whose faces all have straight edges and stand, by the box of their corners,
-    /// beyond the box of every lateral face of the cylinder, however the plane, extended, cuts the
-    /// cylinder: through a plate's bore between its faces, across the bore's rims, through a
-    /// fillet's quarter, through a corner where a lateral face's straight edge meets its arc (a
-    /// fillet meeting its wall, a flat wall cutting a bore). Refused:
-    /// - a face on the plane not shown apart from a lateral face that way — reaching it, near it,
-    ///   or bounded by a curved edge (the cap of a slanted cylinder);
-    /// - the plane touching a rim of a lateral face at a single point, or touching a corner of a
-    ///   lateral face's boundary from inside the face, or a section in a shape the trace does not
-    ///   read ([`DeclineKind::ObliqueSection`]);
+    /// So does one that cuts the cylinder where the result has no face bounded along the cut —
+    /// through a plate's bore between its faces, across the bore's rims, through a fillet's
+    /// quarter, through a corner where a lateral face's straight edge meets its arc — and one whose
+    /// faces only touch the cylinder's solid (a gusset standing on the plate over a hole). Refused:
+    /// - a result face bounded along the cut — the result would carry an elliptical edge;
+    /// - the plane touching a circle of a lateral face's boundary (a rim, or the arc of a hole in
+    ///   it) at a single point, or touching a corner of a lateral face's boundary from inside the
+    ///   face, or a section in a shape the trace does not read ([`DeclineKind::ObliqueSection`]);
     /// - a ruling another cylinder leaves on the plane not shown apart from the section;
     /// - the plane sectioning two cylinders whose axes are not parallel, or sectioning one while it
     ///   lies across the axis of another — however far that other cylinder stands.
@@ -417,10 +415,11 @@ pub enum RejectReason {
     // a line parallel to the axis read as «no crossing», two sections of cylinders whose axes are
     // not parallel nested as if the cylinders were.
     //
-    // The result assembly raises it too, for the same broken promise read at an edge: a rim, an arc
-    // or a ruling whose plane and cylinder the truth calls oblique
-    // (`nacre_topo::EdgeDecline::Oblique`) or cannot place in one frame
-    // (`nacre_topo::EdgeDecline::Unstated`) — the gate admits neither to the arrangement.
+    // The result assembly raises it too, at an edge: a rim, an arc or a ruling whose plane and
+    // cylinder the truth calls oblique (`nacre_topo::EdgeDecline::Oblique`) or cannot place in one
+    // frame (`nacre_topo::EdgeDecline::Unstated`). The first is an elliptical edge, which reaches
+    // the assembly only in a result a class's stopper already refuses as `Self::ObliqueCylinderCut`
+    // (`crate::yield_to` covers it); the second the gate admits not at all — a broken promise.
     /// **A cylinder's closed trace sits on a class the gate did not record it on** — a section of a
     /// class oblique to its axis that is no recorded section, or the traces of two cylinders whose
     /// axes are not parallel on one class — so a rule that reads it as a circle, or nests it
@@ -822,8 +821,7 @@ pub enum RejectReason {
     // cannot place, a ruling the wall's pieces do not tile, a cycle whose pieces do not chain or
     // whose arc units are not whole turns), the chart and the assembly (a cut circle spelled
     // whole), the cleaning pass and the assembly (a whole circle spelled for the other face kind —
-    // a cap's circle on a lateral, a lateral's rim on a plane face), the planar arrangement and the
-    // chart (an arc whose cap and lateral name different rim planes), the split and the chart's
+    // a cap's circle on a lateral, a lateral's rim on a plane face), the split and the chart's
     // cell reader (a present cell with no circle at an end, a station the split placed that is no
     // crossing of its wall, two chart lines on one rim node), and a stored pierce definition and
     // its own re-solved meet.
@@ -1251,6 +1249,8 @@ impl std::fmt::Display for Xyz {
 pub(crate) fn reject(reason: RejectReason) -> BoolError {
     #[cfg(any(test, feature = "test-util"))]
     reject_census::raised(reason, std::panic::Location::caller());
+    #[cfg(test)]
+    stopper_probe::RAISED.push((reason, std::panic::Location::caller().file()));
     BoolError::Rejected { reason, at: None }
 }
 
@@ -1261,8 +1261,42 @@ pub(crate) fn reject(reason: RejectReason) -> BoolError {
 pub(crate) fn reject_at(reason: RejectReason, at: RejectWhere) -> BoolError {
     #[cfg(any(test, feature = "test-util"))]
     reject_census::raised(reason, std::panic::Location::caller());
+    #[cfg(test)]
+    stopper_probe::RAISED.push((reason, std::panic::Location::caller().file()));
     BoolError::Rejected {
         reason,
         at: Some(at),
     }
+}
+
+/// **A stage's failure yields to the boolean's stopper** — the one spelling of the interception:
+/// a stopper made where a class's out-of-coverage fact is (`arrangement::per_class`) is the
+/// boolean's answer however far the pipeline gets past it, so every stage between it and the
+/// assembly's end hands its own failure here. With no stopper the failure is the answer.
+pub(crate) fn yield_to(stopper: Option<BoolError>, e: BoolError) -> BoolError {
+    match stopper {
+        Some(d) => {
+            #[cfg(test)]
+            if let BoolError::Rejected { reason, .. } = e {
+                stopper_probe::COVERED.push(reason);
+            }
+            d
+        }
+        None => e,
+    }
+}
+
+/// **What the stopper covered, and where the refusals were raised** — so a test can say that a
+/// refused population got as far as it claims: every failure a stopper covered in its own work,
+/// and the file each name was raised in. Rows carry their owner (`crate::ledger`); read
+/// `mine()`, and assert sets, not counts — the debug build's reference run and the parallel
+/// build's evaluation past a first failure repeat raises.
+#[cfg(test)]
+pub(crate) mod stopper_probe {
+    use super::RejectReason;
+    use crate::ledger::Ledger;
+    /// Every failure [`super::yield_to`] replaced with a stopper.
+    pub(crate) static COVERED: Ledger<RejectReason> = Ledger::new();
+    /// Every refusal raised through [`super::reject`] or [`super::reject_at`], with its file.
+    pub(crate) static RAISED: Ledger<(RejectReason, &'static str)> = Ledger::new();
 }
