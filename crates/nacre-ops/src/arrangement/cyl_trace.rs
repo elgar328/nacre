@@ -706,7 +706,10 @@ fn cycle_on_class(
     // `0` inside. An arc lies in its rim's plane across the axis, which meets the class in a line,
     // and it crosses the section where it holds a root of that line ([`combinatorics::arc_crossings`],
     // the count the planar trace reads too); with both ends on the class it leaves to the side its
-    // tangent points ([`combinatorics::arc_departure_side`]). An end on the class is a corner on
+    // tangent points ([`combinatorics::arc_departure`]). An open arc cannot leave along it — a line
+    // through two points of a section is no tangent — and a loop of one circle's arcs is a rim, read
+    // before this road; a closed arc inside a longer ring that leaves along it touches the section
+    // there, which the walk reads as a touch. An end on the class is a corner on
     // the section, the root under the end's own name, which the arc does not cross again there.
     //
     // The walk's count and the `Crossing` arm's node are one question — asked twice, the second
@@ -727,8 +730,7 @@ fn cycle_on_class(
         |i| match (oblique, nr.walls[i]) {
             (None, _) => Some(combinatorics::EdgeMeet::On),
             (Some(_), Wall::Arc { cyl: c, ccw, plane }) => {
-                combinatorics::arc_departure_side(jd, cyls, ring[i], plane, wc, c, ccw)
-                    .map(combinatorics::EdgeMeet::Departs)
+                combinatorics::arc_departure(jd, cyls, ring[i], plane, wc, c, ccw)
             }
             (Some(_), Wall::Ruling { .. } | Wall::Plane(_)) => None,
         },

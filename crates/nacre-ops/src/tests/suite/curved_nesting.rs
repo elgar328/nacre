@@ -810,8 +810,9 @@ fn on_the_cube_ring(check: impl FnOnce(&Judge<'_, WorkingPlane>, [NodeId; 6], us
 /// by the off-line node and σ, the second by σ and the off-line node — so both pieces cross
 /// exactly when σ is the *other* side, and negating σ swaps the answer. With the edge on the line
 /// the four nodes are one run that touches and turns back. The closure supplies σ, so no
-/// cylinder is needed: this locks the walk's rule, and `arc_departure_side`'s sign is locked by
-/// the re-operation census (a wall boss's plate face is such a run with the arc's own σ).
+/// cylinder is needed: this locks the walk's rule. `arc_departure`'s sign across the line is locked
+/// by the re-operation census (a wall boss's plate face is such a run with the arc's own σ), its
+/// sign along the line by `an_arc_leaving_a_line_along_it_lies_on_its_centres_side`.
 #[test]
 fn the_walk_cuts_a_run_at_a_departure() {
     use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane};
@@ -840,7 +841,10 @@ fn the_walk_cuts_a_run_at_a_departure() {
                 x1,
                 |i| {
                     Some(if i == 2 {
-                        EdgeMeet::Departs(sigma)
+                        EdgeMeet::Departs {
+                            side: sigma,
+                            tangent: false,
+                        }
                     } else {
                         EdgeMeet::On
                     })
@@ -971,7 +975,7 @@ fn the_walk_asks_a_curved_edge_its_crossings() {
     });
 }
 
-/// **A closed arc whose node is on the line crosses it again** (`ring_against_plane`). A ring of
+/// **A closed arc that leaves the line across it crosses it again** (`ring_against_plane`). A ring of
 /// one node on `x = 1` and one arc from it back to it, departing to side σ: its two ends are one
 /// node, so they do not settle the count, and the walk asks the arc — with that end — and reads
 /// one crossing, a sign change between the arc's two pieces, and the node a run whose flanks
@@ -989,7 +993,12 @@ fn a_closed_arc_on_the_line_is_asked_its_crossing() {
                     &[],
                     &node,
                     x1,
-                    |_| Some(EdgeMeet::Departs(sigma)),
+                    |_| {
+                        Some(EdgeMeet::Departs {
+                            side: sigma,
+                            tangent: false,
+                        })
+                    },
                     |i, on_end| {
                         asked.borrow_mut().push((i, on_end));
                         Some(count)
@@ -1026,6 +1035,81 @@ fn a_closed_arc_on_the_line_is_asked_its_crossing() {
                 );
             }
         }
+    });
+}
+
+/// **A closed arc that leaves the line along it touches the line once** (`ring_against_plane`). The
+/// same one-node ring, its arc now tangent to `x = 1` at the node and lying on side σ: the line
+/// meets the circle at that point only, so the walk asks the arc and reads no crossing, and the node
+/// a run whose two flanks are the arc's one side — a touch. One or two crossings is impossible for a
+/// tangent departure, and unnameable. An arc between two distinct nodes on the line cannot leave
+/// either along it (a line through two points of a circle is no tangent): unnameable.
+#[test]
+fn a_closed_arc_tangent_to_the_line_touches_it_once() {
+    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane};
+    on_the_cube_ring(|jd, ring, x1, _| {
+        let node = [ring[1]];
+        let tangent = |side: i8| {
+            Some(EdgeMeet::Departs {
+                side,
+                tangent: true,
+            })
+        };
+        for sigma in [1i8, -1] {
+            let walk = |count: u8| {
+                let asked = std::cell::RefCell::new(Vec::new());
+                let got = ring_against_plane(
+                    jd,
+                    &[],
+                    &node,
+                    x1,
+                    |_| tangent(sigma),
+                    |i, on_end| {
+                        asked.borrow_mut().push((i, on_end));
+                        Some(count)
+                    },
+                );
+                (got, asked.into_inner())
+            };
+            let (RingWalk::Met(got), asked) = walk(0) else {
+                panic!("σ = {sigma}: the ring meets the line")
+            };
+            assert_eq!(asked, [(0, Some(0))], "the arc is asked, with its end");
+            assert_eq!(
+                got,
+                vec![Feature::Run {
+                    first: 0,
+                    len: 1,
+                    flanks_differ: false,
+                    flank: sigma,
+                }],
+                "σ = {sigma}"
+            );
+            for count in [1, 2] {
+                assert!(
+                    matches!(walk(count).0, RingWalk::Unnameable),
+                    "σ = {sigma}: {count} crossings is impossible"
+                );
+            }
+        }
+        let open = ring_against_plane(
+            jd,
+            &[],
+            &ring,
+            x1,
+            |i| {
+                if i == 2 {
+                    tangent(1)
+                } else {
+                    Some(EdgeMeet::On)
+                }
+            },
+            |_, _| Some(0),
+        );
+        assert!(
+            matches!(open, RingWalk::Unnameable),
+            "an open arc tangent at an end"
+        );
     });
 }
 

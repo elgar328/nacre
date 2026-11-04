@@ -467,23 +467,28 @@ fn incident_plane_classes(
     classes
 }
 
-/// **Which side of `q` an arc leaves to**: the arc lies on class `p` — the cylinder's section by
+/// **How an arc leaves the line `q` cuts**: the arc lies on class `p` — the cylinder's section by
 /// `p`'s plane, a circle across the axis or an ellipse oblique to it — starts at `node`, a pierce
-/// point of cylinder `cyl` on the line `q` cuts, and travels counter-clockwise about the axis when
-/// `ccw`. The side of `q` its tangent there points to is the side the whole excursion lies on (a
-/// plane section of the cylinder meets a second plane in at most two points).
+/// point of cylinder `cyl` on that line, and travels counter-clockwise about the axis when `ccw`.
+/// The answer is [`EdgeMeet::Departs`]: the side of `q` the whole excursion lies on (a plane section
+/// of the cylinder meets a second plane in at most two points), and whether the arc leaves along
+/// `q`.
 ///
-/// Coordinate-free: the counter-clockwise tangent's component along `n_q` is
-/// [`nacre_exact::quad::ccw_tangent_side`] — across the axis that is minus [`ruling_side_signed`] at the
-/// node, `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))`, the very predicate that names which ruling a
-/// lateral point lies on — and a clockwise arc's is its negation. Then the same canonical → outward
-/// bridge as [`side_of`] ([`Judge::outward_fix`]), so the answer sits in the walk's frame. `None`
-/// when the arc is tangent to `q` at the node (the tangent's side reads zero) or a description is
-/// missing — the walk answers `Unnameable`.
+/// **The side is the first term of the arc's way out that is not zero.** Its counter-clockwise
+/// tangent's component along `n_q` is [`nacre_exact::quad::ccw_tangent_side`] — across the axis that
+/// is minus [`ruling_side_signed`] at the node, `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))`, the very
+/// predicate that names which ruling a lateral point lies on — and a clockwise arc's is its negation.
+/// Where that component is zero, `q` touches the section at the node, and the section — convex —
+/// lies on the side of `q` its centre does, the axis's meet with `p`: the curvature's term, whichever
+/// way the arc runs. Then the same canonical → outward bridge as [`side_of`] ([`Judge::outward_fix`]),
+/// so the answer sits in the walk's frame. `None` when a description is missing, or when the
+/// tangent reads zero with the centre on `q` (a plane through the centre crosses the section, it
+/// does not touch it — a contradiction, refused rather than guessed); the walk answers
+/// `Unnameable`.
 ///
 /// Not `direction::arc_side`, which is the *turn* of an arc against a segment in the face's own
 /// plane (the winding walk's question, in the stored frame); this is a half-space of `q`.
-pub(crate) fn arc_departure_side(
+pub(crate) fn arc_departure(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     node: NodeId,
@@ -491,7 +496,7 @@ pub(crate) fn arc_departure_side(
     q: usize,
     cyl: usize,
     ccw: bool,
-) -> Option<i8> {
+) -> Option<EdgeMeet> {
     let def = &cyls.get(cyl)?.def;
     // A class with no world statement carries no oblique section — the gate records one only on
     // a named class (`planes::CylRecord::Sections`) — so an arc on it is a circle and its normal is
@@ -508,10 +513,24 @@ pub(crate) fn arc_departure_side(
         &def.dir(),
         (&line, &sv),
     )?;
-    if ts == 0 {
-        return None;
+    if ts != 0 {
+        return Some(EdgeMeet::Departs {
+            side: jd.outward_fix(q)? * if ccw { ts } else { -ts },
+            tangent: false,
+        });
     }
-    Some(jd.outward_fix(q)? * if ccw { ts } else { -ts })
+    let centre = nacre_exact::axis_plane_meet(&jd.world_rat(p)?, &def.origin(), &def.dir())?;
+    let at = nacre_exact::dot3_rat(&[nq[0], nq[1], nq[2]], &centre)?.checked_add(nq[3])?;
+    let zero = nacre_exact::Rat::from_int(0);
+    let side = match at.cmp(&zero) {
+        std::cmp::Ordering::Greater => 1,
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => return None,
+    };
+    Some(EdgeMeet::Departs {
+        side: jd.outward_fix(q)? * side,
+        tangent: true,
+    })
 }
 
 // ---------------------------------------------------------------------------

@@ -1114,7 +1114,7 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
 /// - **a bracket** — a column off the wall whose arm reaches the mouth at `z ∈ [−3.5, −3]`, touching
 ///   the wall nowhere: the same crossings with the wall's ring untouched by the bracket;
 /// - **flush with the top, at the through notch** — the line `y = −11` on the top face holds both
-///   ends of the notch's arc, which leaves it between them (`arc_departure_side`).
+///   ends of the notch's arc, which leaves it between them (`arc_departure`).
 ///
 /// Each on the world frame and a 3-4-5 one, in either operand order.
 ///
@@ -1420,8 +1420,9 @@ fn a_body_whose_vertex_on_a_cylinder_surface_touches_its_own_face_is_refused() {
 /// the same contact gets between flat faces.
 ///
 /// A box's bottom face lies on a cap's plane and its corner on the cap's rim, or on a bored plate's
-/// top with its corner on the hole's rim from inside; a column of its own on the plate joins the
-/// box to the body elsewhere. The two faces on that plane touch at the corner only, and the plane's
+/// top with its corner on the hole's rim from inside; or an arm's bottom face lies on the cap's
+/// plane with its corner on the rim and one side along the rim's tangent there. A column of its own
+/// on the plate joins the box (or the arm) to the body elsewhere. The two faces on that plane touch at the corner only, and the plane's
 /// arrangement cuts both rings there: the corner becomes a vertex of the cap (or the plate's top),
 /// of the cylinder's lateral and of the box at once, so it bounds every face it touches and no
 /// face-reading check can see it — it is where two fans of faces meet at one vertex. Each row's
@@ -1494,7 +1495,7 @@ fn a_body_resting_a_corner_on_its_own_rim_is_a_pinch() {
     }
     type Build =
         fn(&mut Model, SketchFrame, Quad, Quad, f64, bool) -> (Handle<Solid>, Handle<Solid>);
-    let rows: [(&str, Build, Quad, Quad, [f64; 3]); 3] = [
+    let rows: [(&str, Build, Quad, Quad, [f64; 3]); 4] = [
         (
             "a box corner on the boss's rim at (3, 4)",
             on_a_boss,
@@ -1508,6 +1509,13 @@ fn a_body_resting_a_corner_on_its_own_rim_is_a_pinch() {
             rect(4.0, 3.0, 10.0, 10.0),
             rect(8.0, 8.0, 10.0, 10.0),
             [4.0, 3.0, 4.0],
+        ),
+        (
+            "an arm's corner on the rim's tangent point (3, 4), one side along the tangent",
+            on_a_boss,
+            [[3.0, 4.0], [7.0, 1.0], [8.2, 2.6], [4.2, 5.6]],
+            rect(6.6, 2.0, 7.4, 2.6),
+            [3.0, 4.0, 4.0],
         ),
         (
             "a box corner on the hole's rim at (3, 4), from inside",

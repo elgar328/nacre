@@ -73,8 +73,9 @@ pub(crate) enum RingWalk {
     /// departure is an off-line entry of its own side ([`EdgeMeet::Departs`]).
     AllOn,
     /// A node whose side this walk cannot answer, an edge between two on-`q` nodes whose meet the
-    /// caller cannot state (`on_meet` answering `None`), or an edge whose interior crossings the
-    /// caller cannot count (`crossings` answering `None`, or a count its ends make impossible).
+    /// caller cannot state (`on_meet` answering `None`, or a departure along `q` between two
+    /// distinct nodes), or an edge whose interior crossings the caller cannot count (`crossings`
+    /// answering `None`, or a count its ends make impossible).
     ///
     /// **A [`NodeKind::Pierce`] corner is unnameable whenever the caller brings no cylinder
     /// table.** Given one, [`side_of`]'s pierce arm answers (short of a class with no narrow
@@ -137,10 +138,12 @@ pub(crate) enum EdgeMeet {
     /// The edge lies on the meet: two on-`q` nodes joined by a straight edge, or — on the circle
     /// road — an arc carried by `q` itself.
     On,
-    /// The edge leaves the meet between two on-`q` nodes (a curved edge) and stays on this side of
+    /// The edge leaves the meet between two on-`q` nodes (a curved edge) and stays on `side` of
     /// `q`, in [`side_of`]'s frame, until it returns — a circle meets a plane in two points, so
-    /// the whole excursion lies on one side.
-    Departs(i8),
+    /// the whole excursion lies on one side. `tangent` when it leaves along `q`: the plane touches
+    /// the section at the node, and the section lies on its centre's side of `q`, meeting it at that
+    /// point only.
+    Departs { side: i8, tangent: bool },
 }
 
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
@@ -171,11 +174,13 @@ pub(crate) enum EdgeMeet {
 /// does it leave to?"** — edge `i` runs from `nodes[i]` to `nodes[i + 1]`, and it is asked only
 /// where both ends are on `q`. Two on-`q` nodes do **not** settle it: two points fix a straight
 /// line, so a straight edge between them is on it, and a **curved** one leaves and comes back —
-/// without crossing between two distinct ends, and across the other root where the two ends are
-/// one node (a closed arc, asked `crossings` like the edges below).
+/// without crossing between two distinct ends, and where the two ends are one node (a closed arc,
+/// asked `crossings` like the edges below) across the other root when it leaves across the line and
+/// nowhere when it leaves along it.
 /// What counts as "the meet" is the caller's, because it differs by road — a plane class cuts a
 /// planar face in a **line** (so a straight edge is `On` and an arc `Departs` to the side its
-/// tangent points, [`arc_departure_side`]) and a lateral face in a **circle** (so an arc carried
+/// tangent points, or where that tangent runs along the line to its centre's side — [`arc_departure`])
+/// and a lateral face in a **circle** (so an arc carried
 /// by that very class is `On`). `None` is "no exact description" and answers [`RingWalk::Unnameable`].
 ///
 /// **A departing edge is read as one more off-line entry, of the departure's side.**
@@ -235,20 +240,25 @@ pub(crate) fn ring_against_plane(
                 None => return RingWalk::Unnameable,
                 Some(EdgeMeet::On) => {}
                 // Two on-`q` ends settle the count only when they are two points: a circle
-                // meets a line twice, so an arc between them is wholly on one side. A **closed**
-                // arc's two ends are one node, and its whole turn meets the line again at the
-                // other root — asked like any edge whose ends cannot say, the departure's side
-                // flipping at the crossing. A departure is transverse at the node (a tangent one
-                // has no side, and `on_meet` says `None` for it), so the line meets the circle at
-                // a second point and any count but one is impossible.
-                Some(EdgeMeet::Departs(s)) if nodes[i] == nodes[(i + 1) % n] => {
-                    if crossings(i, Some(i)) != Some(1) {
-                        return RingWalk::Unnameable;
+                // meets a line twice, so an arc between them is wholly on one side, and it cannot
+                // leave either end along the line (a line through two points of a circle is no
+                // tangent). A **closed** arc's two ends are one node: leaving across the line, its
+                // whole turn meets the line again at the other root — asked like any edge whose
+                // ends cannot say, the departure's side flipping at the crossing — and leaving
+                // along it, the line touches the circle at the node and meets it nowhere else. Any
+                // other count is impossible.
+                Some(EdgeMeet::Departs { side: s, tangent }) if nodes[i] == nodes[(i + 1) % n] => {
+                    match (tangent, crossings(i, Some(i))) {
+                        (false, Some(1)) => {
+                            seq.push((s, Entry::Piece { edge: i, k: 0 }));
+                            seq.push((-s, Entry::Piece { edge: i, k: 1 }));
+                        }
+                        (true, Some(0)) => seq.push((s, Entry::Piece { edge: i, k: 0 })),
+                        _ => return RingWalk::Unnameable,
                     }
-                    seq.push((s, Entry::Piece { edge: i, k: 0 }));
-                    seq.push((-s, Entry::Piece { edge: i, k: 1 }));
                 }
-                Some(EdgeMeet::Departs(s)) => seq.push((s, Entry::Departure)),
+                Some(EdgeMeet::Departs { tangent: true, .. }) => return RingWalk::Unnameable,
+                Some(EdgeMeet::Departs { side: s, .. }) => seq.push((s, Entry::Departure)),
             }
         } else if sa != -sb {
             // Same side (0 or 2 crossings), or one end on `q` (0 or 1): the ends cannot say.

@@ -147,7 +147,7 @@ impl ChartCorner {
 /// half-open one, spelled once in [`nacre_geom::intersect::ray_step_crossing`] — the corner is
 /// counted by the step that leaves it upward. A line step reads that off its other end's sign;
 /// an arc whose root is its own end reads it off its tangent there (the CCW tangent's side of
-/// the ray's plane, [`nacre_exact::quad::ccw_tangent_side`] — `arc_departure_side`'s
+/// the ray's plane, [`nacre_exact::quad::ccw_tangent_side`] — `arc_departure`'s
 /// convention). Abstaining at the corner in both arms is not harmless: eight `NoClearRay`
 /// cells of the crossing census were exactly that abstention exhausting every probe.
 ///
@@ -352,7 +352,7 @@ pub(crate) fn point_in_mixed_ring(
                     // (`ray_step_crossing`): the corner is counted by the step that leaves it
                     // upward. The arc leaves an end along its tangent, whose side of the ray's
                     // plane is the section's counter-clockwise tangent against the ray plane's
-                    // normal (`arc_departure_side`'s convention, the class's own section whatever
+                    // normal (`arc_departure`'s convention, the class's own section whatever
                     // its tilt): `lo` departs CCW at `ts`, `hi` — walked backwards — at `−ts`.
                     // With the end on the ray and right of the probe, that sign is the virtual
                     // tangent step's `side` too (`t × (q − E) = ty·(Ex − qx)`), so the call is

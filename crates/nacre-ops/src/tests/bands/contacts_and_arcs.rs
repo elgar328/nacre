@@ -186,6 +186,66 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     crate::tests::mesh_covers_faces("corner on the rim", &m, &out);
 }
 
+/// **The pinched ring re-cuts along the rim's tangent.** The body of
+/// [`a_crossing_on_a_segments_endpoint_is_inside_it`] has a plate top whose one ring passes the
+/// corner `(8, 13, 5)` twice — round the bore's whole rim, which touches `y = 13` there, and along
+/// the boss's footprint, whose side lies on `y = 13`. Cutting it with a box whose face is `y = 13`
+/// reads that ring against the line: the rim leaves the corner along it, lies on its centre's side,
+/// and touches it at that point only. Three cuts — a slot along the line away from the boss, a slot
+/// along it stopping short of the corner, a block across the bore up to the line — each leave one
+/// body, its volume less what the box removes. The side the rim's departure states does not change these answers (planted:
+/// the two runs at the corner trade which one the touch flanks, and the cut is the same); the
+/// side's own oracle is `an_arc_leaving_a_line_along_it_lies_on_its_centres_side`.
+#[test]
+fn the_pinched_ring_re_cuts_along_the_rims_tangent() {
+    let bore = std::f64::consts::PI * 9.0;
+    for (what, lo, hi, removed) in [
+        (
+            "a slot along y = 13 away from the boss",
+            [25.0, 13.0, 2.0],
+            [35.0, 25.0, 8.0],
+            10.0 * 7.0 * 3.0,
+        ),
+        (
+            "a slot along y = 13 stopping short of the corner",
+            [2.0, 13.0, 2.0],
+            [7.0, 25.0, 8.0],
+            5.0 * 7.0 * 3.0,
+        ),
+        (
+            "a block across the bore up to y = 13",
+            [2.0, -5.0, 2.0],
+            [30.0, 13.0, 8.0],
+            28.0 * 13.0 * 3.0 - bore * 3.0,
+        ),
+    ] {
+        let mut m = Model::new();
+        let plate = crate::fixtures::cuboid(&mut m, [0.0; 3], [40.0, 20.0, 5.0]);
+        let hole = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([8.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+            3.0,
+            7.0,
+        )
+        .solid;
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        let boss = crate::fixtures::cuboid(&mut m, [8.0, 13.0, 5.0], [12.0, 17.0, 8.0]);
+        let body = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("corner on rim")[0];
+        let before = nacre_props::mass_props(&m, body).expect("props").volume;
+        let cutter = crate::fixtures::cuboid(&mut m, lo, hi);
+        let out = crate::boolean(&mut m, BoolKind::Cut, body, cutter)
+            .unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        assert_eq!(out.len(), 1, "{what}: one body");
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{what}: {vs:?}");
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = before - removed;
+        assert!((v - want).abs() < 1e-9, "{what}: volume {v}, want {want}");
+    }
+}
+
 /// **The population where the naming rule actually fires — on a non-`+Z` cylinder.**
 ///
 /// Almost every cylinder in the suite stands on `[0, 0, 1]`, and that is not an accident of taste —

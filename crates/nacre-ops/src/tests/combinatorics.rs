@@ -1052,6 +1052,85 @@ fn a_segment_meets_a_cap_disk_across_its_chord_or_at_its_tangent_point() {
     }
 }
 
+/// **An arc that leaves a line along it lies on its circle's centre side.** The circle of radius 1
+/// about the `z` axis on the cap plane `z = 3`, and the planes `x = 1` and `x = −1` of a block
+/// spanning `x ∈ [−1, 1]`: each touches the circle at one point, a pierce point of the plane pair
+/// with a double root, and an arc leaving that point either way runs along the plane there. The
+/// side [`arc_departure`] gives is the side the circle's centre `(0, 0, 3)` is on — read here off a
+/// corner of the block on the same side as the centre (the corner on the *other* plane, `x = ∓1`),
+/// by the judge's `orient3d` — the frame `side_of` answers a three-plane point in — and it does not depend on which way the arc runs. An arc
+/// on an oblique section (an ellipse) takes the same road, the centre being the axis's meet with
+/// its plane; no fixture here builds one.
+#[test]
+fn an_arc_leaving_a_line_along_it_lies_on_its_centres_side() {
+    use nacre_exact::Rat;
+    use nacre_math::{Point3, Vector3};
+    let ri = Rat::from_int;
+    let mut m = Model::new();
+    let boss = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        3.0,
+    );
+    let surf = m.face(boss.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def,
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+        grazed: Vec::new(),
+        records: Vec::new(),
+        boxes: Vec::new(),
+    }];
+    let mut m = Model::new();
+    let block = crate::fixtures::cuboid(&mut m, [-1.0, -2.0, 1.0], [1.0, 2.0, 3.0]);
+    let rows = crate::planes::collect_planes(&m, block).expect("the block's face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    // The class whose plane is `x_k = d`.
+    let class = |k: usize, d: f64| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                (0..3).all(|i| (i == k) != (w[i] == ri(0)))
+                    && Rat::try_from_f64(d)
+                        .and_then(|d| w[k].checked_mul(d))
+                        .is_some_and(|wd| wd.checked_add(w[3]) == Some(ri(0)))
+            })
+            .expect("the block holds that plane")
+    };
+    let (cap, y) = (class(2, 3.0), class(1, -2.0));
+    for (q, other) in [
+        (class(0, 1.0), class(0, -1.0)),
+        (class(0, -1.0), class(0, 1.0)),
+    ] {
+        let node = NodeId::pierce(q, cap, 0, crate::combinatorics::QuadRoot::Double);
+        let corner = NodeId::three_planes(Canon3::three([cap, other, y]));
+        // The judge's side of that corner, in the outward frame `side_of` answers in.
+        let [a, b, c] = three_plane_name(corner).expect("a three-plane corner");
+        let want = jd.orient3d(a, b, c, q);
+        assert_ne!(want, 0, "the other plane's corner is off q");
+        for ccw in [true, false] {
+            assert_eq!(
+                arc_departure(&jd, &cyls, node, cap, q, 0, ccw),
+                Some(EdgeMeet::Departs {
+                    side: want,
+                    tangent: true,
+                }),
+                "q = class {q}, ccw = {ccw}"
+            );
+        }
+    }
+}
+
 /// **A vertex whose name is a pierce name is read against a plane face by what it carries.** The
 /// cylinder of radius 1 about the `z` axis, and an L-shaped body whose planes are `x = 0.5, 2, 3`,
 /// `y = ±2`, `z = 1, 2, 3`: the pierce name `{z = 3, x = 0.5, Lo}` is the point `(0.5, −√0.75, 3)`,
