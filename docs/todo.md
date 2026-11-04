@@ -239,7 +239,10 @@ census 는 0 이다 — 코퍼스에 원통을 비스듬히 자르는 배치가 
   묻는 길: 꼭짓점이 원통 위인가는 `named_point_in_disk` 의 반지름 판독이고, 옆면의 닫힌 영역은 `loop_parity` 가 읽되 경계 위와 못 읽음을
   한 `None` 으로 내므로 둘을 갈라야 한다. 림 위의 접촉은 이 팔의 몫이 아니다 — 「가지 말 것」의 옆면 점 팔 행. 점 팔이 혼합 링에서
   버리는 기권(무리수 관통 점, 그리고 혼합 링의 좌표 읽기가 기권한 점 — `point_in_mixed_ring` 은 링 위와 접선 광선을 한 `None` 으로
-  낸다)은 비스듬한 단면이 늘릴 수 있다; 오늘의 수는 `self_touch_reject` 본문.
+  낸다)은 비스듬한 단면이 늘릴 수 있다; 오늘의 수는 `self_touch_reject` 본문. 비스듬한 절단이 옆면의 두 림을 한 점에서 맞닿게 하면
+  그 옆면의 철자 — 두 림 루프가 꼭짓점을 나누는가, 한 루프인가(한 루프는 감김 0 이라 tess 의 두 림 전제와 부딪힌다) — 와 집힘
+  검사의 전제(`nacre_topo::nonmanifold_vertices` 는 한 면이 한 꼭짓점을 두 루프로 지나면 그 자리를 집힘으로 읽는다)를 함께 정한다.
+  오늘 그 철자는 validate 가 보는 모델과 불리언 결과에서 0 이고, 나오면 χ 가 홀수라 `EulerParity` 도 함께 울린다.
 - **기하·위상** — `nacre_geom::Curve` 에 타원이 없고 `derive_edge_curve` 가 `EdgeDecline::Oblique` 를 낸다; `realize.rs` 의
   `seam_point_stated` 는 비스듬한 평면에서 평면 밖의 점이고, `pierce_point` 는 캡 × 비스듬한 평면을 실현하지 못한다.
 - **소비자** — tess `cylinder_chart`·`interior_nodes`(호가 수평이라는 전제), props `lateral_moments`(호의 z 가 상수),
@@ -303,6 +306,14 @@ census·kit 에서 손으로 지은 단위 시험(`an_arc_ends_unaliased_second_
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
 잠금 공백·API·성능·구조. 순서는 없다.
+
+### 혼합 링 읽기는 접하는 반직선에서 기권한다
+
+`point_in_mixed_ring` 은 반직선이 링의 호가 놓인 원에 접하면(`CylinderMeet::Tangent`) 근을 읽지 않고 기권한다. 그 기권은
+`rational_ring_side` 의 `Said::Abstain` 이 되어 부르는 쪽이 다른 탐침으로 간다 — 스위트 600·census 127·무시 스윕 8·kit 60 번.
+판정으로 바꾸는 규칙은 하나다: 접점이 호의 span 안이면 닿고 돌아가 홀짝을 바꾸지 않고, 닫힌 호의 노드면 같고, 호의 끝이면
+곡률 쪽으로 떠나는 걸음이다(`combinatorics::arc_departure` 의 규칙 — 그때 둘이 한 함수를 나눠 쓴다). 불리언의 답이 이 기권에 걸린
+자리가 있는지(모든 탐침이 기권해 거절로 끝나는 읽기)는 아직 안 쟀다 — 먼저 잴 것.
 
 ### kit 은 소비마다 복사한다 — 모든 중간값이 산다
 
