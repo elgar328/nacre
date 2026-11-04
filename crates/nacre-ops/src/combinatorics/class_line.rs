@@ -53,7 +53,8 @@ impl From<&Carrier> for LineCarrier {
 /// own: the order it handles runs and crossings in, the names it records, the words it refuses in.
 ///
 /// The meet is a **line**, so a straight edge between two nodes on it lies on it, and an arc leaves
-/// it to the side its tangent points ([`arc_departure`]). An arc whose ends cannot say how
+/// it to the side its tangent points, or along it to its centre's side ([`arc_departure`]). An arc
+/// whose ends cannot say how
 /// often it crosses is asked ([`arc_crossings_of`]), and the same list names the crossings the walk
 /// counted. A crossing is named by what carries its edge: a plane wall pins it on the line; on an
 /// arc it is the `nth` root the arc strictly contains, on a ruling the root that ruling is

@@ -301,12 +301,15 @@ pub(super) fn self_touch_reject(
         // ruling (the tangency verdict), or it is slanted to the axis (`ObliqueCylinderCut`), or the
         // face's bound is another cylinder's arc (`CylinderPairContact`) — the last two lean on the
         // gate refusing first. What is not asked: a lateral face touched at a single point — a
-        // gap, not an abstention; and a vertex the point arm's reading cannot place, whose
-        // abstention is dropped — a point with no rational coordinates against a mixed ring, and
-        // a point the mixed ring's coordinate walk abstains on. Slanted planes reach both and
-        // the gate refuses most of them first; planes along and across the axis reach both too, at
-        // a rim, and what answers there is whatever guard happens to fire, or nothing (the todo
-        // item names the measured rows).
+        // vertex inside one, an edge tangent to one — a gap, not an abstention; the shapes
+        // measured that make one are slanted to the axis, and the gate refuses them first
+        // (`ObliqueCylinderCut`). A vertex resting on a rim is not that touch: the arrangement
+        // cuts the rim's two faces at it, so it bounds both, and the result check names the pinch
+        // (`NonManifoldVertex`). And a vertex the point arm's reading cannot place, whose
+        // abstention is dropped — a point with no rational coordinates against a mixed ring, and a
+        // point the mixed ring's coordinate walk abstains on: over the suite, the census, the
+        // ignored sweep and nacre-kit, 722 such pairs, every one off the face when read
+        // approximately.
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
