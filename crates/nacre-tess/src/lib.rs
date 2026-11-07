@@ -92,10 +92,10 @@ pub enum TessError {
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
     HoleWinding,
-    /// A face's **interior** triangulation left an edge outside the declared budget — the mesh
-    /// would misrepresent the surface there. See [`within_budget`]: the boundary is sampled to the
-    /// budget by construction, so this only ever reports what the sweep chose, and it reports it
-    /// rather than drawing a face that is quietly the wrong shape.
+    /// A face's triangulation left an interior edge or a facet outside the declared budget — the
+    /// mesh would misrepresent the surface there. See [`within_budget`]: the boundary is sampled to
+    /// the budget by construction, so this only ever reports triangles the face's boundary and the
+    /// sweep made, and it reports them rather than drawing a face that is quietly the wrong shape.
     OverBudget,
 }
 
@@ -105,7 +105,7 @@ impl std::fmt::Display for TessError {
             Self::DegenerateRing => "a face's rings are not a polygon with sibling holes",
             Self::SelfTouchingBoundary => "a face's boundary touches itself",
             Self::HoleWinding => "a hole winds the same way as its outer ring",
-            Self::OverBudget => "a face's interior triangulation left an edge outside the budget",
+            Self::OverBudget => "a face's triangulation left an edge or a facet outside the budget",
         })
     }
 }
@@ -191,7 +191,10 @@ pub struct TessConfig {
     /// On a regular polygon this one number is three at once: the central angle of a
     /// segment, the kink at each vertex, and the angle between adjacent facet normals
     /// — so it bounds both how polygonal a silhouette looks and how banded its shading
-    /// is. `2°` puts a circle that fills an 800px viewport within 0.06px of round.
+    /// is. `2°` puts a circle that fills an 800px viewport within 0.06px of round. Every facet's
+    /// normal, at its centroid, stays within it of its surface's too. An angle that is not finite
+    /// and positive asks nothing: the curves fall back on `tol` alone, and nothing is asked of a
+    /// mesh's angles.
     pub max_angle_deg: f64,
 }
 
@@ -759,14 +762,14 @@ pub struct Leaning {
 /// that has no area. Test-only (`test-util`): the mesh locks call it with the budget's
 /// `max_angle_deg`.
 ///
-/// **Why the budget bounds it.** Each edge of a lateral triangle turns about the axis by at most
-/// the budget — an arc's chord by [`circle_segments`], an interior chord by `within_budget`, a
-/// ruling not at all — so its three corners lie within one budget's turn of each other, and so does
-/// its facet's normal of the surface's. That needs the three not to stand in a row along a curve
-/// oblique to the axis, whose facet lies in that curve's plane: a circle's or a ruling's points are
-/// collinear in the chart, so they make no triangle, and an ellipse's two samples one apart span two
-/// θ steps, outside the budget, so no interior edge joins them. A sliver the chart made out of a lattice point standing a few
-/// ulps off the boundary leaned 2.6° to 90° (at 90° it lies in a cap plane).
+/// **Why the budget bounds it.** The mesher asks every facet the same of its own accord
+/// (`within_budget`, `facet_in_budget`), and refuses the face otherwise; this lock measures the
+/// shipped mesh again without that judgement, so it bites if the judgement is bypassed or wrong.
+/// Its spelling is not the mesher's: the angle to the surface's normal at the centroid, corners in
+/// the triangle's order, a bare `>` with no slack (stricter at the budget's edge), no allowance for
+/// a normal its points do not determine (looser for a sliver), laterals only. A sliver the chart
+/// made out of a lattice point standing a few ulps off the boundary leaned 2.6° to 90° (at 90° it
+/// lies in a cap plane).
 #[cfg(any(test, feature = "test-util"))]
 pub fn leaning_laterals(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Leaning> {
     let mut out = Vec::new();
@@ -1949,8 +1952,18 @@ fn triangulate_face(
         SurfaceCache::Cylinder { .. } => Vec::new(),
     };
     let geom = surface.to_geom();
-    let within = |p: polygon::P2, q: polygon::P2| {
-        edge_in_budget(cfg, &geom, map.invert(p).1, map.invert(q).1)
+    // The point the mesh will ship for each corner: a boundary vertex's shared position, or the
+    // chart's inverse for a point this face mints.
+    let at = |(i, p): polygon::Corner| {
+        if i < boundary {
+            t.vertices.get(handles[i]).pos
+        } else {
+            map.invert(p).1
+        }
+    };
+    let within = |e: polygon::Element| match e {
+        polygon::Element::Edge(c) => edge_in_budget(cfg, &geom, c.map(|k| (k.0, at(k)))),
+        polygon::Element::Facet(c) => facet_in_budget(cfg, &geom, c.map(|k| (k.0, at(k)))),
     };
     let (tris, rings_used) =
         polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits, &within)?;
@@ -2004,7 +2017,7 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
     out
 }
 
-/// **The mesh's one rule, asked of the face's *interior*.**
+/// **The mesh's one rule, asked of the face's *interior* and of every facet.**
 ///
 /// `TessConfig` declares two budgets and [`circle_segments`] enforces **both** on every boundary
 /// polyline. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
@@ -2016,13 +2029,18 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 ///
 /// So the same two questions are asked of every interior edge:
 /// * **linear** — how far the surface strays from the chord, measured at its midpoint;
-/// * **angular** — how far the surface *turns* between the ends, measured on its own normals.
+/// * **angular** — how far the surface *turns* between the ends, measured on its own normals;
 ///
-/// Both come from [`nacre_geom::Surface`] and are exhaustive over the surface kinds, so a plane
-/// answers zero to both without anyone declaring that a plane is flat, and a new surface kind is a
-/// compile error rather than a missing case.
+/// and one of every facet, interior or not — how far its normal leans off the surface's
+/// ([`facet_in_budget`]). Edges within the budget do not hold a facet to its surface: three
+/// samples in a row along a curve oblique to a cylinder's axis make a facet in that curve's plane.
 ///
-/// **A boundary edge cannot fail, so it is not asked.** An arc is cut into `circle_segments`
+/// All of it comes from [`nacre_geom::Surface`] and is exhaustive over the surface kinds, so a
+/// plane answers zero without anyone declaring that a plane is flat — only a sliver whose normal
+/// its points do not determine is outside there (none in the corpus or the suites) — and a new
+/// surface kind is a compile error rather than a missing case.
+///
+/// **A boundary edge cannot fail, so it is not asked** (a facet can, with two boundary edges). An arc is cut into `circle_segments`
 /// pieces, which is the *larger* of the two budgets' demands; a straight edge (a ruling, a
 /// plane's side) strays zero and its ends share one normal. The two halves of the sentence meet
 /// there — which is why this checks only what the sweep chose, never what the sampler laid down.
@@ -2046,17 +2064,17 @@ fn within_budget(
             })
         })
         .collect();
+    let at = |i: usize| (i, t.vertices.get(handles[i]).pos);
     for tri in tris {
+        if !facet_in_budget(cfg, surface, tri.map(at)) {
+            return Err(TessError::OverBudget);
+        }
         for k in 0..3 {
             let (i, j) = (tri[k], tri[(k + 1) % 3]);
             if boundary.contains(&(i.min(j), i.max(j))) {
                 continue;
             }
-            let (a, b) = (
-                t.vertices.get(handles[i]).pos,
-                t.vertices.get(handles[j]).pos,
-            );
-            if !edge_in_budget(cfg, surface, a, b) {
+            if !edge_in_budget(cfg, surface, [at(i), at(j)]) {
                 return Err(TessError::OverBudget);
             }
         }
@@ -2064,21 +2082,84 @@ fn within_budget(
     Ok(())
 }
 
-/// **Whether the edge `a — b` keeps both budgets on `surface`** — the one spelling of the question
-/// [`within_budget`] asks of every interior edge and the quality pass asks before it flips one
-/// (`polygon::triangulate_uv`'s `within`).
-fn edge_in_budget(cfg: &TessConfig, surface: &Surface, a: Point3, b: Point3) -> bool {
-    // Today's populations sit **exactly** on the angular budget — an interior diagonal spanning one
-    // sample turns by precisely the sampler's own step — so a bare `>` would be decided by the last
-    // bit of two differently-rounded routes to the same number.
+/// The angular budget in radians, or `None` when [`TessConfig::max_angle_deg`] is not a finite
+/// positive angle — then nothing is asked of the angle, as the sampler falls back on the chord
+/// budget alone ([`circle_segments`]). With the budget's own slack: today's populations sit
+/// **exactly** on it — an interior diagonal spanning one sample turns by precisely the sampler's own
+/// step — so a bare `>` would be decided by the last bit of two differently-rounded routes to the
+/// same number.
+fn angle_budget(cfg: &TessConfig) -> Option<f64> {
+    let deg = cfg.max_angle_deg;
+    (deg.is_finite() && deg > 0.0).then(|| deg.to_radians() * (1.0 + 1e-9))
+}
+
+/// **Whether the edge `a — b` keeps both budgets on `surface`**: its midpoint within `tol` of it,
+/// and the surface's normals at its ends within the angular budget of each other.
+///
+/// This and [`facet_in_budget`] are the one spelling of the question [`within_budget`] asks of the
+/// finished mesh and the flip pass asks before it flips (`polygon::triangulate_uv`'s `within`). Each
+/// corner comes with its index and the point the mesh will ship for it, and the corners are put in
+/// index order first, so an element is judged in the same rounding whichever triangle or flip asks
+/// about it — which is what lets the flip pass count.
+fn edge_in_budget(cfg: &TessConfig, surface: &Surface, mut ends: [(usize, Point3); 2]) -> bool {
+    ends.sort_unstable_by_key(|&(i, _)| i);
+    let [a, b] = ends.map(|(_, p)| p);
     let slack = 1.0 + 1e-9;
     if surface.distance(a + (b - a) * 0.5) > cfg.tol * slack {
         return false;
     }
+    let Some(limit) = angle_budget(cfg) else {
+        return true;
+    };
     let (Some(na), Some(nb)) = (surface.normal_at(a), surface.normal_at(b)) else {
         return true; // a normal with no name (a point on the axis) is not a budget failure
     };
-    na.dot(nb).clamp(-1.0, 1.0).acos() <= cfg.max_angle_deg.to_radians() * slack
+    na.dot(nb).clamp(-1.0, 1.0).acos() <= limit
+}
+
+/// **Whether the facet `a b c` keeps the angular budget** (in [`edge_in_budget`]'s spelling): the
+/// angle between its normal and the surface's normal at its centroid, plus how far rounding may
+/// have turned its normal, within the budget. A facet whose normal its own points do not determine
+/// — no area, or a sliver whose cross product is rounding — is outside.
+///
+/// **The rounding.** Each component of `d₁ × d₂`, `d₁ = b − a` and `d₂ = c − a` rounded, is a
+/// difference of two products of rounded differences, so it is off by at most
+/// `4u(|d₁ᵧ||d₂_z| + |d₁_z||d₂ᵧ|)` to first order (`u = ε/2`: two differences, a product, a
+/// subtraction); over the three components that is at most `4√2·u|d₁||d₂| < 4ε|d₁||d₂|`. A vector
+/// of length `|n|` moved by `|Δ| < |n|` turns by at most `asin(|Δ|/|n|)`. The points are the mesh's
+/// own, so only this arithmetic is counted; the centroid, the surface's normal, the dot product
+/// and the `acos` are rounded as [`edge_in_budget`]'s are, inside the budget's slack. A centroid on
+/// the axis has no normal to compare with; it is outside — the facet's projection across the axis
+/// would have to hold the axis, and then its edges are far outside the budget anyway.
+///
+/// **No chord budget here, and why none is missing.** A plane's facet lies in it. On a cylinder, a
+/// facet whose corners span less than a half-turn projects across the axis to a triangle that does
+/// not hold the axis, so its point nearest the axis — farthest from the surface — is on its
+/// boundary, and on each edge, whose ends are both on the cylinder, at the edge's midpoint: which
+/// [`edge_in_budget`] asks of an interior edge and the sampler lays down on a boundary one. A new
+/// surface kind is where to ask again.
+///
+/// Both arguments — the centroid on the axis, and no chord budget — rest on the angular budget
+/// holding every edge to a few degrees. Where nothing is asked of the angle ([`angle_budget`])
+/// neither is asked, and a facet around the axis, each edge a third of a turn, passes a chord
+/// budget of `r/2` with its centroid `r` off the surface — a pathological setting.
+fn facet_in_budget(cfg: &TessConfig, surface: &Surface, mut corners: [(usize, Point3); 3]) -> bool {
+    corners.sort_unstable_by_key(|&(i, _)| i);
+    let [a, b, c] = corners.map(|(_, p)| p);
+    let (d1, d2) = (b - a, c - a);
+    let n = d1.cross(d2);
+    let len = n.norm();
+    let unsure = 4.0 * f64::EPSILON * d1.norm() * d2.norm() / len;
+    if !unsure.is_finite() || unsure >= 1.0 {
+        return false;
+    }
+    let Some(limit) = angle_budget(cfg) else {
+        return true;
+    };
+    let Some(normal) = surface.normal_at(a + (d1 + d2) * (1.0 / 3.0)) else {
+        return false;
+    };
+    (n * (1.0 / len)).dot(normal).abs().clamp(0.0, 1.0).acos() + unsure.asin() <= limit
 }
 
 #[cfg(test)]

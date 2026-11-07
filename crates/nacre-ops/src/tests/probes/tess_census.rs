@@ -31,8 +31,8 @@ pub(crate) fn record(model: &Model) {
     let cfg = nacre_tess::TessConfig::default();
     let mesh = nacre_tess::tessellate(model, &cfg);
     // **And it lies on its surface**: no lateral triangle leans off the cylinder by more than the
-    // budget lets an edge turn (`leaning_laterals`) — a lattice point placed a few ulps off the
-    // boundary makes a sliver leaning up to 90° off, with nothing else failing.
+    // budget (`leaning_laterals`, measured without the mesher's own facet judgement) — a lattice
+    // point placed a few ulps off the boundary makes a sliver leaning up to 90° off.
     if let Ok(t) = &mesh {
         let leaning = nacre_tess::leaning_laterals(model, t, cfg.max_angle_deg);
         assert!(

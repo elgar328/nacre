@@ -1707,3 +1707,140 @@ fn near_contact_past_the_finest_sampling_is_refused_by_name() {
         "a gap of 1e-8"
     );
 }
+
+/// **A band too thin between rims off each other's samples is refused by name** — a known defect,
+/// in `docs/todo.md`. A disk of radius 50 with a box taking `z ≥ h` off its rim beyond `x = 15`:
+/// the rim drops to `h` on an arc from the box's wall, cut evenly between its own ends, so its
+/// samples stand on none of the bottom circle's, and every facet across the band tilts by about the
+/// offset sag over `h`. At `h = 0.1` that is past the angular budget and the mesh is `OverBudget`;
+/// at `0.4` it is drawn. Cutting every curve on one cylinder on one θ grid would draw the first
+/// too.
+#[test]
+fn a_band_too_thin_between_rims_off_each_others_samples_is_refused() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let cut = |h: f64| {
+        let mut m = Model::new();
+        let disk = fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([-1.0, 0.0, 0.0]),
+            50.0,
+            1.0,
+        )
+        .solid;
+        let block = fixtures::cuboid(&mut m, [15.0, -100.0, h], [100.0, 100.0, 2.0]);
+        let out = boolean(&mut m, BoolKind::Cut, disk, block).expect("the box cuts");
+        tessellate_solids(&m, &out, &TessConfig::default()).map(|_| ())
+    };
+    assert_eq!(cut(0.1), Err(TessError::OverBudget), "a band 0.1 high");
+    assert_eq!(cut(0.4), Ok(()), "a band 0.4 high");
+}
+
+/// **A facet whose normal its own points do not determine is outside the budget, asked in any
+/// order.** On the plane `z = 0`: three points in a line have no normal; the sliver `b = (1, 0,
+/// 0)`, `a = (0, 0, 0)`, `c = (1e-3, 1e-16, 0)` has one only to within the rounding of its cross
+/// product, which from `b` (the lowest index) bounds the turn past a right angle (`4ε|d₁||d₂| / |d₁
+/// × d₂| ≈ 8.9`) and from `a` or `c` would not (`≈ 8.9e-3`) — so the corners are put in index order
+/// first, and every order of the same indexed corners gets one answer. A fat facet is inside. On a
+/// cylinder, a facet one 2° step wide and a unit tall leans about a third of a degree and is
+/// inside; three points on one ruling are not a facet.
+#[test]
+fn a_facet_whose_normal_its_points_do_not_determine_is_outside() {
+    let cfg = TessConfig::default();
+    let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
+    let plane = Surface::Plane(
+        nacre_geom::Plane::from_point_normal(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        )
+        .expect("a plane"),
+    );
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let every_order = |surface: &Surface, corners: [(usize, Point3); 3]| -> Vec<bool> {
+        orders
+            .iter()
+            .map(|o| facet_in_budget(&cfg, surface, o.map(|k| corners[k])))
+            .collect()
+    };
+    let sliver = [
+        (0, p(1.0, 0.0, 0.0)),
+        (1, p(0.0, 0.0, 0.0)),
+        (2, p(1e-3, 1e-16, 0.0)),
+    ];
+    assert_eq!(every_order(&plane, sliver), [false; 6], "the sliver");
+    let line = [
+        (0, p(0.0, 0.0, 0.0)),
+        (1, p(1.0, 0.0, 0.0)),
+        (2, p(2.0, 0.0, 0.0)),
+    ];
+    assert_eq!(
+        every_order(&plane, line),
+        [false; 6],
+        "three points in a line"
+    );
+    let fat = [
+        (0, p(0.0, 0.0, 0.0)),
+        (1, p(1.0, 0.0, 0.0)),
+        (2, p(0.0, 1.0, 0.0)),
+    ];
+    assert_eq!(every_order(&plane, fat), [true; 6], "a fat facet");
+
+    let cylinder = Surface::Cylinder(
+        nacre_geom::Cylinder::from_axis(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            1.0,
+        )
+        .expect("a cylinder"),
+    );
+    let on = |theta_deg: f64, z: f64| {
+        let t = theta_deg.to_radians();
+        p(t.cos(), t.sin(), z)
+    };
+    let step = [(0, on(10.0, 0.0)), (1, on(12.0, 0.0)), (2, on(10.0, 1.0))];
+    assert_eq!(
+        every_order(&cylinder, step),
+        [true; 6],
+        "a facet one step wide"
+    );
+    let ruling = [(0, on(10.0, 0.0)), (1, on(10.0, 0.5)), (2, on(10.0, 1.0))];
+    assert_eq!(
+        every_order(&cylinder, ruling),
+        [false; 6],
+        "three points on a ruling"
+    );
+}
+
+/// **An angular budget that is not a finite positive angle asks nothing of the angle** — of the
+/// curves, which fall back on `tol` alone, nor of the mesh: a box and a cylinder of radius 1 mesh
+/// at `0`, `−1` and `NaN`, the cylinder's rims cut into the 23 pieces the chord budget alone asks
+/// for (`⌈π / acos(1 − 0.01)⌉`).
+#[test]
+fn a_non_positive_angle_asks_nothing_of_the_angle() {
+    for angle in [0.0, -1.0, f64::NAN] {
+        let cfg = TessConfig {
+            max_angle_deg: angle,
+            ..Default::default()
+        };
+        tessellate(&cube([0.0; 3], [1.0, 2.0, 3.0]), &cfg)
+            .unwrap_or_else(|e| panic!("the box at {angle}: {e:?}"));
+        let m = cylinder([0.0; 3], [0.0, 0.0, 1.0], 1.0, 2.0);
+        let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("the cylinder at {angle}: {e:?}"));
+        let rims: Vec<usize> = t
+            .by_edge
+            .iter()
+            .filter(|(e, _)| matches!(m.edge_curve(**e), Curve::Ellipse(_)))
+            .map(|(_, poly)| poly.len())
+            .collect();
+        assert_eq!(rims, [23, 23], "the rims at {angle}");
+    }
+}

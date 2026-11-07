@@ -44,6 +44,19 @@ pub(crate) enum Revisit {
     Pinch { ring: usize, x: usize, y: usize },
 }
 
+/// A chart point and its index into `uv` — the index is what lets a caller judge its own point
+/// for it (a shared boundary vertex, or the point it will mint), not the chart's image of it.
+pub(crate) type Corner = (usize, P2);
+
+/// **One element the budget is asked of** — an edge or a facet of the triangulation. The quality
+/// pass asks about both before it flips ([`delaunay::refine`]); a bare polygon with no surface
+/// under it has no budget to leave and answers `true`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Element {
+    Edge([Corner; 2]),
+    Facet([Corner; 3]),
+}
+
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
 use nacre_predicates::orient2d;
@@ -188,15 +201,16 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// the positions the others were given), a point passed three times (two pairs sharing a visit —
 /// one symbolic pair per point cannot order three), and what [`pinch`] refuses.
 ///
-/// **`within` — the budget, asked of a chart edge.** The quality pass flips only within it and
-/// moves an edge outside it where it can ([`delaunay::refine`]); a bare polygon with no surface
-/// under it has no budget to leave and passes `&|_, _| true`.
+/// **`within` — the budget, asked of an [`Element`].** The flip pass never raises the count of
+/// edges and facets outside it and lowers it where it can ([`delaunay::refine`]). Each corner comes
+/// with its index, so the caller judges the point it will ship for it, not the chart's image of it;
+/// a bare polygon with no surface under it has no budget to leave and passes `&|_| true`.
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
     candidates: &[P2],
     revisits: &[Revisit],
-    within: &dyn Fn(P2, P2) -> bool,
+    within: &dyn Fn(Element) -> bool,
 ) -> Result<Triangulated, TessError> {
     if ring_orientation(rings[0], uv) != 1 {
         return Err(TessError::DegenerateRing);
@@ -225,9 +239,9 @@ pub(crate) fn triangulate_uv(
     for piece in monotone::decompose(uv, &refs, &twins)? {
         monotone::triangulate_monotone(uv, &piece, &mut out, &twins)?;
     }
-    // The decomposition answers *whether* the face meshes; this answers *how well*.
-    // It moves diagonals only — never the rings — so the count, the area and the
-    // boundary are the same on both sides of it.
+    // The decomposition answers *whether* the face meshes; this keeps it within the budget and
+    // then makes it as good as the budget allows. It moves diagonals only — never the rings — so
+    // the count, the area and the boundary are the same on both sides of it.
     let constrained: HashSet<(usize, usize)> = refs
         .iter()
         .flat_map(|r| {

@@ -7,11 +7,11 @@
 //! Delaunay one maximises the smallest angle, and any triangulation reaches it by
 //! flipping the free edges that fail the incircle test, in finitely many steps.
 //!
-//! So correctness and quality stay orthogonal: [`super::monotone`] settles the first
-//! and this settles the second, and deleting this file would leave a mesh that is still
-//! right. Nothing here creates or removes a vertex or a triangle, and no constrained
-//! edge is ever touched, so watertightness, the triangle count and the boundary all
-//! come through untouched by construction.
+//! So [`super::monotone`] settles whether the face triangulates, and this settles the rest: that
+//! every edge and facet keeps the caller's budget where flipping can make it, and then quality.
+//! Nothing here creates or removes a vertex or a triangle, and no constrained edge is ever
+//! touched, so watertightness, the triangle count and the boundary all come through untouched by
+//! construction.
 //!
 //! **Measured, because the obvious expectation was wrong.** The mean smallest angle
 //! roughly doubles — on a cylinder cap at `tol` 1e-4, `0.51° → 1.05°`; at 1e-2,
@@ -44,30 +44,42 @@
 //! This file still creates and removes nothing; it runs after those points have arrived, and their
 //! arrival is what gives it something to flip.
 
-use super::P2;
+use super::{Element, P2};
 use nacre_predicates::{incircle, orient2d};
 use std::collections::{HashMap, HashSet};
 
-/// Flip every free edge that fails the incircle test, until none does — **within the budget**.
+/// Flip free edges until the budget and then the incircle test have nothing left to ask.
 ///
 /// `constrained` holds the ring edges as `(min, max)` pairs — the polygon's boundary
 /// and its holes' — and they are the edges a flip may not take. Triangles must arrive
 /// counter-clockwise and leave the same way.
 ///
-/// `within` says whether an edge between two chart points keeps the mesh's budget on its surface
-/// (the caller's — this file knows only the chart). The budget is the mesh's contract and Delaunay
-/// its taste, so the contract decides: a flip whose new diagonal would leave the budget is not
-/// taken, and a diagonal outside it is flipped whenever its replacement is inside, incircle or not.
-/// The count of edges outside the budget therefore never grows and falls with every such flip, and
-/// between those the Lawson flips terminate as they always do. On a lateral the two disagree where
-/// a band is tall and its rims are not level — an ellipse's rim beside a circle's: the sweep zips
-/// the two rims sample by sample, and the circumcircles of so tall a strip invite a diagonal that
-/// skips a sample (measured: `4°` on a rod cut obliquely, the budget `2°`).
+/// `within` says whether an edge or a facet keeps the mesh's budget on its surface (the caller's —
+/// this file knows only the chart). The budget is the mesh's contract and Delaunay its taste, so
+/// the contract decides first: a flip replaces three elements — the diagonal and the two facets
+/// beside it — and is taken when fewer of the three are outside the budget after it than before,
+/// or as many and the incircle test asks for it (strictly, so cocircular points do not flip back
+/// and forth). The caller judges each element in one spelling whichever side asks, so the count
+/// outside the budget over the whole mesh moves by exactly the quad's difference: it never grows,
+/// and a flip that keeps it lowers the Delaunay lifting potential, so the pair falls
+/// lexicographically and the pass ends. Where every facet is inside, this is the edge rule — a
+/// diagonal outside goes for one inside whatever the incircle says, two inside follow the incircle,
+/// and so do two outside.
+///
+/// Why facets: the budget on edges alone does not hold a facet to its surface — three samples in a
+/// row along a curve oblique to a cylinder's axis make a triangle whose every edge is within it and
+/// whose facet lies in the curve's plane. And why the count rather than a veto on any flip into a
+/// facet outside: the sweep's own triangles can be outside, and reaching a mesh with none passes
+/// through flips that leave as many outside as they found (the rejected rules are in
+/// `docs/design.md`). On a lateral the budget and the incircle test also disagree where a band is
+/// tall and its rims are not level — an ellipse's rim beside a circle's: the circumcircles of so
+/// tall a strip invite a diagonal that skips a sample (measured: `4°` on a rod cut obliquely, the
+/// budget `2°`).
 pub(super) fn refine(
     uv: &[P2],
     tris: &mut [[usize; 3]],
     constrained: &HashSet<(usize, usize)>,
-    within: &dyn Fn(P2, P2) -> bool,
+    within: &dyn Fn(Element) -> bool,
 ) {
     // Which triangle contains each *directed* edge. In a triangulation every directed
     // edge belongs to exactly one triangle, so this is a function — and the neighbour
@@ -91,15 +103,16 @@ pub(super) fn refine(
         }
     }
 
-    // Lawson terminates, but a bound costs one counter and turns "we believe it does"
-    // into "it did" — a mis-signed predicate would otherwise spin here forever.
-    let mut budget = 64 * tris.len() + 64;
+    // The pass terminates, but a bound costs one counter and turns "we believe it does" into "it
+    // did" — a mis-signed predicate would otherwise spin here forever. What it leaves outside the
+    // budget the caller's own check still refuses.
+    let mut flips_left = 64 * tris.len() + 64;
     while let Some((a, b)) = stack.pop() {
         queued.remove(&key(a, b));
-        if budget == 0 {
+        if flips_left == 0 {
             return;
         }
-        budget -= 1;
+        flips_left -= 1;
         let (Some(&t1), Some(&t2)) = (owner.get(&(a, b)), owner.get(&(b, a))) else {
             continue; // a boundary edge, or one this loop has already replaced
         };
@@ -116,13 +129,26 @@ pub(super) fn refine(
         if orient2d(uv[a], uv[d], uv[c]) <= 0.0 || orient2d(uv[d], uv[b], uv[c]) <= 0.0 {
             continue;
         }
+        // How many of the three elements this flip replaces are outside the budget, now and after.
+        let edge =
+            |x: usize, y: usize| usize::from(!within(Element::Edge([(x, uv[x]), (y, uv[y])])));
+        let facet = |x: usize, y: usize, z: usize| {
+            usize::from(!within(Element::Facet([
+                (x, uv[x]),
+                (y, uv[y]),
+                (z, uv[z]),
+            ])))
+        };
+        let before = edge(a, b) + facet(a, b, c) + facet(b, a, d);
         // `(a, b, c)` is counter-clockwise because `t1` is, so this asks exactly what
-        // the Delaunay condition asks: is the opposite vertex inside the circumcircle? An edge
-        // outside the budget is moved whatever the answer.
-        if within(uv[a], uv[b]) && incircle(uv[a], uv[b], uv[c], uv[d]) <= 0.0 {
+        // the Delaunay condition asks: is the opposite vertex inside the circumcircle?
+        let delaunay = incircle(uv[a], uv[b], uv[c], uv[d]) > 0.0;
+        // Nothing outside now and nothing the taste asks for: no flip can do better.
+        if before == 0 && !delaunay {
             continue;
         }
-        if !within(uv[c], uv[d]) {
+        let after = edge(c, d) + facet(a, d, c) + facet(d, b, c);
+        if !(after < before || (after == before && delaunay)) {
             continue;
         }
 
@@ -138,8 +164,9 @@ pub(super) fn refine(
                 owner.insert((tris[t][k], tris[t][(k + 1) % 3]), t);
             }
         }
-        // The quad's four sides may have stopped being Delaunay now that the diagonal
-        // moved; the new diagonal `c–d` cannot, since it was just chosen.
+        // The quad's four sides may want flipping now that their facets changed; the new diagonal
+        // `c–d` does not — flipping it back would raise the count, or keep it against the
+        // incircle test, which is now negative.
         for (x, y) in [(a, d), (d, b), (b, c), (c, a)] {
             if !constrained.contains(&key(x, y)) && queued.insert(key(x, y)) {
                 stack.push((x, y));
@@ -168,6 +195,75 @@ mod tests {
         worst
     }
 
+    fn edges_of(tris: &[[usize; 3]]) -> HashSet<(usize, usize)> {
+        tris.iter()
+            .flat_map(|t| (0..3).map(move |k| (t[k].min(t[(k + 1) % 3]), t[k].max(t[(k + 1) % 3]))))
+            .collect()
+    }
+
+    /// **An ear the incircle test keeps goes when its facet is outside the budget.** Three
+    /// consecutive points of a unit arc and one far below: the far point is outside the arc's
+    /// circle, so Delaunay keeps the diagonal that cuts off the ear — the shape of three ellipse
+    /// samples on a tall lateral band, whose facet lies in the cut plane. A caller that says that
+    /// one facet is outside gets the other diagonal: fewer elements outside after the flip than
+    /// before.
+    #[test]
+    fn an_ear_outside_the_budget_is_flipped_away() {
+        let h = 0.1f64;
+        // p₀, q, p₂, p₁ — counter-clockwise, p₁ the arc's middle sample, q far below.
+        let uv: Vec<P2> = vec![
+            [-h.sin(), h.cos()],
+            [0.0, -5.0],
+            [h.sin(), h.cos()],
+            [0.0, 1.0],
+        ];
+        let start = vec![[0, 1, 2], [0, 2, 3]];
+        let constrained: HashSet<(usize, usize)> =
+            [(0, 1), (1, 2), (2, 3), (0, 3)].into_iter().collect();
+
+        let mut taste = start.clone();
+        refine(&uv, &mut taste, &constrained, &|_| true);
+        assert_eq!(taste, start, "Delaunay keeps the ear");
+
+        let ear = |e: Element| match e {
+            Element::Facet(c) => {
+                let mut i = c.map(|(i, _)| i);
+                i.sort_unstable();
+                i != [0, 2, 3]
+            }
+            Element::Edge(_) => true,
+        };
+        let mut tris = start;
+        refine(&uv, &mut tris, &constrained, &ear);
+        let edges = edges_of(&tris);
+        assert!(
+            edges.contains(&(1, 3)) && !edges.contains(&(0, 2)),
+            "{tris:?}"
+        );
+    }
+
+    /// **As many outside before and after: the incircle test decides.** The splinter fan below,
+    /// with every facet outside the budget — no flip changes the count, so the pass is plain
+    /// Delaunay and ends where it ends with no budget at all.
+    #[test]
+    fn with_as_many_outside_either_way_delaunay_decides() {
+        let k = 12;
+        let mut uv: Vec<P2> = (0..=k).map(|i| [i as f64, 0.0]).collect();
+        uv.extend((0..=k).rev().map(|i| [i as f64, 1.0]));
+        let n = uv.len();
+        let fan: Vec<[usize; 3]> = (1..n - 1).map(|i| [0, i, i + 1]).collect();
+        let constrained: HashSet<(usize, usize)> = (0..n)
+            .map(|i| (i.min((i + 1) % n), i.max((i + 1) % n)))
+            .collect();
+        let mut free = fan.clone();
+        refine(&uv, &mut free, &constrained, &|_| true);
+        let mut every_facet_out = fan;
+        refine(&uv, &mut every_facet_out, &constrained, &|e| {
+            matches!(e, Element::Edge(_))
+        });
+        assert_eq!(every_facet_out, free);
+    }
+
     /// A long strip with vertices down both sides: fan it from one corner and the
     /// triangles are splinters, flip it and they are near-right-angled halves of the
     /// squares they sit in. Delaunay maximises the smallest angle, and here that is a
@@ -193,7 +289,7 @@ mod tests {
 
         let before = min_angle(&uv, &tris);
         let count = tris.len();
-        refine(&uv, &mut tris, &constrained, &|_, _| true);
+        refine(&uv, &mut tris, &constrained, &|_| true);
         let after = min_angle(&uv, &tris);
 
         assert_eq!(
@@ -251,7 +347,7 @@ mod tests {
         let constrained: HashSet<(usize, usize)> = (0..n)
             .map(|i| (i.min((i + 1) % n), i.max((i + 1) % n)))
             .collect();
-        refine(&uv, &mut tris, &constrained, &|_, _| true);
+        refine(&uv, &mut tris, &constrained, &|_| true);
         assert_eq!(
             tris, before,
             "a flip fired on points the incircle test cannot separate"
@@ -265,7 +361,7 @@ mod tests {
         let mut tris = vec![[0, 1, 2], [0, 2, 3]];
         let constrained: HashSet<(usize, usize)> =
             [(0, 1), (1, 2), (2, 3), (0, 3)].into_iter().collect();
-        refine(&uv, &mut tris, &constrained, &|_, _| true);
+        refine(&uv, &mut tris, &constrained, &|_| true);
         let edges: HashSet<(usize, usize)> = tris
             .iter()
             .flat_map(|t| (0..3).map(move |k| (t[k].min(t[(k + 1) % 3]), t[k].max(t[(k + 1) % 3]))))

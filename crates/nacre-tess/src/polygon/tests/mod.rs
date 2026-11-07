@@ -16,7 +16,7 @@ fn tri(uv: &[P2], outer: &[usize], holes: &[&[usize]]) -> Result<Vec<[usize; 3]>
     let refs: Vec<&[usize]> = std::iter::once(outer)
         .chain(holes.iter().copied())
         .collect();
-    triangulate_uv(&mut v, &refs, &[], &[], &|_, _| true).map(|(t, _)| t)
+    triangulate_uv(&mut v, &refs, &[], &[], &|_| true).map(|(t, _)| t)
 }
 
 /// The same road with one bridge named — what the chart layer hands over for a pinched face.
@@ -30,7 +30,7 @@ fn tri_bridged(
     let refs: Vec<&[usize]> = std::iter::once(outer)
         .chain(holes.iter().copied())
         .collect();
-    triangulate_uv(&mut v, &refs, &[], &[Revisit::Bridge(bridge)], &|_, _| true)
+    triangulate_uv(&mut v, &refs, &[], &[Revisit::Bridge(bridge)], &|_| true)
 }
 
 /// The checks every golden gets, each catching a different fault: the count pins
@@ -313,7 +313,7 @@ fn offered_points_land_inside_and_on_interior_edges() {
     let lattice: Vec<P2> = (1..4)
         .flat_map(|i| (1..4).map(move |j| [f64::from(i), f64::from(j)]))
         .collect();
-    let t = triangulate_uv(&mut uv, &[&ring], &lattice, &[], &|_, _| true)
+    let t = triangulate_uv(&mut uv, &[&ring], &lattice, &[], &|_| true)
         .unwrap()
         .0;
     assert_eq!(uv.len(), 4 + 9, "every offered point was placed");
@@ -350,7 +350,7 @@ fn a_candidate_on_the_boundary_or_outside_is_declined() {
         [-1.0, 2.0], // outside, and level with the interior
     ] {
         let mut uv = base.clone();
-        let t = triangulate_uv(&mut uv, &[&ring], &[p], &[], &|_, _| true)
+        let t = triangulate_uv(&mut uv, &[&ring], &[p], &[], &|_| true)
             .unwrap()
             .0;
         assert_eq!(uv.len(), 4, "{p:?} was placed");
@@ -538,7 +538,7 @@ fn tri_pinched(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Triangul
         &[ring],
         &[],
         &[Revisit::Pinch { ring: 0, x, y }],
-        &|_, _| true,
+        &|_| true,
     )
 }
 
@@ -610,7 +610,7 @@ fn a_ring_pinched_at_two_points_meshes() {
             y: 8,
         },
     ];
-    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_, _| true)
+    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_| true)
         .expect("the twice-pinched ring meshes");
     check(&p, &tris, 10, 24.0 - 0.5 - 0.5);
     assert_eq!(rings, vec![ring.clone()], "nothing spliced");
@@ -644,7 +644,7 @@ fn a_pinch_with_a_reflex_sector_meshes() {
         x: 1,
         y: 4,
     }];
-    let (tris, rings) = triangulate_uv(&mut v, &[&outer, &hole], &[], &revisits, &|_, _| true)
+    let (tris, rings) = triangulate_uv(&mut v, &[&outer, &hole], &[], &revisits, &|_| true)
         .expect("the pinched hole meshes");
     check(&p, &tris, 10, 36.0 - 1.0 - 0.5);
     check_partition(&tris, &rings[0], &[&rings[1]]);
@@ -683,7 +683,7 @@ fn a_ring_pinched_twice_with_a_reflex_sector_meshes() {
             y: 7,
         },
     ];
-    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_, _| true)
+    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_| true)
         .expect("the twice-pinched ring meshes");
     check(&p, &tris, 9, 36.0 - 1.0 - 1.0);
     assert_eq!(rings, vec![ring.clone()], "nothing spliced");
@@ -974,7 +974,7 @@ fn random_figure_eight_holes_triangulate() {
                 x: 0,
                 y: 3,
             }],
-            &|_, _| true,
+            &|_| true,
         )
         .unwrap_or_else(|e| panic!("{e:?}: {p:?}"));
         check(&p, &tris, 10, 400.0 - lobes);
@@ -1146,7 +1146,7 @@ fn random_pinched_grid_faces_triangulate() {
         }
         let refs: Vec<&[usize]> = idx.iter().map(|r| r.as_slice()).collect();
         let mut v = p.clone();
-        let r = triangulate_uv(&mut v, &refs, &[], &revisits, &|_, _| true);
+        let r = triangulate_uv(&mut v, &refs, &[], &revisits, &|_| true);
         if revisits.iter().any(|r| matches!(r, Revisit::Bridge(_))) {
             assert!(
                 matches!(r, Err(TessError::SelfTouchingBoundary)),
