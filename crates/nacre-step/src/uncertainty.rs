@@ -199,7 +199,7 @@ impl Path {
             Curve::Line(l) => Path::Line {
                 dir: v3(l.direction().as_array())?,
             },
-            Curve::Circle(c) => Path::Circle {
+            Curve::Ellipse(c) => Path::Circle {
                 centre: gaps.point(c.center().as_array())?,
                 normal: v3(c.normal().as_array())?,
                 radius: hp(c.radius())?,

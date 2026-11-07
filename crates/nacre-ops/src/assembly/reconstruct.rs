@@ -355,7 +355,7 @@ pub(crate) fn reconstruct(
             Ok(Loop { half_edges })
         };
         // **Which way a rim circle is walked.** `derive_edge_curve` builds it on the
-        // cylinder cache's frame (`Circle::from_unit_frame(centre, axis, ref_dir, r)`), so its
+        // cylinder cache's frame (`Ellipse::from_unit_frame(centre, axis, ref_dir, r)`), so its
         // parameter runs **CCW about the cylinder's axis** — the cache's, which runs the same way
         // as the statement's `def.dir()` (the cylinder door asserts it). A loop must run CCW about
         // its own face's outward normal, so a bound on a face whose normal agrees with the axis is

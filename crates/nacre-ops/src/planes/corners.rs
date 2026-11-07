@@ -301,14 +301,14 @@ pub(super) fn corner_of(
         nacre_geom::Curve::Line(_) => {}
         // A single circular edge is the whole loop, so the loop is a disk — anything else
         // curved bulges past a hull this road cannot state.
-        nacre_geom::Curve::Circle(_) if lp.half_edges.len() == 1 => {
+        nacre_geom::Curve::Ellipse(_) if lp.half_edges.len() == 1 => {
             return disk_of(model, face, he);
         }
         // **An arc is a piece too**. A loop that mixes lines and arcs — a filleted
         // outline is the everyday one — is spellable: the same circle a whole loop would be, cut
         // to the extent its two ends name (a face the reader cannot spell refuses the boolean).
         // A failure here says its own cause, the way the whole disk's does.
-        nacre_geom::Curve::Circle(_) => {
+        nacre_geom::Curve::Ellipse(_) => {
             return arc_of(model, face, he);
         }
     }

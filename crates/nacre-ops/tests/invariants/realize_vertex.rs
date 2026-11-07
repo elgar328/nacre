@@ -2262,7 +2262,7 @@ fn the_refine_door_leaves_every_deep_line_and_circle_nearest() {
                         c.lines_off += 1;
                     }
                 }
-                nacre_geom::Curve::Circle(circle) => {
+                nacre_geom::Curve::Ellipse(circle) => {
                     c.circles += 1;
                     let cyl = cylinder.expect("a circle has a cylinder carrier");
                     let cap = if cyl == s0 { s1 } else { s0 };

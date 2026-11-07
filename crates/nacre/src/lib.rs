@@ -17,7 +17,7 @@
 //! | [`store`] | `Store<T>` / `Handle<T>` — append-only typed arenas |
 //! | [`math`] | `Point<D>` / `Vector<D>` — plain f64 linear algebra |
 //! | [`exact`] | `Rat` / `Angle` / `Isometry` / `PlaneName` — what is answered exactly in rationals |
-//! | [`geom`] | `Plane` / `Line` / `Circle` / `Cylinder`, the `intersect` and `mixed` predicates |
+//! | [`geom`] | `Plane` / `Line` / `Ellipse` / `Cylinder`, the `intersect` and `mixed` predicates |
 //! | [`topo`] | `Model` and the b-rep cells — the truth and its realization |
 //! | [`ops`] | `Operation` / `apply` / `replay`, sketch profiles, extrude, boolean |
 //! | [`props`] | volume, area, centroid, bounding box, per-face facts |

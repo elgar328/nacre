@@ -816,15 +816,15 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
 /// full rim is one: the chord Newell sum alone reads an arc-dominated loop **backwards** (the
 /// turned boss's crescent — the region between chord and long arc lies on the chord's other
 /// side), so every circle half-edge contributes its **circular segment**'s area vector —
-/// `Circle::segment_area` about the circle's own normal, signed by traversal, with Δθ read from
+/// `Ellipse::segment_area` about the circle's own normal, signed by traversal, with Δθ read from
 /// the edge's stored `[from, to]` order (CCW about the axis, the arc convention;
-/// `Circle::angle_of` is the one spelling) — and a closed edge `[v, v]` in a loop of several, the
+/// `Ellipse::angle_of` is the one spelling) — and a closed edge `[v, v]` in a loop of several, the
 /// circle a groove's tip touches, is the whole turn. A digon (chord + arc, two points) has an empty
 /// Newell sum and one segment — which is why the too-few-points refusal only applies to
 /// all-line loops.
 fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
     if let [he] = lp.half_edges[..] {
-        if let nacre_geom::Curve::Circle(c) = m.edge_curve(he.edge) {
+        if let nacre_geom::Curve::Ellipse(c) = m.edge_curve(he.edge) {
             return Some(c.normal() * if he.forward { 1.0 } else { -1.0 });
         }
     }
@@ -833,7 +833,7 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
     let arcs: Vec<&nacre_topo::HalfEdge> = lp
         .half_edges
         .iter()
-        .filter(|he| matches!(m.edge_curve(he.edge), nacre_geom::Curve::Circle(_)))
+        .filter(|he| matches!(m.edge_curve(he.edge), nacre_geom::Curve::Ellipse(_)))
         .collect();
     if n < 3 && arcs.is_empty() {
         return None;
@@ -850,7 +850,7 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
         acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
     });
     let sum = arcs.iter().fold(chords, |acc, he| {
-        let nacre_geom::Curve::Circle(c) = m.edge_curve(he.edge) else {
+        let nacre_geom::Curve::Ellipse(c) = m.edge_curve(he.edge) else {
             unreachable!("filtered above");
         };
         let [va, vb] = m.edge(he.edge).vertices;

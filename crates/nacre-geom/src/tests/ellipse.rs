@@ -4,8 +4,8 @@ use proptest::prelude::*;
 
 const EPS: f64 = 1e-9;
 
-fn unit_circle() -> Circle {
-    Circle::from_center_normal(
+fn unit_circle() -> Ellipse {
+    Ellipse::from_center_normal(
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
         Vector3::from_array([1.0, 0.0, 0.0]),
@@ -21,7 +21,7 @@ fn unit_circle() -> Circle {
 /// same angle), which is how the arc consumers ask it about realized endpoints.
 #[test]
 fn angle_of_inverts_point_at() {
-    let c = Circle::from_center_normal(
+    let c = Ellipse::from_center_normal(
         Point3::from_array([1.0, -2.0, 0.5]),
         Vector3::from_array([0.0, 3.0, 4.0]),
         Vector3::from_array([1.0, 0.0, 0.0]),
@@ -64,7 +64,7 @@ fn unit_circle_basics() {
 fn ref_dir_is_orthogonalized_and_normalized() {
     // A ref_dir with a normal component and non-unit length is projected and
     // normalized: normal +Z, ref_dir (2, 0, 7) → angle-0 axis +X.
-    let c = Circle::from_center_normal(
+    let c = Ellipse::from_center_normal(
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
         Vector3::from_array([2.0, 0.0, 7.0]),
@@ -80,10 +80,10 @@ fn degenerate_constructions_return_none() {
     let c = Point3::origin();
     let z = Vector3::from_array([0.0, 0.0, 1.0]);
     let x = Vector3::from_array([1.0, 0.0, 0.0]);
-    assert!(Circle::from_center_normal(c, Vector3::zero(), x, 1.0).is_none()); // zero normal
-    assert!(Circle::from_center_normal(c, z, z, 1.0).is_none()); // ref_dir ∥ normal
-    assert!(Circle::from_center_normal(c, z, x, 0.0).is_none()); // zero radius
-    assert!(Circle::from_center_normal(c, z, x, -2.0).is_none()); // negative radius
+    assert!(Ellipse::from_center_normal(c, Vector3::zero(), x, 1.0).is_none()); // zero normal
+    assert!(Ellipse::from_center_normal(c, z, z, 1.0).is_none()); // ref_dir ∥ normal
+    assert!(Ellipse::from_center_normal(c, z, x, 0.0).is_none()); // zero radius
+    assert!(Ellipse::from_center_normal(c, z, x, -2.0).is_none()); // negative radius
 }
 
 // --- proptest ---
@@ -97,7 +97,7 @@ fn vec3() -> impl Strategy<Value = Vector3> {
 
 /// A well-conditioned circle: normal and ref_dir are kept clearly non-parallel
 /// so the in-plane frame is stable (mirrors `plane_and_points`).
-fn circle() -> impl Strategy<Value = Circle> {
+fn circle() -> impl Strategy<Value = Ellipse> {
     (pt3(), vec3(), vec3(), 0.5f64..10.0).prop_filter_map(
         "degenerate circle frame",
         |(center, normal, ref_dir, radius)| {
@@ -106,7 +106,7 @@ fn circle() -> impl Strategy<Value = Circle> {
                 (Some(n), Some(r)) if n.cross(r).norm() >= 1e-3
             );
             if separated {
-                Circle::from_center_normal(center, normal, ref_dir, radius)
+                Ellipse::from_center_normal(center, normal, ref_dir, radius)
             } else {
                 None
             }
@@ -125,7 +125,7 @@ proptest! {
         // it on an origin-centered copy — differencing `point_at` at a large center
         // would just add catastrophic cancellation from the huge shared term.
         let c0 =
-            Circle::from_center_normal(Point3::origin(), c.normal(), c.ref_dir(), c.radius())
+            Ellipse::from_center_normal(Point3::origin(), c.normal(), c.ref_dir(), c.radius())
                 .unwrap();
         let h = 1e-6;
         let central = (c0.point_at(theta + h) - c0.point_at(theta - h)) / (2.0 * h);

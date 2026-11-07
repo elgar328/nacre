@@ -301,7 +301,7 @@ impl Model {
     ///   and the two complementary arcs between one vertex pair are the two orders. Producers
     ///   uphold this (`boolean`'s edge welding keys arcs in CCW order); the curve stored here is
     ///   the whole circle either way. Every consumer reads it the same way: tessellation's
-    ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
+    ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Ellipse::angle_of` as the one spelling of
     ///   θ, and the three that add each arc's circular segment to a chord polygon take Δθ from the
     ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
     ///   `outer_tri`. **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
@@ -383,8 +383,8 @@ impl Model {
                             };
                         // The frame is the cylinder cache's, bit for bit — a rim has no frame of
                         // its own, so it is as correctly rounded as that cache is, never less.
-                        Ok(Curve::Circle(
-                            Circle::from_unit_frame(
+                        Ok(Curve::Ellipse(
+                            Ellipse::from_unit_frame(
                                 center,
                                 axis.direction(),
                                 c.ref_dir(),

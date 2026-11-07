@@ -395,11 +395,12 @@ pub enum Surface {
 
 pub enum Curve {
     Line(Line),
-    /// 전체 원 carrier(중심/법선/**ref_dir**/반경 — `ref_dir` 이 θ=0 앵커이고, 원통의
+    /// 림의 전체 carrier — 평면이 원통과 만나는 곡선(이름은 일반형을 따른다; 담는 값은 원:
+    /// 중심/법선/**ref_dir**/반경 — `ref_dir` 이 θ=0 앵커이고, 원통의
     /// seam 은 **+ref_dir** 에 고정된다). 호 = 이 담체 + 서로 다른 두 끝점 정점,
     /// 온전한 원 = 같은 정점이 양 끝(`[v, v]`, 위상 층 절의 rim 규칙) — Line 과 같은
     /// carrier-vs-trim. brep-to-step `Curve::Circle`(끝점 동일 여부로 원/호 구분)과 정합.
-    Circle(Circle),
+    Ellipse(Ellipse),
     // 계획: `Nurbs(NurbsCurve)` 도 생산자가 붙을 때 온다(평가기 `NurbsCurve` 는 이미 있다).
 }
 ```

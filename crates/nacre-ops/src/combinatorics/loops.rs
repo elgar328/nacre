@@ -581,7 +581,7 @@ fn curved_wall(
 ) -> Result<crate::combinatorics::Wall, BoolError> {
     let curved = || reject(RejectReason::CurvedOperandBoundary);
     match model.edge_curve(he.edge) {
-        nacre_geom::Curve::Circle(_) => Ok(crate::combinatorics::Wall::Arc {
+        nacre_geom::Curve::Ellipse(_) => Ok(crate::combinatorics::Wall::Arc {
             cyl,
             ccw: he.forward,
             plane: near,

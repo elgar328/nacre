@@ -41,7 +41,7 @@ impl Cylinder {
     /// Returns `None` if `direction` is zero, `ref_dir` is parallel to the axis
     /// (no perpendicular component), or `radius` is not positive (rejects `0`,
     /// negatives, and `NaN`). Fallible `from_*` constructor, mirroring
-    /// [`Circle::from_center_normal`](crate::Circle).
+    /// [`Ellipse::from_center_normal`](crate::Ellipse).
     pub fn from_axis(
         origin: Point3,
         direction: Vector3,

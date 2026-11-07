@@ -256,7 +256,7 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
             want.sort();
 
             for eh in (0..m.edge_count() as u32).filter_map(|i| m.edge_handle_at(i)) {
-                let nacre_geom::Curve::Circle(c) = m.edge_curve(eh) else {
+                let nacre_geom::Curve::Ellipse(c) = m.edge_curve(eh) else {
                     continue;
                 };
                 let [s0, s1] = m.edge(eh).surfaces;

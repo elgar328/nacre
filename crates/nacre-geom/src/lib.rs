@@ -7,13 +7,13 @@
 //! is closed-form and stores **no** tolerance: every containment query takes the
 //! caller's epsilon.
 //!
-//! The types are [`Plane`], [`Line`], [`Circle`] (the full-circle carrier), [`Cylinder`], and
+//! The types are [`Plane`], [`Line`], [`Ellipse`] (a rim's carrier — a circle), [`Cylinder`], and
 //! the standalone rational B-spline evaluators [`NurbsCurve`]/[`NurbsSurface`]. A `Curve` or
 //! `Surface` variant is added with the producer that makes it.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-mod circle;
 mod cylinder;
+mod ellipse;
 mod line;
 mod nurbs;
 mod plane;
@@ -23,8 +23,8 @@ pub mod mixed;
 
 mod region;
 
-pub use circle::Circle;
 pub use cylinder::Cylinder;
+pub use ellipse::Ellipse;
 pub use line::Line;
 pub use nurbs::{NurbsCurve, NurbsSurface};
 pub use plane::Plane;
@@ -165,13 +165,13 @@ impl Surface {
 /// A curve, realized — the **cache** side of an edge's geometry, [`Surface`]'s sibling: the
 /// carriers and endpoints an edge records are the truth, and this is derived from them.
 ///
-/// `Line` and `Circle` (the full-circle carrier) are the variants; a marched intersection wants a
+/// `Line` and `Ellipse` (a rim's carrier — a circle) are the variants; a marched intersection wants a
 /// shape this crate cannot spell — see the crate doc. **Not `Copy`**, same as [`Surface`], so a
 /// heap-backed variant can be added without changing the type's contract.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Curve {
     Line(Line),
-    Circle(Circle),
+    Ellipse(Ellipse),
 }
 
 impl Curve {
@@ -181,7 +181,7 @@ impl Curve {
     pub fn distance(&self, p: Point3) -> f64 {
         match self {
             Curve::Line(c) => c.distance(p),
-            Curve::Circle(c) => c.distance(p),
+            Curve::Ellipse(c) => c.distance(p),
         }
     }
 
@@ -190,7 +190,7 @@ impl Curve {
     pub fn translated(&self, offset: Vector3) -> Curve {
         match self {
             Curve::Line(c) => Curve::Line(c.translated(offset)),
-            Curve::Circle(c) => Curve::Circle(c.translated(offset)),
+            Curve::Ellipse(c) => Curve::Ellipse(c.translated(offset)),
         }
     }
 
@@ -200,7 +200,7 @@ impl Curve {
     pub fn mirrored(&self, m: AxisMirror) -> Option<Curve> {
         match self {
             Curve::Line(c) => Some(Curve::Line(c.mirrored(m))),
-            Curve::Circle(_) => None,
+            Curve::Ellipse(_) => None,
         }
     }
 
@@ -255,8 +255,8 @@ mod tests {
     #[test]
     fn curve_delegates_to_circle() {
         // Unit circle in the XY plane, centre origin.
-        let c = Curve::Circle(
-            Circle::from_center_normal(
+        let c = Curve::Ellipse(
+            Ellipse::from_center_normal(
                 Point3::origin(),
                 Vector3::from_array([0.0, 0.0, 1.0]),
                 Vector3::from_array([1.0, 0.0, 0.0]),

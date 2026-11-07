@@ -391,9 +391,9 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     // chord polygon alone winds backwards when an arc dominates the loop — a 270° sector's cap is
     // three points whose triangle turns the other way round, the region between the chords and the
     // long arc lying on the chords' other side. So every circle half-edge adds its **circular
-    // segment**'s area vector: `Circle::segment_area` about the circle's own normal, `Δθ` from the
+    // segment**'s area vector: `Ellipse::segment_area` about the circle's own normal, `Δθ` from the
     // edge's stored `[from, to]` order (counter-clockwise about the axis, the arc convention;
-    // `Circle::angle_of` is the one spelling of the angle), signed by which way this loop walks it.
+    // `Ellipse::angle_of` is the one spelling of the angle), signed by which way this loop walks it.
     // The numbers are `nacre-geom`'s; the fold is the one `nacre-validate`'s winding witness and
     // `nacre-props`' integrals make on their own, independently of this kernel — with their
     // premise: an arc near zero length whose angle difference rounds below zero reads as nearly a
@@ -402,7 +402,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
         acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
     });
     let newell = face.outer.half_edges.iter().fold(chords, |acc, he| {
-        let nacre_geom::Curve::Circle(c) = model.edge_curve(he.edge) else {
+        let nacre_geom::Curve::Ellipse(c) = model.edge_curve(he.edge) else {
             return acc;
         };
         let [from, to] = model.edge(he.edge).vertices;

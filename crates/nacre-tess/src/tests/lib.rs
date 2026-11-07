@@ -193,7 +193,7 @@ fn cylinder_provenance_matches_positions() {
         let expected = match tv.origin {
             TessOrigin::OnVertex(v) => m.vertex_point(v),
             TessOrigin::OnEdge { edge, t: param } => match m.edge_curve(edge) {
-                Curve::Circle(c) => c.point_at(param),
+                Curve::Ellipse(c) => c.point_at(param),
                 Curve::Line(_) => unreachable!("cylinder rims are circles"),
             },
             TessOrigin::OnFace { .. } => unreachable!("cylinder uses no interior face samples"),

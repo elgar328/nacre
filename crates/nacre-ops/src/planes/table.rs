@@ -81,7 +81,7 @@ pub(crate) fn collect_planes(
                 // face's stated outward like every other `tri`. A loop with no curved edge that
                 // spreads nothing is still `DegenerateFace`: it bounds no area.
                 None if face.outer.half_edges.iter().any(|he| {
-                    matches!(model.edge_curve(he.edge), nacre_geom::Curve::Circle(_))
+                    matches!(model.edge_curve(he.edge), nacre_geom::Curve::Ellipse(_))
                 }) =>
                 {
                     let nacre_topo::Surface::Plane {

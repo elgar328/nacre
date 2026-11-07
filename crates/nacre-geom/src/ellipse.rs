@@ -1,18 +1,18 @@
-//! `Circle` — a full circle in 3-D: the periodic carrier for circular edges.
+//! `Ellipse` — the periodic carrier of a rim, the curve a plane meets a cylinder in.
 
 use nacre_math::{Point3, Vector3};
 
-/// A full circle, stored as a `center`, a **unit** `normal` (the plane it lies
-/// in), a **unit** `ref_dir` in that plane (the angle-0 direction), and a
-/// positive `radius`.
+/// A rim's carrier, named for the general section of a cylinder by a plane; the values it holds
+/// are a full circle's — a `center`, a **unit** `normal` (the plane it lies in), a **unit**
+/// `ref_dir` in that plane (the angle-0 direction), and a positive `radius`.
 ///
 /// Invariant: `normal` and `ref_dir` are unit and mutually orthogonal, and `radius > 0` —
-/// [`Circle::from_center_normal`] normalizes, orthogonalizes, and rejects a zero axis or
-/// non-positive radius; [`Circle::from_unit_frame`] takes a frame that already is one. Only
+/// [`Ellipse::from_center_normal`] normalizes, orthogonalizes, and rejects a zero axis or
+/// non-positive radius; [`Ellipse::from_unit_frame`] takes a frame that already is one. Only
 /// `(center, normal, ref_dir, radius)` are stored; the second in-plane axis (`normal × ref_dir`)
 /// is derived on demand so there is one fewer orthonormality invariant to keep.
 ///
-/// A `Circle` is the *full, unbounded* curve, parameterized by angle θ (radians)
+/// An `Ellipse` is the *full, unbounded* curve, parameterized by angle θ (radians)
 /// from `ref_dir`. An edge trims it to an arc via its endpoint vertices — a
 /// closed edge is the whole circle — its two endpoint vertices are the same seam
 /// vertex (`[v, v]`), the same carrier-vs-trim split as [`Line`](crate::Line) +
@@ -20,17 +20,17 @@ use nacre_math::{Point3, Vector3};
 /// is exactly `center`/`normal`/`ref_dir`).
 ///
 /// Same `PartialEq` / no-`Eq` / no-`Hash` rationale as [`Line`](crate::Line):
-/// exact `==` is for tests only; on-circle queries use [`Circle::distance`] /
-/// [`Circle::contains`] with a caller-supplied tolerance.
+/// exact `==` is for tests only; on-circle queries use [`Ellipse::distance`] /
+/// [`Ellipse::contains`] with a caller-supplied tolerance.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Circle {
+pub struct Ellipse {
     center: Point3,
     normal: Vector3,
     ref_dir: Vector3,
     radius: f64,
 }
 
-impl Circle {
+impl Ellipse {
     /// A circle in the plane through `center` perpendicular to `normal`, with the
     /// angle-0 direction taken from `ref_dir` (its component in the plane, via
     /// Gram–Schmidt) and the given `radius`.
@@ -39,18 +39,18 @@ impl Circle {
     /// (no in-plane component), or `radius` is not positive (rejects `0`,
     /// negatives, and `NaN`). Named `from_*` (not `new`) as a fallible
     /// constructor, mirroring [`Plane::from_point_normal`](crate::Plane). A frame that is
-    /// already a correctly rounded unit pair takes [`Circle::from_unit_frame`] — normalizing it
+    /// already a correctly rounded unit pair takes [`Ellipse::from_unit_frame`] — normalizing it
     /// again moves its bits.
     pub fn from_center_normal(
         center: Point3,
         normal: Vector3,
         ref_dir: Vector3,
         radius: f64,
-    ) -> Option<Circle> {
+    ) -> Option<Ellipse> {
         let normal = normal.normalize()?;
         // Strip the normal component so the angle-0 axis lies in the plane.
         let ref_dir = (ref_dir - normal * ref_dir.dot(normal)).normalize()?;
-        (radius > 0.0).then_some(Circle {
+        (radius > 0.0).then_some(Ellipse {
             center,
             normal,
             ref_dir,
@@ -60,7 +60,7 @@ impl Circle {
 
     /// A circle whose `normal` and `ref_dir` **are already** the unit, mutually perpendicular
     /// vectors to keep, stored bit for bit — the frame a realization rounded correctly (a
-    /// cylinder cache's axis and seam direction), which [`Circle::from_center_normal`] would round
+    /// cylinder cache's axis and seam direction), which [`Ellipse::from_center_normal`] would round
     /// again: it normalizes the one and strips the other in `f64`, and a component whose truth is
     /// `0` comes back as a residue. The mirror of
     /// [`Cylinder::from_unit_frame`](crate::Cylinder::from_unit_frame). `None` for a radius that is
@@ -71,14 +71,14 @@ impl Circle {
         normal: Vector3,
         ref_dir: Vector3,
         radius: f64,
-    ) -> Option<Circle> {
+    ) -> Option<Ellipse> {
         debug_assert!(
             (normal.dot(normal) - 1.0).abs() < 1e-12
                 && (ref_dir.dot(ref_dir) - 1.0).abs() < 1e-12
                 && normal.dot(ref_dir).abs() < 1e-12,
             "a unit ref_dir across a unit normal: {normal:?} {ref_dir:?}"
         );
-        (radius > 0.0).then_some(Circle {
+        (radius > 0.0).then_some(Ellipse {
             center,
             normal,
             ref_dir,
@@ -113,8 +113,8 @@ impl Circle {
     /// The circle translated by `offset` — the center shifts, the plane
     /// (normal, ref_dir) and radius are unchanged.
     #[inline]
-    pub fn translated(self, offset: Vector3) -> Circle {
-        Circle {
+    pub fn translated(self, offset: Vector3) -> Ellipse {
+        Ellipse {
             center: self.center + offset,
             normal: self.normal,
             ref_dir: self.ref_dir,
@@ -137,7 +137,7 @@ impl Circle {
     }
 
     /// The angle θ ∈ [0, 2π) of `p`'s direction from the center — the inverse of
-    /// [`point_at`](Circle::point_at)'s parameterization (`atan2` of the projections onto the
+    /// [`point_at`](Ellipse::point_at)'s parameterization (`atan2` of the projections onto the
     /// two in-plane axes). `p` need not lie on the circle: the answer is the angle of its
     /// in-plane direction, and a point on the axis (both projections zero) returns `0.0` by
     /// `atan2`'s own convention rather than refusing — callers pass realized edge endpoints,
@@ -188,7 +188,7 @@ impl Circle {
     /// along the curve, the quantity a finite difference of [`point_at`] returns.
     /// (Term follows *The NURBS Book*.)
     ///
-    /// [`point_at`]: Circle::point_at
+    /// [`point_at`]: Ellipse::point_at
     #[inline]
     pub fn derivative(self, theta: f64) -> Vector3 {
         let (sin, cos) = theta.sin_cos();
@@ -218,5 +218,5 @@ impl Circle {
 }
 
 #[cfg(test)]
-#[path = "tests/circle.rs"]
+#[path = "tests/ellipse.rs"]
 mod tests;

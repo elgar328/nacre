@@ -7,7 +7,7 @@
 //! crate; the rest of the kernel knows no STEP.
 //!
 //! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
-//! `Curve::{Line, Circle}` (a whole cylinder: two seam vertices, two full-circle rims, and a
+//! `Curve::{Line, Ellipse}` (a whole cylinder: two seam vertices, two full-circle rims, and a
 //! lateral bounded by those two rims — one its outer bound, the other an inner one). AP242 Ed2 is
 //! stamped by the writer.
 
@@ -69,7 +69,7 @@ impl From<brep_to_step::Error> for StepError {
 /// Export every live solid in `model` to AP242 (Ed2) STEP text.
 ///
 /// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines,
-/// arcs and full circles (`Curve::{Line, Circle}`); a full-circle rim is a closed edge
+/// arcs and full circles (`Curve::{Line, Ellipse}`); a full-circle rim is a closed edge
 /// (`vertices: [v, v]`, start == end, `v` its seam vertex) that emits a closed STEP circle. A
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
 /// emitted in millimetres (nacre is unitless; STEP needs a unit). Each solid is one STEP part,
@@ -272,7 +272,7 @@ fn build_edge<W: Write>(
     // a new curve variant is a compile error here.
     let curve = match model.edge_curve(eh) {
         Curve::Line(l) => StepCurve::LineAlong(l.direction().as_array()),
-        Curve::Circle(c) => StepCurve::Circle {
+        Curve::Ellipse(c) => StepCurve::Circle {
             frame: frame(c.center(), c.normal(), c.ref_dir()),
             radius: c.radius(),
         },

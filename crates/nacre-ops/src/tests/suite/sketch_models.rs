@@ -63,7 +63,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                         carriers.sort_unstable();
                         let curve = match m.edge_curve(he.edge) {
                             nacre_geom::Curve::Line(_) => "line",
-                            nacre_geom::Curve::Circle(_) => "circle",
+                            nacre_geom::Curve::Ellipse(_) => "circle",
                         };
                         edges.push((carriers.join("+"), curve, e.vertices[0] == e.vertices[1]));
                     }

@@ -204,7 +204,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
         .edges
         .into_iter()
         .filter(|&eh| {
-            matches!(m.edge_curve(eh), Curve::Circle(_))
+            matches!(m.edge_curve(eh), Curve::Ellipse(_))
                 && m.edge(eh).surfaces.iter().any(|&h| {
                     matches!(m.surface(h), Surface::Cylinder { .. })
                         && m.world_cylinder_def(h).is_none()
@@ -240,7 +240,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
 /// as a residue — and a `+z` cylinder turned 37° about `y` then 11° about `x`.
 ///
 /// The sweep also counts the rims whose frame a renormalization *would* move, and requires one:
-/// a fixture whose frame survives `Circle::from_center_normal` bit for bit cannot tell the two
+/// a fixture whose frame survives `Ellipse::from_center_normal` bit for bit cannot tell the two
 /// constructors apart, and this lock would pass with either.
 #[test]
 fn a_rims_frame_is_its_cylinders_cache() {
@@ -276,7 +276,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
         let mut rims = 0;
         for &fh in &m.shell(m.solid(s).outer).faces {
             for he in &m.face(fh).outer.half_edges {
-                let Curve::Circle(c) = m.edge_curve(he.edge) else {
+                let Curve::Ellipse(c) = m.edge_curve(he.edge) else {
                     continue;
                 };
                 let cyl = m
@@ -299,7 +299,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
                     cc.radius().to_bits(),
                     "{name}: radius"
                 );
-                let again = nacre_geom::Circle::from_center_normal(
+                let again = nacre_geom::Ellipse::from_center_normal(
                     c.center(),
                     cc.axis().direction(),
                     cc.ref_dir(),
@@ -372,7 +372,7 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
             let mut seen = std::collections::HashSet::new();
             for &fh in &m.shell(m.solid(s).outer).faces {
                 for he in &m.face(fh).outer.half_edges {
-                    let Curve::Circle(c) = m.edge_curve(he.edge) else {
+                    let Curve::Ellipse(c) = m.edge_curve(he.edge) else {
                         continue;
                     };
                     if !seen.insert(he.edge) {
@@ -567,7 +567,7 @@ fn edge_kinds(m: &Model, s: Handle<nacre_topo::Solid>) -> (usize, usize) {
         {
             if seen.insert(he.edge) {
                 match m.edge_curve(he.edge) {
-                    Curve::Circle(_) => circles += 1,
+                    Curve::Ellipse(_) => circles += 1,
                     Curve::Line(_) => lines += 1,
                 }
             }

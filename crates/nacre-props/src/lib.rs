@@ -220,7 +220,7 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
             for &he in &lp.half_edges {
                 match edge_curve(model, he) {
                     Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
-                    Curve::Circle(circle) => {
+                    Curve::Ellipse(circle) => {
                         // The **whole** circle's extent, whatever the edge's endpoints say — so
                         // an arc grows the box too much, never too little. A bound that
                         // errs outward stays a bound, which is why this one needs no change when
@@ -341,7 +341,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // not "fix" a formula that is not wrong. (A loop *mixing* arcs with lines is the same
         // decline, and `nacre-validate::loop_winding` names it as its own landing site.)
         match edge_curve(model, outer.half_edges[0]) {
-            Curve::Circle(circle) => {
+            Curve::Ellipse(circle) => {
                 let area = PI * circle.radius() * circle.radius();
                 Ok((area, circle.center()))
             }
@@ -353,7 +353,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // **circular segment** — area `r²(Δθ − sin Δθ)/2`, centroid `4r·sin³(Δθ/2) /
         // (3(Δθ − sin Δθ))` out along the bisector — with Δθ read from the edge's stored
         // `[from, to]` order (**CCW about the axis**, the arc convention;
-        // [`Circle::angle_of`] is the one spelling of the angle; a closed edge `[v, v]` is the
+        // [`Ellipse::angle_of`] is the one spelling of the angle; a closed edge `[v, v]` is the
         // whole turn) and the sign from which way this traversal walks it. A digon (chord + arc)
         // is the degenerate case the fan contributes nothing to: one segment is the whole answer.
         //
@@ -366,7 +366,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             .half_edges
             .iter()
             .find_map(|&he| match edge_curve(model, he) {
-                Curve::Circle(c) => Some(c.normal()),
+                Curve::Ellipse(c) => Some(c.normal()),
                 _ => None,
             })
             .ok_or(PropsError::UnsupportedBoundary)?;
@@ -381,7 +381,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             moment += (u + v) * (a / 3.0);
         }
         for he in &outer.half_edges {
-            let Curve::Circle(c) = edge_curve(model, *he) else {
+            let Curve::Ellipse(c) = edge_curve(model, *he) else {
                 continue;
             };
             let [va, vb] = model.edge(he.edge).vertices;
@@ -489,7 +489,7 @@ fn lateral_moments(
     let (mut cc, mut cs, mut ss, mut zc, mut zs) = (0.0, 0.0, 0.0, 0.0, 0.0);
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for &he in &lp.half_edges {
-            let Curve::Circle(c) = edge_curve(model, he) else {
+            let Curve::Ellipse(c) = edge_curve(model, he) else {
                 continue; // straight: a ruling, at one θ ⇒ dθ = 0
             };
             let z = axial_of(c.center()) - z0;

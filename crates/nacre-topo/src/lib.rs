@@ -19,7 +19,7 @@ pub use adjacency::{Adjacency, nonmanifold_vertices};
 pub use topology::{Edge, EdgeDecline, Face, HalfEdge, Loop, Shell, Solid};
 
 use nacre_exact::{Angle, Axis, HpBounded, Mag, Rat};
-use nacre_geom::{Circle, Curve, Cylinder, Line, Plane};
+use nacre_geom::{Curve, Cylinder, Ellipse, Line, Plane};
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
 use std::collections::{HashMap, HashSet};

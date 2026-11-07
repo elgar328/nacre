@@ -134,7 +134,7 @@ fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
                                 st.lines_bit_identical += 1;
                             }
                         }
-                        (Curve::Circle(stored), Curve::Circle(d)) => {
+                        (Curve::Ellipse(stored), Curve::Ellipse(d)) => {
                             let mut dev: f64 = rel(stored.radius(), d.radius());
                             for k in 0..3 {
                                 dev = dev

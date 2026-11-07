@@ -9,7 +9,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod polygon;
 
-use nacre_geom::{Circle, Curve, Cylinder, Surface};
+use nacre_geom::{Curve, Cylinder, Ellipse, Surface};
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
 use nacre_topo::{Edge, Face, Loop, Model, Solid, SurfaceCache, Vertex};
@@ -418,7 +418,7 @@ fn separate_crossing_chords(
     let curved = loops
         .iter()
         .flat_map(|lp| &lp.half_edges)
-        .any(|he| matches!(model.edge_curve(he.edge), Curve::Circle(_)));
+        .any(|he| matches!(model.edge_curve(he.edge), Curve::Ellipse(_)));
     let one_circle = loops.len() == 1 && face.outer.half_edges.len() == 1;
     loop {
         // A face whose chart or rings are refused is left for its own triangulation to name.
@@ -493,7 +493,7 @@ fn separate_crossing_chords(
 ///
 /// The polyline runs CCW about the circle ([`circle_span`]), so the chord's earlier end is `from`
 /// walked forward and the arrival walked backward; θ is read off both ends with
-/// `Circle::angle_of`, the one spelling of θ, and the new sample stands halfway round between.
+/// `Ellipse::angle_of`, the one spelling of θ, and the new sample stands halfway round between.
 ///
 /// **At the `f64` floor the midpoint need not lie between its ends** — for chords under about
 /// `1e-12` rad about 1% of the midpoints land outside them, whatever the formula (the angle
@@ -507,7 +507,7 @@ fn arc_midpoint(
     from: Traced,
     (step, wraps): (Traced, bool),
 ) -> Option<(Handle<Edge>, usize, Point3, f64)> {
-    let Curve::Circle(c) = model.edge_curve(step.edge) else {
+    let Curve::Ellipse(c) = model.edge_curve(step.edge) else {
         return None;
     };
     let edge = model.edge(step.edge);
@@ -829,7 +829,7 @@ fn sample_edge(
     let [v0, v1] = edge.vertices;
     match model.edge_curve(eh) {
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
-        Curve::Circle(c) => {
+        Curve::Ellipse(c) => {
             let (t0, dt) = circle_span(model, edge, c);
             let n = segments_over(circle_segments(cfg, c.radius()), edge, dt);
             // Point 0 is the edge's first vertex and the rest are interior edge points going round
@@ -859,8 +859,8 @@ fn sample_edge(
 /// A full circle turns `2π` from its vertex — a rim's vertex is its seam point (`OnSeam`), at
 /// angle 0 (= centre + r·ref_dir) by definition; any other vertex is read off the curve. An arc's
 /// stored `[v0, v1]` order is CCW about the axis — the convention `derive_edge_curve`'s circle arm
-/// states — so it turns from θ(v0) to θ(v1), with `Circle::angle_of` as the one spelling of θ.
-fn circle_span(model: &Model, edge: &Edge, c: &Circle) -> (f64, f64) {
+/// states — so it turns from θ(v0) to θ(v1), with `Ellipse::angle_of` as the one spelling of θ.
+fn circle_span(model: &Model, edge: &Edge, c: &Ellipse) -> (f64, f64) {
     let [v0, v1] = edge.vertices;
     if v0 == v1 {
         let t0 = match model.vertex(v0) {
@@ -1128,7 +1128,7 @@ fn cylinder_chart(
     let mut circles: HashMap<Handle<nacre_topo::Surface>, f64> = HashMap::new();
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for he in &lp.half_edges {
-            if let Curve::Circle(c) = model.edge_curve(he.edge) {
+            if let Curve::Ellipse(c) = model.edge_curve(he.edge) {
                 let s = station(cyl, c);
                 stations.push(s);
                 for &h in &t.by_edge[&he.edge] {
@@ -1361,7 +1361,7 @@ fn cut_seamless_bands(
                 let (ring, closing) = &traced[a];
                 let arc = |k: usize| {
                     let arriving = ring.get(k + 1).or(closing.as_ref()).unwrap_or(&ring[0]);
-                    matches!(model.edge_curve(arriving.edge), Curve::Circle(_))
+                    matches!(model.edge_curve(arriving.edge), Curve::Ellipse(_))
                 };
                 band_generator(&turns, [a, b], arc)
                     .and_then(|c| band_cut(t, model, cyl, &traced, &turns, [a, b], c))
@@ -1539,7 +1539,7 @@ fn band_cut(
     }
     let mut points: Vec<(usize, Handle<TessVertex>, f64)> = Vec::with_capacity(found.len());
     for (ring, step, wraps) in found {
-        let Curve::Circle(circle) = model.edge_curve(step.edge) else {
+        let Curve::Ellipse(circle) = model.edge_curve(step.edge) else {
             return None;
         };
         let pos = circle.center() + (x * c.cos() + y * c.sin()) * circle.radius();
@@ -1680,7 +1680,7 @@ fn joined_band(
 /// tilted axis an arc's samples sit a few ulps off their circle's place, and a lattice row computed
 /// one way next to a boundary computed the other was a sliver leaning off the lateral — up to 90°,
 /// lying in the cap plane.
-fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
+fn station(cyl: &Cylinder, circle: &Ellipse) -> f64 {
     (circle.center() - cyl.axis().origin()).dot(cyl.axis().direction())
 }
 
@@ -1726,7 +1726,7 @@ fn ruling_break_place(
             match model
                 .derive_edge_curve([cylinder, plane], [vh, vh], |_| nacre_topo::EdgeGiven::NONE)
             {
-                Ok(Curve::Circle(c)) => Some(station(cyl, &c)),
+                Ok(Curve::Ellipse(c)) => Some(station(cyl, &c)),
                 _ => None,
             }
         })

@@ -388,7 +388,7 @@ fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
     let mut edges: Vec<_> = m.reachable().edges.into_iter().collect();
     edges.sort_by_key(|e| e.index());
     for eh in edges {
-        let nacre_geom::Curve::Circle(c) = m.edge_curve(eh) else {
+        let nacre_geom::Curve::Ellipse(c) = m.edge_curve(eh) else {
             continue;
         };
         let [s0, s1] = m.edge(eh).surfaces;

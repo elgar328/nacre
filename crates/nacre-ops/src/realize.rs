@@ -1650,7 +1650,7 @@ pub struct RimCentreAudit {
 /// not a circle or a carrier cannot be read.
 #[cfg(any(test, feature = "test-util"))]
 pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<RimCentreAudit> {
-    let nacre_geom::Curve::Circle(circle) = model.edge_curve(e) else {
+    let nacre_geom::Curve::Ellipse(circle) = model.edge_curve(e) else {
         return None;
     };
     let s = model.edge(e).surfaces;

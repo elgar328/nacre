@@ -48,7 +48,7 @@ mod region_tests {
         {
             let e = m.edge(he.edge);
             assert_ne!(e.surfaces[0], e.surfaces[1], "no seam edge");
-            let circular = matches!(m.edge_curve(he.edge), nacre_geom::Curve::Circle(_));
+            let circular = matches!(m.edge_curve(he.edge), nacre_geom::Curve::Ellipse(_));
             match (circular, e.vertices[0] == e.vertices[1]) {
                 (true, true) => closed += 1,
                 (true, false) => arcs += 1,
