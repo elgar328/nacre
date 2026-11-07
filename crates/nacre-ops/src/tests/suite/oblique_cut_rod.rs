@@ -167,8 +167,9 @@ fn a_rods_oblique_end_measures_as_derived() {
     }
 }
 
-/// The mesh: no lateral triangle leans off the cylinder, and the triangles enclose the solid's
-/// volume to the mesh's resolution.
+/// The mesh: no lateral triangle leans off the cylinder, the elliptical rim's polyline turns within
+/// the budget at its major ends too (an ellipse turns `a/b` times as fast as its circle there), and
+/// the triangles enclose the solid's volume to the mesh's resolution.
 #[test]
 fn a_rods_oblique_end_meshes() {
     for k in SLOPES {
@@ -177,6 +178,8 @@ fn a_rods_oblique_end_meshes() {
         let t = nacre_tess::tessellate(&m, &cfg).expect("the mesh");
         let leaning = nacre_tess::leaning_laterals(&m, &t, cfg.max_angle_deg);
         assert!(leaning.is_empty(), "{leaning:?}");
+        let kinked = nacre_tess::kinked_edges(&m, &t, cfg.max_angle_deg);
+        assert!(kinked.is_empty(), "{k}: {kinked:?}");
         let mut volume = 0.0;
         for f in &m.reachable_from(&[s]).faces {
             for &tri in &t.by_face[f] {

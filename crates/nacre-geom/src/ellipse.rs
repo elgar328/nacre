@@ -229,17 +229,20 @@ impl Ellipse {
         }
     }
 
-    /// The largest radius of curvature — the radius for a circle, `a²/b` for an ellipse (at the
-    /// ends of its minor axis): the sag a chord of a given angle leaves is never more than a
-    /// circle of this radius leaves.
+    /// The most the tangent turns per radian of θ — `1` for a circle, `a/b` for an ellipse (at the
+    /// ends of its major axis; `b` is the cylinder's radius).
+    ///
+    /// The curve is the circle of radius `r` lifted linearly along the axis, θ kept, so a chord
+    /// from θ₀ to θ₁ is parallel to the tangent at `(θ₀ + θ₁)/2` (a linear map keeps the circle's
+    /// parallels). Two consecutive chords of one θ step `h` therefore turn by what the tangent
+    /// turns over `h`: at most this times `h`. Their sag is the circle's `r(1 − cos(h/2))` carried
+    /// by the map, so at most [`semi_major`](Ellipse::semi_major)`·(1 − cos(h/2))` — the sag of
+    /// a circle of radius `a`. Those two bound a polyline sampled evenly in θ.
     #[inline]
-    pub fn max_curvature_radius(&self) -> f64 {
+    pub fn max_turn_rate(&self) -> f64 {
         match self.tilt {
-            None => self.radius,
-            Some(_) => {
-                let a = self.semi_major();
-                a * a / self.radius
-            }
+            None => 1.0,
+            Some(_) => self.semi_major() / self.radius,
         }
     }
 

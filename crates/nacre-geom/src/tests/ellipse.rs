@@ -251,14 +251,12 @@ proptest! {
     }
 
     /// The half-extent bounds every sampled point and is reached; the semi-axes are the farthest
-    /// and nearest points from the centre; the largest radius of curvature is at least the
-    /// curvature radius anywhere.
+    /// and nearest points from the centre.
     #[test]
-    fn a_tilted_curves_extent_axes_and_curvature(e in tilted()) {
+    fn a_tilted_curves_extent_and_axes(e in tilted()) {
         let n = 2000;
         let mut reach = [0.0f64; 3];
         let (mut far, mut near) = (0.0f64, f64::MAX);
-        let mut curve_radius = 0.0f64;
         for i in 0..n {
             let t = std::f64::consts::TAU * i as f64 / n as f64;
             let d = e.point_at(t) - e.center();
@@ -267,9 +265,6 @@ proptest! {
             }
             far = far.max(d.norm());
             near = near.min(d.norm());
-            let (d1, h) = (e.derivative(t), 1e-5);
-            let d2 = (e.derivative(t + h) - e.derivative(t - h)) / (2.0 * h);
-            curve_radius = curve_radius.max(d1.norm().powi(3) / d1.cross(d2).norm());
         }
         let half = e.half_extent();
         for k in 0..3 {
@@ -277,7 +272,45 @@ proptest! {
         }
         prop_assert!((e.semi_major() - far).abs() <= 1e-5 * far);
         prop_assert!((e.radius() - near).abs() <= 1e-5 * far);
-        prop_assert!(e.max_curvature_radius() + 1e-6 >= curve_radius * (1.0 - 1e-4));
+    }
+
+    /// **The sampler's two bounds, and that they are reached.** Over an even θ step `h`, two
+    /// consecutive chords turn by at most `max_turn_rate()·h`, and an arc stands off its chord by
+    /// at most `semi_major()·(1 − cos(h/2))`. At a major end both are met: the two chords there
+    /// turn by exactly `2·atan((a/b)·tan(h/2))` — `(a/b)·h` to second order — and the chord across
+    /// it leaves exactly a radius-`a` circle's sag.
+    #[test]
+    fn a_tilted_curves_chords_keep_its_turn_and_sag(
+        e in tilted(),
+        theta in 0.0f64..std::f64::consts::TAU,
+        h in 0.005f64..0.2,
+    ) {
+        let turn = |t: f64| {
+            let (a, b, c) = (e.point_at(t - h), e.point_at(t), e.point_at(t + h));
+            let (u, v) = (b - a, c - b);
+            u.cross(v).norm().atan2(u.dot(v))
+        };
+        // The farthest the arc from `t` to `t + h` stands off its chord, its middle among the
+        // points.
+        let sag = |t: f64| {
+            let (a, b) = (e.point_at(t), e.point_at(t + h));
+            let d = (b - a).normalize().expect("a chord");
+            (0..=64)
+                .map(|i| {
+                    let p = e.point_at(t + h * f64::from(i) / 64.0) - a;
+                    (p - d * p.dot(d)).norm()
+                })
+                .fold(0.0f64, f64::max)
+        };
+        let (rate, a) = (e.max_turn_rate(), e.semi_major());
+        let circle_sag = a * (1.0 - (h / 2.0).cos());
+        prop_assert!(turn(theta) <= rate * h * (1.0 + 1e-9) + 1e-12);
+        prop_assert!(sag(theta) <= circle_sag * (1.0 + 1e-9) + 1e-13);
+        let [t0, t1] = e.axial_trig();
+        let major = t1.atan2(t0);
+        let at_major = 2.0 * (rate * (h / 2.0).tan()).atan();
+        prop_assert!((turn(major) - at_major).abs() <= 1e-9 * at_major, "{} vs {at_major}", turn(major));
+        prop_assert!((sag(major - h / 2.0) - circle_sag).abs() <= 1e-6 * circle_sag);
     }
 
     /// **What a STEP file writes is this curve, the same way round.** The placement's
@@ -340,7 +373,7 @@ fn a_circle_is_the_circle_formulas_to_the_bit() {
     }
     assert_eq!(c.plane_normal(), n);
     assert_eq!(c.area(), std::f64::consts::PI * r * r);
-    assert_eq!(c.max_curvature_radius(), r);
+    assert_eq!(c.max_turn_rate(), 1.0);
     let na = n.as_array();
     assert_eq!(
         c.half_extent(),

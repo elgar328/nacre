@@ -512,6 +512,12 @@ fn record(
                 leaning.is_empty(),
                 "{tag}: a mesh that leans off a lateral: {leaning:?}"
             );
+            // And no curve's polyline kinks past the budget along itself.
+            let kinked = nacre_tess::kinked_edges(m, t, cfg.max_angle_deg);
+            assert!(
+                kinked.is_empty(),
+                "{tag}: a curve's polyline that kinks past the budget: {kinked:?}"
+            );
         }
     }
     print!("c {tag} in:{inputs} ");

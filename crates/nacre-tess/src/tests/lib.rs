@@ -1844,3 +1844,54 @@ fn a_non_positive_angle_asks_nothing_of_the_angle() {
         assert_eq!(rims, [23, 23], "the rims at {angle}");
     }
 }
+
+/// **A band too thin for its rims' misaligned samples is refused by name** — a known defect, in
+/// `docs/todo.md`. A rod of radius 2 less a prism over the plane `z = low + 0.15 + 0.05·x` (the
+/// rod's oblique end at `k = 1/20`, so `a/b ≈ 1.00125`): the ellipse is cut into 181 pieces against
+/// its bottom circle's 180, the two rims' samples stand on no common ruling, and every facet across
+/// the band tilts by about the samples' offset sag over the band's height. Where the band is
+/// `0.004` at its lowest that is past the angular budget and the mesh is `OverBudget`; at `0.05` it
+/// is drawn.
+#[test]
+fn a_band_too_thin_for_its_rims_misaligned_samples_is_refused() {
+    use nacre_exact::Axis;
+    use nacre_ops::{
+        BoolKind, OpOutput, Operation, Ring2d, SketchFrame, apply, boolean, fixtures, from_paths,
+    };
+    let cut = |low: f64, high: f64| {
+        let mut m = Model::new();
+        let rod = fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([0.0, 3.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            2.0,
+            10.0,
+        )
+        .solid;
+        // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
+        let pts = [(low, -3.0), (high, 3.0), (12.0, 3.0), (12.0, -3.0)]
+            .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+        let ring = Ring2d::polygon_decimal(pts.to_vec()).expect("a quadrilateral");
+        let profile = from_paths(vec![ring]).expect("one profile").remove(0);
+        let frame = SketchFrame::world(&m, Axis::Y);
+        let Ok(OpOutput::Extrude { solid: prism, .. }) = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 6.0,
+            },
+        ) else {
+            panic!("the prism extrudes")
+        };
+        let out = boolean(&mut m, BoolKind::Cut, rod, prism).expect("the rod cuts");
+        tessellate_solids(&m, &out, &TessConfig::default()).map(|_| ())
+    };
+    assert_eq!(
+        cut(-0.046, 0.254),
+        Err(TessError::OverBudget),
+        "a band 0.004 high"
+    );
+    assert_eq!(cut(0.0, 0.3), Ok(()), "a band 0.05 high");
+}

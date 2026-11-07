@@ -39,6 +39,13 @@ pub(crate) fn record(model: &Model) {
             leaning.is_empty(),
             "a boolean built a solid whose mesh leans off a lateral: {leaning:?}"
         );
+        // And its curves' polylines turn within the budget along themselves (`kinked_edges`) —
+        // nothing else asks: the surface normals a boundary chord keeps say nothing of its curve.
+        let kinked = nacre_tess::kinked_edges(model, t, cfg.max_angle_deg);
+        assert!(
+            kinked.is_empty(),
+            "a boolean built a solid whose curve's polyline kinks past the budget: {kinked:?}"
+        );
     }
     // **The claim is asserted here, where the fact exists — not in a later test.**
     // A `#[test]` that reads the ledger sees only the booleans that ran *before* it, so a solid

@@ -804,6 +804,63 @@ pub fn leaning_laterals(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<
     out
 }
 
+/// Two consecutive chords of a curved edge's polyline that turn by more than the budget, and by how
+/// much: the edge, the chord pair's middle sample (its place in the polyline), and the turn in
+/// degrees — `None` when a chord has no length, so no direction. Test-only (`test-util`).
+#[cfg(any(test, feature = "test-util"))]
+#[derive(Clone, Copy, Debug)]
+pub struct Kinked {
+    pub edge: Handle<Edge>,
+    pub at: usize,
+    pub degrees: Option<f64>,
+}
+
+/// Every pair of consecutive chords in a curved edge's polyline (`by_edge`) that turns by more than
+/// `limit_deg` — the closing chord of a whole rim with both its neighbours, an arc's chords only
+/// among themselves (the turn across an edge's end vertex is the model's corner, not a chord's).
+/// Test-only (`test-util`): the mesh locks call it with the budget's `max_angle_deg`.
+///
+/// **What it holds the sampler to.** A curve's polyline must keep the angular budget along the
+/// curve itself, and nothing else asks: `within_budget` and [`leaning_laterals`] read surface
+/// normals, which a boundary chord keeps by its θ step whatever its curve does. The slack is the
+/// mesher's own ([`BUDGET_SLACK`]).
+#[cfg(any(test, feature = "test-util"))]
+pub fn kinked_edges(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Kinked> {
+    let limit = limit_deg.to_radians() * BUDGET_SLACK;
+    let mut out = Vec::new();
+    // `by_edge` is a `HashMap`; walk the edges in handle order so a report reads the same each run.
+    let mut edges: Vec<_> = t.by_edge.iter().collect();
+    edges.sort_by_key(|(e, _)| e.index());
+    for (&edge, poly) in edges {
+        if !matches!(model.edge_curve(edge), Curve::Ellipse(_)) {
+            continue;
+        }
+        let pts: Vec<Point3> = poly.iter().map(|&h| t.vertices.get(h).pos).collect();
+        let closed = {
+            let [v0, v1] = model.edge(edge).vertices;
+            v0 == v1
+        };
+        let n = pts.len();
+        // A whole rim's polyline does not repeat its vertex: chord `k` runs from `k` to `k + 1`
+        // modulo `n`, and every sample is some pair's middle. An arc's middles are its interior.
+        let middles = if closed { 0..n } else { 1..n.saturating_sub(1) };
+        for at in middles {
+            let (a, b, c) = (pts[(at + n - 1) % n], pts[at], pts[(at + 1) % n]);
+            let (u, v) = (b - a, c - b);
+            let degrees =
+                (u.norm() > 0.0 && v.norm() > 0.0).then(|| u.cross(v).norm().atan2(u.dot(v)));
+            if degrees.is_none_or(|d| d > limit) {
+                out.push(Kinked {
+                    edge,
+                    at,
+                    degrees: degrees.map(f64::to_degrees),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// A deduped mesh vertex for a topology vertex (tagged `OnVertex`).
 fn vertex_of(
     t: &mut Tessellation,
@@ -837,10 +894,9 @@ fn sample_edge(
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Ellipse(c) => {
             let (t0, dt) = circle_span(model, edge, c);
-            // An ellipse takes its circle's θ step, so at its major ends two chords turn `a/b`
-            // times the angular budget — a known defect (`docs/todo.md`): the finer step it needs
-            // lets a chord skip a sample and lay a lateral triangle in the cut plane.
-            let n = segments_over(circle_segments(cfg, c.max_curvature_radius()), edge, dt);
+            // Evenly in θ, at the step the curve's own bounds ask for — its fastest turn and the
+            // sag of a circle of its semi-major axis ([`Ellipse::max_turn_rate`]).
+            let n = segments_over(segments(cfg, c.semi_major(), c.max_turn_rate()), edge, dt);
             // Point 0 is the edge's first vertex and the rest are interior edge points going round
             // from it; an arc ends on its second vertex, a full circle closes on its first without
             // repeating it. Both endpoints are shared mesh vertices (crack-free with the
@@ -895,28 +951,41 @@ fn segments_over(per_turn: usize, edge: &Edge, dt: f64) -> usize {
     }
 }
 
-/// The most segments a whole circle is ever cut into. [`circle_segments`] clamps its count to it,
-/// and [`separate_crossing_chords`] stops cutting an edge at it — one statement, the finest this
-/// mesher samples a circle, read in two places. Where the declared budget asks for more — a
-/// pathological setting, or a circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`) — the
-/// polyline is coarser than the budget and nothing refuses it: a known defect, in `docs/todo.md`.
+/// The most segments a whole curve is ever cut into. [`segments`] clamps its count to it, and
+/// [`separate_crossing_chords`] stops cutting an edge at it — one statement, the finest this mesher
+/// samples a curve, read in two places. Where the declared budget asks for more — a pathological
+/// setting, a circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`), an ellipse too nearly
+/// along its axis for its angle (past `a/b ≈ 22.7` at `2°`) — the polyline is coarser than the
+/// budget and nothing refuses it: a known defect, in `docs/todo.md`.
 const FINEST_CIRCLE: usize = 4096;
 
-/// Segments for a circle of `radius`: **whichever of the two budgets asks for more**
-/// ([`TessConfig`] says why there are two).
+/// Segments for a whole circle of `radius` — [`segments`] for a curve that turns as a circle does.
+fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
+    segments(cfg, radius, 1.0)
+}
+
+/// Segments for a whole curve sampled evenly in θ: **whichever of the two budgets asks for more**
+/// ([`TessConfig`] says why there are two), for a curve that sags no more than a circle of
+/// `radius` and whose tangent turns at most `turn` radians per radian of θ
+/// ([`Ellipse::semi_major`], [`Ellipse::max_turn_rate`] — `r` and `1` for a circle).
 ///
 /// * sagitta: `r(1 − cos(π/n)) ≤ tol` ⟹ `n ≥ π / acos(1 − tol/r)` — grows as `√r`, so
-///   it is the term that speaks for a circle large in model units;
-/// * angle: `360°/n ≤ Δθ` ⟹ `n ≥ 360/Δθ` — **the same for every radius**, so it is the
-///   term that keeps a small circle from being an octagon.
+///   it is the term that speaks for a curve large in model units;
+/// * angle: `turn · 360°/n ≤ Δθ` ⟹ `n ≥ turn · 360/Δθ` — **the same for every radius**, so it is
+///   the term that keeps a small circle from being an octagon, and an ellipse's major ends from
+///   turning `a/b` times the budget.
 ///
-/// With the default `2°` the angular term leads until `r ≈ 66` (that is `tol` divided by
+/// Even in θ, not a step that varies along the curve: a lateral's boundary chord spans its θ step,
+/// so its ends' normals part by exactly that step, and one step for the whole curve keeps both.
+///
+/// With the default `2°` the angular term leads a circle until `r ≈ 66` (that is `tol` divided by
 /// `1 − cos(1°)`), which covers ordinary part sizes; past it the sagitta term takes over.
 ///
 /// Pathological inputs are clamped rather than refused — a non-positive `tol` asks for
 /// the finest we allow, a non-positive or absurd angle falls back on the other term and
-/// the `[MIN, MAX]` clamp. The mesh is a cache; it answers rather than argues.
-fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
+/// the `[MIN, MAX]` clamp. The mesh is a cache; it answers rather than argues — and a budget
+/// that asks for more than [`FINEST_CIRCLE`] gets that many ([`FINEST_CIRCLE`]'s doc).
+fn segments(cfg: &TessConfig, radius: f64, turn: f64) -> usize {
     const MIN: usize = 8;
     const MAX: usize = FINEST_CIRCLE;
     let by_sagitta = {
@@ -931,7 +1000,7 @@ fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
         }
     };
     let by_angle = {
-        let n = (360.0 / cfg.max_angle_deg).ceil();
+        let n = (360.0 / cfg.max_angle_deg * turn).ceil();
         if n.is_finite() && n >= 0.0 {
             (n as usize).clamp(MIN, MAX)
         } else {
@@ -1797,19 +1866,24 @@ fn ruling_break_place(
 /// A band's rims sample θ finely, and every diagonal the sweep draws between them lands on a
 /// closely-sampled arc, so the interior is fine for free. It stops being free in two places. Where
 /// a face's boundary leaves part of its θ range without arcs, the sweep has only chords across that
-/// stretch (measured on a lateral merged across erased seams: chords spanning half a turn). And where
-/// a ruling breaks part way between the rims, the break is a boundary point with no arc at its
-/// height, and an interior edge from it leaves the angular budget though the rims cover every θ
-/// (`OverBudget`, measured on a half bore with a box beside it).
+/// stretch (measured on a lateral merged across erased seams: chords spanning half a turn). And
+/// where a ruling breaks part way between the rims, the break is a boundary point with no arc at
+/// its height, and an interior edge from it leaves the angular budget though the rims cover every θ
+/// (`OverBudget`, measured on a half bore with a box beside it). A third no interior point mends:
+/// two rims whose samples do not stand on common rulings — an arc whose ends do not both stand on
+/// its partner's samples, or a circle and an ellipse cut into different counts — with a band
+/// between them thinner than a step's sag over the angular budget tilt every facet across it, and
+/// the mesh refuses the face (a known defect, in `docs/todo.md`).
 ///
 /// So the chart — the layer that knows the surface — supplies them, on a **lattice with no free
 /// parameter in it**:
 ///
-/// * **around** (`v`): the sampler's own step, `2πr / circle_segments`, so the lattice is as fine
-///   as the arcs the boundary laid down. It does **not** land on their samples: an arc is sampled
-///   from its own start ([`sample_edge`]), the lattice from `θ = 0`. `i` covers the chart's whole
-///   `v` range, because a chart's θ is *unwrapped* — a hole rides whole turns from the outer ring,
-///   and a single turn's worth of lattice would miss it entirely.
+/// * **around** (`v`): the sampler's own step for a circle, `2πr / circle_segments`, so the lattice
+///   is as fine as a circle's arcs (an ellipse's are finer, by its turn). It does **not** land on
+///   their samples: an arc is sampled from its own start ([`sample_edge`]), the lattice from
+///   `θ = 0`. `i` covers the chart's whole `v` range, because a chart's θ is *unwrapped* — a hole
+///   rides whole turns from the outer ring, and a single turn's worth of lattice would miss it
+///   entirely.
 /// * **along** (`u`): each boundary circle's place, [`station`] — the very number the chart gave
 ///   that circle's points — and each ruling's break, at [`ruling_break_place`]. Read from the
 ///   curve, never from the sampled points: one rim's points
@@ -2019,13 +2093,13 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 
 /// **The mesh's one rule, asked of the face's *interior* and of every facet.**
 ///
-/// `TessConfig` declares two budgets and [`circle_segments`] enforces **both** on every boundary
+/// `TessConfig` declares two budgets and [`segments`] enforces **both** on every curved boundary
 /// polyline. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
-/// while the boundary samples the curvature (a band's rims do), and silently wrong when it does
-/// not — a lateral whose boundary leaves a θ stretch unsampled meshes as flat chords across it
-/// (measured on one merged across erased seams: four triangles spanning half a turn, a sixth of
-/// its area lost, while `validate`, watertightness, the exact volume and the face counts stay
-/// green).
+/// while the boundary samples the curvature (a band's rims do — but see the thin band in
+/// `docs/todo.md`), and silently wrong when it does not — a lateral whose boundary leaves a θ
+/// stretch unsampled meshes as flat chords across it (measured on one merged across erased seams:
+/// four triangles spanning half a turn, a sixth of its area lost, while `validate`, watertightness,
+/// the exact volume and the face counts stay green).
 ///
 /// So the same two questions are asked of every interior edge:
 /// * **linear** — how far the surface strays from the chord, measured at its midpoint;
@@ -2040,10 +2114,11 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// its points do not determine is outside there (none in the corpus or the suites) — and a new
 /// surface kind is a compile error rather than a missing case.
 ///
-/// **A boundary edge cannot fail, so it is not asked** (a facet can, with two boundary edges). An arc is cut into `circle_segments`
-/// pieces, which is the *larger* of the two budgets' demands; a straight edge (a ruling, a
-/// plane's side) strays zero and its ends share one normal. The two halves of the sentence meet
-/// there — which is why this checks only what the sweep chose, never what the sampler laid down.
+/// **A boundary edge cannot fail, so it is not asked.** A curve is cut into [`segments`] pieces,
+/// which is the *larger* of the two budgets' demands for that curve; a straight edge (a ruling, a
+/// plane's side) strays zero and its ends share one normal. So of the edges this checks only what
+/// the sweep chose, never what the sampler laid down — but every facet, since a facet with two
+/// boundary edges is still the sweep's choice.
 ///
 /// A violation is an error, not a repair: this layer's charter (see [`TessError`]) is that a wrong
 /// cache is worse than none, and the defect above is exactly what a quiet one looks like.
@@ -2082,30 +2157,33 @@ fn within_budget(
     Ok(())
 }
 
-/// The angular budget in radians, or `None` when [`TessConfig::max_angle_deg`] is not a finite
-/// positive angle — then nothing is asked of the angle, as the sampler falls back on the chord
-/// budget alone ([`circle_segments`]). With the budget's own slack: today's populations sit
-/// **exactly** on it — an interior diagonal spanning one sample turns by precisely the sampler's own
-/// step — so a bare `>` would be decided by the last bit of two differently-rounded routes to the
-/// same number.
+/// **The slack every budget comparison allows**, one number for the chord and the angle and for the
+/// lock on a curve's turn (`kinked_edges`): today's populations sit **exactly** on the budget — an
+/// interior diagonal spanning one sample turns by precisely the sampler's own step, a circle's two
+/// chords by precisely the angle — so a bare `>` would be decided by the last bit of two
+/// differently-rounded routes to the same number.
+const BUDGET_SLACK: f64 = 1.0 + 1e-9;
+
+/// The angular budget in radians, with [`BUDGET_SLACK`], or `None` when
+/// [`TessConfig::max_angle_deg`] is not a finite positive angle — then nothing is asked of the
+/// angle, as the sampler falls back on the chord budget alone ([`segments`]).
 fn angle_budget(cfg: &TessConfig) -> Option<f64> {
     let deg = cfg.max_angle_deg;
-    (deg.is_finite() && deg > 0.0).then(|| deg.to_radians() * (1.0 + 1e-9))
+    (deg.is_finite() && deg > 0.0).then(|| deg.to_radians() * BUDGET_SLACK)
 }
 
 /// **Whether the edge `a — b` keeps both budgets on `surface`**: its midpoint within `tol` of it,
 /// and the surface's normals at its ends within the angular budget of each other.
 ///
 /// This and [`facet_in_budget`] are the one spelling of the question [`within_budget`] asks of the
-/// finished mesh and the flip pass asks before it flips (`polygon::triangulate_uv`'s `within`). Each
-/// corner comes with its index and the point the mesh will ship for it, and the corners are put in
-/// index order first, so an element is judged in the same rounding whichever triangle or flip asks
-/// about it — which is what lets the flip pass count.
+/// finished mesh and the flip pass asks before it flips (`polygon::triangulate_uv`'s `within`).
+/// Each corner comes with its index and the point the mesh will ship for it, and the corners are
+/// put in index order first, so an element is judged in the same rounding whichever triangle or
+/// flip asks about it — which is what lets the flip pass count.
 fn edge_in_budget(cfg: &TessConfig, surface: &Surface, mut ends: [(usize, Point3); 2]) -> bool {
     ends.sort_unstable_by_key(|&(i, _)| i);
     let [a, b] = ends.map(|(_, p)| p);
-    let slack = 1.0 + 1e-9;
-    if surface.distance(a + (b - a) * 0.5) > cfg.tol * slack {
+    if surface.distance(a + (b - a) * 0.5) > cfg.tol * BUDGET_SLACK {
         return false;
     }
     let Some(limit) = angle_budget(cfg) else {
