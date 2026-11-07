@@ -3,6 +3,7 @@ use nacre_exact::Axis;
 use nacre_math::{Point2, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+use std::f64::consts::PI;
 
 /// Relative-or-absolute comparison sized for accumulated f64 error.
 fn close(got: f64, expected: f64) -> bool {
@@ -720,5 +721,63 @@ proptest! {
         let area = 6.0 * (outer * outer + inner * inner);
         prop_assert!(close(props.volume, vol), "vol {} vs {}", props.volume, vol);
         prop_assert!(close(props.area, area), "area {} vs {}", props.area, area);
+    }
+}
+
+/// **The tilt's integrals are the integrals** — each of [`TiltTerms`]' nine against Simpson's rule
+/// over the same travel, forwards and backwards, and over a closed rim (where the periodic parts
+/// are exactly zero and only `∫cos² = ∫sin² = travel/2` remain).
+#[test]
+fn tilt_terms_are_the_trig_integrals() {
+    let simpson = |f: &dyn Fn(f64) -> f64, a: f64, b: f64| {
+        let n = 20_000;
+        let h = (b - a) / n as f64;
+        (0..=n)
+            .map(|i| {
+                let w = if i == 0 || i == n {
+                    1.0
+                } else if i % 2 == 1 {
+                    4.0
+                } else {
+                    2.0
+                };
+                w * f(a + h * i as f64)
+            })
+            .sum::<f64>()
+            * h
+            / 3.0
+    };
+    // Each row: the integrand's name, the integrand, and the term that claims its integral.
+    type Row<'a> = (&'a str, &'a dyn Fn(f64) -> f64, fn(&TiltTerms) -> f64);
+    let fs: [Row; 9] = [
+        ("c", &|t: f64| t.cos(), |i| i.c),
+        ("s", &|t: f64| t.sin(), |i| i.s),
+        ("cc", &|t: f64| t.cos().powi(2), |i| i.cc),
+        ("cs", &|t: f64| t.cos() * t.sin(), |i| i.cs),
+        ("ss", &|t: f64| t.sin().powi(2), |i| i.ss),
+        ("ccc", &|t: f64| t.cos().powi(3), |i| i.ccc),
+        ("ccs", &|t: f64| t.cos().powi(2) * t.sin(), |i| i.ccs),
+        ("css", &|t: f64| t.cos() * t.sin().powi(2), |i| i.css),
+        ("sss", &|t: f64| t.sin().powi(3), |i| i.sss),
+    ];
+    let tau = std::f64::consts::TAU;
+    // (start, end, travel, closed): an arc walked forwards, the same walked back, and a closed rim
+    // both ways.
+    for (a, b, travel, closed) in [
+        (0.4, 2.9, 2.5, false),
+        (2.9, 0.4, -2.5, false),
+        (5.0, 1.0, tau - 4.0, false),
+        (0.0, 0.0, tau, true),
+        (0.0, 0.0, -tau, true),
+    ] {
+        let terms = TiltTerms::over(a, b, travel, closed);
+        for (name, f, got) in &fs {
+            let want = simpson(*f, a, a + travel);
+            assert!(
+                (got(&terms) - want).abs() < 1e-9,
+                "∫{name} from {a} over {travel}: {} vs {want}",
+                got(&terms)
+            );
+        }
     }
 }

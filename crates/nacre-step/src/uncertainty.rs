@@ -191,6 +191,16 @@ enum Path {
         normal: V3,
         radius: HpBounded,
     },
+    /// The file's `ELLIPSE`: `centre + a cos u·x + b sin u·y`, `x` the written reference direction
+    /// made unit and normal to the written normal, `y` that unit normal crossed with `x` — the
+    /// placement as a reader builds it from the written numbers.
+    Ellipse {
+        centre: V3,
+        x: V3,
+        y: V3,
+        a: HpBounded,
+        b: HpBounded,
+    },
 }
 
 impl Path {
@@ -199,11 +209,32 @@ impl Path {
             Curve::Line(l) => Path::Line {
                 dir: v3(l.direction().as_array())?,
             },
-            Curve::Ellipse(c) => Path::Circle {
-                centre: gaps.point(c.center().as_array())?,
-                normal: v3(c.normal().as_array())?,
-                radius: hp(c.radius())?,
-            },
+            // The numbers `build_edge` writes, read from the same `written`: a circle's centre,
+            // axis and radius, or an ellipse's placement and semi-axes.
+            Curve::Ellipse(c) if c.is_circle() => {
+                let w = c.written();
+                Path::Circle {
+                    centre: gaps.point(w.center.as_array())?,
+                    normal: v3(w.normal.as_array())?,
+                    radius: hp(w.semi_1)?,
+                }
+            }
+            Curve::Ellipse(c) => {
+                let w = c.written();
+                let n = unit(&v3(w.normal.as_array())?)?;
+                let r = v3(w.ref_dir.as_array())?;
+                let along = dot(&r, &n);
+                let x = unit(&core::array::from_fn(|k| {
+                    r[k].sub(&along.mul(&n[k], PREC), PREC)
+                }))?;
+                Path::Ellipse {
+                    centre: gaps.point(w.center.as_array())?,
+                    y: cross(&n, &x),
+                    x,
+                    a: hp(w.semi_1)?,
+                    b: hp(w.semi_2)?,
+                }
+            }
         })
     }
 
@@ -223,6 +254,23 @@ impl Path {
                 let axial = off_plane(v, centre, normal)?;
                 let radial = off_round(&cross(&d, normal), normal, radius)?;
                 Some(sum_up(axial, radial))
+            }
+            // No closed form reaches the nearest point (a quartic), so the bound is the distance to
+            // **a** point of the curve: the angle `v` itself points to in the ellipse's own
+            // coordinates, `(cos u, sin u) ∝ ((v − c)·x / a, (v − c)·y / b)` — normalized in the
+            // intervals, whose true values lie on the unit circle, so the true point lies on the
+            // curve and inside the interval point.
+            Path::Ellipse { centre, x, y, a, b } => {
+                let d = sub(v, centre);
+                let (p, q) = (ratio(&dot(&d, x), a)?, ratio(&dot(&d, y), b)?);
+                let k = p.mul(&p, PREC).add(&q.mul(&q, PREC), PREC).inv_sqrt(PREC)?;
+                let (cu, su) = (p.mul(&k, PREC), q.mul(&k, PREC));
+                let (ac, bs) = (a.mul(&cu, PREC), b.mul(&su, PREC));
+                let gap: V3 = core::array::from_fn(|i| {
+                    d[i].sub(&ac.mul(&x[i], PREC), PREC)
+                        .sub(&bs.mul(&y[i], PREC), PREC)
+                });
+                root_up(&dot(&gap, &gap))
             }
         }
     }
@@ -290,6 +338,57 @@ impl Path {
                 let radii = upper(&rc.sub(radius, PREC))?;
                 Some(sum_up(sum_up(e, radii), mul_up(upper(rc)?, sine2)))
             }
+            // The whole ellipse: the centre's height over the plane, plus the most
+            // `n·(a cos u·x + b sin u·y)` reaches, `√((a n·x)² + (b n·y)²)`, over `|n|`.
+            (Path::Ellipse { centre, x, y, a, b }, Carrier::Plane { origin, normal: n }) => {
+                let height = off_plane(centre, origin, n)?;
+                let (p, q) = (a.mul(&dot(n, x), PREC), b.mul(&dot(n, y), PREC));
+                let reach = root_up(&ratio(
+                    &p.mul(&p, PREC).add(&q.mul(&q, PREC), PREC),
+                    &dot(n, n),
+                )?)?;
+                Some(sum_up(height, reach))
+            }
+            // A point of the ellipse stands from the axis at `|W|/|A|`, `W = D + cos u·P + sin u·Q`
+            // with `D`, `P`, `Q` the centre's offset and the two semi-diameters crossed with the
+            // axis `A`. `| |W|/|A| − R | ≤ | |W|² − R²|A|² | / (|A|² R)`, and
+            // `|W|² = D·D + (P·P + Q·Q)/2 + cos 2u·(P·P − Q·Q)/2 + sin 2u·P·Q + 2(cos u·D·P + sin u·D·Q)`,
+            // so the gap is at most the constant part's size, plus the two amplitudes
+            // `√(((P·P − Q·Q)/2)² + (P·Q)²)` and `2√((D·P)² + (D·Q)²)`, over `|A|² R`.
+            (
+                Path::Ellipse { centre, x, y, a, b },
+                Carrier::Cylinder {
+                    origin,
+                    axis,
+                    radius,
+                },
+            ) => {
+                let scaled =
+                    |s: &HpBounded, v: &V3| -> V3 { core::array::from_fn(|i| s.mul(&v[i], PREC)) };
+                let dd = cross(&sub(centre, origin), axis);
+                let pp = cross(&scaled(a, x), axis);
+                let qq = cross(&scaled(b, y), axis);
+                let aa = dot(axis, axis);
+                let den = aa.mul(radius, PREC);
+                let (p2, q2, pq) = (dot(&pp, &pp), dot(&qq, &qq), dot(&pp, &qq));
+                let (dp, dq) = (dot(&dd, &pp), dot(&dd, &qq));
+                let half = hp(0.5)?;
+                let constant = dot(&dd, &dd)
+                    .add(&p2.add(&q2, PREC).mul(&half, PREC), PREC)
+                    .sub(&radius.mul(radius, PREC).mul(&aa, PREC), PREC);
+                let swing = p2.sub(&q2, PREC).mul(&half, PREC);
+                let den2 = den.mul(&den, PREC);
+                let level = upper(&ratio(&constant, &den)?)?;
+                let wobble = root_up(&ratio(
+                    &swing.mul(&swing, PREC).add(&pq.mul(&pq, PREC), PREC),
+                    &den2,
+                )?)?;
+                let shift = root_up(&ratio(
+                    &dp.mul(&dp, PREC).add(&dq.mul(&dq, PREC), PREC),
+                    &den2,
+                )?)?;
+                Some(sum_up(sum_up(level, wobble), mul_up(2.0, shift)))
+            }
         }
     }
 }
@@ -307,6 +406,12 @@ fn off_round(w: &V3, a: &V3, r: &HpBounded) -> Option<f64> {
     let aa = dot(a, a);
     let excess = dot(w, w).sub(&r.mul(r, PREC).mul(&aa, PREC), PREC);
     upper(&ratio(&excess, &aa.mul(r, PREC))?)
+}
+
+/// `v / |v|`, `None` where `|v|` may be zero.
+fn unit(v: &V3) -> Option<V3> {
+    let k = dot(v, v).inv_sqrt(PREC)?;
+    Some(core::array::from_fn(|i| v[i].mul(&k, PREC)))
 }
 
 fn hp(v: f64) -> Option<HpBounded> {

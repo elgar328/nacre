@@ -391,7 +391,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     // chord polygon alone winds backwards when an arc dominates the loop — a 270° sector's cap is
     // three points whose triangle turns the other way round, the region between the chords and the
     // long arc lying on the chords' other side. So every circle half-edge adds its **circular
-    // segment**'s area vector: `Ellipse::segment_area` about the circle's own normal, `Δθ` from the
+    // segment**'s area vector: `Ellipse::segment_area` about its plane's normal, `Δθ` from the
     // edge's stored `[from, to]` order (counter-clockwise about the axis, the arc convention;
     // `Ellipse::angle_of` is the one spelling of the angle), signed by which way this loop walks it.
     // The numbers are `nacre-geom`'s; the fold is the one `nacre-validate`'s winding witness and
@@ -415,7 +415,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
         };
         let sign = if he.forward { 1.0 } else { -1.0 };
         // The Newell fold is twice the area vector; the segment is scaled to match.
-        acc + c.normal() * (2.0 * sign * c.segment_area(dt))
+        acc + c.plane_normal() * (2.0 * sign * c.segment_area(dt))
     });
     let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
     let (a, b, c) = (pts[i0], pts[i1], pts[i2]);

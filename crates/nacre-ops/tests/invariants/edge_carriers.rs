@@ -142,10 +142,7 @@ fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
                                         stored.center().as_array()[k],
                                         d.center().as_array()[k],
                                     ))
-                                    .max(rel(
-                                        stored.normal().as_array()[k],
-                                        d.normal().as_array()[k],
-                                    ))
+                                    .max(rel(stored.axis().as_array()[k], d.axis().as_array()[k]))
                                     .max(rel(
                                         stored.ref_dir().as_array()[k],
                                         d.ref_dir().as_array()[k],

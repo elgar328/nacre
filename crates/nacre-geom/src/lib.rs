@@ -24,7 +24,7 @@ pub mod mixed;
 mod region;
 
 pub use cylinder::Cylinder;
-pub use ellipse::Ellipse;
+pub use ellipse::{Ellipse, Written};
 pub use line::Line;
 pub use nurbs::{NurbsCurve, NurbsSurface};
 pub use plane::Plane;

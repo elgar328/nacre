@@ -400,7 +400,7 @@ fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
             unreachable!("a circle edge has a cylinder carrier")
         };
         let bits = |v: nacre_math::Vector3| v.as_array().map(f64::to_bits);
-        if bits(c.normal()) != bits(cc.axis().direction())
+        if bits(c.axis()) != bits(cc.axis().direction())
             || bits(c.ref_dir()) != bits(cc.ref_dir())
             || c.radius().to_bits() != cc.radius().to_bits()
         {

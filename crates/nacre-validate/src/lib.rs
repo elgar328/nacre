@@ -816,7 +816,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
 /// full rim is one: the chord Newell sum alone reads an arc-dominated loop **backwards** (the
 /// turned boss's crescent — the region between chord and long arc lies on the chord's other
 /// side), so every circle half-edge contributes its **circular segment**'s area vector —
-/// `Ellipse::segment_area` about the circle's own normal, signed by traversal, with Δθ read from
+/// `Ellipse::segment_area` about its plane's normal, signed by traversal, with Δθ read from
 /// the edge's stored `[from, to]` order (CCW about the axis, the arc convention;
 /// `Ellipse::angle_of` is the one spelling) — and a closed edge `[v, v]` in a loop of several, the
 /// circle a groove's tip touches, is the whole turn. A digon (chord + arc, two points) has an empty
@@ -825,7 +825,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
 fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
     if let [he] = lp.half_edges[..] {
         if let nacre_geom::Curve::Ellipse(c) = m.edge_curve(he.edge) {
-            return Some(c.normal() * if he.forward { 1.0 } else { -1.0 });
+            return Some(c.plane_normal() * if he.forward { 1.0 } else { -1.0 });
         }
     }
     let pts = loop_points(m, lp);
@@ -863,7 +863,7 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
         };
         let sign = if he.forward { 1.0 } else { -1.0 };
         // The Newell fold above is twice the area vector; scale the segment to match.
-        acc + c.normal() * (2.0 * sign * c.segment_area(dt))
+        acc + c.plane_normal() * (2.0 * sign * c.segment_area(dt))
     });
     sum.normalize()
 }

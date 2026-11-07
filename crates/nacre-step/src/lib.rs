@@ -272,10 +272,24 @@ fn build_edge<W: Write>(
     // a new curve variant is a compile error here.
     let curve = match model.edge_curve(eh) {
         Curve::Line(l) => StepCurve::LineAlong(l.direction().as_array()),
-        Curve::Ellipse(c) => StepCurve::Circle {
-            frame: frame(c.center(), c.normal(), c.ref_dir()),
-            radius: c.radius(),
-        },
+        Curve::Ellipse(c) => {
+            // The numbers the file writes are the curve's own `written` — the one the uncertainty
+            // proof reads too. A circle is a `CIRCLE`; an ellipse an `ELLIPSE` whose placement
+            // turns the same way about its plane's normal as θ about the axis.
+            let w = c.written();
+            if c.is_circle() {
+                StepCurve::Circle {
+                    frame: frame(w.center, w.normal, w.ref_dir),
+                    radius: w.semi_1,
+                }
+            } else {
+                StepCurve::Ellipse {
+                    frame: frame(w.center, w.normal, w.ref_dir),
+                    semi_axis_1: w.semi_1,
+                    semi_axis_2: w.semi_2,
+                }
+            }
+        }
     };
     let sv0 = build_vertex(b, model, v0, vmap)?;
     let sv1 = build_vertex(b, model, v1, vmap)?;

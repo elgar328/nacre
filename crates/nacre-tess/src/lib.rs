@@ -831,7 +831,7 @@ fn sample_edge(
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Ellipse(c) => {
             let (t0, dt) = circle_span(model, edge, c);
-            let n = segments_over(circle_segments(cfg, c.radius()), edge, dt);
+            let n = segments_over(circle_segments(cfg, c.max_curvature_radius()), edge, dt);
             // Point 0 is the edge's first vertex and the rest are interior edge points going round
             // from it; an arc ends on its second vertex, a full circle closes on its first without
             // repeating it. Both endpoints are shared mesh vertices (crack-free with the
@@ -1102,9 +1102,12 @@ fn planar_chart(
 /// the outer ring's range so they lie inside it.
 ///
 /// **`u` of a circle's point is the circle's place**, [`station`], not the point's own axial
-/// coordinate — so every arc is level in the chart, at the height the lattice lays its row
-/// ([`interior_nodes`]). A point on no circle stands part way along a ruling, where another face's
-/// edge breaks it; its `u` is [`ruling_break_place`], and the lattice lays a row there too.
+/// coordinate — so every circle's arc is level in the chart, at the height the lattice lays its row
+/// ([`interior_nodes`]). An ellipse's point stands at the curve's own height there
+/// ([`curve_place`]) and lays no row — its arc rises, and the lattice treats it as it treats a
+/// ruling; a point the ellipse shares with a circle keeps the circle's place, the row's. A point on
+/// no curve stands part way along a ruling, where another face's edge breaks it; its `u` is
+/// [`ruling_break_place`], and the lattice lays a row there too.
 fn cylinder_chart(
     t: &Tessellation,
     model: &Model,
@@ -1126,18 +1129,30 @@ fn cylinder_chart(
     let mut stations: Vec<f64> = Vec::new();
     let mut place: HashMap<Handle<TessVertex>, f64> = HashMap::new();
     let mut circles: HashMap<Handle<nacre_topo::Surface>, f64> = HashMap::new();
-    for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
-        for he in &lp.half_edges {
-            if let Curve::Ellipse(c) = model.edge_curve(he.edge) {
-                let s = station(cyl, c);
-                stations.push(s);
-                for &h in &t.by_edge[&he.edge] {
-                    place.insert(h, s);
-                }
-                for plane in model.edge(he.edge).surfaces {
-                    circles.insert(plane, s);
-                }
-            }
+    let curves = || {
+        std::iter::once(&face.outer)
+            .chain(face.inner.iter())
+            .flat_map(|lp| &lp.half_edges)
+            .filter_map(|he| match model.edge_curve(he.edge) {
+                Curve::Ellipse(c) => Some((he.edge, c)),
+                Curve::Line(_) => None,
+            })
+    };
+    for (e, c) in curves().filter(|(_, c)| c.is_circle()) {
+        let s = station(cyl, c);
+        stations.push(s);
+        for &h in &t.by_edge[&e] {
+            place.insert(h, s);
+        }
+        for plane in model.edge(e).surfaces {
+            circles.insert(plane, s);
+        }
+    }
+    for (e, c) in curves().filter(|(_, c)| !c.is_circle()) {
+        for &h in &t.by_edge[&e] {
+            place
+                .entry(h)
+                .or_insert_with(|| curve_place(cyl, c, t.vertices.get(h).pos));
         }
     }
     let mut uv: Vec<polygon::P2> = vec![[0.0, 0.0]; handles.len()];
@@ -1499,11 +1514,11 @@ struct Cut {
 /// as [`band_generator`] admits, a crossed step is not an arc, or two points on the generator do
 /// not lie strictly in order along the axis.
 ///
-/// **Along the axis, by the circle's centre.** Every crossing lies on an arc (a ruling is
-/// parallel to the generator, and `c` lies off every sample), and an arc's axial place is its
-/// circle's — read from the curve, where every arc of one circle agrees bitwise, rather than from
-/// the computed point, which carries rounding. Two points at one place would be two loops touching
-/// on the cut.
+/// **Along the axis, by the curve.** Every crossing lies on an arc (a ruling is parallel to the
+/// generator, and `c` lies off every sample), and an arc's axial place is its curve's at `c`
+/// ([`curve_place`] — a circle's centre, where every arc of one circle agrees bitwise; an
+/// ellipse's own height there) rather than the computed point's, which carries rounding. Two
+/// points at one place would be two loops touching on the cut.
 #[allow(clippy::too_many_arguments)]
 fn band_cut(
     t: &mut Tessellation,
@@ -1542,7 +1557,13 @@ fn band_cut(
         let Curve::Ellipse(circle) = model.edge_curve(step.edge) else {
             return None;
         };
-        let pos = circle.center() + (x * c.cos() + y * c.sin()) * circle.radius();
+        let round = circle.center() + (x * c.cos() + y * c.sin()) * circle.radius();
+        let z = circle.z_at(c);
+        let pos = if z == 0.0 {
+            round
+        } else {
+            round + axis.direction() * z
+        };
         let h = t.vertices.push(TessVertex {
             pos,
             origin: TessOrigin::OnEdge {
@@ -1552,7 +1573,7 @@ fn band_cut(
         });
         let poly = t.by_edge.get_mut(&step.edge)?;
         poly.insert(between(poly, step, wraps), h);
-        points.push((ring, h, station(cyl, circle)));
+        points.push((ring, h, curve_place(cyl, circle, pos)));
     }
     let place_of = |ring: usize| points.iter().find(|p| p.0 == ring).map(|p| p.2);
     let (pa, pb) = (place_of(wrapping[0])?, place_of(wrapping[1])?);
@@ -1684,12 +1705,29 @@ fn station(cyl: &Cylinder, circle: &Ellipse) -> f64 {
     (circle.center() - cyl.axis().origin()).dot(cyl.axis().direction())
 }
 
+/// **Where a point of a rim stands along the axis, read from the curve** — the rim's [`station`]
+/// plus the curve's own height at the point's angle ([`Ellipse::z_at`], `0` for a circle, which
+/// leaves the station itself). Read from the curve rather than the point, so every point one
+/// carrier pair's edges share stands at one `f64`.
+fn curve_place(cyl: &Cylinder, curve: &Ellipse, pos: Point3) -> f64 {
+    let z = curve.z_at(curve.angle_of(pos));
+    let s = station(cyl, curve);
+    if z == 0.0 { s } else { s + z }
+}
+
 /// **Where a ruling broken part way stands along the axis** — the place of the plane across the
-/// axis that breaks it: the [`station`] of that plane's circle on the face where the face has one
+/// axis that breaks it, if one of the point's two planes is (two cannot be: they would be
+/// parallel): the [`station`] of that plane's circle on the face where the face has one
 /// (`circles`, keyed by the circle edges' carriers — the stored curve, so bit for bit its points'
 /// `u`), else of the circle [`Model::derive_edge_curve`] derives for the cylinder and that plane.
-/// A plane along the axis has no circle on the face and derives a line, which two ends at this one
-/// vertex refuse (`Coincident`) — so only the plane across answers.
+/// Only where neither plane is across does a plane oblique to the axis answer, with its ellipse's
+/// own height at the point ([`curve_place`]). Which plane is across the truth says — the derived
+/// curve's kind is the exact axis relation's — not the order the planes are stored in: an oblique
+/// plane read first would put the break at its ellipse's computed height, ulps off the station
+/// the other plane's circle and breaks stand at (measured over the workspace suite, the ignored
+/// sweep, the census and the kit: every break beside an across plane already read that plane
+/// first, so this rule moves no mesh there). A plane along the axis derives a line, which two ends
+/// at this one vertex refuse (`Coincident`), so it never answers.
 ///
 /// One number twice is the hazard: two breaks on one plane are one height, and on a tilted axis
 /// their own axial coordinates are one ulp apart — `1.0` and `0.9999999999999999` on the D-shaped
@@ -1721,16 +1759,26 @@ fn ruling_break_place(
     if cylinder != face.surface {
         return None;
     }
-    planes.iter().find_map(|&plane| {
-        circles.get(&plane).copied().or_else(|| {
-            match model
-                .derive_edge_curve([cylinder, plane], [vh, vh], |_| nacre_topo::EdgeGiven::NONE)
-            {
-                Ok(Curve::Ellipse(c)) => Some(station(cyl, &c)),
-                _ => None,
-            }
+    let derived = |plane| match model
+        .derive_edge_curve([cylinder, plane], [vh, vh], |_| nacre_topo::EdgeGiven::NONE)
+    {
+        Ok(Curve::Ellipse(c)) => Some(c),
+        _ => None,
+    };
+    planes
+        .iter()
+        .find_map(|&plane| {
+            circles.get(&plane).copied().or_else(|| {
+                derived(plane)
+                    .filter(Ellipse::is_circle)
+                    .map(|c| station(cyl, &c))
+            })
         })
-    })
+        .or_else(|| {
+            planes
+                .iter()
+                .find_map(|&plane| derived(plane).map(|c| curve_place(cyl, &c, v.pos)))
+        })
 }
 
 /// **The points a cylindrical face's boundary does not supply, and the mesh needs.**
@@ -1775,12 +1823,14 @@ fn ruling_break_place(
 ///   a multiple of the lattice's angle (a wall at `x = 0.5` against `r = 1` is 30°, the fifteenth
 ///   2° column). That is not one number computed twice — it is two numbers that geometry makes
 ///   equal, and no one computation gives both — so a column within [`ON_RULING`] of a rising step
-///   (a ruling, or a band's cut generator; the arcs are level) is withheld.
+///   (a ruling, an ellipse's arc, or a band's cut generator; a circle's arcs are level) is withheld.
 ///
-/// **The lowest and highest stations are not laid at all** — they are the face's own two rims,
-/// where every row point lies on a rim's chord or outside the face (a ruling runs from arc to arc,
-/// any break between, so the arcs bound the `u` range). Laid anyway, an ordinary band is offered 358 points and the sweep
-/// drops every one (measured): the mesh is the same, the work is not.
+/// **A station at the chart's own `u` extent is not laid at all** — there every row point lies on
+/// a rim's chord or outside the face. Where only circles bound the face those are its lowest and
+/// highest stations (a ruling runs from arc to arc, any break between, so the arcs bound the `u`
+/// range); an ellipse reaches past its circle's place, so the extent is read off the chart, not off
+/// the stations' order. Laid anyway, an ordinary band is offered 358 points and the sweep drops
+/// every one (measured): the mesh is the same, the work is not.
 fn interior_nodes(
     cfg: &TessConfig,
     cyl: &Cylinder,
@@ -1791,7 +1841,14 @@ fn interior_nodes(
 ) -> Vec<polygon::P2> {
     stations.sort_by(f64::total_cmp);
     stations.dedup();
-    if stations.len() <= 2 {
+    // The chart's own `u` range — the rims' places where only circles bound it, the ellipses'
+    // reach where they do.
+    let (ulo, uhi) = uv.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+        (lo.min(p[0]), hi.max(p[0]))
+    });
+    let u_of = |s: f64| if negated { -s } else { s };
+    stations.retain(|&s| ulo < u_of(s) && u_of(s) < uhi);
+    if stations.is_empty() {
         return Vec::new();
     }
     let step = std::f64::consts::TAU * cyl.radius() / circle_segments(cfg, cyl.radius()) as f64;
@@ -1799,8 +1856,8 @@ fn interior_nodes(
         (lo.min(p[1]), hi.max(p[1]))
     });
     let (i0, i1) = ((lo / step).ceil(), (hi / step).floor());
-    // The boundary's steps that are not level — after the chart's one place per circle, only rulings
-    // and a band's cut generator rise.
+    // The boundary's steps that are not level — after the chart's one place per circle, rulings,
+    // ellipses' arcs and a band's cut generator rise.
     let rising: Vec<(polygon::P2, polygon::P2)> = rings
         .iter()
         .flat_map(|ring| (0..ring.len()).map(move |k| (ring[k], ring[(k + 1) % ring.len()])))
@@ -1809,8 +1866,8 @@ fn interior_nodes(
         .collect();
     let near = step * ON_RULING;
     let mut out = Vec::new();
-    for &s in &stations[1..stations.len() - 1] {
-        let u = if negated { -s } else { s };
+    for &s in &stations {
+        let u = u_of(s);
         let here: Vec<&(polygon::P2, polygon::P2)> = rising
             .iter()
             .filter(|(a, b)| a[0].min(b[0]) - near <= u && u <= a[0].max(b[0]) + near)

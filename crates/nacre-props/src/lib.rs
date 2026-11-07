@@ -15,8 +15,6 @@ use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
 use nacre_topo::{Face, Loop, Model, Solid, SurfaceCache};
 
-use std::f64::consts::PI;
-
 /// Volume and surface area of one solid. The centroid is [`centroid`]. (Inertia is still
 /// deferred — no consumer has asked.)
 ///
@@ -220,15 +218,12 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
             for &he in &lp.half_edges {
                 match edge_curve(model, he) {
                     Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
-                    Curve::Ellipse(circle) => {
-                        // The **whole** circle's extent, whatever the edge's endpoints say — so
+                    Curve::Ellipse(curve) => {
+                        // The **whole** curve's extent, whatever the edge's endpoints say — so
                         // an arc grows the box too much, never too little. A bound that
                         // errs outward stays a bound, which is why this one needs no change when
                         // arcs arrive; `sample_edge` in `nacre-tess` is the one that would not.
-                        let n = circle.normal().as_array();
-                        let r = circle.radius();
-                        let pad = std::array::from_fn(|i| r * (1.0 - n[i] * n[i]).max(0.0).sqrt());
-                        grow(circle.center(), pad);
+                        grow(curve.center(), curve.half_extent());
                     }
                 }
             }
@@ -341,10 +336,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // not "fix" a formula that is not wrong. (A loop *mixing* arcs with lines is the same
         // decline, and `nacre-validate::loop_winding` names it as its own landing site.)
         match edge_curve(model, outer.half_edges[0]) {
-            Curve::Ellipse(circle) => {
-                let area = PI * circle.radius() * circle.radius();
-                Ok((area, circle.center()))
-            }
+            Curve::Ellipse(curve) => Ok((curve.area(), curve.center())),
             _ => Err(PropsError::UnsupportedBoundary),
         }
     } else {
@@ -357,16 +349,17 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // whole turn) and the sign from which way this traversal walks it. A digon (chord + arc)
         // is the degenerate case the fan contributes nothing to: one segment is the whole answer.
         //
-        // Every contribution is scalarized on one reference normal — the first arc's circle
-        // normal, which is the cylinder axis and so collinear with the cap plane's normal
-        // either way up — so segments and fan combine by plain signs, and the signs cancel out
-        // of `moment / area` (the centroid is winding-independent, like the polygon road's).
+        // Every contribution is scalarized on one reference normal — the first arc's plane
+        // normal ([`Ellipse::plane_normal`], the face's plane either way up; a circle's is the
+        // cylinder axis) — so segments, which are areas in that plane, and the fan's true areas
+        // combine by plain signs, and the signs cancel out of `moment / area` (the centroid is
+        // winding-independent, like the polygon road's).
         let points = loop_points(model, outer)?;
         let n_ref = outer
             .half_edges
             .iter()
             .find_map(|&he| match edge_curve(model, he) {
-                Curve::Ellipse(c) => Some(c.normal()),
+                Curve::Ellipse(c) => Some(c.plane_normal()),
                 _ => None,
             })
             .ok_or(PropsError::UnsupportedBoundary)?;
@@ -397,7 +390,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             if seg <= 0.0 {
                 continue; // a zero span contributes nothing
             }
-            let sign = if he.forward { 1.0 } else { -1.0 } * c.normal().dot(n_ref).signum();
+            let sign = if he.forward { 1.0 } else { -1.0 } * c.plane_normal().dot(n_ref).signum();
             let c_seg = c.segment_centroid(t0, dt);
             area += sign * seg;
             moment += (c_seg - base) * (sign * seg);
@@ -458,8 +451,11 @@ struct LateralMoments {
 /// Honest declines (`UnsupportedBoundary`): an empty loop, or a region whose chart area is not
 /// positive.
 ///
-/// Unchanged assumption: a rim is a **circle** cut by a plane ⊥ the axis, so `z` is constant
-/// along an arc. An oblique cut gives an ellipse, and that is out of scope here.
+/// **A rim's height along an arc is `z(θ) = Z + B cos θ + C sin θ`** — constant on a circle (a
+/// plane across the axis), the ellipse's [`nacre_geom::Ellipse::axial_trig`] on a plane oblique to
+/// it — so every `G` above is a trigonometric polynomial of degree three at most and closed-form
+/// ([`TiltTerms`]). A circle's terms are the constant-`z` ones alone, computed as they always were;
+/// the tilt adds its own.
 fn lateral_moments(
     model: &Model,
     face: &Face,
@@ -493,6 +489,7 @@ fn lateral_moments(
                 continue; // straight: a ruling, at one θ ⇒ dθ = 0
             };
             let z = axial_of(c.center()) - z0;
+            let [tb, tc] = c.axial_trig();
             let [va, vb] = model.edge(he.edge).vertices;
             // **The travel comes from the edge's own stored order, never from a wrapped
             // angle difference.** An arc edge stores `[from, to]` **CCW about the axis**
@@ -532,6 +529,28 @@ fn lateral_moments(
                 zc -= 0.5 * z * z * (t_end.sin() - t_start.sin());
                 zs += 0.5 * z * z * (t_end.cos() - t_start.cos());
             }
+            if tb != 0.0 || tc != 0.0 {
+                // The tilt's part of every integral above: `z` gains `B cos θ + C sin θ`.
+                let i = TiltTerms::over(t_start, t_end, travel, va == vb);
+                let (lin, lc, ls, lcc, lcs, lss) = (
+                    tb * i.c + tc * i.s,
+                    tb * i.cc + tc * i.cs,
+                    tb * i.cs + tc * i.ss,
+                    tb * i.ccc + tc * i.ccs,
+                    tb * i.ccs + tc * i.css,
+                    tb * i.css + tc * i.sss,
+                );
+                let (b2, bc2, c2) = (tb * tb, 2.0 * tb * tc, tc * tc);
+                j1 -= lin;
+                jz -= z * lin + 0.5 * (b2 * i.cc + bc2 * i.cs + c2 * i.ss);
+                jc -= lc;
+                js -= ls;
+                cc -= lcc;
+                cs -= lcs;
+                ss -= lss;
+                zc -= z * lc + 0.5 * (b2 * i.ccc + bc2 * i.ccs + c2 * i.css);
+                zs -= z * ls + 0.5 * (b2 * i.ccs + bc2 * i.css + c2 * i.sss);
+            }
         }
     }
     if j1 == 0.0 {
@@ -545,6 +564,42 @@ fn lateral_moments(
         jnn: [cc, cs, ss],
         z0,
     })
+}
+
+/// **The trigonometric integrals over one arc's travel** — `∫ f(θ) dθ` from `start` to `end` for
+/// each product of `cos θ` and `sin θ` up to degree three, walked `travel` (signed; `±2π` for a
+/// closed rim). Antiderivatives: `cos → sin`, `sin → −cos`, `cos² → θ/2 + sin 2θ/4`, `sin² → θ/2 −
+/// sin 2θ/4`, `cos·sin → sin²/2`, `cos³ → sin − sin³/3`, `sin³ → −cos + cos³/3`, `cos²·sin →
+/// −cos³/3`, `cos·sin² → sin³/3`. The `θ` parts read `travel`, the periodic parts the two ends —
+/// exactly zero over a closed rim, where the ends are one angle.
+struct TiltTerms {
+    c: f64,
+    s: f64,
+    cc: f64,
+    cs: f64,
+    ss: f64,
+    ccc: f64,
+    ccs: f64,
+    css: f64,
+    sss: f64,
+}
+
+impl TiltTerms {
+    fn over(start: f64, end: f64, travel: f64, closed: bool) -> TiltTerms {
+        let d = |f: fn(f64) -> f64| if closed { 0.0 } else { f(end) - f(start) };
+        let half = 0.5 * travel;
+        TiltTerms {
+            c: d(f64::sin),
+            s: d(|t| -t.cos()),
+            cc: half + d(|t| 0.25 * (2.0 * t).sin()),
+            cs: d(|t| 0.5 * t.sin().powi(2)),
+            ss: half - d(|t| 0.25 * (2.0 * t).sin()),
+            ccc: d(|t| t.sin() - t.sin().powi(3) / 3.0),
+            ccs: d(|t| -t.cos().powi(3) / 3.0),
+            css: d(|t| t.sin().powi(3) / 3.0),
+            sss: d(|t| -t.cos() + t.cos().powi(3) / 3.0),
+        }
+    }
 }
 
 /// The ordered start vertices of a loop's half-edges (the boundary polyline).

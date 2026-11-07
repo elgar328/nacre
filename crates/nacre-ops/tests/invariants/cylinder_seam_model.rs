@@ -289,7 +289,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
                     unreachable!("a cylinder truth has a cylinder cache")
                 };
                 assert_eq!(
-                    bits(c.normal()),
+                    bits(c.axis()),
                     bits(cc.axis().direction()),
                     "{name}: normal"
                 );
@@ -306,7 +306,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
                     cc.radius(),
                 )
                 .expect("a nondegenerate frame");
-                if bits(again.normal()) != bits(c.normal())
+                if bits(again.axis()) != bits(c.axis())
                     || bits(again.ref_dir()) != bits(c.ref_dir())
                 {
                     would_move += 1;

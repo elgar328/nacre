@@ -288,8 +288,7 @@ fn vertex_gaps_beyond(m: &Model, s: Handle<Solid>, u: f64) -> Vec<String> {
                                 }
                             }
                             nacre_geom::Curve::Ellipse(c) => {
-                                let (cc, n) =
-                                    (b3(c.center().as_array()), b3(c.normal().as_array()));
+                                let (cc, n) = (b3(c.center().as_array()), b3(c.axis().as_array()));
                                 let d = bsub(&v, &cc);
                                 let h = bdot(&n, &d);
                                 let nn = bdot(&n, &n);
