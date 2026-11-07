@@ -762,7 +762,10 @@ pub struct Leaning {
 /// **Why the budget bounds it.** Each edge of a lateral triangle turns about the axis by at most
 /// the budget — an arc's chord by [`circle_segments`], an interior chord by `within_budget`, a
 /// ruling not at all — so its three corners lie within one budget's turn of each other, and so does
-/// its facet's normal of the surface's. A sliver the chart made out of a lattice point standing a few
+/// its facet's normal of the surface's. That needs the three not to stand in a row along a curve
+/// oblique to the axis, whose facet lies in that curve's plane: a circle's or a ruling's points are
+/// collinear in the chart, so they make no triangle, and an ellipse's two samples one apart span two
+/// θ steps, outside the budget, so no interior edge joins them. A sliver the chart made out of a lattice point standing a few
 /// ulps off the boundary leaned 2.6° to 90° (at 90° it lies in a cap plane).
 #[cfg(any(test, feature = "test-util"))]
 pub fn leaning_laterals(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Leaning> {
@@ -831,6 +834,9 @@ fn sample_edge(
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Ellipse(c) => {
             let (t0, dt) = circle_span(model, edge, c);
+            // An ellipse takes its circle's θ step, so at its major ends two chords turn `a/b`
+            // times the angular budget — a known defect (`docs/todo.md`): the finer step it needs
+            // lets a chord skip a sample and lay a lateral triangle in the cut plane.
             let n = segments_over(circle_segments(cfg, c.max_curvature_radius()), edge, dt);
             // Point 0 is the edge's first vertex and the rest are interior edge points going round
             // from it; an arc ends on its second vertex, a full circle closes on its first without
@@ -886,9 +892,11 @@ fn segments_over(per_turn: usize, edge: &Edge, dt: f64) -> usize {
     }
 }
 
-/// The most segments a whole circle is ever cut into. [`circle_segments`] clamps a pathological
-/// budget to it, and [`separate_crossing_chords`] stops cutting an edge at it — one statement, the
-/// finest this mesher samples a circle, read in two places.
+/// The most segments a whole circle is ever cut into. [`circle_segments`] clamps its count to it,
+/// and [`separate_crossing_chords`] stops cutting an edge at it — one statement, the finest this
+/// mesher samples a circle, read in two places. Where the declared budget asks for more — a
+/// pathological setting, or a circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`) — the
+/// polyline is coarser than the budget and nothing refuses it: a known defect, in `docs/todo.md`.
 const FINEST_CIRCLE: usize = 4096;
 
 /// Segments for a circle of `radius`: **whichever of the two budgets asks for more**
