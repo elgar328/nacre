@@ -1197,7 +1197,7 @@ fn stacked_fuse_emits_ten_closed_faces() {
         &plane_ix,
         &cyls,
     );
-    let (faces, _, _) = trace_result_faces(
+    let (faces, _) = trace_result_faces(
         &m,
         BoolKind::Fuse,
         a,
@@ -1376,7 +1376,7 @@ fn tunnel_cut_emits_ten_faces_two_annular() {
         &plane_ix,
         &cyls,
     );
-    let (faces, _, _) = trace_result_faces(
+    let (faces, _) = trace_result_faces(
         &m,
         BoolKind::Cut,
         a,
@@ -1481,7 +1481,7 @@ fn u_slab_fuse_emits_a_two_hole_face() {
         &plane_ix,
         &cyls,
     );
-    let (faces, _, _) = trace_result_faces(
+    let (faces, _) = trace_result_faces(
         &m,
         BoolKind::Fuse,
         u,

@@ -166,7 +166,7 @@ fn rotated_tunnel_area_and_faces() {
         &plane_ix,
         &cyls,
     );
-    let (faces, _, _) = trace_result_faces(
+    let (faces, _) = trace_result_faces(
         &m,
         BoolKind::Cut,
         a,

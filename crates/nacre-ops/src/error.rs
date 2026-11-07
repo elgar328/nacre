@@ -389,12 +389,11 @@ pub enum RejectReason {
     VertexNamesAbsentSurface,
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose meet with the
     /// cylinder — an ellipse, or arcs of one — the kernel does not build there. A slanted plane
-    /// that runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes.
-    /// So does one that cuts the cylinder where the result has no face bounded along the cut —
-    /// through a plate's bore between its faces, across the bore's rims, through a fillet's
-    /// quarter, through a corner where a lateral face's straight edge meets its arc — and one whose
-    /// faces only touch the cylinder's solid (a gusset standing on the plate over a hole). Refused:
-    /// - a result face bounded along the cut — the result would carry an elliptical edge;
+    /// that cuts a cylinder builds, and the result keeps the cut as elliptical edges: a rod's end
+    /// cut obliquely, a gusset across a plate's bore, a tilted cylinder through a box. So does one
+    /// that runs past every lateral face (a gusset beside a plate's holes) or whose faces only
+    /// touch the cylinder's solid (a gusset standing on the plate over a hole). Refused:
+    /// - an operand bounded by such an edge — a result of an oblique cut, fed to a boolean again;
     /// - the plane touching a circle of a lateral face's boundary (a rim, or the arc of a hole in
     ///   it) at a single point, or touching a corner of a lateral face's boundary from inside the
     ///   face, or a section in a shape the trace does not read ([`DeclineKind::ObliqueSection`]);
@@ -687,10 +686,9 @@ pub enum RejectReason {
     /// could not be resolved, this one that the digits are too long. Sharing one name would tell the
     /// user that the placement is in doubt when the digits are.
     WitnessNotRational,
-    // The arc population builds (the straddling boss — `bands`' fences), so no stopper carries this
-    // name. The region case is `cyl_chart::regions` — measured 0 across the suite, the census and
+    // The arc population builds (the straddling boss — `bands`' fences). The region case is `cyl_chart::regions` — measured 0 across the suite, the census and
     // the ignored sweep. The one-node reading is `Chart::arc_over`, `cyl_chart::regions`.
-    /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, not a stopper.
+    /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop.
     ///
     /// What it names are the shapes the lateral's walk and assembly do not arrange:
     ///
@@ -1248,7 +1246,7 @@ pub(crate) fn reject(reason: RejectReason) -> BoolError {
     #[cfg(any(test, feature = "test-util"))]
     reject_census::raised(reason, std::panic::Location::caller());
     #[cfg(test)]
-    stopper_probe::RAISED.push((reason, std::panic::Location::caller().file()));
+    raise_probe::RAISED.push((reason, std::panic::Location::caller().file()));
     BoolError::Rejected { reason, at: None }
 }
 
@@ -1260,41 +1258,21 @@ pub(crate) fn reject_at(reason: RejectReason, at: RejectWhere) -> BoolError {
     #[cfg(any(test, feature = "test-util"))]
     reject_census::raised(reason, std::panic::Location::caller());
     #[cfg(test)]
-    stopper_probe::RAISED.push((reason, std::panic::Location::caller().file()));
+    raise_probe::RAISED.push((reason, std::panic::Location::caller().file()));
     BoolError::Rejected {
         reason,
         at: Some(at),
     }
 }
 
-/// **A stage's failure yields to the boolean's stopper** — the one spelling of the interception:
-/// a stopper made where a class's out-of-coverage fact is (`arrangement::per_class`) is the
-/// boolean's answer however far the pipeline gets past it, so every stage between it and the
-/// assembly's end hands its own failure here. With no stopper the failure is the answer.
-pub(crate) fn yield_to(stopper: Option<BoolError>, e: BoolError) -> BoolError {
-    match stopper {
-        Some(d) => {
-            #[cfg(test)]
-            if let BoolError::Rejected { reason, .. } = e {
-                stopper_probe::COVERED.push(reason);
-            }
-            d
-        }
-        None => e,
-    }
-}
-
-/// **What the stopper covered, and where the refusals were raised** — so a test can say that a
-/// refused population got as far as it claims: every failure a stopper covered in its own work,
-/// and the file each name was raised in. Rows carry their owner (`crate::ledger`); read
-/// `mine()`, and assert sets, not counts — the debug build's reference run and the parallel
-/// build's evaluation past a first failure repeat raises.
+/// **Where the refusals were raised** — so a test can say a refusal came from the guard it
+/// locks: every refusal raised through [`reject`] or [`reject_at`], with its file. Rows carry
+/// their owner (`crate::ledger`); read `mine()`, and assert sets, not counts — the debug build's
+/// reference run and the parallel build's evaluation past a first failure repeat raises.
 #[cfg(test)]
-pub(crate) mod stopper_probe {
+pub(crate) mod raise_probe {
     use super::RejectReason;
     use crate::ledger::Ledger;
-    /// Every failure [`super::yield_to`] replaced with a stopper.
-    pub(crate) static COVERED: Ledger<RejectReason> = Ledger::new();
     /// Every refusal raised through [`super::reject`] or [`super::reject_at`], with its file.
     pub(crate) static RAISED: Ledger<(RejectReason, &'static str)> = Ledger::new();
 }

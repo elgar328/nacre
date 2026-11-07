@@ -530,17 +530,11 @@ const CORPUS: [Fixture; 14] = [
     Fixture {
         name: "cylinder-oblique",
         // A tilted axis against an axis-aligned box: its planes are neither ⊥ nor ∥ to `(0,3,4)` —
-        // ellipses. The box's faces bound the sections, so the arrangement refuses where it makes
-        // them (the stopper); the assembly behind it builds the elliptical edges and nothing else
-        // fails.
-        expect: Some(RejectReason::ObliqueCylinderCut),
+        // ellipses, which the result keeps as edges; nothing rings.
+        expect: None,
         run: cylinder_oblique,
-        raised: &[(
-            "oblique_cylinder_cut",
-            None,
-            "crates/nacre-ops/src/arrangement/per_class.rs",
-        )],
-        surfaced: &[("oblique_cylinder_cut", None)],
+        raised: &[],
+        surfaced: &[],
     },
     Fixture {
         name: "cylinder-pair",
@@ -702,20 +696,20 @@ fn the_reject_census() {
 fn instrument_answers_for_itself() {
     // `#[track_caller]` on `reject()` must report the *guard's* line, not `reject`'s own. Nothing
     // else in this file would notice if that attribute were dropped, and every row of the table
-    // would silently collapse onto one line in `error.rs`. The oblique cut: its refusal is raised
-    // where the arrangement makes a face bounded along the section (`arrangement/per_class.rs`),
-    // and what this checks is that the guard names its own line, not `reject`'s.
+    // would silently collapse onto one line in `error.rs`. Two cylinders whose faces meet: the
+    // refusal is raised by the gate's pair rule (`planes/cyl_gate.rs`), and what this checks is
+    // that the guard names its own line, not `reject`'s.
     let mut m = Model::new();
-    let _ = cylinder_oblique(&mut m);
+    let _ = cylinder_pair(&mut m);
     let c = reject_census::take();
     let site = c
         .raised
         .iter()
-        .find(|(s, _)| s.id.reason == "oblique_cylinder_cut")
+        .find(|(s, _)| s.id.reason == "cylinder_pair_contact")
         .map(|(s, _)| *s)
         .expect("the cylinder guard rang");
     assert!(
-        site.file.ends_with("arrangement/per_class.rs"),
+        site.file.ends_with("planes/cyl_gate.rs"),
         "the raise site is reported as {}:{} — `#[track_caller]` is naming `reject()` itself, \
          not the guard",
         site.file,

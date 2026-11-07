@@ -7,9 +7,9 @@
 //! section of the cylinder — and what the boolean answers, by kind and in both operand orders
 //! ([`every_kind`]). Volumes are derived, not copied. The section is a whole ellipse or arcs of one
 //! — cut by a rim, by a fillet's rulings, by another face of the class — and either way it closes
-//! the class's own arrangement; what stays refused is a result face bounded along the section (the
-//! class's stopper), a plane touching a circle of a lateral's boundary at one point (the gate), and
-//! a class sectioning two cylinders whose axes are not parallel.
+//! the class's own arrangement, and a result face bounded along it keeps an elliptical edge; what
+//! stays refused is a plane touching a circle of a lateral's boundary at one point (the gate) and a
+//! class sectioning two cylinders whose axes are not parallel.
 //!
 //! The geometry, shared by the families: the bored plate of [`plate_with_bore`] (`[0,40]²×[0,10]`,
 //! a bore of radius 2 about `(10, 10)`), and a gusset — a triangle in the `yz` plane extruded one
@@ -753,13 +753,25 @@ fn a_gusset_whose_plane_sections_two_crossing_bores_is_refused() {
     every_kind(build, REFUSED);
 }
 
+/// What an operand `a` and a gusset of volume 8 sharing `shared` of it make — the gusset split in
+/// two by what it crosses: Fuse adds what the operand lacks, Cut takes the shared part, Common is
+/// that part, in two bodies — and the gusset less the operand is the rest.
+fn crossing(a: f64, shared: f64) -> [[Want; 3]; 2] {
+    let rest = 8.0 - shared;
+    [
+        [Built(1, a + rest), Built(1, a - shared), Built(2, shared)],
+        [Built(1, a + rest), Built(1, rest), Built(2, shared)],
+    ]
+}
+
 /// A gusset straddling the bore — `x ∈ [9.5, 10.5]`, corners `(6, 4)`, `(14, 4)`, `(14, 6)` on the
-/// same plane: its slanted face crosses the lateral, so the result has an edge on the ellipse. The
-/// gate records the section; the arrangement, the chart and the assembly build the faces bounded
-/// along it and the elliptical edge, and the stopper alone refuses the result
-/// ([`refused_at_the_ellipse`]).
+/// same plane: its slanted face crosses the lateral, so the result has edges on the ellipse. The
+/// gate records the section; every kind in both orders builds. Volumes: the gusset is 8 (area 8,
+/// one thick), and over each `x` the bore holds `y ∈ 10 ± w`, `w = √(4 − (x − 10)²)`, where the
+/// gusset's height `y/4 − 3/2` integrates to `2w` — so the bore holds `∫ 2w dx = √3.75 + 8·asin(1/4)`
+/// of it, and the plate the rest.
 #[test]
-fn a_gusset_across_the_bore_is_refused_at_its_ellipse() {
+fn a_gusset_across_the_bore_builds() {
     let build = |m: &mut Model| {
         (
             plate_with_bore(m),
@@ -767,20 +779,30 @@ fn a_gusset_across_the_bore_is_refused_at_its_ellipse() {
         )
     };
     gate(build, Ok(1));
-    refused_at_the_ellipse(&[], build);
+    let in_bore = 3.75f64.sqrt() + 8.0 * 0.25f64.asin();
+    every_kind(build, crossing(bored(), 8.0 - in_bore));
 }
 
 /// The bore cut by a slot through it (walls `x = 9` and `x = 11`, `y ∈ [7, 13]`), and the same
 /// gusset at `x ∈ [10.5, 11.5]`: the slot's wall `x = 11` cuts the lateral in a ruling that ends
-/// on the section, and the stopper alone refuses the result — nothing on the way fails.
+/// on the section, and every kind builds. Volumes: the slot takes `120` less the bore's strip
+/// `|x − 10| ≤ 1` (`10·(2√3 + 4π/3)`) from the bored plate; the gusset loses, over `x ∈ [10.5, 11]`,
+/// the slot's `y ∈ [7, 13]` (`6` a unit of `x`, so 3) and over `x ∈ [11, 11.5]` the bore's
+/// `2∫₁^{1.5} √(4 − s²) ds`.
 #[test]
-fn a_gusset_across_a_slotted_bore_is_refused_at_its_ellipse() {
-    refused_at_the_ellipse(&[], |m: &mut Model| {
-        let p = plate_with_bore(m);
-        let slot = crate::fixtures::cuboid(m, [9.0, 7.0, -1.0], [11.0, 13.0, 11.0]);
-        let a = op(m, BoolKind::Cut, p, slot);
-        (a, gusset(m, [(6.0, 4.0), (14.0, 4.0), (14.0, 6.0)], 10.5))
-    });
+fn a_gusset_across_a_slotted_bore_builds() {
+    let slotted = bored() - (120.0 - 10.0 * (2.0 * 3f64.sqrt() + 4.0 * pi() / 3.0));
+    let prim = |s: f64| 0.5 * s * (4.0 - s * s).sqrt() + 2.0 * (s / 2.0).asin();
+    let lost = 3.0 + 2.0 * (prim(1.5) - prim(1.0));
+    every_kind(
+        |m: &mut Model| {
+            let p = plate_with_bore(m);
+            let slot = crate::fixtures::cuboid(m, [9.0, 7.0, -1.0], [11.0, 13.0, 11.0]);
+            let a = op(m, BoolKind::Cut, p, slot);
+            (a, gusset(m, [(6.0, 4.0), (14.0, 4.0), (14.0, 6.0)], 10.5))
+        },
+        crossing(slotted, 8.0 - lost),
+    );
 }
 
 /// **A slanted face touching a circle inside a lateral's span is refused at the gate.** A boss

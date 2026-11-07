@@ -586,7 +586,7 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             plane_ix,
             cyls,
         );
-        let (plane_faces, curved, deferred) = crate::arrangement::trace_result_faces_full_for_test(
+        let (plane_faces, curved) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
             BoolKind::Fuse,
             plate,
@@ -600,8 +600,6 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             &trace_in,
         )
         .expect("the arc population traces");
-        // The stopper socket is empty for this population — nothing defers.
-        assert!(deferred.is_none(), "{deferred:?}");
         let (faces, _) = crate::arrangement::whole_result_faces(
             BoolKind::Fuse,
             &jd,
@@ -696,7 +694,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             plane_ix,
             cyls,
         );
-        let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+        let (plane_faces, curved) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
             BoolKind::Fuse,
             plate,
@@ -843,7 +841,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             plane_ix,
             cyls,
         );
-        let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+        let (plane_faces, curved) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
             BoolKind::Fuse,
             plate,
@@ -1277,7 +1275,7 @@ fn the_grouping_joins_across_a_cut_rim() {
             plane_ix,
             cyls,
         );
-        let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+        let (plane_faces, curved) = crate::arrangement::trace_result_faces_full_for_test(
             &m,
             BoolKind::Fuse,
             plate,

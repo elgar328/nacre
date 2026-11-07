@@ -15,10 +15,8 @@ pub(crate) struct Named {
 /// every ring node's defining triple.
 ///
 /// A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred-stopper socket stands behind it (at the assembly's very end) and
-/// intercepts everything a plugged stopper would, so no
-/// reject name can testify that the naming completed — only a fence that calls it directly on the
-/// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
+/// one: a fence calls it directly on the faces production feeds it. Model-immutable by signature:
+/// nothing here takes `&mut Model`.
 pub(crate) fn name_result_vertices(
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],

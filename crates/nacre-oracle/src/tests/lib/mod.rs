@@ -125,6 +125,7 @@ fn extrude_dist(m: &mut Model, plane: SketchPlane, pts: &[[f64; 2]], dist: f64) 
 
 mod booleans;
 mod nonconvex;
+mod oblique;
 mod orientation;
 mod pockets_and_sweeps;
 mod props;

@@ -9,7 +9,6 @@ pub(crate) fn reconstruct(
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
     rims: &crate::draft::HeldRims,
-    deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
     memo: &mut crate::realize::PlaneMemo,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
@@ -21,18 +20,12 @@ pub(crate) fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
-    let named = name_result_vertices(jd, seam, faces, cyls, &tangencies);
-    // The naming's failure yields to the deferred stopper like every stage before it; the raise
-    // itself stands at the assembly's very end below.
     let Named {
         grouping,
         group_of,
         per_solid,
         defs: def_triple,
-    } = match named {
-        Ok(n) => n,
-        Err(e) => return Err(crate::yield_to(deferred, e)),
-    };
+    } = name_result_vertices(jd, seam, faces, cyls, &tangencies)?;
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
     // The per-solid straight-angle pass may have dropped nodes of its own — per solid, so a rim
     // can be whole for one body and cut for another it touches; everything below asks the rims
@@ -42,11 +35,8 @@ pub(crate) fn reconstruct(
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
     // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
     // question "do these two lumps share a solid" is only askable of a grouping that answered.
-    // Its refusal yields to the deferred stopper like every stage's here.
-    if let Ok(g) = &grouping
-        && let Err(e) = tangency_reject(&tangencies, g)
-    {
-        return Err(crate::yield_to(deferred, e));
+    if let Ok(g) = &grouping {
+        tangency_reject(&tangencies, g)?;
     }
 
     // Vertices (deterministic: first appearance across faces in order).
@@ -110,11 +100,7 @@ pub(crate) fn reconstruct(
             }
         }
     }
-    // The materialization's failure yields to the deferred stopper like the naming's above; the
-    // raise itself stands at the assembly's very end below.
-    if let Err(e) = materialized {
-        return Err(crate::yield_to(deferred, e));
-    }
+    materialized?;
 
     // **The rim table**: a whole circle has no node and no triple, so it is not welded through
     // the seam table at all — it is minted here, once per `(group, cylinder class, plane class)`,
@@ -149,34 +135,52 @@ pub(crate) fn reconstruct(
                     return Err(reject(RejectReason::CylinderStagesDisagree));
                 }
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
-                // The seam point of this rim, spelled as a circle prism spells one: the axis meets
-                // the plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
+                // The seam point of this rim: the axis meets the plane at the rim's centre, and
+                // `θ = 0` is the `+ref_dir` generator — on a plane across the axis the `+ref_dir`
+                // side of the centre, as a circle prism spells it; on one oblique to it the rim's
+                // own point there, lifted along the axis onto the plane.
                 let realized = cyls[k].realized;
-                let centre = nacre_geom::intersect::line_plane(
-                    &realized.axis(),
-                    match model.surface_cache(plane) {
-                        nacre_topo::SurfaceCache::Plane { plane: p, .. } => p,
-                        // **Spelled out rather than `_`, so a third surface kind is a compile
-                        // error here.**
-                        //
-                        // The arm is unreachable today: `plane` comes from `jd.planes`, the
-                        // *plane* class table (`WorkingPlane` holds a `geom::Plane`), while a
-                        // cylinder's rows live in `cyls` (`WorkingCyl`) — and `c` indexes the
-                        // cutting plane of a rim key. The reject is kept rather than
-                        // `unreachable!` because that is a **table** invariant, not a type one:
-                        // `planes`'s `unreachable!("a cylinder truth carries a cylinder
-                        // cache")` is the type-guaranteed shape, and this is not that.
-                        //
-                        // The reason's wording ("three planes that should meet do not") does
-                        // not describe a non-planar cap; it is harmless only because nothing
-                        // reaches it. An author who makes it reachable owes it a real name.
-                        nacre_topo::SurfaceCache::Cylinder { .. } => {
-                            return Err(reject(RejectReason::ThreePlanes));
-                        }
-                    },
-                )
-                .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                let point = centre + realized.ref_dir() * realized.radius();
+                let cap = match model.surface_cache(plane) {
+                    nacre_topo::SurfaceCache::Plane { plane: p, .. } => p,
+                    // **Spelled out rather than `_`, so a third surface kind is a compile
+                    // error here.**
+                    //
+                    // The arm is unreachable today: `plane` comes from `jd.planes`, the
+                    // *plane* class table (`WorkingPlane` holds a `geom::Plane`), while a
+                    // cylinder's rows live in `cyls` (`WorkingCyl`) — and `c` indexes the
+                    // cutting plane of a rim key. The reject is kept rather than
+                    // `unreachable!` because that is a **table** invariant, not a type one:
+                    // `planes`'s `unreachable!("a cylinder truth carries a cylinder
+                    // cache")` is the type-guaranteed shape, and this is not that.
+                    //
+                    // The reason's wording ("three planes that should meet do not") does
+                    // not describe a non-planar cap; it is harmless only because nothing
+                    // reaches it. An author who makes it reachable owes it a real name.
+                    nacre_topo::SurfaceCache::Cylinder { .. } => {
+                        return Err(reject(RejectReason::ThreePlanes));
+                    }
+                };
+                let centre = nacre_geom::intersect::line_plane(&realized.axis(), cap)
+                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+                // Which rim it is, the truth says (`plane_cylinder_relation`, exact); the numbers
+                // only place it.
+                let oblique = model.plane_cylinder_relation(plane, lat)
+                    == Some(nacre_exact::AxisRelation::Oblique);
+                let tilted = oblique
+                    .then(|| {
+                        nacre_geom::Ellipse::from_unit_frame(
+                            centre,
+                            realized.axis().direction(),
+                            realized.ref_dir(),
+                            realized.radius(),
+                        )?
+                        .tilted_into(cap.normal())
+                    })
+                    .flatten();
+                let point = match tilted {
+                    Some(rim) => rim.point_at(0.0),
+                    None => centre + realized.ref_dir() * realized.radius(),
+                };
                 let v = crate::realize::push_vertex_realized(
                     model,
                     Vertex::OnSeam([lat, plane]),
@@ -190,10 +194,7 @@ pub(crate) fn reconstruct(
         }
         Ok(())
     })();
-    // A rim's failure yields to the deferred stopper like every stage before it.
-    if let Err(e) = rims_built {
-        return Err(crate::yield_to(deferred, e));
-    }
+    rims_built?;
 
     // **An edge's carriers are the two faces that use it — read off the whole result, not
     // guessed from one side.** The obvious per-face answer ("my plane, plus the wall my
@@ -496,12 +497,8 @@ pub(crate) fn reconstruct(
             orientation,
         }));
     }
-    // The face loop's failure yields to the deferred stopper like every stage before it; the
-    // raise itself stands at the assembly's very end below (an incomplete face set has no
-    // shell to count, so an assembly failure still stops here).
-    if let Err(e) = assembled {
-        return Err(crate::yield_to(deferred, e));
-    }
+    // An incomplete face set has no shell to count, so an assembly failure stops here.
+    assembled?;
     // Closed-shell guard: a 2-manifold b-rep uses every edge exactly twice (once from each of the
     // two faces that share it). A reconstruction that emits a face set with a dangling edge (use
     // count 1) or a pinched one (>2) is not a solid — `validate` would call it `NonManifoldEdge`,
@@ -530,19 +527,13 @@ pub(crate) fn reconstruct(
             .min_by_key(|e| e.index())
         {
             let [va, vb] = model.edge(eh).vertices;
-            return Err(crate::yield_to(
-                deferred,
-                crate::reject_at(
-                    RejectReason::NonManifoldResultEdge,
-                    crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
-                ),
+            return Err(crate::reject_at(
+                RejectReason::NonManifoldResultEdge,
+                crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
             ));
         }
         if uses.values().any(|&n| n != 2) {
-            return Err(crate::yield_to(
-                deferred,
-                reject(RejectReason::OpenResultShell),
-            ));
+            return Err(reject(RejectReason::OpenResultShell));
         }
     }
     // **The grouping decided at the top of this function, raised here.** What it says:
@@ -550,18 +541,13 @@ pub(crate) fn reconstruct(
     // inward-oriented shell) or a severed operand (two or more material-enclosing shells), and a
     // surviving cavity belongs to the piece whose outer shell nests it. See [`group_faces`] — and
     // for why the *group*, not the component, is the unit the handles above were minted per.
-    // The grouping's failure yields to the deferred stopper like every stage before it; the
-    // raise itself stands at the very end, past the solid assembly below.
     let Grouping {
         labels,
         n,
         positives,
         mut comps_of,
         ..
-    } = match grouping {
-        Ok(g) => g,
-        Err(e) => return Err(crate::yield_to(deferred, e)),
-    };
+    } = grouping?;
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
@@ -613,24 +599,6 @@ pub(crate) fn reconstruct(
             })
         })
         .collect());
-    // **The stopper's raise — the very end of the assembly.** A class's stopper (`per_class`: a
-    // face bounded along an oblique section) crowns an interception ladder — the per-class map
-    // (other classes' failures included), the seam stretch, the naming, the vertex
-    // materialization, the rims, the face loop, the shell guard, the grouping and the solid
-    // assembly all yield to it (`crate::yield_to`) — so the refused population carries one name
-    // out however far this pipeline gets.
-    //
-    // **An arc reject therefore leaves a complete garbage solid in the store —
-    // deliberately.** Vertices, edges, faces, shells and the solid itself: cells outside the
-    // live set (`assemble_fuse_cut` retires operands only on `Ok`, and nothing pushed here is
-    // reachable from a live solid), the same class of residue a late reject's arena cells have
-    // always been. The live-set fences stay green, and a session that keeps recording after a
-    // reject rebuilds from the log (`replay`'s discipline, stated in `docs/design.md`). Holding
-    // the raise any earlier would put the solid assembly behind an interception nothing can see
-    // past — the unreachable-machinery trap this ladder keeps refusing.
-    if let Some(d) = deferred {
-        return Err(d);
-    }
     // **Every result vertex is named by the faces that meet it** — the naming's own rule, asked
     // of what was minted, and `validate`'s `VertexNamesAbsentSurface`. It implies the solid-wide
     // property transform and replay stand on (`transform::foreign_named_vertex`). It is a shipped

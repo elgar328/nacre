@@ -14,7 +14,7 @@ use super::*;
 /// completes, every face it emits is still a plane face, and the
 /// drilled cap carries its circular hole.
 #[test]
-fn the_production_road_survives_a_cylinder_past_the_stopper() {
+fn the_production_road_survives_a_cylinder() {
     let mut m = Model::new();
     let (a, b) = drilled(&mut m, -1.0, 4.0); // a through-hole: circles on both box caps
     let PlaneSetup {
@@ -41,7 +41,7 @@ fn the_production_road_survives_a_cylinder_past_the_stopper() {
         &plane_ix,
         &cyls,
     );
-    let (faces, _, _) = trace_result_faces(
+    let (faces, _) = trace_result_faces(
         &m,
         BoolKind::Cut,
         a,
@@ -841,15 +841,17 @@ fn a_lateral_face_is_asked_for_points_and_edges_as_a_plane_face_is() {
     );
 }
 
-/// **An arc on a slanted plane has no height** — a lateral ring of one closed arc on the plane
-/// `z − x = 1`, slanted to the axis `z` of the cylinder `r = 1`, its node where that plane meets the
-/// cap plane `z = 1` on the cylinder. The arc is a section: it climbs from that node, so no one
-/// height places it, and the loops cannot say which side of it a point of the cylinder is on — the
-/// answer is `None`. Read off its node's name instead, it would stand at the cap's `z = 1`, and the
-/// point `(1, 0, 2)` would get a confident answer. The planes come from a wedge whose faces lie on
-/// `z = 1`, `x = 1` and the slanted plane.
+/// **An arc on a slanted plane is read on its own plane** — a lateral ring of one closed arc on the
+/// plane `z − x = 1`, slanted to the axis `z` of the cylinder `r = 1`, its node where that plane
+/// meets the cap plane `z = 1` on the cylinder. The arc is a section: it climbs from that node, so
+/// no one height places it; which side of it a point of the cylinder is on is which side of its
+/// plane, on the point's generator. On the generator `x = 1` the section stands at `z = 2`: the point
+/// `(1, 0, 2)` is on it, `(1, 0, 3)` above it (the ray up the axis crosses nothing) and `(1, 0, 1.5)`
+/// below (it crosses the arc once). Read off its node's name instead, the arc would stand at the
+/// cap's `z = 1` and all three would get the wrong answer. The planes come from a wedge whose
+/// faces lie on `z = 1`, `x = 1` and the slanted plane.
 #[test]
-fn an_arc_on_a_slanted_plane_has_no_height() {
+fn an_arc_on_a_slanted_plane_is_read_on_its_own_plane() {
     use crate::combinatorics::{Carrier, EndPin, LateralLoop, QuadRoot, RingEdge, loop_parity};
     use nacre_exact::Rat;
     use nacre_exact::quad::{CylinderMeet, QuadVal, plane_plane_cylinder};
@@ -910,23 +912,32 @@ fn an_arc_on_a_slanted_plane_has_no_height() {
         from_h: EndPin::Cylinder,
         to_h: EndPin::Cylinder,
     }];
-    let (x1, z2) = ([ri(1), ri(0), ri(0), ri(-1)], [ri(0), ri(0), ri(1), ri(-2)]);
-    let CylinderMeet::Tangent { line, s } =
-        plane_plane_cylinder(&x1, &z2, &def.origin(), &def.dir(), def.r2()).unwrap()
-    else {
-        panic!("the line x = 1, z = 2 touches the cylinder")
-    };
-    assert_eq!(
-        loop_parity(
-            &jd,
-            &def,
-            &[LateralLoop::Ring(ring)],
-            &line,
-            &QuadVal::from_rat(s)
-        ),
-        None,
-        "a section's arc is read at no height"
-    );
+    use nacre_geom::intersect::RingSide;
+    let x1 = [ri(1), ri(0), ri(0), ri(-1)];
+    for (z, want) in [
+        (Rat::from_int(2), RingSide::OnBoundary),
+        (Rat::from_int(3), RingSide::Outside),
+        (Rat::new(3, 2).unwrap(), RingSide::Inside),
+    ] {
+        let zero = Rat::from_int(0);
+        let at_z = [ri(0), ri(0), ri(1), zero.checked_sub(z).unwrap()];
+        let CylinderMeet::Tangent { line, s } =
+            plane_plane_cylinder(&x1, &at_z, &def.origin(), &def.dir(), def.r2()).unwrap()
+        else {
+            panic!("the line x = 1, z = {z:?} touches the cylinder")
+        };
+        assert_eq!(
+            loop_parity(
+                &jd,
+                &def,
+                &[LateralLoop::Ring(ring.clone())],
+                &line,
+                &QuadVal::from_rat(s)
+            ),
+            Some(want),
+            "the point at z = {z:?} against the section's arc"
+        );
+    }
 }
 
 /// **A lateral face answers the crossing question by the same parity, on its own chart**
@@ -1429,7 +1440,6 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         &faces,
         &setup.cyls,
         &rims,
-        None,
         crate::assembly::Tangencies::none(),
         &mut memo,
     )

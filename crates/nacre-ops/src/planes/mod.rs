@@ -546,8 +546,7 @@ pub(crate) enum CylRecord {
     /// cylinder's section truly — the ellipse, whole between a band's rims or cut into arcs where a
     /// rim, a ruling or a segment of the class crosses it — and on the lateral chart the section is
     /// a line like any other (`arrangement::cyl_chart`'s module doc). A face of the class bounded
-    /// along it would leave an elliptical edge, which the arrangement refuses where the face is made
-    /// (`ObliqueCylinderCut`, `per_class`'s stopper). The named twin of [`Silence::Sectioned`]: the
+    /// along it keeps an elliptical edge. The named twin of [`Silence::Sectioned`]: the
     /// class has world coefficients, so the roads that answer a silent class from its record ask
     /// those instead.
     Sections,

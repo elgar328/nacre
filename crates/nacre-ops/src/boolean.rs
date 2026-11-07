@@ -52,6 +52,13 @@ pub fn boolean_with_report(
     if [a, b].into_iter().any(|s| has_cylinder_pair_edge(model, s)) {
         return Err(surfacing(reject(RejectReason::CylinderPairEdge)));
     }
+    // An operand bounded along a section of a cylinder by an oblique plane — a result this kernel
+    // built — is read by no stage: the gate, the plane rows and the lateral readers take a curve on
+    // a cylinder for a circle across its axis. The coverage ends at the door, once, rather than at
+    // each reader.
+    if [a, b].into_iter().any(|s| has_elliptical_edge(model, s)) {
+        return Err(surfacing(reject(RejectReason::ObliqueCylinderCut)));
+    }
     // The arrangement engine (`arrangement`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
@@ -88,9 +95,32 @@ pub fn boolean_with_report(
 }
 
 /// Does `solid` have an edge whose two carriers are different cylinders
-/// ([`RejectReason::CylinderPairEdge`])? Every face of every shell, every loop.
+/// ([`RejectReason::CylinderPairEdge`])?
 fn has_cylinder_pair_edge(model: &Model, solid: Handle<Solid>) -> bool {
     let cylinder = |h| matches!(model.surface(h), nacre_topo::Surface::Cylinder { .. });
+    any_edge(model, solid, |e| {
+        let [p, q] = model.edge(e).surfaces;
+        p != q && cylinder(p) && cylinder(q)
+    })
+}
+
+/// Does `solid` have an edge on a plane oblique to a cylinder's axis — a curve the truth's axis
+/// relation made an ellipse ([`nacre_geom::Ellipse::is_circle`]), read as
+/// [`RejectReason::ObliqueCylinderCut`]?
+fn has_elliptical_edge(model: &Model, solid: Handle<Solid>) -> bool {
+    any_edge(
+        model,
+        solid,
+        |e| matches!(model.edge_curve(e), nacre_geom::Curve::Ellipse(c) if !c.is_circle()),
+    )
+}
+
+/// Whether any edge of `solid` — every face of every shell, every loop — answers `hit`.
+fn any_edge(
+    model: &Model,
+    solid: Handle<Solid>,
+    hit: impl Fn(Handle<nacre_topo::Edge>) -> bool,
+) -> bool {
     let sol = model.solid(solid);
     std::iter::once(&sol.outer)
         .chain(sol.cavities.iter())
@@ -100,10 +130,7 @@ fn has_cylinder_pair_edge(model: &Model, solid: Handle<Solid>) -> bool {
             std::iter::once(&f.outer).chain(f.inner.iter())
         })
         .flat_map(|lp| lp.half_edges.iter())
-        .any(|he| {
-            let [p, q] = model.edge(he.edge).surfaces;
-            p != q && cylinder(p) && cylinder(q)
-        })
+        .any(|he| hit(he.edge))
 }
 
 /// Record that `e` is leaving the kernel — the *surfaced* column of a test build's

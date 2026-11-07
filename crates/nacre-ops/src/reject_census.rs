@@ -41,10 +41,9 @@
 //! **Raise *counts* are not stable; the *sets* are.** `debug` runs every traced boolean twice
 //! (`arrangement`'s `#[cfg(debug_assertions)]` reference run), and `parallel` evaluates the
 //! remaining items of a failing map while `serial` stops at the first
-//! (`crate::par::try_map_range`) — except the per-class arrangement, which evaluates every class
-//! in both so a stopper can answer for them all. Surfacing is unaffected: the refusal is chosen by
-//! index (`try_map_range`'s **lowest-index** error, the arrangement's stopper first), so *which*
-//! reason comes back is schedule-independent.
+//! (`crate::par::try_map_range`). Surfacing is unaffected: the refusal is chosen by index
+//! (`try_map_range`'s **lowest-index** error), so *which* reason comes back is
+//! schedule-independent.
 //! Assert on sets and on distinct-site counts, never on raise counts.
 
 use crate::RejectReason;

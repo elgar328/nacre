@@ -111,9 +111,8 @@ pub(crate) fn trace_band(
 /// oblique pair whose lateral faces cannot be *proved* to miss the plane is refused
 /// ([`crate::RejectReason::ObliqueCylinderCut`]) unless it is recorded as the class's section of
 /// the cylinder ([`crate::planes::CylRecord::Sections`]) — drawn on the class's own arrangement,
-/// whole or in arcs, which the roads above ask this of before they read a circle; and a result face
-/// bounded along that section would carry an elliptical edge, which the class's stopper refuses
-/// where the face is made (`arrangement::per_class`). The seated producer has a second, stronger
+/// whole or in arcs, which the roads above ask this of before they read a circle; a result face
+/// bounded along that section carries an elliptical edge. The seated producer has a second, stronger
 /// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
 /// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
 /// its own plane, while a cylinder's *circular* section is ⊥ to the axis.

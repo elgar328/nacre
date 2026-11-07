@@ -829,9 +829,7 @@ pub(crate) fn frame_audit(
                 // makes the audit an instrument; feeding it un-split edges would let it run to
                 // the end and report `failed_at: None` for an input the boolean refuses —
                 // *"the worst possible time to be lying"* (`decline_to_reject`). The arc fence
-                // in `bands.rs` locks the two together as «both
-                // succeed» (a class's stopper rides out in `Staged`, which the audit does not
-                // raise and the boolean raises at the assembly's end).
+                // in `bands.rs` locks the two together as «both succeed».
                 let edges = ClassEdges::of(
                     &jd, &cyls, &faces_tab, wc, &split, &circles, &rulings, &local,
                 )?;

@@ -1005,50 +1005,6 @@ enum Want {
     Refused(RejectReason),
 }
 
-/// **Refused by the stopper alone** — every kind in both orders is refused `ObliqueCylinderCut`,
-/// and what the stopper covered is at most `gaps`: the failures, each with the file it is raised
-/// in, that this family meets past the stopper today (none, where the pipeline runs to the end).
-/// So the arrangement and the chart built the faces bounded along the section and the assembly
-/// built the result's elliptical edges: a wrong label or a chart that disagrees would be covered
-/// under its own name, in this class or another, and this says which. Run in the test's own pool
-/// so the probe rows are its own (`crate::ledger`).
-fn refused_at_the_ellipse(
-    gaps: &[(RejectReason, &str)],
-    build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>) + Sync,
-) {
-    use crate::error::stopper_probe::{COVERED, RAISED};
-    crate::ledger::owned(|| {
-        for swap in [false, true] {
-            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-                let mut m = Model::new();
-                let (a, b) = build(&mut m);
-                let (x, y) = if swap { (b, a) } else { (a, b) };
-                let (c0, r0) = (COVERED.len(), RAISED.len());
-                match boolean(&mut m, kind, x, y) {
-                    Err(BoolError::Rejected {
-                        reason: RejectReason::ObliqueCylinderCut,
-                        ..
-                    }) => {}
-                    other => panic!("{kind:?} swap={swap}: want ObliqueCylinderCut, got {other:?}"),
-                }
-                let covered = COVERED.mine_since(c0);
-                assert!(
-                    covered.iter().all(|r| gaps.iter().any(|(g, _)| g == r)),
-                    "{kind:?} swap={swap}: the stopper covered {covered:?}"
-                );
-                for (r, f) in RAISED.mine_since(r0) {
-                    if let Some((_, at)) = gaps.iter().find(|(g, _)| *g == r) {
-                        assert!(
-                            f.ends_with(at),
-                            "{kind:?} swap={swap}: {r:?} raised at {f}, not {at}"
-                        );
-                    }
-                }
-            }
-        }
-    });
-}
-
 /// **Every kind, both orders** — `want` is one cell for each of `[Fuse, Cut, Common]` with the
 /// operands as built, then swapped. `build` makes the two operands in a fresh model (a boolean
 /// consumes its inputs). A cell that builds is held to its body count and its analytic volume
@@ -1074,29 +1030,71 @@ fn every_kind(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>), want
                 (Want::Refused(name), out) => {
                     panic!("{kind:?} swap={swap}: want {name:?}, got {out:?}")
                 }
-                (Want::Built(n, v), Ok(out)) => {
-                    assert_eq!(out.len(), n, "{kind:?} swap={swap}: bodies");
-                    let got: f64 = out
-                        .iter()
-                        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
-                        .sum();
-                    (got, v)
-                }
+                (Want::Built(n, v), Ok(out)) => (
+                    built_volume(&m, &out, n, &format!("{kind:?} swap={swap}")),
+                    v,
+                ),
                 (Want::Built(..), Err(e)) => panic!("{kind:?} swap={swap}: {e:?}"),
             };
             assert!(
                 (got - volume).abs() <= 1e-9 * volume.max(1.0),
                 "{kind:?} swap={swap}: {got} vs {volume}"
             );
-            let violations = nacre_validate::validate(&m);
-            assert!(
-                violations.is_empty(),
-                "{kind:?} swap={swap}: {violations:?}"
-            );
-            nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
-                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: mesh {e:?}"));
         }
     }
+}
+
+/// **A cell that builds, checked** — `n` bodies, `validate` clean, the model meshes — and its
+/// total volume.
+fn built_volume(m: &Model, out: &[Handle<Solid>], n: usize, cell: &str) -> f64 {
+    assert_eq!(out.len(), n, "{cell}: bodies");
+    let violations = nacre_validate::validate(m);
+    assert!(violations.is_empty(), "{cell}: {violations:?}");
+    nacre_tess::tessellate(m, &nacre_tess::TessConfig::default())
+        .unwrap_or_else(|e| panic!("{cell}: mesh {e:?}"));
+    out.iter()
+        .map(|&s| nacre_props::mass_props(m, s).expect("props").volume)
+        .sum()
+}
+
+/// **Every kind, both orders, held to the set identities** — for a pair whose common part has no
+/// closed form here: every cell builds with the bodies `counts` says (`[Fuse, Cut, Common]`, then
+/// swapped), checked as [`built_volume`] checks, and with `a`, `b` the operands' exact volumes and
+/// `C` the Common's, `Fuse = a + b − C`, `a − b = a − C` and `b − a = b − C` (relative `1e-12`)
+/// and the two Commons agree. What the identities cannot say — `C` itself — the OCCT oracle does
+/// (`nacre-oracle`).
+fn every_kind_by_identity(
+    build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+    [a, b]: [f64; 2],
+    counts: [[usize; 3]; 2],
+) {
+    let mut vol = [[0.0f64; 3]; 2];
+    for (swap, row) in [false, true].into_iter().zip(counts) {
+        for (k, (kind, n)) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(row)
+            .enumerate()
+        {
+            let mut m = Model::new();
+            let (x, y) = build(&mut m);
+            let (x, y) = if swap { (y, x) } else { (x, y) };
+            let out = boolean(&mut m, kind, x, y)
+                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: {e:?}"));
+            vol[usize::from(swap)][k] = built_volume(&m, &out, n, &format!("{kind:?} swap={swap}"));
+        }
+    }
+    let c = vol[0][2];
+    let near = |got: f64, want: f64, what: &str| {
+        assert!(
+            (got - want).abs() <= 1e-12 * want.max(1.0),
+            "{what}: {got} vs {want}"
+        );
+    };
+    near(vol[1][2], c, "the two Commons");
+    near(vol[0][0], a + b - c, "Fuse");
+    near(vol[1][0], a + b - c, "Fuse swapped");
+    near(vol[0][1], a - c, "Cut");
+    near(vol[1][1], b - c, "Cut swapped");
 }
 
 /// A cylinder of radius `r` and length `h` about the world Z axis, its base at the origin, then
@@ -1149,6 +1147,7 @@ mod frames;
 mod loop_nesting;
 mod motion;
 mod naming;
+mod oblique_cut_rod;
 mod oblique_sections;
 pub(crate) use oblique_sections::{SUNK, gusset};
 mod overhang_corners;
@@ -1157,6 +1156,5 @@ mod pierce_corners;
 mod plane_sense;
 mod rotation;
 mod sketch_models;
-mod truncated_cylinder;
 mod unstated_classes;
 mod user_models;

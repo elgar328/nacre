@@ -2456,7 +2456,7 @@ fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
 /// of it cut by rims, rulings and the class's other segments — and the tracer reads which from the
 /// faces' boundaries. Where the class's faces reach the lateral the section is a line the lateral's
 /// chart cuts its cells at like any other; a result face bounded along it carries an elliptical
-/// edge, which the arrangement refuses by this name where the face is made (`per_class`'s stopper).
+/// edge.
 /// The touch test asks each circle whole, also where the face holds only an arc of it (a fillet's
 /// quarter): wider than the faces, never narrower. `Some(Clear)` when every face's span is missed
 /// ([`section_in_span`]), `Some(Sections)` when one is met, `None` when the proof fails — a

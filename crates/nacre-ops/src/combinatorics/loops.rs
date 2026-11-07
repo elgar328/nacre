@@ -617,8 +617,8 @@ fn curved_wall(
             // **The two parameters cannot tie**: each is where the plane ⊥ to the axis through its
             // end crosses the axis — that end's height on the ruling — and an edge's two ends are
             // two points of the ruling. An end with no ⊥ plane among its names (a ruling ending on
-            // an oblique section, which a result keeps only in a body its stopper refuses) has no
-            // parameter, and the boundary is read as curved (`curved`). The strict `>` therefore
+            // an oblique section — an operand with such an edge is refused at the boolean's door)
+            // has no parameter, and the boundary is read as curved (`curved`). The strict `>` therefore
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
             let axial_param = |v: Handle<Vertex>| -> Option<nacre_exact::Rat> {

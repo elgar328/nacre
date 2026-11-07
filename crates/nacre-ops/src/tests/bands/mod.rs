@@ -10,7 +10,7 @@ use nacre_topo::Surface;
 
 use nacre_topo::{Model, Solid};
 
-/// Run the plane arrangement past the stopper and hand the band pass what it needs.
+/// Run the plane arrangement and hand the band pass what it needs.
 /// Returns `(band faces, the plane classes' axis parameters keyed by class)`.
 fn bands(
     m: &Model,
@@ -43,7 +43,7 @@ fn bands(
         plane_ix,
         cyls,
     );
-    let (_, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+    let (_, curved) = crate::arrangement::trace_result_faces_full_for_test(
         m,
         kind,
         a,

@@ -544,41 +544,53 @@ fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacr
     Some([m[0], m[1], m[2], d0])
 }
 
-/// **The height of a rim or an arc on class `c`, as an axis parameter** — the curve's own plane
-/// gives it, and only a plane across the axis ([`crate::planes::class_carries_circle`]) does: on a
-/// slanted plane the curve is a section, which has no one height, and the answer is `None`, as it
-/// is for a class with no world statement or arithmetic out. Not its ends' heights: a section's
-/// end on a rim stands at the rim's height, and the section does not.
-fn rim_height(
+/// **The plane of a rim or an arc on class `c`, its normal turned along the axis** — so a point of
+/// the cylinder lies below the curve exactly where it is on the plane's negative side, on the
+/// generator through it: a rim across the axis (a circle) and one oblique to it (a section) alike,
+/// the one question being which side of the curve's plane the point is. `None` for a plane along
+/// the axis (it crosses no generator once), a class with no world statement, or arithmetic out.
+fn rim_up(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
     def: &nacre_topo::CylinderDef,
-) -> Option<nacre_exact::Rat> {
+) -> Option<[nacre_exact::Rat; 4]> {
     let w = jd.world_rat(c)?;
-    if !crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
-        return None;
+    let along = nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &def.dir())?;
+    match along.numer().signum() {
+        0 => None,
+        1 => Some(w),
+        _ => {
+            let zero = nacre_exact::Rat::from_int(0);
+            Some([
+                zero.checked_sub(w[0])?,
+                zero.checked_sub(w[1])?,
+                zero.checked_sub(w[2])?,
+                zero.checked_sub(w[3])?,
+            ])
+        }
     }
-    crate::planes::axis_param_of_plane(&w, def)
 }
 
 /// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
 /// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)`.
 ///
-/// The rule is the planar rings' half-open rule read on this chart. A whole-circle rim is
-/// crossed iff it is above `x`. A ring's **arc** (z = const, a CCW span in θ) is crossed iff
-/// it is above `x` and `θ_x` is in its span — with a span end exactly at `θ_x` counted by the
+/// The rule is the planar rings' half-open rule read on this chart. A whole rim is crossed iff it
+/// is above `x` on `x`'s generator — `x` on the negative side of its plane turned along the axis
+/// ([`rim_up`]), a circle's or a section's. A ring's **arc** (a CCW span in θ on such a curve) is
+/// crossed iff it is above `x` and `θ_x` is in its span — with a span end exactly at `θ_x` counted by the
 /// end the arc *leaves upward* (`+θ`): `lo` counts, `hi` does not
 /// ([`nacre_geom::intersect::ray_step_crossing`]`(Zero, ±, ±)`), and the ruling at that corner
 /// runs along the ray and never counts. A **ruling** piece is crossed by nothing; `x` on it is
-/// the boundary. Every comparison is one the arrangement already owns: `z` by
-/// [`nacre_exact::quad::plane_side`] against [`rim_plane`], `θ` by [`arc_span`], a ruling by
+/// the boundary — asked first whether `x` is on the ruling's line at all, so its ends' heights are
+/// read only for a point on it. Every comparison is one the arrangement already owns: above or
+/// below by [`nacre_exact::quad::plane_side`] against [`rim_up`], `θ` by [`arc_span`], a ruling by
 /// its own carrier (`plane_side(plane) == 0 ∧ ruling_side_signed(plane) == side`, against the
 /// plane its side was measured against — the predicate `crossing_on_ruling` names stations with).
 ///
 /// `OnBoundary` = `x` on a rim, an arc or a ruling of the face. `None` = a zero-span arc inside
-/// `arc_span`, a loop the road cannot read (a rim or an arc on a plane slanted to the axis — a
-/// section — or a plane carrier), or checked arithmetic running out. `z` is asked before `θ`: an
-/// arc below `x` needs no order.
+/// `arc_span`, a ruling `x` lies on whose end has no axis parameter (an end on a section), a plane
+/// carrier, or checked arithmetic running out. Above or below is asked before `θ`: an arc below
+/// `x` needs no order.
 pub(crate) fn loop_parity(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -590,12 +602,13 @@ pub(crate) fn loop_parity(
     use nacre_exact::quad::plane_side;
     let above =
         |t: nacre_exact::Rat| -> Option<Orient> { Some(plane_side(&rim_plane(def, t)?, meet, s)) };
+    let below_curve =
+        |c: usize| -> Option<Orient> { Some(plane_side(&rim_up(jd, c, def)?, meet, s)) };
     let mut crossings = 0usize;
     for lp in loops {
         match lp {
             LateralLoop::Rim(c) => {
-                let t = rim_height(jd, *c, def)?;
-                match above(t)? {
+                match below_curve(*c)? {
                     // `z_x < t`: the rim is above the point, and the ray up the axis crosses it.
                     Orient::Negative => crossings += 1,
                     Orient::Positive => {}
@@ -606,8 +619,7 @@ pub(crate) fn loop_parity(
                 for e in edges {
                     match &e.carrier {
                         Carrier::Arc(arc) => {
-                            let t = rim_height(jd, arc.plane, def)?;
-                            let side = above(t)?;
+                            let side = below_curve(arc.plane)?;
                             if side == Orient::Positive {
                                 continue; // the arc is below the point
                             }
@@ -641,6 +653,17 @@ pub(crate) fn loop_parity(
                             }
                         }
                         Carrier::Ruling(rl) => {
+                            // The plane the ruling's `side` was measured against, carried — not
+                            // the corner name's ∥ class, which can be another plane through the
+                            // same line — and the signed side, which answers `0` for a tangent
+                            // one; arithmetic out abstains like everywhere here. Off its line,
+                            // `x` is nowhere on the piece, whatever its heights.
+                            let w = jd.world_rat(rl.plane)?;
+                            if plane_side(&w, meet, s) != Orient::Zero
+                                || ruling_side_signed(&w, def, (meet, s))? != rl.side
+                            {
+                                continue;
+                            }
                             let (Some(t0), Some(t1)) = (
                                 pierce_axis_param(jd, def, e.node),
                                 pierce_axis_param(jd, def, e.to),
@@ -648,18 +671,8 @@ pub(crate) fn loop_parity(
                                 return None;
                             };
                             let (lo, hi) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
-                            // Outside the piece's closed axial range: not on it, whatever θ.
-                            if above(lo)? == Orient::Negative || above(hi)? == Orient::Positive {
-                                continue;
-                            }
-                            // The plane the ruling's `side` was measured against, carried — not
-                            // the corner name's ∥ class, which can be another plane through the
-                            // same line — and the signed side, which answers `0` for a tangent
-                            // one; arithmetic out abstains like everywhere here.
-                            let w = jd.world_rat(rl.plane)?;
-                            if plane_side(&w, meet, s) == Orient::Zero
-                                && ruling_side_signed(&w, def, (meet, s))? == rl.side
-                            {
+                            // Inside the piece's closed axial range: on it.
+                            if above(lo)? != Orient::Negative && above(hi)? != Orient::Positive {
                                 return Some(RingSide::OnBoundary);
                             }
                         }
@@ -759,7 +772,7 @@ pub(crate) fn lateral_face_crossings(
 /// where a plane of each end's name crosses **this ruling**, not the axis (a plane naming the end
 /// may be slanted, and where it meets the axis says nothing of the end; ☐ no input names one so —
 /// over the suite's 1,108 ends the two readings agree, and the census asks none) — while the cut heights,
-/// the face's rims and arcs read off their planes as [`loop_parity`] reads them (`rim_height`), only
+/// the face's rims and arcs read off their planes where they cross this ruling, only
 /// decide which points are asked:
 /// wrong there, a touch can be missed, never invented. ☐ No input yet where the cut changes the
 /// answer — an arc of the face crossing the edge's line meets the two walls there too, and the
@@ -787,6 +800,12 @@ pub(crate) fn ruling_meets_lateral(
         d[k] = base[k].checked_sub(o[k])?;
     }
     let at_base = dot3_rat(&m, &d)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    // Where a plane crosses this ruling — a rim's, an arc's (a circle's and a section's alike), or
+    // one an end is named by.
+    let on_ruling = |c: usize| -> Option<Rat> {
+        let t = nacre_exact::axis_param_of_plane(&jd.world_rat(c)?, &base, &m)?;
+        at_base.checked_add(t)
+    };
     // An end's height: a plane of its name across the ruling meets it at the end.
     let z_of = |n: NodeId| -> Option<Rat> {
         let planes: Vec<usize> = match (three_plane_name(n), pierce_name(n)) {
@@ -794,21 +813,18 @@ pub(crate) fn ruling_meets_lateral(
             (None, Some((p, _, _))) => p.to_vec(),
             (None, None) => return None,
         };
-        planes.into_iter().find_map(|c| {
-            let t = nacre_exact::axis_param_of_plane(&jd.world_rat(c)?, &base, &m)?;
-            at_base.checked_add(t)
-        })
+        planes.into_iter().find_map(on_ruling)
     };
     let (a, b) = (z_of(ends[0])?, z_of(ends[1])?);
     let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
     let mut ts = vec![lo, hi];
     for lp in loops {
         match lp {
-            LateralLoop::Rim(c) => ts.push(rim_height(jd, *c, def)?),
+            LateralLoop::Rim(c) => ts.push(on_ruling(*c)?),
             LateralLoop::Ring(edges) => {
                 for e in edges {
                     if let Carrier::Arc(arc) = &e.carrier {
-                        ts.push(rim_height(jd, arc.plane, def)?);
+                        ts.push(on_ruling(arc.plane)?);
                     }
                 }
             }

@@ -29,7 +29,7 @@
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 4,616 |
 //! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | 2,062 |
 //! | `n ⊥ m` | `d > r`, or no face reaching the lateral | nothing | 24,661 |
-//! | oblique | — | a **section** — a line of the chart, crossing others, which the class draws on its own arrangement (`CylRecord::Sections`) wherever the plane touches none of the lateral's circles; a cell it bounds on one side only is a face with an elliptical edge, refused where it is made (`ObliqueCylinderCut`) | 298 |
+//! | oblique | — | a **section** — a line of the chart, crossing others, which the class draws on its own arrangement (`CylRecord::Sections`) wherever the plane touches none of the lateral's circles; a cell it bounds on one side only is a face with an elliptical edge | 298 |
 //!
 //! So the chart's lines are the sections the arrangement traced on this cylinder — every class with
 //! a label or a cut rim of it — and its events the rulings' stations,

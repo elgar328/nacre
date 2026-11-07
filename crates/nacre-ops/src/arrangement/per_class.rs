@@ -7,17 +7,11 @@ use super::*;
 /// words, *"the worst possible time to be lying"*. One copy, and the audit is auditing what the
 /// boolean ran.
 ///
-/// **And it puts every stage behind one `Result`, and makes the class's stopper last.** The stopper
-/// is the fact read off the faces `emit_faces` produced — a face bounded along an oblique section,
-/// an elliptical edge the kernel does not build — so what fails in here fails before the fact is
-/// known and keeps its own name unless another class's stopper covers it (the caller's fold), and
-/// the stopper rides out in [`Staged`]`::stopper` for the caller's socket, where every later stage
-/// yields to it (`crate::yield_to`).
+/// **And it puts every stage behind one `Result`.**
 ///
 /// **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a
 /// `Result`; this one returns its product outright, and what follows it only reads its faces (the
-/// along-the-axis check and the stopper) — so a probe of the socket's interception cannot be
-/// planted from outside by failing this stage.
+/// along-the-axis check).
 pub(super) fn per_class(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -40,35 +34,24 @@ pub(super) fn per_class(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
-    // **A face bounded along a section the class draws.** Two readings, by the section's kind.
-    // Along the axis (`Silence::Sectioned`, a class with no world statement): the gate proved every
-    // face on the class apart from the lateral boxes, so a face bounded along one of those rulings
-    // would have no lateral partner — the stages disagree. Oblique to it (`CylRecord::Sections`):
-    // the class's faces may reach the lateral, and a face bounded along the ellipse is a result face
-    // with an elliptical edge, a curve the kernel does not build — the coverage ends here, and the
-    // fact is made into this class's stopper (`ObliqueCylinderCut`), which the caller's socket
-    // raises at the assembly's end over whatever fails between. The section's labels still go to
-    // the lateral's chart, whose line it is. Checked here, where the faces are; every bound is
-    // read, a whole circle included, which the polygon rings leave out.
+    // **A face bounded along a ruling of a section the class draws along the axis**
+    // (`Silence::Sectioned`, a class with no world statement): the gate proved every face on the
+    // class apart from the lateral boxes, so such a face would have no lateral partner — the stages
+    // disagree. Checked here, where the faces are. (A section oblique to the axis is a line the
+    // class draws like any other; a face bounded along it carries an elliptical edge.)
     use crate::combinatorics::Wall;
-    use crate::draft::Bound;
     let along = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections_along(wc));
-    let oblique = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc));
-    let any_bound = |hit: &dyn Fn(&Bound) -> bool| {
-        faces
-            .iter()
-            .any(|f| std::iter::once(&f.outer).chain(&f.inner).any(hit))
-    };
-    let any_wall =
-        |b: &Bound, hit: &dyn Fn(&Wall) -> bool| b.ring().is_some_and(|r| r.walls.iter().any(hit));
-    if any_bound(&|b| any_wall(b, &|w| matches!(*w, Wall::Ruling { cyl, .. } if along(cyl)))) {
+    if faces.iter().any(|f| {
+        std::iter::once(&f.outer).chain(&f.inner).any(|b| {
+            b.ring().is_some_and(|r| {
+                r.walls
+                    .iter()
+                    .any(|w| matches!(*w, Wall::Ruling { cyl, .. } if along(cyl)))
+            })
+        })
+    }) {
         return Err(reject(RejectReason::CylinderStagesDisagree));
     }
-    let stopper = any_bound(&|b| match b {
-        Bound::Circle { cyl } => oblique(*cyl),
-        _ => any_wall(b, &|w| matches!(*w, Wall::Arc { cyl, .. } if oblique(cyl))),
-    })
-    .then(|| reject(RejectReason::ObliqueCylinderCut));
     // The cylinder chart's **vertical** lines, read off the pieces this class already made. Where
     // a ruling ends on the chart is the chart's to read, off the ends' names (`cyl_chart::chart_of`).
     let ruling_extents: Vec<(usize, RulingExtent)> = edges
@@ -169,7 +152,6 @@ pub(super) fn per_class(
         })
         .collect();
     Ok(Staged {
-        stopper,
         #[cfg(test)]
         cells,
         #[cfg(test)]

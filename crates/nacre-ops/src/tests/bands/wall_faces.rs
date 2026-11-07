@@ -696,16 +696,14 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     );
 }
 
-/// **A pinch behind a stopper is the stopper's** — the notch of
+/// **A pinch under a slanted top is a pinch** — the notch of
 /// [`a_boss_tangent_in_a_notch_pinches_the_block_it_joins`] with the block's top slanted
-/// (`z = 2 + x/10`, over `z ∈ [2, 2.6]`): the boss crosses that top, so the result would carry an
-/// elliptical edge and the slanted class's stopper refuses it (`ObliqueCylinderCut`); the pinch
-/// the tangency verdict finds behind it yields to the stopper like every stage after it, recorded
-/// as covered. With the top level the pinch is the answer.
+/// (`z = 2 + x/10`, over `z ∈ [2, 2.6]`): the boss crosses that top, so the result carries an
+/// elliptical edge, and the tangency verdict finds the same pinch the level top has — the answer
+/// is `SelfTouchingResult` either way up.
 #[test]
-fn a_pinch_behind_the_stopper_yields_to_it() {
-    use crate::error::stopper_probe::COVERED;
-    crate::ledger::owned(|| {
+fn a_pinch_under_a_slanted_top_is_a_pinch() {
+    {
         for slanted in [true, false] {
             let mut m = Model::new();
             let outer = if slanted {
@@ -742,25 +740,19 @@ fn a_pinch_behind_the_stopper_yields_to_it() {
                 3.5,
             )
             .solid;
-            let c0 = COVERED.len();
             let err = crate::boolean(&mut m, BoolKind::Fuse, block, boss).expect_err("refused");
-            let want = if slanted {
-                RejectReason::ObliqueCylinderCut
-            } else {
-                RejectReason::SelfTouchingResult
-            };
             assert!(
-                matches!(err, BoolError::Rejected { reason, .. } if reason == want),
+                matches!(
+                    err,
+                    BoolError::Rejected {
+                        reason: RejectReason::SelfTouchingResult,
+                        ..
+                    }
+                ),
                 "slanted = {slanted}: {err:?}"
             );
-            let covered = COVERED.mine_since(c0);
-            assert_eq!(
-                covered.contains(&RejectReason::SelfTouchingResult),
-                slanted,
-                "slanted = {slanted}: the stopper covered {covered:?}"
-            );
         }
-    });
+    }
 }
 
 /// **A tangent wall through a window in the lateral does not touch it.** The slab's face

@@ -382,7 +382,7 @@ fn a_nodes_interval_holds_it_for_either_kind_of_name() {
         plane_ix,
         cyls,
     );
-    let (faces, _, _) = crate::arrangement::trace_result_faces_full_for_test(
+    let (faces, _) = crate::arrangement::trace_result_faces_full_for_test(
         &m,
         crate::BoolKind::Fuse,
         plate,

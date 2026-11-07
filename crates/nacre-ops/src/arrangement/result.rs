@@ -15,7 +15,7 @@ pub(crate) fn trace_result_faces_full_for_test(
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     trace_in: &combinatorics::TraceInput,
-) -> Result<(Vec<LocalFace>, Curved, Option<BoolError>), BoolError> {
+) -> Result<(Vec<LocalFace>, Curved), BoolError> {
     trace_result_faces(
         model,
         kind,
@@ -203,10 +203,9 @@ pub(crate) struct Curved {
 /// every producer's figure does.
 ///
 /// A named function rather than a block for the same reason `per_class` is one: the arc fence
-/// calls it on the very faces production feeds it. A stopper intercepts the whole stretch this runs
-/// in, so in a refused population a failure *here* never reaches the caller under its own name —
-/// which means no reject name can testify that the pierce arm works, and only a direct second
-/// consumer can (measured: with the arm disabled wholesale, every boolean-level fence stays green).
+/// calls it on the very faces production feeds it — a direct second consumer, which is what
+/// testifies that the pierce arm works (measured: with the arm disabled wholesale, every
+/// boolean-level fence stays green).
 pub(crate) fn seam_table(
     model: &Model,
     faces: &[LocalFace],
@@ -400,7 +399,7 @@ pub(super) fn trace_result_faces(
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
     trace_in: &combinatorics::TraceInput,
-) -> Result<(Vec<LocalFace>, Curved, Option<BoolError>), BoolError> {
+) -> Result<(Vec<LocalFace>, Curved), BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
@@ -443,7 +442,7 @@ pub(super) fn trace_result_faces(
         // what leaves circles on the ⊥ classes), and a lateral surface *is* not a plane class —
         // asking which one it is has no answer, which is exactly what `ClassIx::plane`'s panic
         // says. Filtering here is the upstream filter that panic is a detector for; without it
-        // the first cylinder boolean past the stopper aborts the kernel.
+        // the first cylinder boolean aborts the kernel.
         let mut c: Vec<usize> = trace_in
             .faces
             .iter()
@@ -521,9 +520,8 @@ pub(super) fn trace_result_faces(
     // Pass B is independent per class — it reads `splits[wc]` and the judging context, and
     // returns owned faces — so it is evaluated across cores. `try_map_range` is what keeps
     // that from being observable: the faces are consumed in class order, so the handles
-    // `assemble_fuse_cut` mints are the ones a single thread would have minted. Every class is
-    // evaluated, in both builds, and the refusal is chosen in class order below (a stopper first,
-    // then the lowest index), not by whichever worker got there first.
+    // `assemble_fuse_cut` mints are the ones a single thread would have minted, and the refusal is
+    // the lowest-index class's in both builds, not whichever worker got there first.
     // The vertex→class map of each operand, built once and only if some class needs it.
     let vc_a = plans
         .contains(&crate::reuse::ClassPlan::PassThrough(SolidSide::A))
@@ -537,14 +535,13 @@ pub(super) fn trace_result_faces(
         let (split, circles, rulings) = &splits[k];
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
-        // off), the cut rims, and the class's stopper (see the socket note below).
+        // off), the cut rims and the rulings' extents.
         type ClassOut = (
             Vec<LocalFace>,
             Vec<(usize, Label)>,
             Vec<(usize, ArcLabel)>,
             Vec<(usize, CutRim)>,
             Vec<(usize, RulingExtent)>,
-            Option<BoolError>,
         );
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
@@ -556,27 +553,13 @@ pub(super) fn trace_result_faces(
                 C_SPLIT,
                 ClassEdges::of(jd, cyls, faces, wc, split, circles, rulings, &aliases)
             )?;
-            // **The stopper socket.** A class's stopper is made in `per_class`, where the fact it
-            // states is — a face of the class bounded along an oblique section, an elliptical edge
-            // the kernel does not build — and raised inside `reconstruct` at the assembly's very
-            // end; every stage between hands its failure to [`crate::yield_to`], so the refused
-            // population carries one name out however far the pipeline gets — another class's
-            // failure included (the fold below). A failure where no class has made the fact — no
-            // stopper anywhere, its split or its stages before the faces failing — keeps its own
-            // name: the fact is not known.
-            //
-            // `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
-            // *with* the boolean, so it stays green when both slide to the same wrong name; asking
-            // it about interception measures the proposition next door.
-            let mut s = per_class(jd, cyls, kind, wc, &edges)?;
-            let deferred = s.stopper.take();
+            let s = per_class(jd, cyls, kind, wc, &edges)?;
             Ok((
                 s.faces,
                 s.disk_labels,
                 s.arc_labels,
                 edges.cut_rims.clone(),
                 s.ruling_extents,
-                deferred,
             ))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
@@ -601,44 +584,20 @@ pub(super) fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => Ok((f, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None)),
+            Some(f) => Ok((f, Vec::new(), Vec::new(), Vec::new(), Vec::new())),
             None => arrange(wc),
         }
     };
-    // Every class's outcome is kept, its failure included (`Infallible`: the map itself cannot
-    // fail), so the fold below can let a later class's stopper answer for an earlier class's
-    // failure.
-    let per_class = crate::par::try_map_range(splits.len(), |k| {
-        Ok::<_, core::convert::Infallible>(one_class(k))
-    })
-    .unwrap_or_else(|never| match never {});
-    // **The stopper answers for every class.** The lowest-index class with a stopper, else the
-    // lowest-index failure — read in `work` order, so the parallel and serial builds choose alike.
-    // Every failing class yields to the stopper, so each covered failure is the stopper's to
-    // answer for, not only the first.
-    if let Some(stopper) = per_class
-        .iter()
-        .find_map(|r| r.as_ref().ok().and_then(|out| out.5))
-        && per_class.iter().any(Result::is_err)
-    {
-        return Err(per_class
-            .into_iter()
-            .filter_map(Result::err)
-            .fold(stopper, |d, e| crate::yield_to(Some(d), e)));
-    }
-    let per_class = per_class
-        .into_iter()
-        .collect::<Result<Vec<_>, BoolError>>()?;
+    // The lowest-index failure, read in `work` order, so the parallel and serial builds choose
+    // alike.
+    let per_class = crate::par::try_map_range(splits.len(), one_class)?;
     let mut curved = Curved {
         disk_labels: HashMap::new(),
         arc_labels: HashMap::new(),
         split_rims: HashMap::new(),
         rulings: HashMap::new(),
     };
-    // The first class's stopper, in `work` order — the map above may run its classes in parallel,
-    // but this fold reads the vec in order, so the choice is deterministic.
-    let mut deferred: Option<BoolError> = None;
-    for (k, (faces, labels, arcs, rims, ruls, d)) in per_class.into_iter().enumerate() {
+    for (k, (faces, labels, arcs, rims, ruls)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
         // `work[k]` is the translation from this arrangement's k-th class to the global plane
         // class index — the curved maps are keyed in the global space the assembly speaks.
@@ -661,7 +620,6 @@ pub(super) fn trace_result_faces(
             r.wall = work[k];
             curved.rulings.entry(cyl).or_default().push(r);
         }
-        deferred = deferred.or(d);
     }
-    Ok((local_faces, curved, deferred))
+    Ok((local_faces, curved))
 }
