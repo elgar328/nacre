@@ -287,8 +287,10 @@ impl Model {
     ///   (`axis direction`, `ref_dir`, `radius`) stored bit for bit; every rim's cache comes from
     ///   here (`push_edge` fills it by this derivation), so tessellation's `θ` parameterization is
     ///   the cylinder's. The endpoints are not read: a full rim is a closed edge (`[v, v]`), which
-    ///   is not a degeneracy. Oblique — an ellipse — is [`EdgeDecline::Oblique`], and a pair whose
-    ///   truths cannot be placed in one frame is [`EdgeDecline::Unstated`].
+    ///   is not a degeneracy. A plane oblique to the axis gives the same circle tilted onto it
+    ///   ([`nacre_geom::Ellipse::tilted_into`], the plane cache's normal) — an ellipse at the
+    ///   cylinder's own θ — and numbers that cannot say the tilt are [`EdgeDecline::Degenerate`]; a
+    ///   pair whose truths cannot be placed in one frame is [`EdgeDecline::Unstated`].
     ///
     ///   **The kind is the truth's, so the «discard and regenerate» warrant holds for it
     ///   too**: a regenerated cache is the same kind of curve, and every reader that dispatches
@@ -356,43 +358,45 @@ impl Model {
                     SurfaceCache::Plane { .. } => (surfaces[0], surfaces[1]),
                     SurfaceCache::Cylinder { .. } => (surfaces[1], surfaces[0]),
                 };
-                match self.plane_cylinder_relation(plane, cyl) {
-                    None => Err(EdgeDecline::Unstated),
-                    Some(nacre_exact::AxisRelation::Oblique) => Err(EdgeDecline::Oblique),
-                    Some(nacre_exact::AxisRelation::Along) => {
-                        line(Some(c.axis().direction().as_array()))
-                    }
-                    Some(nacre_exact::AxisRelation::Across) => {
-                        let axis = c.axis();
-                        // The centre is the truth's where the truth is stated in the world. A
-                        // cylinder on a chain that does not fold (a frame node, a turn off the
-                        // quarters) has no rational centre here — its chain needs replaying, which
-                        // this crate cannot do — so the pusher is asked; only where nobody answers
-                        // does the caches' meet stand.
-                        let given_centre = || {
-                            self.kept_given(surfaces)
-                                .centre
-                                .or_else(|| given(self).centre)
-                                .map(Point3::from_array)
-                        };
-                        let center =
-                            match self.world_rim_centre_f64(cyl, plane).or_else(given_centre) {
-                                Some(truth) => truth,
-                                None => nacre_geom::intersect::line_plane(&axis, p)
-                                    .ok_or(EdgeDecline::Degenerate)?,
-                            };
-                        // The frame is the cylinder cache's, bit for bit — a rim has no frame of
-                        // its own, so it is as correctly rounded as that cache is, never less.
-                        Ok(Curve::Ellipse(
-                            Ellipse::from_unit_frame(
-                                center,
-                                axis.direction(),
-                                c.ref_dir(),
-                                c.radius(),
-                            )
+                let relation = self.plane_cylinder_relation(plane, cyl);
+                if let Some(nacre_exact::AxisRelation::Along) = relation {
+                    return line(Some(c.axis().direction().as_array()));
+                }
+                let Some(across_or_oblique) = relation else {
+                    return Err(EdgeDecline::Unstated);
+                };
+                let axis = c.axis();
+                // The centre — where the axis meets the plane — is the truth's where the truth is
+                // stated in the world. A cylinder on a chain that does not fold (a frame node, a
+                // turn off the quarters) has no rational centre here — its chain needs replaying,
+                // which this crate cannot do — so the pusher is asked; only where nobody answers
+                // does the caches' meet stand.
+                let given_centre = || {
+                    self.kept_given(surfaces)
+                        .centre
+                        .or_else(|| given(self).centre)
+                        .map(Point3::from_array)
+                };
+                let center = match self.world_rim_centre_f64(cyl, plane).or_else(given_centre) {
+                    Some(truth) => truth,
+                    None => nacre_geom::intersect::line_plane(&axis, p)
+                        .ok_or(EdgeDecline::Degenerate)?,
+                };
+                // The frame is the cylinder cache's, bit for bit — a rim has no frame of its own,
+                // so it is as correctly rounded as that cache is, never less.
+                let circle =
+                    Ellipse::from_unit_frame(center, axis.direction(), c.ref_dir(), c.radius())
+                        .ok_or(EdgeDecline::Degenerate)?;
+                match across_or_oblique {
+                    nacre_exact::AxisRelation::Across => Ok(Curve::Ellipse(circle)),
+                    // `Oblique` (`Along` returned above): the plane tilts the circle onto itself, the plane cache's
+                    // normal giving the tilt; numbers that cannot say the tilt (one along the
+                    // axis, or none at all) are a degenerate curve, not a circle.
+                    _ => Ok(Curve::Ellipse(
+                        circle
+                            .tilted_into(p.normal())
                             .ok_or(EdgeDecline::Degenerate)?,
-                        ))
-                    }
+                    )),
                 }
             }
             // Two cylinders whose axes are parallel meet on rulings — straight lines along the

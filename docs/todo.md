@@ -223,8 +223,7 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - **비스듬한 원통의 캡** — 캡 평면은 제 원통의 원과 다른 원통의 단면을 함께 들어 게이트가 거절한다(`carries_unnested` — 원판
   둘의 중첩은 축이 평행할 때만 답한다; `wall_faces.rs` 의 `an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes`,
   z = 2.4).
-- **기하·위상** — `nacre_geom::Curve` 에 타원이 없고 `derive_edge_curve` 가 `EdgeDecline::Oblique` 를 낸다(마개가 덮는 실패).
-  이 단이 함께 정할 것: 호 간선의 열쇠가 평면을 드는 것(`EdgeKey::Arc` — 캡의 원과 단면이 끝을 나눈다)의 첫 잠금 —
+- **기하·위상** — 마개가 덮는 실패는 이제 없다(`derive_edge_curve` 가 비스듬한 평면에서 타원을 낸다). 이 단이 함께 정할 것: 호 간선의 열쇠가 평면을 드는 것(`EdgeKey::Arc` — 캡의 원과 단면이 끝을 나눈다)의 첫 잠금 —
   오늘은 같은 결과의 다른 타원 간선이 먼저 실패해 심기가 물지 않는다; 룰링이 단면에서 끝나는 정거장의 높이(`pierce_axis_param`
   은 축을 가로지르는 평면이 없는 이름에 `None` — `rulings.rs` 의 `body_side`·`per_class.rs`·`in_faces.rs`); 비스듬한 절단이 옆면의
   두 림을 한 점에서 맞닿게 할 때의 철자 — 두 림 루프가 꼭짓점을 나누는가, 한 루프인가(한 루프는 감김 0 이라 tess 의 두 림 전제와

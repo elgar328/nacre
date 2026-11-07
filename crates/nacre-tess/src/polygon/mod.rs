@@ -187,11 +187,16 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// come back [`TessError::SelfTouchingBoundary`]: a bridge beside any other revisit (a splice moves
 /// the positions the others were given), a point passed three times (two pairs sharing a visit —
 /// one symbolic pair per point cannot order three), and what [`pinch`] refuses.
+///
+/// **`within` — the budget, asked of a chart edge.** The quality pass flips only within it and
+/// moves an edge outside it where it can ([`delaunay::refine`]); a bare polygon with no surface
+/// under it has no budget to leave and passes `&|_, _| true`.
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
     candidates: &[P2],
     revisits: &[Revisit],
+    within: &dyn Fn(P2, P2) -> bool,
 ) -> Result<Triangulated, TessError> {
     if ring_orientation(rings[0], uv) != 1 {
         return Err(TessError::DegenerateRing);
@@ -232,12 +237,12 @@ pub(crate) fn triangulate_uv(
             })
         })
         .collect();
-    delaunay::refine(uv, &mut out, &constrained);
+    delaunay::refine(uv, &mut out, &constrained, within);
     if !candidates.is_empty() {
         insert_interior(uv, &mut out, &constrained, candidates);
         // The insertions are what make the flip pass able to do anything here: a long edge stays
         // Delaunay while nothing sits inside its circumcircle, and these points are what sit there.
-        delaunay::refine(uv, &mut out, &constrained);
+        delaunay::refine(uv, &mut out, &constrained, within);
     }
     Ok((out, rings_used))
 }

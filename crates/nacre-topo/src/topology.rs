@@ -47,8 +47,6 @@ pub struct Edge {
 pub enum EdgeDecline {
     /// A straight edge (two planes, or a ruling) whose endpoints are one point: zero length.
     Coincident,
-    /// A plane oblique to a cylinder's axis — the section is an ellipse, which no edge carries.
-    Oblique,
     /// Two carriers with a cylinder among them whose truths cannot be placed in one frame, so how
     /// they stand to each other is not stated.
     Unstated,
@@ -56,7 +54,8 @@ pub enum EdgeDecline {
     /// stated twice, a surface separated from itself; no edge carries either. Two cylinders on
     /// parallel axes meet on a ruling, which is a line.
     TwoCylinders,
-    /// The truth states a circle, but the cache could not build it (no centre, no radius).
+    /// The truth states a rim, but the cache could not build its curve (no centre, no radius, or
+    /// an oblique plane whose numbers cannot say its tilt).
     Degenerate,
 }
 
@@ -64,7 +63,6 @@ impl std::fmt::Display for EdgeDecline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Coincident => "the straight edge's endpoints are one point",
-            Self::Oblique => "the plane is oblique to the cylinder's axis",
             Self::Unstated => "the edge's carriers cannot be placed in one frame",
             Self::TwoCylinders => {
                 "the edge's carriers are one cylinder twice, or two that do not meet on a line"

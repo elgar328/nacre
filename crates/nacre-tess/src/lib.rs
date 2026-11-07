@@ -1940,7 +1940,12 @@ fn triangulate_face(
         // compile error here rather than a silent "no bridges".
         SurfaceCache::Cylinder { .. } => Vec::new(),
     };
-    let (tris, rings_used) = polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits)?;
+    let geom = surface.to_geom();
+    let within = |p: polygon::P2, q: polygon::P2| {
+        edge_in_budget(cfg, &geom, map.invert(p).1, map.invert(q).1)
+    };
+    let (tris, rings_used) =
+        polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits, &within)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
     // first minted vertices. Everything before it was already a shared boundary vertex.
     for &p in &uv[boundary..] {
@@ -1953,7 +1958,7 @@ fn triangulate_face(
             },
         }));
     }
-    within_budget(t, cfg, &surface.to_geom(), &handles, &rings_used, &tris)?;
+    within_budget(t, cfg, &geom, &handles, &rings_used, &tris)?;
     for tri in tris {
         push_tri(t, fh, tri.map(|i| handles[i]));
     }
@@ -2033,12 +2038,6 @@ fn within_budget(
             })
         })
         .collect();
-    // Today's populations sit **exactly** on the angular budget — an interior diagonal spanning one
-    // sample turns by precisely the sampler's own step — so a bare `>` would be decided by the last
-    // bit of two differently-rounded routes to the same number.
-    let slack = 1.0 + 1e-9;
-    let max_turn = cfg.max_angle_deg.to_radians() * slack;
-    let max_sag = cfg.tol * slack;
     for tri in tris {
         for k in 0..3 {
             let (i, j) = (tri[k], tri[(k + 1) % 3]);
@@ -2049,18 +2048,29 @@ fn within_budget(
                 t.vertices.get(handles[i]).pos,
                 t.vertices.get(handles[j]).pos,
             );
-            if surface.distance(a + (b - a) * 0.5) > max_sag {
-                return Err(TessError::OverBudget);
-            }
-            let (Some(na), Some(nb)) = (surface.normal_at(a), surface.normal_at(b)) else {
-                continue; // a normal with no name (a point on the axis) is not a budget failure
-            };
-            if na.dot(nb).clamp(-1.0, 1.0).acos() > max_turn {
+            if !edge_in_budget(cfg, surface, a, b) {
                 return Err(TessError::OverBudget);
             }
         }
     }
     Ok(())
+}
+
+/// **Whether the edge `a — b` keeps both budgets on `surface`** — the one spelling of the question
+/// [`within_budget`] asks of every interior edge and the quality pass asks before it flips one
+/// (`polygon::triangulate_uv`'s `within`).
+fn edge_in_budget(cfg: &TessConfig, surface: &Surface, a: Point3, b: Point3) -> bool {
+    // Today's populations sit **exactly** on the angular budget — an interior diagonal spanning one
+    // sample turns by precisely the sampler's own step — so a bare `>` would be decided by the last
+    // bit of two differently-rounded routes to the same number.
+    let slack = 1.0 + 1e-9;
+    if surface.distance(a + (b - a) * 0.5) > cfg.tol * slack {
+        return false;
+    }
+    let (Some(na), Some(nb)) = (surface.normal_at(a), surface.normal_at(b)) else {
+        return true; // a normal with no name (a point on the axis) is not a budget failure
+    };
+    na.dot(nb).clamp(-1.0, 1.0).acos() <= cfg.max_angle_deg.to_radians() * slack
 }
 
 #[cfg(test)]

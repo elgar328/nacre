@@ -534,7 +534,6 @@ fn every_error_line_follows_the_std_convention() {
     .chain(
         [
             EdgeDecline::Coincident,
-            EdgeDecline::Oblique,
             EdgeDecline::Unstated,
             EdgeDecline::TwoCylinders,
             EdgeDecline::Degenerate,

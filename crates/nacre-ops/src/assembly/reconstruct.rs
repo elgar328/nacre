@@ -698,14 +698,12 @@ pub(crate) fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
 
 /// **What an edge the assembly asked for and could not have means here** — one reject per
 /// [`nacre_topo::EdgeDecline`] cause. Every edge the assembly pushes joins two distinct nodes on
-/// classes the gate admitted. An oblique edge is the elliptical edge of a result a class's stopper
-/// already refuses (`ObliqueCylinderCut`), so its name here is what the stopper covers; every other
-/// cause is a broken promise, named for the promise.
+/// classes the gate admitted, so every cause is a broken promise, named for the promise.
 fn edge_refused(d: nacre_topo::EdgeDecline) -> crate::BoolError {
     use nacre_topo::EdgeDecline::*;
     reject(match d {
         Coincident => RejectReason::ZeroLengthEdge,
-        Oblique | Unstated => RejectReason::ObliqueCircleClass,
+        Unstated => RejectReason::ObliqueCircleClass,
         TwoCylinders | Degenerate => RejectReason::EdgeCurveUnderived,
     })
 }

@@ -1369,8 +1369,8 @@ mod chain_folds {
 /// **An edge's kind is the truth's, not the cache's tolerance.** Two planes a hair off the
 /// relations a plane can have with a `+z` cylinder — one tilted `1e-10` from ⊥ the axis, one
 /// tilted `1e-10` from ∥ it — are both **oblique** in their exact statements: the section is an
-/// ellipse, which no edge here can carry. Read off `f64` normals under a tolerance, the first
-/// would pass for a circle and the second for a ruling line.
+/// ellipse, and the edge carries one, tilted — neither a circle nor a ruling. Read off `f64` normals
+/// under a tolerance, the first would pass for a circle and the second for a ruling line.
 #[test]
 fn a_plane_a_hair_off_either_relation_is_oblique() {
     let mut m = Model::new();
@@ -1427,10 +1427,10 @@ fn a_plane_a_hair_off_either_relation_is_oblique() {
                 coord: Point3::from_array([1.0, 0.0, 0.0]),
             },
         );
-        assert_eq!(
-            m.derive_edge_curve([plane, cyl], [v, v], |_| crate::EdgeGiven::NONE),
-            Err(EdgeDecline::Oblique),
-            "{name}: an oblique section is no circle and no ruling"
+        let curve = m.derive_edge_curve([plane, cyl], [v, v], |_| crate::EdgeGiven::NONE);
+        assert!(
+            matches!(curve, Ok(nacre_geom::Curve::Ellipse(e)) if !e.is_circle()),
+            "{name}: an oblique section is an ellipse, no circle and no ruling: {curve:?}"
         );
     }
 }

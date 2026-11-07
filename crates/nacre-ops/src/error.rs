@@ -416,10 +416,8 @@ pub enum RejectReason {
     // not parallel nested as if the cylinders were.
     //
     // The result assembly raises it too, at an edge: a rim, an arc or a ruling whose plane and
-    // cylinder the truth calls oblique (`nacre_topo::EdgeDecline::Oblique`) or cannot place in one
-    // frame (`nacre_topo::EdgeDecline::Unstated`). The first is an elliptical edge, which reaches
-    // the assembly only in a result a class's stopper already refuses as `Self::ObliqueCylinderCut`
-    // (`crate::yield_to` covers it); the second the gate admits not at all — a broken promise.
+    // cylinder the truth cannot place in one frame (`nacre_topo::EdgeDecline::Unstated`), which the
+    // gate admits not at all — a broken promise.
     /// **A cylinder's closed trace sits on a class the gate did not record it on** — a section of a
     /// class oblique to its axis that is no recorded section, or the traces of two cylinders whose
     /// axes are not parallel on one class — so a rule that reads it as a circle, or nests it

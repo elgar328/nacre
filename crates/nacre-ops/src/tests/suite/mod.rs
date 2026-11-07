@@ -1005,16 +1005,17 @@ enum Want {
     Refused(RejectReason),
 }
 
-/// **Refused as an oblique cut at the curve, and only there** — every kind in both orders is
-/// refused `ObliqueCylinderCut`, and in each the stopper covered one failure kind, the result
-/// edge on the section whose curve does not derive (`ObliqueCircleClass`, raised in the assembly).
+/// **Refused by the stopper alone** — every kind in both orders is refused `ObliqueCylinderCut`,
+/// and what the stopper covered is at most `gaps`: the failures, each with the file it is raised
+/// in, that this family meets past the stopper today (none, where the pipeline runs to the end).
 /// So the arrangement and the chart built the faces bounded along the section and the assembly
-/// got as far as the edge: a wrong label or a chart that disagrees would be covered under its own
-/// name, in this class or another, and this says which. What it cannot see is a failure the edge's
-/// curve shadows — the arc key merging two curves fails no sooner than another elliptical edge of
-/// the same result, so that key's first lock is the stage that builds ellipses. Run in the test's
-/// own pool so the probe rows are its own (`crate::ledger`).
-fn refused_at_the_ellipse(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>) + Sync) {
+/// built the result's elliptical edges: a wrong label or a chart that disagrees would be covered
+/// under its own name, in this class or another, and this says which. Run in the test's own pool
+/// so the probe rows are its own (`crate::ledger`).
+fn refused_at_the_ellipse(
+    gaps: &[(RejectReason, &str)],
+    build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>) + Sync,
+) {
     use crate::error::stopper_probe::{COVERED, RAISED};
     crate::ledger::owned(|| {
         for swap in [false, true] {
@@ -1032,22 +1033,17 @@ fn refused_at_the_ellipse(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<S
                 }
                 let covered = COVERED.mine_since(c0);
                 assert!(
-                    !covered.is_empty()
-                        && covered
-                            .iter()
-                            .all(|&r| r == RejectReason::ObliqueCircleClass),
+                    covered.iter().all(|r| gaps.iter().any(|(g, _)| g == r)),
                     "{kind:?} swap={swap}: the stopper covered {covered:?}"
                 );
-                let sites: Vec<&str> = RAISED
-                    .mine_since(r0)
-                    .into_iter()
-                    .filter(|&(r, _)| r == RejectReason::ObliqueCircleClass)
-                    .map(|(_, f)| f)
-                    .collect();
-                assert!(
-                    sites.iter().all(|f| f.ends_with("assembly/reconstruct.rs")),
-                    "{kind:?} swap={swap}: the curve's refusal raised at {sites:?}"
-                );
+                for (r, f) in RAISED.mine_since(r0) {
+                    if let Some((_, at)) = gaps.iter().find(|(g, _)| *g == r) {
+                        assert!(
+                            f.ends_with(at),
+                            "{kind:?} swap={swap}: {r:?} raised at {f}, not {at}"
+                        );
+                    }
+                }
             }
         }
     });
@@ -1161,5 +1157,6 @@ mod pierce_corners;
 mod plane_sense;
 mod rotation;
 mod sketch_models;
+mod truncated_cylinder;
 mod unstated_classes;
 mod user_models;

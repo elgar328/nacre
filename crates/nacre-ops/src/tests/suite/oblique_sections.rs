@@ -755,8 +755,9 @@ fn a_gusset_whose_plane_sections_two_crossing_bores_is_refused() {
 
 /// A gusset straddling the bore — `x ∈ [9.5, 10.5]`, corners `(6, 4)`, `(14, 4)`, `(14, 6)` on the
 /// same plane: its slanted face crosses the lateral, so the result has an edge on the ellipse. The
-/// gate records the section; the arrangement and the chart build the faces bounded along it, and
-/// the result is refused at that edge's curve ([`refused_at_the_ellipse`]).
+/// gate records the section; the arrangement, the chart and the assembly build the faces bounded
+/// along it and the elliptical edge, and the stopper alone refuses the result
+/// ([`refused_at_the_ellipse`]).
 #[test]
 fn a_gusset_across_the_bore_is_refused_at_its_ellipse() {
     let build = |m: &mut Model| {
@@ -766,15 +767,15 @@ fn a_gusset_across_the_bore_is_refused_at_its_ellipse() {
         )
     };
     gate(build, Ok(1));
-    refused_at_the_ellipse(build);
+    refused_at_the_ellipse(&[], build);
 }
 
 /// The bore cut by a slot through it (walls `x = 9` and `x = 11`, `y ∈ [7, 13]`), and the same
 /// gusset at `x ∈ [10.5, 11.5]`: the slot's wall `x = 11` cuts the lateral in a ruling that ends
-/// on the section, and the result is refused at the ellipse's curve, not on the way to it.
+/// on the section, and the stopper alone refuses the result — nothing on the way fails.
 #[test]
 fn a_gusset_across_a_slotted_bore_is_refused_at_its_ellipse() {
-    refused_at_the_ellipse(|m: &mut Model| {
+    refused_at_the_ellipse(&[], |m: &mut Model| {
         let p = plate_with_bore(m);
         let slot = crate::fixtures::cuboid(m, [9.0, 7.0, -1.0], [11.0, 13.0, 11.0]);
         let a = op(m, BoolKind::Cut, p, slot);

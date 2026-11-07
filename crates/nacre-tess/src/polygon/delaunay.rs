@@ -48,12 +48,27 @@ use super::P2;
 use nacre_predicates::{incircle, orient2d};
 use std::collections::{HashMap, HashSet};
 
-/// Flip every free edge that fails the incircle test, until none does.
+/// Flip every free edge that fails the incircle test, until none does — **within the budget**.
 ///
 /// `constrained` holds the ring edges as `(min, max)` pairs — the polygon's boundary
 /// and its holes' — and they are the edges a flip may not take. Triangles must arrive
 /// counter-clockwise and leave the same way.
-pub(super) fn refine(uv: &[P2], tris: &mut [[usize; 3]], constrained: &HashSet<(usize, usize)>) {
+///
+/// `within` says whether an edge between two chart points keeps the mesh's budget on its surface
+/// (the caller's — this file knows only the chart). The budget is the mesh's contract and Delaunay
+/// its taste, so the contract decides: a flip whose new diagonal would leave the budget is not
+/// taken, and a diagonal outside it is flipped whenever its replacement is inside, incircle or not.
+/// The count of edges outside the budget therefore never grows and falls with every such flip, and
+/// between those the Lawson flips terminate as they always do. On a lateral the two disagree where
+/// a band is tall and its rims are not level — an ellipse's rim beside a circle's: the sweep zips
+/// the two rims sample by sample, and the circumcircles of so tall a strip invite a diagonal that
+/// skips a sample (measured: `4°` on a rod cut obliquely, the budget `2°`).
+pub(super) fn refine(
+    uv: &[P2],
+    tris: &mut [[usize; 3]],
+    constrained: &HashSet<(usize, usize)>,
+    within: &dyn Fn(P2, P2) -> bool,
+) {
     // Which triangle contains each *directed* edge. In a triangulation every directed
     // edge belongs to exactly one triangle, so this is a function — and the neighbour
     // across `a → b` is simply whoever owns `b → a`.
@@ -102,8 +117,12 @@ pub(super) fn refine(uv: &[P2], tris: &mut [[usize; 3]], constrained: &HashSet<(
             continue;
         }
         // `(a, b, c)` is counter-clockwise because `t1` is, so this asks exactly what
-        // the Delaunay condition asks: is the opposite vertex inside the circumcircle?
-        if incircle(uv[a], uv[b], uv[c], uv[d]) <= 0.0 {
+        // the Delaunay condition asks: is the opposite vertex inside the circumcircle? An edge
+        // outside the budget is moved whatever the answer.
+        if within(uv[a], uv[b]) && incircle(uv[a], uv[b], uv[c], uv[d]) <= 0.0 {
+            continue;
+        }
+        if !within(uv[c], uv[d]) {
             continue;
         }
 
@@ -174,7 +193,7 @@ mod tests {
 
         let before = min_angle(&uv, &tris);
         let count = tris.len();
-        refine(&uv, &mut tris, &constrained);
+        refine(&uv, &mut tris, &constrained, &|_, _| true);
         let after = min_angle(&uv, &tris);
 
         assert_eq!(
@@ -232,7 +251,7 @@ mod tests {
         let constrained: HashSet<(usize, usize)> = (0..n)
             .map(|i| (i.min((i + 1) % n), i.max((i + 1) % n)))
             .collect();
-        refine(&uv, &mut tris, &constrained);
+        refine(&uv, &mut tris, &constrained, &|_, _| true);
         assert_eq!(
             tris, before,
             "a flip fired on points the incircle test cannot separate"
@@ -246,7 +265,7 @@ mod tests {
         let mut tris = vec![[0, 1, 2], [0, 2, 3]];
         let constrained: HashSet<(usize, usize)> =
             [(0, 1), (1, 2), (2, 3), (0, 3)].into_iter().collect();
-        refine(&uv, &mut tris, &constrained);
+        refine(&uv, &mut tris, &constrained, &|_, _| true);
         let edges: HashSet<(usize, usize)> = tris
             .iter()
             .flat_map(|t| (0..3).map(move |k| (t[k].min(t[(k + 1) % 3]), t[k].max(t[(k + 1) % 3]))))

@@ -531,22 +531,15 @@ const CORPUS: [Fixture; 14] = [
         name: "cylinder-oblique",
         // A tilted axis against an axis-aligned box: its planes are neither ⊥ nor ∥ to `(0,3,4)` —
         // ellipses. The box's faces bound the sections, so the arrangement refuses where it makes
-        // them (the stopper), and the assembly behind it fails at the elliptical edge's curve —
-        // the failure the stopper covers.
+        // them (the stopper); the assembly behind it builds the elliptical edges and nothing else
+        // fails.
         expect: Some(RejectReason::ObliqueCylinderCut),
         run: cylinder_oblique,
-        raised: &[
-            (
-                "oblique_circle_class",
-                None,
-                "crates/nacre-ops/src/assembly/reconstruct.rs",
-            ),
-            (
-                "oblique_cylinder_cut",
-                None,
-                "crates/nacre-ops/src/arrangement/per_class.rs",
-            ),
-        ],
+        raised: &[(
+            "oblique_cylinder_cut",
+            None,
+            "crates/nacre-ops/src/arrangement/per_class.rs",
+        )],
         surfaced: &[("oblique_cylinder_cut", None)],
     },
     Fixture {
