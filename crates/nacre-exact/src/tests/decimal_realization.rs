@@ -36,18 +36,39 @@ fn a_seam_point_lands_on_the_rim() {
     let r = |n: i128| Rat::from_int(n);
     // centre at origin, e1 = +x (already unit), r² = 25 -> (5, 0, 0) exactly.
     let big = |n: i128| BigRat::from(r(n));
-    let out = seam_point_hp([r(0); 3], [r(1), r(0), r(0)], &big(25), 256).expect("ok");
+    let out = seam_point_hp(
+        [r(0); 3],
+        [r(1), r(0), r(0)],
+        [r(1), r(0), r(0)],
+        &big(25),
+        256,
+    )
+    .expect("ok");
     let got: Vec<_> = out
         .iter()
         .map(|b| round_to_digits(&b.value, b.error, 10).expect("decided"))
         .collect();
     assert_eq!(got, ["5.0000000000", "0.0000000000", "0.0000000000"]);
     // e1 = (1,1,0): the seam is at radius/√2 on each of x and y.
-    let out = seam_point_hp([r(0); 3], [r(1), r(1), r(0)], &big(1), 512).expect("ok");
+    let out = seam_point_hp(
+        [r(0); 3],
+        [r(1), r(1), r(0)],
+        [r(1), r(1), r(0)],
+        &big(1),
+        512,
+    )
+    .expect("ok");
     let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
     assert_eq!(x, "0.70710678118654752440");
     // r² = 2 with e1 = +x: no rational radius exists, and the seam is at √2, realized.
-    let out = seam_point_hp([r(0); 3], [r(1), r(0), r(0)], &big(2), 512).expect("ok");
+    let out = seam_point_hp(
+        [r(0); 3],
+        [r(1), r(0), r(0)],
+        [r(1), r(0), r(0)],
+        &big(2),
+        512,
+    )
+    .expect("ok");
     let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
     assert_eq!(x, "1.41421356237309504880");
     // A wide square: `r = 5.000000000000001e-8` has a square no `Rat` holds, and the seam is
@@ -57,12 +78,34 @@ fn a_seam_point_lands_on_the_rim() {
         wide.checked_mul(wide).is_none(),
         "the fixture's square must leave i128"
     );
-    let out =
-        seam_point_hp([r(0); 3], [r(1), r(0), r(0)], &BigRat::square_of(wide), 256).expect("ok");
+    let out = seam_point_hp(
+        [r(0); 3],
+        [r(1), r(0), r(0)],
+        [r(1), r(0), r(0)],
+        &BigRat::square_of(wide),
+        256,
+    )
+    .expect("ok");
     assert_eq!(
         round_to_digits(&out[0].value, out[0].error, 24).expect("decided"),
         "0.000000050000000000000010"
     );
+    // An oblique rim: the plane `z = x` cuts the axis `+z` at the origin, and `e₁ = +x` carried
+    // along the axis onto it is `(1, 0, 1)` — the point on the generator through `(2, 0, 0)`,
+    // `r² = 4`, is `(2, 0, 2)`, on the plane, not the circle's `(2, 0, 0)` beside it.
+    let out = seam_point_hp(
+        [r(0); 3],
+        [r(1), r(0), r(0)],
+        [r(1), r(0), r(1)],
+        &big(4),
+        256,
+    )
+    .expect("ok");
+    let got: Vec<_> = out
+        .iter()
+        .map(|b| round_to_digits(&b.value, b.error, 10).expect("decided"))
+        .collect();
+    assert_eq!(got, ["2.0000000000", "0.0000000000", "2.0000000000"]);
 }
 
 /// `sqrt_f64`: a rational's square comes back as that rational's own `to_f64`, bit for bit —

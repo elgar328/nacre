@@ -46,11 +46,13 @@ pub enum Vertex {
     /// The intersection of three planes (their surface handles).
     ThreePlane([Handle<Surface>; 3]),
     /// A point on the intersection **curve** of two surfaces — the M3 cylinder seam vertex:
-    /// the rim circle (lateral cylinder ∩ cap plane) at parameter `θ = 0`.
+    /// the rim (lateral cylinder ∩ cap plane — a circle across the axis, an ellipse oblique to
+    /// it) at parameter `θ = 0`.
     ///
     /// The pair pins a curve; what picks the point on it is the cylinder's `ref_dir`, which
     /// sits in the cylinder's truth ([`CylinderDef`]): `OnSeam([cylinder, cap])`
-    /// **is** "the rim ∩ the `+ref_dir` ray" — a unique point, exactly designated. The
+    /// **is** "the rim ∩ the generator through `origin + r·ê`" (`ê` the unit part of `ref_dir`
+    /// across the axis) — a unique point, exactly designated. The
     /// definition is complete and `nacre_ops::realize_vertex` regenerates the coordinate from
     /// it — the road the push funnel realizes the cache on.
     /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are

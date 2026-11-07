@@ -619,16 +619,21 @@ pub fn affine_hp(base: Rat, dir: Rat, s: &HpBounded, prec: usize) -> Option<HpBo
     Some(HpBounded::of_rat(base, prec).add(&term, prec))
 }
 
-/// **A point on a circle's `+ref` seam, realized at `prec` bits.**
+/// **A rim's point on its cylinder's `+ref` generator, realized at `prec` bits.**
 ///
-/// `centre + r · e₁/|e₁|`, where `e₁` is the reference direction's component perpendicular to the
-/// axis and the radius is stated as its square `r2` (the cylinder truth's form). `centre`, `e₁`
-/// and `r2` are exact rationals. When `r2` is a rational's square — every radius a user writes —
-/// the single irrational step is `1/|e₁|`, one `inv_sqrt_hp` with exact arithmetic around it;
-/// otherwise `√r2` is realized beside it.
+/// `centre + (r/|e₁|) · lift`, where `centre` is where the axis meets the rim's plane, `e₁` is the
+/// reference direction's component perpendicular to the axis, and `lift` is `e₁` carried along the
+/// axis onto that plane (`e₁ − (n·e₁)/(n·m)·m` for the plane's normal `n` and the axis `m`) — so the
+/// point lies on the plane and on the generator through `origin + r·e₁/|e₁|`, a plane across the
+/// axis or oblique to it alike. Across the axis `n·e₁ = 0` and `lift` is `e₁` itself. The radius is
+/// stated as its square `r2` (the cylinder truth's form); `centre`, `e₁`, `lift` and `r2` are exact
+/// rationals. When `r2` is a rational's square — every radius a user writes — the single irrational
+/// step is `1/|e₁|`, one `inv_sqrt_hp` with exact arithmetic around it; otherwise `√r2` is realized
+/// beside it.
 pub fn seam_point_hp(
     centre: [Rat; 3],
     e1: [Rat; 3],
+    lift: [Rat; 3],
     r2: &BigRat,
     prec: usize,
 ) -> Option<[HpBounded; 3]> {
@@ -638,7 +643,7 @@ pub fn seam_point_hp(
         None => sqrt_hp_big(r2, prec)?.mul(&inv, prec),
     };
     let coord = |k: usize| {
-        let radial = HpBounded::of_rat(e1[k], prec).mul(&scale, prec);
+        let radial = HpBounded::of_rat(lift[k], prec).mul(&scale, prec);
         HpBounded::of_rat(centre[k], prec).add(&radial, prec)
     };
     Some([coord(0), coord(1), coord(2)])

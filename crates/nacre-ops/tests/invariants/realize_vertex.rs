@@ -2595,3 +2595,119 @@ fn a_deep_folding_chain_is_realized_and_the_lock_agrees() {
         );
     }
 }
+
+/// **A pierce or seam vertex on planes oblique to the axis realizes where its definition says.**
+///
+/// [`cylinder`]'s bore (radius 3 about `(2, 2)`, axis `+z`, seam `+x`, caps `z = 0` and `z = 4`)
+/// with two datums oblique to the axis, `P: x + z = 4` and `Q: y + z = 4` — neither holds the axis
+/// direction, so no plane of a pair is a wall. The oracle owes nothing to the realization:
+/// - `[P, Q]`'s meet line `(2, 2, 2) + t(−1, −1, 1)` crosses the bore at `t = ∓3/√2`, the two
+///   points at 45° and 225° about the axis — rank 0 is the 45° one, `z = 2 − 3/√2`;
+/// - `[cap z = 4, P]`'s meet line is `x = 0` on the cap: `y = 2 ± √5`, off the axis by `(−2, ±√5)`,
+///   at 132° and 228° from the seam — rank 0 is `y = 2 + √5`;
+/// - `OnSeam([bore, P])` is the generator through `(5, 2)` met with `P`: `(5, 2, −1)`, exactly.
+///
+/// Rank 0 and 1 of each pair are asked; both realize and land on all three carriers.
+#[test]
+fn a_vertex_on_planes_oblique_to_the_axis_realizes_where_its_definition_says() {
+    let mut m = cylinder();
+    let datum = |m: &mut Model, n: [f64; 3]| -> Handle<Surface> {
+        let plane = SketchPlane::from_origin_normal(
+            Point3::from_array([2.0, 2.0, 2.0]),
+            Vector3::from_array(n),
+        )
+        .expect("a plane");
+        match apply(
+            m,
+            &Operation::DatumPlane {
+                def: nacre_ops::DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(OpOutput::DatumPlane { plane, .. }) => plane,
+            other => panic!("a datum: {other:?}"),
+        }
+    };
+    let p = datum(&mut m, [1.0, 0.0, 1.0]);
+    let q = datum(&mut m, [0.0, 1.0, 1.0]);
+    let mut bore = None;
+    let mut top = None;
+    for i in 0..m.surface_count() as u32 {
+        let Some(h) = m.surface_handle_at(i) else {
+            continue;
+        };
+        match m.surface_cache(h) {
+            nacre_topo::SurfaceCache::Cylinder { .. } => bore = Some(h),
+            nacre_topo::SurfaceCache::Plane { plane, .. } => {
+                let o = plane.origin().as_array();
+                let n = plane.normal().as_array();
+                if n[0] == 0.0 && n[1] == 0.0 && (o[2] - 4.0).abs() < 1e-12 {
+                    top = Some(h);
+                }
+            }
+        }
+    }
+    let (bore, top) = (bore.expect("the bore"), top.expect("the top cap"));
+    let ordered = |a: Handle<Surface>, b: Handle<Surface>| {
+        if a.index() < b.index() {
+            [a, b]
+        } else {
+            [b, a]
+        }
+    };
+    let s = 3.0 / 2f64.sqrt();
+    let r5 = 5f64.sqrt();
+    let want: [(Vertex, [f64; 3]); 5] = [
+        (
+            Vertex::Pierce {
+                planes: ordered(p, q),
+                cylinder: bore,
+                rank: 0,
+            },
+            [2.0 + s, 2.0 + s, 2.0 - s],
+        ),
+        (
+            Vertex::Pierce {
+                planes: ordered(p, q),
+                cylinder: bore,
+                rank: 1,
+            },
+            [2.0 - s, 2.0 - s, 2.0 + s],
+        ),
+        (
+            Vertex::Pierce {
+                planes: ordered(top, p),
+                cylinder: bore,
+                rank: 0,
+            },
+            [0.0, 2.0 + r5, 4.0],
+        ),
+        (
+            Vertex::Pierce {
+                planes: ordered(top, p),
+                cylinder: bore,
+                rank: 1,
+            },
+            [0.0, 2.0 - r5, 4.0],
+        ),
+        (Vertex::OnSeam([bore, p]), [5.0, 2.0, -1.0]),
+    ];
+    for (def, at) in want {
+        let vh = m.push_vertex(
+            def,
+            PointCache::Unrealized {
+                coord: Point3::from_array([0.0; 3]),
+            },
+        );
+        let got = realize_vertex(&m, vh, Precision::NearestF64)
+            .unwrap_or_else(|e| panic!("{def:?} refused: {e:?}"))
+            .to_f64()
+            .expect("decided")
+            .0;
+        for k in 0..3 {
+            assert!(
+                (got[k] - at[k]).abs() < 1e-12,
+                "{def:?}: realized {got:?}, its definition says {at:?}"
+            );
+        }
+    }
+}

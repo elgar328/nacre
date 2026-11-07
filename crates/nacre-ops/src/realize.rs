@@ -1812,12 +1812,13 @@ fn build(
     }
 }
 
-/// **The seam vertex is the rim's `+ref_dir` point** — `centre + r·ê`, `ê` the reference
-/// direction's unit part perpendicular to the axis. `Vertex::OnSeam`'s doc calls it *"a unique
-/// point, exactly designated"*; this realizes that designation instead of reading the cache.
+/// **The seam vertex is the rim's point on the `+ref` generator** — the ruling through
+/// `origin + r·ê`, `ê` the reference direction's unit part perpendicular to the axis, met with the
+/// cap; on a cap across the axis that is `centre + r·ê`. `Vertex::OnSeam`'s doc calls it *"a
+/// unique point, exactly designated"*; this realizes that designation instead of reading the cache.
 ///
 /// Two roads, one point: where the cylinder and its cap are stated in the world the rim's centre
-/// is rational and only `r·ê` is not ([`seam_point_stated`]); where either is carried by a chain
+/// is rational and only `r/|e₁|` is not ([`seam_point_stated`]); where either is carried by a chain
 /// that does not fold — a cylinder turned off the quarters, a circle extruded on a frame node —
 /// the seam's line is replayed and met with the cap in the world ([`seam_point_met`]).
 fn seam_point(
@@ -1832,7 +1833,9 @@ fn seam_point(
     }
 }
 
-/// [`seam_point`] where the cylinder and the cap are stated in the world.
+/// [`seam_point`] where the cylinder and the cap are stated in the world: the generator through
+/// `origin + r·ê` met with the cap, exactly up to `r/|e₁|` — the axis meets the cap at a rational
+/// centre, and `e₁` carried along the axis onto the cap is rational ([`seam_lift`]).
 fn seam_point_stated(
     model: &Model,
     cyl: Handle<Surface>,
@@ -1843,7 +1846,32 @@ fn seam_point_stated(
     let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
     let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
     let centre = nacre_exact::axis_plane_meet(&coeffs, &o, &m)?;
-    nacre_exact::seam_point_hp(centre, perp_component(&e, &m)?, r2, bits)
+    let e1 = perp_component(&e, &m)?;
+    nacre_exact::seam_point_hp(centre, e1, seam_lift(&coeffs, &e1, &m)?, r2, bits)
+}
+
+/// **`e₁` carried along the axis `m` onto the plane `coeffs`** — `e₁ − (n·e₁)/(n·m)·m`, the step
+/// from where the axis meets the plane to where the `+ref` generator does, per unit of `e₁`. On a
+/// plane across the axis `n·e₁` is zero and the step is `e₁` itself, entry for entry, so a cap's
+/// seam point is the circle's `centre + r·ê` to the bit. `None` for a plane along the axis (it
+/// meets no generator once) or arithmetic that leaves `i128`.
+fn seam_lift(
+    coeffs: &[nacre_exact::Rat; 4],
+    e1: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+) -> Option<[nacre_exact::Rat; 3]> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let ne = nacre_exact::dot3_rat(&n, e1)?;
+    if ne.numer() == 0 {
+        return Some(*e1);
+    }
+    let nm = nacre_exact::dot3_rat(&n, m)?;
+    let k = ne.checked_mul(nacre_exact::Rat::new(nm.denom(), nm.numer())?)?;
+    let mut out = [nacre_exact::Rat::from_int(0); 3];
+    for i in 0..3 {
+        out[i] = e1[i].checked_sub(k.checked_mul(m[i])?)?;
+    }
+    Some(out)
 }
 
 /// [`seam_point`] met in the world: the seam's line — the cylinder's origin plus `r·ê`, along the
@@ -2101,18 +2129,23 @@ fn pair_point(
     ruling_point(model, c0, *m0, plane, ruling, bits)
 }
 
-/// **A pierce vertex is its ruling's point on its other plane.** A pierce corner's two planes are
-/// a wall parallel to the cylinder's axis and a plane across it (the cylinder gate refuses a
-/// slanted one, and a prism's corner is a wall on its cap), so every crossing of their meet line
-/// lies on one of the wall's rulings, and the rank — the point's place about the axis — is its
-/// ruling's ([`wall_rulings`]). The other plane only picks the point on the ruling
-/// ([`ruling_point`]), so its frame is not asked.
+/// **A pierce vertex is a ruling's point on one of its planes.** The two planes' meet line crosses
+/// the cylinder at most twice; the plane through that line parallel to the axis — the line swept
+/// along the axis — is a wall, and each crossing lies on one of its two rulings, so the rank — the
+/// point's place about the axis — is its ruling's ([`wall_rulings`], the order
+/// `draft::Def::vertex` names the point by). Either plane then picks the point on the ruling
+/// ([`ruling_point`]), which meets it in the world, so that plane's frame is not asked.
 ///
-/// The rulings are ranked exactly, in one frame with the wall: the world, where the cylinder and
-/// the wall both have world statements, else the cylinder's own statement frame
-/// ([`plane_in_cylinder_frame`]). A rigid motion carries the cylinder with its `ref_dir`, so both
-/// frames give one order. A definition whose planes are not one such wall and one other plane, or
-/// whose wall neither frame reads, names no point here (`NoCurvedPoint`).
+/// The wall is found where it is read: a plane of the pair that is itself parallel to the axis
+/// holds the meet line and **is** the swept wall, so only it is read in the cylinder's frame and
+/// the other may sit on any chain; with neither parallel, the wall is the pencil member
+/// `(n_Q·m)·P − (n_P·m)·Q` ([`swept_wall`]), and both are read. The rulings are ranked exactly, in
+/// one frame with the wall: the world, where the cylinder and the planes it needs have world
+/// statements, else the cylinder's own statement frame ([`plane_in_cylinder_frame`]). A rigid
+/// motion carries the cylinder with its `ref_dir`, so both frames give one order. A definition
+/// whose planes are both parallel to the axis (their line is a ruling, crossing nothing once),
+/// whose needed planes neither frame reads, or whose rank asks for a crossing the line does not
+/// make, names no point here (`NoCurvedPoint`).
 fn pierce_point(
     model: &Model,
     planes: [Handle<Surface>; 2],
@@ -2123,25 +2156,26 @@ fn pierce_point(
     let Surface::Cylinder { def, motion } = model.surface(cylinder) else {
         return Err(RealizeError::NoCurvedPoint);
     };
-    let one_wall = |read: [Option<[nacre_exact::Rat; 4]>; 2], m: [nacre_exact::Rat; 3]| {
+    let wall_of = |read: [Option<[nacre_exact::Rat; 4]>; 2], m: [nacre_exact::Rat; 3]| {
         let along = |c: &[nacre_exact::Rat; 4]| {
             nacre_exact::dot3_rat(&[c[0], c[1], c[2]], &m).is_some_and(|d| d.numer() == 0)
         };
-        match read.map(|c| c.filter(along)) {
-            [Some(w), None] => Some((w, planes[1])),
-            [None, Some(w)] => Some((w, planes[0])),
+        match read.map(|c| c.map(|c| (along(&c), c))) {
+            [Some((true, w)), Some((false, _)) | None] => Some((w, planes[1])),
+            [Some((false, _)) | None, Some((true, w))] => Some((w, planes[0])),
+            [Some((false, p)), Some((false, q))] => Some((swept_wall(&p, &q, &m)?, planes[0])),
             _ => None,
         }
     };
     let world = model.world_cylinder_def(cylinder).and_then(|w| {
         let read = planes.map(|h| crate::planes::world_plane_coeffs(model, h));
-        Some((one_wall(read, w.dir())?, w))
+        Some((wall_of(read, w.dir())?, w))
     });
     let ((wall, other), frame, chain) = match world {
         Some((found, w)) => (found, w, None),
         None => {
             let read = planes.map(|h| plane_in_cylinder_frame(model, h, *motion));
-            let found = one_wall(read, def.dir()).ok_or(RealizeError::NoCurvedPoint)?;
+            let found = wall_of(read, def.dir()).ok_or(RealizeError::NoCurvedPoint)?;
             (found, def.clone(), *motion)
         }
     };
@@ -2150,6 +2184,24 @@ fn pierce_point(
         .get(usize::from(rank))
         .ok_or(RealizeError::NoCurvedPoint)?;
     ruling_point(model, &frame, chain, other, ruling, bits)
+}
+
+/// **The plane through two planes' meet line, parallel to the axis `m`** — the pencil member
+/// `(n_Q·m)·P − (n_P·m)·Q`, whose normal `(n_Q·m)·n_P − (n_P·m)·n_Q` has no component along `m`.
+/// `None` where the two normals are parallel (no meet line — the member vanishes) or the
+/// arithmetic leaves `i128`.
+fn swept_wall(
+    p: &[nacre_exact::Rat; 4],
+    q: &[nacre_exact::Rat; 4],
+    m: &[nacre_exact::Rat; 3],
+) -> Option<[nacre_exact::Rat; 4]> {
+    let pm = nacre_exact::dot3_rat(&[p[0], p[1], p[2]], m)?;
+    let qm = nacre_exact::dot3_rat(&[q[0], q[1], q[2]], m)?;
+    let mut w = [nacre_exact::Rat::from_int(0); 4];
+    for k in 0..4 {
+        w[k] = qm.checked_mul(p[k])?.checked_sub(pm.checked_mul(q[k])?)?;
+    }
+    (w[..3].iter().any(|c| c.numer() != 0)).then_some(w)
 }
 
 fn build_three_plane(
