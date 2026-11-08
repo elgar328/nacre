@@ -52,17 +52,21 @@ enum Kind {
     Regular,
 }
 
-/// The decomposition: `rings[0]` is the outer boundary (CCW) and the rest are holes
-/// (CW), so **every directed ring edge has the interior on its left** — one uniform
-/// rule the whole sweep leans on.
+/// The decomposition: **every directed ring edge has the interior on its left** — one
+/// uniform rule the whole sweep leans on, and the only thing it reads of the rings. A
+/// face's outer boundary runs counter-clockwise and its holes clockwise; a face whose
+/// material is two lobes meeting only at a point, or an island touching its hole's rim,
+/// comes as one ring per lobe or island ([`super::triangulate_uv`] cuts it there), and the
+/// sweep takes them in the same pass — how many rings wind which way, and which lies
+/// inside which, it never asks.
 ///
 /// Returns the monotone pieces, each a CCW ring of the same indices. No vertex is
 /// created, and no vertex is repeated within a piece.
 ///
 /// Indices must be `< uv.len()` and each must appear in **exactly one** ring exactly
-/// once. That is the b-rep's own invariant (a face's loops are disjoint and its holes
-/// are siblings, never nested), but this file does not get to assume it — a violation
-/// comes back as [`TessError::DegenerateRing`] rather than as a quietly wrong mesh.
+/// once. That is the b-rep's own invariant (a face's loops are disjoint), but this
+/// file does not get to assume it — a violation comes back as
+/// [`TessError::DegenerateRing`] rather than as a quietly wrong mesh.
 pub(super) fn decompose(
     uv: &[P2],
     rings: &[&[usize]],

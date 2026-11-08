@@ -16,7 +16,8 @@ pub(crate) use monotone::{Crossing, Meets, Touch, TouchKind, Witness};
 use sos::Twins;
 
 /// What [`triangulate_uv`] hands back: the triangles, and the rings it actually triangulated —
-/// the input rings, or with a bridged pair spliced into one.
+/// the input rings, with a bridged pair spliced into one, and a ring cut in two at each point where
+/// it bounds two lobes ([`pinch`]).
 pub(crate) type Triangulated = (Vec<[usize; 3]>, Vec<Vec<usize>>);
 
 /// Two rings that share a vertex — the same point at two indices, one in each — that the caller
@@ -40,7 +41,9 @@ pub(crate) enum Revisit {
     Bridge(Bridge),
     /// Twice in one ring, at positions `x < y` of `rings[ring]`: the boundary is **pinched**
     /// there — a groove whose tip touches the face's own rim, a hole touching a boss's footprint
-    /// at a corner. The ring is one already, so nothing is spliced; the two visits are the twins.
+    /// at a corner. The ring is one already, so nothing is spliced; the two visits are the twins —
+    /// unless each holds the other's rays (two lobes meeting only there), when the ring is cut in
+    /// two at the point and the twins are the two rings' visits ([`pinch`]).
     Pinch { ring: usize, x: usize, y: usize },
 }
 
@@ -160,8 +163,10 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
 }
 
 /// Every way a ring set's boundary meets itself, without triangulating it — the chart layer's
-/// question before it decides to bridge a touch. Rings are linked exactly as [`triangulate_uv`]
-/// would link them, so the answer is the one the sweep would refuse on.
+/// question before it decides to bridge a touch. Rings are linked as given, which is how
+/// [`triangulate_uv`] links them but where it cuts a ring in two at a point the ring bounds two
+/// lobes at — that changes which edge follows which there and nothing that crosses or touches, so
+/// the answer is the one the sweep would refuse on.
 pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
     let (prev, next) = monotone::link(uv.len(), rings)?;
     Ok(monotone::self_touch(uv, &prev, &next))
@@ -193,13 +198,20 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// boundary edges off rings must use them. A [`Revisit::Pinch`] is one ring passing a point twice:
 /// there is nothing to splice.
 ///
-/// Either way one ring passes the point twice, and [`pinch`] names its two visits the [`Twins`] —
-/// one rule for both, so a bridge's twins are a pinch's — handed to the sweep with the order
-/// [`sos`] defines. A face may be pinched at several points, one pair each, and the pairs are
-/// independent: what separates the visits at one point is decided there alone. Three things still
-/// come back [`TessError::SelfTouchingBoundary`]: a bridge beside any other revisit (a splice moves
-/// the positions the others were given), a point passed three times (two pairs sharing a visit —
-/// one symbolic pair per point cannot order three), and what [`pinch`] refuses.
+/// Either way the boundary passes the point at two visits, and [`pinch`] names them the [`Twins`]
+/// — one rule for both, so a bridge's twins are a pinch's — handed to the sweep with the order
+/// [`sos`] defines. Where a pinched ring's two visits each hold the other's rays, the ring bounds
+/// two lobes meeting only at the point: it is cut in two there, each visit taking the other's
+/// incoming edge, and the twins are the two rings' visits. The sweep reads only which edge follows
+/// which, with the material on every edge's left, so it draws the lobes — and an island touching
+/// its hole's rim — in the one decomposition. A face may be pinched at several points, one pair
+/// each, and the pairs are independent: what separates the visits at one point is decided there
+/// alone, from their rays' coordinates, which cutting a ring at another point does not move.
+/// Three things still come back [`TessError::SelfTouchingBoundary`]: a bridge beside any other
+/// revisit (a splice moves the positions the others were given), a point passed three times (two
+/// pairs sharing a visit — one symbolic pair per point cannot order three), and what [`pinch`]
+/// refuses, a bridged ring's two lobes with it: cutting there would only undo the splice, and the
+/// two rings it hands back bound lobes only where the hole encloses the other ring.
 ///
 /// **`within` — the budget, asked of an [`Element`].** The flip pass never raises the count of
 /// edges and facets outside it and lowers it where it can ([`delaunay::refine`]). Each corner comes
@@ -222,16 +234,45 @@ pub(crate) fn triangulate_uv(
     if revisits.len() > 1 && revisits.iter().any(|r| matches!(r, Revisit::Bridge(_))) {
         return Err(TessError::SelfTouchingBoundary);
     }
-    let mut twins: Vec<Twins> = Vec::with_capacity(revisits.len());
+    // Every pair's two visits, read off the rings before any of them is cut in two.
+    let mut pairs: Vec<(bool, [Visit; 2])> = Vec::with_capacity(revisits.len());
     for &revisit in revisits {
-        let (ring, x, y) = match revisit {
-            Revisit::Bridge(bridge) => splice(uv, &mut rings_used, bridge)?,
-            Revisit::Pinch { ring, x, y } => (ring, x, y),
+        let ((ring, x, y), bridged) = match revisit {
+            Revisit::Bridge(bridge) => (splice(uv, &mut rings_used, bridge)?, true),
+            Revisit::Pinch { ring, x, y } => ((ring, x, y), false),
         };
-        let pair = pinch(uv, &rings_used[ring], x, y)?;
-        if twins.iter().any(|t| t.shares_a_visit(&pair)) {
-            return Err(TessError::SelfTouchingBoundary);
-        }
+        let r = &rings_used[ring];
+        let n = r.len();
+        let visit = |k: usize| (r[(k + n - 1) % n], r[k], r[(k + 1) % n]);
+        pairs.push((bridged, [visit(x), visit(y)]));
+    }
+    let point = |&(_, [(_, o, _), (_, h, _)]): &(bool, [Visit; 2])| [o, h];
+    if pairs.iter().enumerate().any(|(i, a)| {
+        pairs[i + 1..]
+            .iter()
+            .any(|b| point(a).iter().any(|k| point(b).contains(k)))
+    }) {
+        return Err(TessError::SelfTouchingBoundary);
+    }
+    let mut twins: Vec<Twins> = Vec::with_capacity(pairs.len());
+    for (bridged, [(op, o, on), (hp, h, hn)]) in pairs {
+        let pair = match pinch(uv, [(op, o, on), (hp, h, hn)])? {
+            Pinched::Twins(pair) => pair,
+            Pinched::Lobes if bridged => return Err(TessError::SelfTouchingBoundary),
+            Pinched::Lobes => {
+                two_rings(&mut rings_used, o, h)?;
+                // Adjacent sectors, by `pinch`'s argument — never two lobes again.
+                let cut = pinch(uv, [(hp, o, on), (op, h, hn)])?;
+                debug_assert!(
+                    matches!(cut, Pinched::Twins(_)),
+                    "a lobe holds the other's rays"
+                );
+                match cut {
+                    Pinched::Twins(pair) => pair,
+                    Pinched::Lobes => return Err(TessError::SelfTouchingBoundary),
+                }
+            }
+        };
         twins.push(pair);
     }
     let refs: Vec<&[usize]> = rings_used.iter().map(|r| r.as_slice()).collect();
@@ -304,8 +345,37 @@ fn splice(
     Ok((ring, i, i + hb.len()))
 }
 
-/// Name the twins of a ring that passes one point twice, at positions `x < y` — after checking
-/// that the order [`sos`] gives them is one a small displacement realizes.
+/// One pass of a ring through a point: `(prev, point, next)`.
+type Visit = (usize, usize, usize);
+
+/// What [`pinch`] reads two visits of one point as.
+enum Pinched {
+    /// The visits bound sectors apart: the twins, with the order [`sos`] gives them.
+    Twins(Twins),
+    /// Each visit's wedge holds both of the other's rays: two lobes meeting only at the point.
+    Lobes,
+}
+
+/// **Cut the ring passing `o` and `h` in two there** — the run from the earlier of the two round to
+/// just before the later, and the run from the later round to just before the earlier — so each
+/// visit closes on the other's incoming edge ([`triangulate_uv`]). `o` and `h` in no one ring is a
+/// boundary this decomposition has no answer for.
+fn two_rings(rings: &mut Vec<Vec<usize>>, o: usize, h: usize) -> Result<(), TessError> {
+    let at = |r: &[usize], i: usize| r.iter().position(|&k| k == i);
+    let (ri, x, y) = rings
+        .iter()
+        .enumerate()
+        .find_map(|(ri, r)| Some((ri, at(r, o)?, at(r, h)?)))
+        .ok_or(TessError::SelfTouchingBoundary)?;
+    let (x, y) = (x.min(y), x.max(y));
+    let r = std::mem::take(&mut rings[ri]);
+    rings[ri] = r[x..y].to_vec();
+    rings.insert(ri + 1, r[y..].iter().chain(&r[..x]).copied().collect());
+    Ok(())
+}
+
+/// Read two visits of one point — after checking that the order [`sos`] gives them as twins is one
+/// a small displacement realizes.
 ///
 /// Each visit's **wedge** is the sector on the left of its two edges, from the ray it leaves
 /// along counter-clockwise to the ray it arrived along. Expanding the point into a small disk,
@@ -318,8 +388,12 @@ fn splice(
 /// - **none, either way** — each visit bounds its own sector of material and the two sectors
 ///   meet only at the point: the face is pinched there and is still one region;
 /// - **both, either way** — each wedge holds the other visit: the region meets itself *only* at
-///   this point, two lobes, so this is not a face's interior
-///   ([`TessError::SelfTouchingBoundary`]);
+///   this point, two lobes ([`Pinched::Lobes`]). The rays then lie counter-clockwise as `n₁, p₂,
+///   n₂, p₁` (`pᵢ`, `nᵢ` the rays to visit `i`'s neighbours), so the two visits that swap incoming
+///   edges, `p₂ → T → n₁` and `p₁ → T → n₂`, bound adjacent sectors and hold none of each other's
+///   rays — the pinch [`triangulate_uv`] hands the sweep once it has cut the ring in two there. One
+///   of those sectors may be a straight half-plane (a lobe whose straight edge passes the point)
+///   and stays; both cannot be, which would put two rays along one direction;
 /// - anything else is a ring passing *through* the point (the rays interleave) or one sector
 ///   inside the other — no triangulation is right ([`TessError::DegenerateRing`]). Nothing
 ///   downstream sees the crossing: no two segments straddle each other there, and the sweep,
@@ -328,8 +402,9 @@ fn splice(
 ///
 /// Then **a strictly convex sector slides, and a sector that is not stays.** A convex wedge
 /// moved along one of its own rays stays inside itself, so two sectors that met only at the
-/// point no longer meet — the earlier visit slides along its incoming edge (toward its
-/// predecessor), the later along its outgoing one (toward its successor). A sector that is not
+/// point no longer meet — the first visit given slides along its incoming edge (toward its
+/// predecessor), the second along its outgoing one (toward its successor); for two lobes those
+/// are the visits as cut, `o`'s ring and `h`'s. A sector that is not
 /// convex does not have that property and does not need it: two disjoint sectors leave at most
 /// one of them reflex, and once the other has moved off the point into itself, the point is
 /// outside it. That visit's twin slides toward itself — a displacement of zero. Two sectors that
@@ -338,10 +413,7 @@ fn splice(
 ///
 /// Sliding the sector that is not convex as well refuses valid input as
 /// [`TessError::DegenerateRing`] (measured on random figure-eight holes).
-fn pinch(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Twins, TessError> {
-    let n = ring.len();
-    let visit = |k: usize| (ring[(k + n - 1) % n], ring[k], ring[(k + 1) % n]);
-    let ((op, o, on), (hp, h, hn)) = (visit(x), visit(y));
+fn pinch(uv: &[P2], [(op, o, on), (hp, h, hn)]: [Visit; 2]) -> Result<Pinched, TessError> {
     let t = uv[o];
     if uv[h] != t {
         return Err(TessError::DegenerateRing);
@@ -366,19 +438,19 @@ fn pinch(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Twins, TessErr
     };
     match (holds((op, on), (hp, hn)), holds((hp, hn), (op, on))) {
         (0, 0) => {}
-        (2, 2) => return Err(TessError::SelfTouchingBoundary),
+        (2, 2) => return Ok(Pinched::Lobes),
         _ => return Err(TessError::DegenerateRing),
     }
     let (o_slides, h_slides) = (convex(op, on), convex(hp, hn));
     if !o_slides && !h_slides {
         return Err(TessError::SelfTouchingBoundary);
     }
-    Ok(Twins {
+    Ok(Pinched::Twins(Twins {
         o,
         h,
         o_along: if o_slides { op } else { o },
         h_along: if h_slides { hn } else { h },
-    })
+    }))
 }
 
 /// Whether `p` is **strictly** inside the counter-clockwise triangle `t` — exactly.

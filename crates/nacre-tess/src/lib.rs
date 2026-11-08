@@ -53,7 +53,7 @@ pub enum TessError {
     /// **The face's boundary touches itself, and no bridge was laid there**: some vertex lies on
     /// the boundary somewhere other than at its own two edges — on another ring, or on a
     /// non-adjacent part of its own. The region is pinched there, so it is not a disk with sibling
-    /// holes and this decomposition has no triangulation of it *as two rings*.
+    /// holes and this decomposition has no triangulation of it *as the rings it was given*.
     ///
     /// **The common case is drawn, not refused.** A hole whose sample sits
     /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
@@ -63,11 +63,13 @@ pub enum TessError {
     /// twice** — a groove whose tip touches the face's own rim, a hole touching a boss's footprint
     /// at a corner — is drawn the same way, its two visits the twins, at as many points as the face
     /// has: where each visit bounds its own sector of material, the convex sectors slide and one
-    /// that is not stays (`polygon::pinch`). What still comes back under this name is what those
+    /// that is not stays (`polygon::pinch`). A face whose material is two pieces meeting only at a
+    /// point — a strip whose top a pin's foot takes away up to one point of its far edge — is drawn
+    /// too, each piece its own ring there. What still comes back under this name is what those
     /// roads do not cover, the bridge's each counted by the pre-pass: a vertex on another ring's
     /// *vertex* (`AtEnd`), a neighbour exactly on the touched line, a touch on a curved edge or
-    /// beside a curved face, two touches on one segment or at one point, two lobes meeting only at
-    /// a point, a point passed three times, and a bridge beside any other bridge or pinch.
+    /// beside a curved face, two touches on one segment or at one point, a point passed three
+    /// times, and a bridge beside any other bridge or pinch.
     ///
     /// **This does not say the solid is wrong — and that is measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a
@@ -1421,7 +1423,7 @@ fn unwrapped_thetas(
 ///
 /// A face whose boundary wraps but not as exactly two rings, or that no generator cuts so — a
 /// hole the generator would cross four times severs the face into more than one outer polygon,
-/// and the sweep takes one — is recorded with `None`.
+/// and [`joined_band`] joins one — is recorded with `None`.
 fn cut_seamless_bands(
     t: &mut Tessellation,
     model: &Model,

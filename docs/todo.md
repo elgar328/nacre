@@ -444,10 +444,11 @@ census 1,170·스윕 12,986 중 0 — 몸체 둘인 결과에서 표가 더 많�
 ### 원통 옆면의 절단선이 구멍을 네 번 지나야 할 때
 
 tess 는 원통 옆면(띠)을 구멍을 0 또는 2 번 지나는 한 생성선에서 잘라 펼친다(`cut_seamless_bands`). 어느 생성선이든 어떤 구멍을
-네 번 이상 지나면(θ 방향으로 C 자로 열린 구멍이 한 바퀴를 덮을 때) 펼친 면이 바깥 다각형 여럿으로 갈라지고, 삼각분할기
-(`triangulate_uv`)는 바깥 고리 하나만 받아 `DegenerateRing` 으로 거절한다. 인구 0(합성 입력의 단위 잠금
-`a_band_generator_crosses_the_fewest_holes_and_never_one_four_times` 만). 여는 길: 끊어 이은 다각형들을 포함 관계로 묶어(바깥
-하나 + 그 구멍들) 묶음마다 삼각분할한다(Stallings, *Reduced Topology B-Reps* §10 의 8단계).
+네 번 이상 지나면(θ 방향으로 C 자로 열린 구멍이 한 바퀴를 덮을 때) 펼친 면이 바깥 다각형 여럿으로 갈라진다 — 생성선 고르기
+(`band_generator`)가 그런 생성선을 받지 않고 이어 붙이기(`joined_band`)는 바깥 고리 하나를 지으므로, 띠는 `DegenerateRing` 으로
+거절된다. 인구 0(합성 입력의 단위 잠금 `a_band_generator_crosses_the_fewest_holes_and_never_one_four_times` 만). 여는 길: 끊어 이은
+다각형들을 한 스윕에 넘긴다(Stallings, *Reduced Topology B-Reps* §10 의 8단계) — 스윕은 모든 변의 왼쪽이 재료인 고리면 바깥
+고리가 여럿이어도 그린다(한 점에서만 붙은 두 엽 면이 그렇게 그려진다); `triangulate_uv` 입구는 첫 고리만 바깥으로 받는다.
 
 ### 메시는 첫 거절에서 그 범위 전체를 멈춘다
 

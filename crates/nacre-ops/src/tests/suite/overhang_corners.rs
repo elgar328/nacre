@@ -327,6 +327,44 @@ fn a_pin_tangent_to_the_edge_takes_a_second_boolean() {
     );
 }
 
+/// The same pin cut by a box across the touch: a strip of the plate under the pin's part beyond
+/// the box's wall, whose top the pin's foot takes away up to the edge `x = 40` it touches — the
+/// strip's top face is two pieces meeting only at `(40, 20, 10)`. The mesh sees the two pieces
+/// where a sample of the pin's arc lands on that point, which it does with the wall through the
+/// axis (`38`) and past it (`38.5`) — asserted, so a sampling that misses the point (the shape is
+/// then drawn without reaching the two pieces) says so here. That every result meshes is the
+/// boolean exit's lock (`tess_census`).
+#[test]
+fn a_pin_tangent_to_the_edge_cut_across_the_touch_leaves_two_lobes() {
+    let pinned = 16000.0 + 12.0 * PI;
+    let pin = |m: &mut Model| plate_with_pin(m, [38.0, 20.0, 10.0], 2.0, 3.0);
+    for wall in [38.0, 38.5] {
+        let mut m = Model::new();
+        let (a, b) = (
+            pin(&mut m),
+            cuboid(&mut m, [wall, 17.0, 8.0], [45.0, 23.0, 14.0]),
+        );
+        op(&mut m, BoolKind::Common, a, b);
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
+        assert!(
+            mesh.vertices
+                .iter()
+                .any(|(_, v)| v.pos.as_array() == [40.0, 20.0, 10.0]),
+            "the pin's arc is sampled on the touch, wall {wall}"
+        );
+        // The box `[wall,45]×[17,23]×[8,14]`: `[wall,40]×[17,23]×[8,10]` of the plate and the
+        // pin's disk past `x = wall`.
+        every_kind(
+            |m| (pin(m), cuboid(m, [wall, 17.0, 8.0], [45.0, 23.0, 14.0])),
+            cells(
+                pinned,
+                (45.0 - wall) * 36.0,
+                (40.0 - wall) * 12.0 + beyond(wall, 38.0),
+            ),
+        );
+    }
+}
+
 /// A pin of radius 5 at `(37, 36)`, its rim through the plate's corner `(40, 40, 10)` — a corner on
 /// three planes and the cylinder — and over both edges beside it.
 #[test]

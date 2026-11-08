@@ -1,23 +1,25 @@
 //! **A symbolic order for the sanctioned coincident pairs — the twins each bridge or pinch makes.**
 //!
 //! A face's boundary can pass one point twice. When a hole's ring is spliced into the ring it
-//! touches, the touching vertex appears twice in the merged ring: once as the split ring's
-//! vertex, once as the hole's, at the same coordinate. When one ring passes a point twice — a
-//! pinch, a groove whose tip touches the face's own rim — it already does. Every exact predicate
-//! the sweep asks about that pair answers zero, and the sweep has no order for a zero. The
-//! classic answer (Edelsbrunner–Mücke) is to *simulate* a displacement: decide every tie as if
-//! each twin had moved by an infinitesimal `ε` in a direction of its own, and read the sign off
-//! the first-order term. No coordinate moves — the triangles come out on the exact points — only
-//! the ties are decided, consistently, as one actual small displacement would decide them.
+//! touches, the touching vertex appears twice in the merged ring: once as the split ring's vertex,
+//! once as the hole's, at the same coordinate. When one ring passes a point twice — a pinch, a
+//! groove whose tip touches the face's own rim — it already does; where it bounds two lobes meeting
+//! only there, it is cut in two at the point and the pair is the two rings' visits. Every exact
+//! predicate the sweep asks about that pair answers zero, and the sweep has no order for a zero.
+//! The classic answer (Edelsbrunner–Mücke) is to *simulate* a displacement: decide every tie as if
+//! each twin had moved by an infinitesimal `ε` in a direction of its own, and read the sign off the
+//! first-order term. No coordinate moves — the triangles come out on the exact points — only the
+//! ties are decided, consistently, as one actual small displacement would decide them.
 //!
 //! **Each twin slides along one of its own edges, or stays**: `d_o = uv[o_along] − T`,
 //! `d_h = uv[h_along] − T`. On a bridge the two are the ends of the split straight segment — the
 //! split ring's copy slides toward its predecessor, the hole's toward its successor — so both
 //! twins stay *on* that line for every `ε` and keep every collinearity they had with the rest of
 //! the ring. On a pinch the earlier visit slides along its incoming edge and the later along its
-//! outgoing one, each into its own sector of material, which is what separates them; a visit
-//! whose sector is not convex names itself as its target (`d = 0`) and stays, the other's slide
-//! alone separating them (`polygon::pinch` decides which, and checks the sectors allow it).
+//! outgoing one (for two lobes, the visit in each ring cut from it), each into its own sector of
+//! material, which is what separates them; a visit whose sector is not convex names itself as its
+//! target (`d = 0`) and stays, the other's slide alone separating them (`polygon::pinch` decides
+//! which, and checks the sectors allow it).
 //!
 //! **The order needs nothing more — the sweep's own tie-break carries the rest.** The sweep's
 //! order (`v` descending, then `u` ascending) is itself a perturbation: the sweep line turned by
@@ -60,10 +62,11 @@ use nacre_predicates::{Expansion, orient2d};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Twins {
     /// The earlier visit of the ring passing the point (on a bridge, the split ring's copy of the
-    /// touching vertex); slides toward `o_along` (its `prev`, or itself).
+    /// touching vertex; for two lobes, the visit in the ring cut from it first); slides toward
+    /// `o_along` (its `prev`, or itself).
     pub(super) o: usize,
-    /// The later visit (on a bridge, the touching ring's copy); slides toward `h_along` (its
-    /// `next`, or itself).
+    /// The later visit (on a bridge, the touching ring's copy; for two lobes, the visit in the
+    /// other ring); slides toward `h_along` (its `next`, or itself).
     pub(super) h: usize,
     pub(super) o_along: usize,
     pub(super) h_along: usize,
@@ -72,12 +75,6 @@ pub(super) struct Twins {
 impl Twins {
     fn is_twin(&self, i: usize) -> bool {
         i == self.o || i == self.h
-    }
-
-    /// Whether the two pairs pass a common index — one point visited three times, which one
-    /// symbolic pair per point cannot order.
-    pub(super) fn shares_a_visit(&self, other: &Twins) -> bool {
-        self.is_twin(other.o) || self.is_twin(other.h)
     }
 
     /// Whether `a` and `b` are the two twins (in either order).
