@@ -6,14 +6,16 @@
 //! closely than bytes: a Hangul syllable is three bytes).
 //!
 //! Three parts also have a floor at nine tenths of the ceiling, so room freed by trimming is given
-//! back rather than left to refill unseen. todo has none, because it is a queue whose finished items
-//! are deleted (rule 3); nor does the section of rejected approaches, which grows a row per rejected
-//! approach (rule 2).
+//! back rather than left to refill unseen. Neither todo part has one, because todo is a queue whose
+//! finished items are deleted (rule 3); nor does the section of rejected approaches, which grows a
+//! row per rejected approach (rule 2).
 //!
 //! design is split at two headings, each of which must start exactly one line. The second is
 //! [`crate::history_words::STORY_SECTION`], matched as a prefix there and here. That section runs
 //! to the end of the file here, so a section added after it is counted with the rejected
-//! approaches; `history_words` reads again from the next `## ` heading.
+//! approaches; `history_words` reads again from the next `## ` heading. todo is split at one
+//! heading ([`PARKED`]), which must also start exactly one line; the parked items run from it to the
+//! end of the file.
 
 use std::path::Path;
 
@@ -29,6 +31,9 @@ struct Part {
 }
 
 const LAYERS: &str = "# 층과 하위 체계";
+
+/// todo's parked items: a session reads the headings and the items its work touches, not the whole.
+const PARKED: &str = "## 보류 — 인구가 생기면";
 
 const PARTS: &[Part] = &[
     Part {
@@ -64,11 +69,19 @@ const PARTS: &[Part] = &[
         floored: false,
     },
     Part {
-        name: "todo",
+        name: "todo: the always-read part",
         file: "docs/todo.md",
         from: None,
+        to: Some(PARKED),
+        ceiling: 21_200,
+        floored: false,
+    },
+    Part {
+        name: "todo: parked items",
+        file: "docs/todo.md",
+        from: Some(PARKED),
         to: None,
-        ceiling: 34_700,
+        ceiling: 13_500,
         floored: false,
     },
 ];
@@ -148,6 +161,12 @@ fn the_split_reads_what_it_should() {
         "## 가지 말 것 — rows\n| a |\n"
     );
     assert_eq!(slice(doc, None, None), doc);
+    let todo = "# todo\n## 다음\nnext\n## 보류 — 인구가 생기면\n### item\n";
+    assert_eq!(slice(todo, None, Some(PARKED)), "# todo\n## 다음\nnext\n");
+    assert_eq!(
+        slice(todo, Some(PARKED), None),
+        "## 보류 — 인구가 생기면\n### item\n"
+    );
     assert_eq!(heading_at("# title\n", LAYERS), Err(0), "a missing heading");
     assert_eq!(
         heading_at("# 층과 하위 체계\n# 층과 하위 체계 again\n", LAYERS),
