@@ -1677,9 +1677,35 @@ fn before_cutting(m: &Model) -> usize {
 }
 
 /// **A boundary nearer another than a chord sags is drawn** ([`crossing_chords`]) — **and the
-/// θ an arc is cut at stands on every curve of its lateral.** Each of these is a valid solid whose
-/// cap the sweep would refuse with the arcs there left uncut — the chords of two curves `1e-8` to
-/// `5e-4` apart passing through each other:
+/// θ an arc is cut at stands on every curve of its lateral.** Each of [`shapes_whose_chords_cross`]
+/// is a valid solid whose cap the sweep would refuse with the arcs there left uncut.
+///
+/// Each finished boundary holds more samples than sampling and the band cut laid: the arcs were
+/// cut, not the shape spared. And no curve misses a θ another curve of its lateral stands a sample
+/// at ([`unshared_columns`]): a fused column's arc on the disk's top is cut where the crossing is,
+/// and its top rim must be cut there too. Cut on that arc alone, the band up to a top `0.01` above
+/// leans past the budget and the mesh is refused (`OverBudget`) — the cut hole passes that way only
+/// because both caps cross at the same θs.
+///
+/// The two tilted bores are where the two rims' asks must be one number ([`arc_midpoint`]): read
+/// off the samples' positions, the first was refused (`SelfTouchingBoundary`, two columns `1e-16`
+/// apart); read off their unwrapped places, the second, its rims' ranges a turn apart.
+#[test]
+fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
+    for (name, m) in shapes_whose_chords_cross() {
+        let t = drawn_right(&m, name);
+        let finished: usize = t.by_edge.values().map(Vec::len).sum();
+        assert!(
+            finished > before_cutting(&m),
+            "{name}: no arc was cut finer"
+        );
+        let unshared = unshared_columns(&m, &t);
+        assert!(unshared.is_empty(), "{name}: {unshared:?}");
+    }
+}
+
+/// **Valid solids whose cap boundaries come nearer each other than a chord sags**, so their
+/// chords pass through each other — `1e-8` to `5e-4` apart:
 ///
 /// * the playground's `d: 9.999` hole at `(3, 4)` in a disk of radius 10, its rim `0.0005` from the
 ///   disk's — cut; fused with a column standing past both caps; and fused with a column whose top
@@ -1688,16 +1714,11 @@ fn before_cutting(m: &Model) -> usize {
 ///   a column whose top stands `0.001` above the disk;
 /// * a groove's tip `1e-8` inside the rim (`wedge_on_a_rim` with its apex off the circle);
 /// * a groove's tip on the rim at `(0.6, 0.8)`, one side leaving it `0.1°` inside the tangent —
-///   inside the half segment's turn (1°) the rim's first chord leaves at.
-///
-/// Each finished boundary holds more samples than sampling and the band cut laid: the arcs were
-/// cut, not the shape spared. And no curve misses a θ another curve of its lateral stands a sample
-/// at ([`unshared_columns`]): a fused column's arc on the disk's top is cut where the crossing is,
-/// and its top rim must be cut there too. Cut on that arc alone, the band up to a top `0.01` above
-/// leans past the budget and the mesh is refused (`OverBudget`) — the cut hole passes that way only
-/// because both caps cross at the same θs.
-#[test]
-fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
+///   inside the half segment's turn (1°) the rim's first chord leaves at;
+/// * the playground's hole cut on a 3-4-5 axis `(0, 0.6, 0.8)` at the origin, and on `(0.6, 0, 0.8)`
+///   toward `(−0.6, 0.8)` of its frame at `(1000, −2000, 3000)` — far enough out that a rim's seam
+///   vertex can read a hair below `θ = 0`.
+fn shapes_whose_chords_cross() -> Vec<(&'static str, Model)> {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let z = Vector3::from_array([0.0, 0.0, 1.0]);
     // The disk stands on `z ∈ [0, 2]`, the column on `[−1, top]`.
@@ -1715,12 +1736,25 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
         boolean(&mut m, kind, disk, column).expect("the column's boolean");
         m
     };
+    // The playground's hole in a disk on `axis`, its frame `seam` and `axis × seam`, standing at
+    // `base`: the bore's centre `5` from the disk's toward `toward` of that frame.
+    let tilted_bore = |base: [f64; 3], axis: [f64; 3], seam: [f64; 3], toward: [f64; 2]| -> Model {
+        let (a, s) = (Vector3::from_array(axis), Vector3::from_array(seam));
+        let w = a.cross(s);
+        let o = Point3::from_array(base);
+        let mut m = Model::new();
+        let disk = fixtures::cylinder_with_seam(&mut m, o, a, s, 10.0, 2.0).solid;
+        let centre = o + s * (5.0 * toward[0]) + w * (5.0 * toward[1]) - a;
+        let bore = fixtures::cylinder_with_seam(&mut m, centre, a, s, 4.9995, 4.0).solid;
+        boolean(&mut m, BoolKind::Cut, disk, bore).expect("the bore cuts");
+        m
+    };
     let wedge = |triangle: [[f64; 2]; 3]| -> Model {
         let mut m = Model::new();
         fixtures::wedge_on_a_rim(&mut m, triangle, 1.0, 2.0);
         m
     };
-    let shapes = [
+    vec![
         (
             "the playground's hole, cut",
             disk_and_column(BoolKind::Cut, 10.0, [3.0, 4.0], 4.9995, 3.0),
@@ -1749,17 +1783,103 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
             "a groove side 0.1° off the tangent",
             wedge([[0.6, 0.8], [0.598601912, 0.801044758], [0.2, 0.3]]),
         ),
-    ];
-    for (name, m) in shapes {
-        let t = drawn_right(&m, name);
-        let finished: usize = t.by_edge.values().map(Vec::len).sum();
-        assert!(
-            finished > before_cutting(&m),
-            "{name}: no arc was cut finer"
-        );
-        let unshared = unshared_columns(&m, &t);
-        assert!(unshared.is_empty(), "{name}: {unshared:?}");
+        (
+            "the playground's hole on a tilted axis",
+            tilted_bore([0.0; 3], [0.0, 0.6, 0.8], [1.0, 0.0, 0.0], [0.6, 0.8]),
+        ),
+        (
+            "the playground's hole on a tilted axis far from the origin",
+            tilted_bore(
+                [1000.0, -2000.0, 3000.0],
+                [0.6, 0.0, 0.8],
+                [0.0, 1.0, 0.0],
+                [-0.6, 0.8],
+            ),
+        ),
+    ]
+}
+
+/// **Every sample a curve's polyline holds stands at the number of its column** — the set's own,
+/// in `[0, τ)` ([`FaceThetas::columns`]): its `t` is a column the set holds or a lattice column
+/// `τk/N` (`k < N`), exactly, and its position is the curve at that `t`, bit for bit. A band's cut
+/// puts one number on every ring it passes ([`band_cut`]). Over the crossing shapes, a band cut
+/// along a generator, and rods cut obliquely (ellipses), with a column merged across `θ = 0` among
+/// them.
+///
+/// With a sample's `t` its unwrapped place, a column past `τ` — the lattice's `k = N` on an arc
+/// across `0`, or every column of a curve whose range starts a hair below `0` — is named a turn up;
+/// with its position at that place, the `t` is right and the point is not the curve's there. The band clause holds a spelling, not a measured
+/// difference: read back off each ring's point (`Ellipse::angle_of`), this band's cut names one
+/// number too.
+#[test]
+fn a_curves_samples_stand_at_their_columns_numbers() {
+    use nacre_ops::{BoolKind, fixtures};
+    use std::f64::consts::TAU;
+    let mut shapes = shapes_whose_chords_cross();
+    let mut m = Model::new();
+    fixtures::cut_at_both_rims(&mut m, BoolKind::Fuse, -2.0);
+    shapes.push(("a band cut at both rims", m));
+    for (low, high) in [(-0.046, 0.254), (-1.496, 1.504)] {
+        shapes.push(("a rod cut obliquely", rod_cut_obliquely(low, high).0));
     }
+    let cfg = TessConfig::default();
+    let (mut generators, mut ellipses, mut merged) = (0, 0, 0);
+    for (name, m) in &shapes {
+        let reach = m.reachable();
+        let (live, mut sets) = theta_sets(m, &cfg, &reach);
+        let (t, cuts, _) = finish_polylines(m, &reach, &live, &mut sets);
+        let mut cut_at: std::collections::HashMap<Handle<TessVertex>, Handle<Face>> =
+            std::collections::HashMap::new();
+        for (&fh, cut) in &cuts {
+            if let Some(cut) = cut {
+                for &h in cut.rims.iter().chain(cut.holes.iter().flatten()) {
+                    cut_at.insert(h, fh);
+                }
+            }
+        }
+        let mut generator: std::collections::HashMap<Handle<Face>, f64> =
+            std::collections::HashMap::new();
+        for (h, v) in t.vertices.iter() {
+            let TessOrigin::OnEdge { edge, t: number } = v.origin else {
+                continue;
+            };
+            let Curve::Ellipse(c) = m.edge_curve(edge) else {
+                panic!("{name}: a sample on a straight edge")
+            };
+            assert_eq!(
+                v.pos.as_array().map(f64::to_bits),
+                c.point_at(number).as_array().map(f64::to_bits),
+                "{name}: a sample off the curve at its own number {number}"
+            );
+            if !c.is_circle() {
+                ellipses += 1;
+            }
+            if let Some(&fh) = cut_at.get(&h) {
+                generators += 1;
+                let one = *generator.entry(fh).or_insert(number);
+                assert_eq!(one, number, "{name}: a band's cut at two numbers");
+                continue;
+            }
+            let set = sets.of(edge);
+            let n = set.count as f64;
+            let k = (number * n / TAU).round();
+            let lattice = (0.0..n).contains(&k) && TAU * k / n == number;
+            let held = set.columns.iter().any(|c| c.0 == number);
+            assert!(
+                lattice || held,
+                "{name}: a sample at {number}, no column's number"
+            );
+        }
+        for set in sets.faces.values() {
+            merged += set.columns.first().is_some_and(|c| {
+                c.1.iter()
+                    .any(|&v| set.angle(m.vertex_point(v)) > std::f64::consts::PI)
+            }) as usize;
+        }
+    }
+    assert!(generators > 0, "no band was cut along a generator");
+    assert!(ellipses > 0, "no ellipse was sampled");
+    assert!(merged > 0, "no column was merged across θ = 0");
 }
 
 /// **Past the finest sampling it is refused by name.** A hole near-concentric with the unit
@@ -1933,7 +2053,7 @@ fn the_theta_set_lays_vertex_and_lattice_columns() {
         columns: at.iter().map(|&a| (a, Vec::new())).collect(),
     };
     let laid = |set: &FaceThetas, lo: f64, hi: f64| -> Vec<f64> {
-        set.columns(lo, hi).into_iter().map(|(c, _)| c).collect()
+        set.columns(lo, hi).into_iter().map(|(c, _, _)| c).collect()
     };
     let lattice = |k: f64| TAU * k / n;
     // Vertices a hair either side of `0`: both laid, and the lattice's `0` between them.
@@ -1975,6 +2095,35 @@ fn the_theta_set_lays_vertex_and_lattice_columns() {
         laid(&s, lattice(3.0) - near / 4.0, lattice(4.5)),
         [lattice(4.0)]
     );
+}
+
+/// **A crossing chord's middle is a column's number, in `[0, τ)`** ([`ccw_midpoint`]) — the one
+/// number the set lays and [`arc_midpoint`]'s `f64`-floor check judges the point at. A chord
+/// across `θ = 0` halves to a sum past `τ`, which comes back a turn down; one that does not cross
+/// comes back as its plain halfway sum; and a sum that rounds to `τ` itself is the column `0`. No
+/// mesh test holds this: a chord across `0` asked for none in the crate's crossing fixtures, nor
+/// in 144 bores near a rim placed toward the seam — the lattice's column `0` ends the chords there.
+#[test]
+fn ccw_midpoint_is_a_columns_number() {
+    use std::f64::consts::TAU;
+    let unfolded = |early: f64, late: f64| early + (late - early).rem_euclid(TAU) / 2.0;
+
+    let (early, late) = (TAU - 1e-3, 3e-3);
+    let past = unfolded(early, late);
+    assert!(past >= TAU, "the chord crosses 0: {past}");
+    let m = ccw_midpoint(early, late);
+    assert!((0.0..TAU).contains(&m), "{m}");
+    assert_eq!(m.to_bits(), (past - TAU).to_bits(), "a turn down, exactly");
+
+    assert_eq!(
+        ccw_midpoint(1.0, 2.0).to_bits(),
+        unfolded(1.0, 2.0).to_bits(),
+        "a chord that does not cross 0 is its halfway sum"
+    );
+
+    let below = f64::from_bits(TAU.to_bits() - 1);
+    assert_eq!(unfolded(below, 1e-300), TAU, "the sum rounds to τ itself");
+    assert_eq!(ccw_midpoint(below, 1e-300).to_bits(), 0.0f64.to_bits());
 }
 
 /// **A facet whose normal its own points do not determine is outside the budget, asked in any
@@ -2094,10 +2243,6 @@ fn a_non_positive_angle_asks_nothing_of_the_angle() {
 /// past the budget below about `0.008` at `1/20`, which the mesh refused.
 #[test]
 fn a_band_thin_between_an_ellipse_and_its_circle_is_drawn() {
-    use nacre_exact::Axis;
-    use nacre_ops::{
-        BoolKind, OpOutput, Operation, Ring2d, SketchFrame, apply, boolean, fixtures, from_paths,
-    };
     let cfg = TessConfig::default();
     let cuts = [
         (-0.046, 0.254),
@@ -2108,33 +2253,7 @@ fn a_band_thin_between_an_ellipse_and_its_circle_is_drawn() {
         (-5.9999, 6.0001),
     ];
     for (low, high) in cuts {
-        let mut m = Model::new();
-        let rod = fixtures::cylinder_with_seam(
-            &mut m,
-            Point3::from_array([0.0, 3.0, 0.0]),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            Vector3::from_array([1.0, 0.0, 0.0]),
-            2.0,
-            20.0,
-        )
-        .solid;
-        // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
-        let pts = [(low, -3.0), (high, 3.0), (19.0, 3.0), (19.0, -3.0)]
-            .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
-        let ring = Ring2d::polygon_decimal(pts.to_vec()).expect("a quadrilateral");
-        let profile = from_paths(vec![ring]).expect("one profile").remove(0);
-        let frame = SketchFrame::world(&m, Axis::Y);
-        let Ok(OpOutput::Extrude { solid: prism, .. }) = apply(
-            &mut m,
-            &Operation::Extrude {
-                frame,
-                profile,
-                dist: 6.0,
-            },
-        ) else {
-            panic!("the prism extrudes")
-        };
-        let out = boolean(&mut m, BoolKind::Cut, rod, prism).expect("the rod cuts");
+        let (m, out) = rod_cut_obliquely(low, high);
         let t = tessellate_solids(&m, &out, &cfg)
             .unwrap_or_else(|e| panic!("cut from {low} to {high}: {e:?}"));
         let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
@@ -2142,4 +2261,41 @@ fn a_band_thin_between_an_ellipse_and_its_circle_is_drawn() {
         let unshared = unshared_columns(&m, &t);
         assert!(unshared.is_empty(), "{low}..{high}: {unshared:?}");
     }
+}
+
+/// A rod of radius 2 on the `z` axis at `(0, 3)`, `20` tall, less a prism over the oblique plane
+/// through `z = low` at `x = −3` and `z = high` at `x = 3` — and the boolean's solids.
+fn rod_cut_obliquely(low: f64, high: f64) -> (Model, Vec<Handle<nacre_topo::Solid>>) {
+    use nacre_exact::Axis;
+    use nacre_ops::{
+        BoolKind, OpOutput, Operation, Ring2d, SketchFrame, apply, boolean, fixtures, from_paths,
+    };
+    let mut m = Model::new();
+    let rod = fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.0, 3.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        2.0,
+        20.0,
+    )
+    .solid;
+    // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
+    let pts = [(low, -3.0), (high, 3.0), (19.0, 3.0), (19.0, -3.0)]
+        .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+    let ring = Ring2d::polygon_decimal(pts.to_vec()).expect("a quadrilateral");
+    let profile = from_paths(vec![ring]).expect("one profile").remove(0);
+    let frame = SketchFrame::world(&m, Axis::Y);
+    let Ok(OpOutput::Extrude { solid: prism, .. }) = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 6.0,
+        },
+    ) else {
+        panic!("the prism extrudes")
+    };
+    let out = boolean(&mut m, BoolKind::Cut, rod, prism).expect("the rod cuts");
+    (m, out)
 }

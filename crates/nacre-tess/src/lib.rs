@@ -120,7 +120,7 @@ impl std::error::Error for TessError {}
 // ---------------------------------------------------------------------------
 
 /// Where a tessellation vertex came from — the truth it can snap back to.
-/// `t`/`uv` are the exact curve/surface parameters.
+/// `t`/`uv` are the exact curve/surface parameters; a curve's `t` is its angle, in `[0, 2π)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TessOrigin {
     OnVertex(Handle<Vertex>),
@@ -397,7 +397,7 @@ fn finish_polylines(
                 chart,
                 meets,
                 wanted,
-            }) = crossing_chords(&t, model, face, plane)
+            }) = crossing_chords(&t, model, face, plane, sets)
             else {
                 continue;
             };
@@ -565,6 +565,13 @@ fn in_turn(x: f64) -> f64 {
     if a == std::f64::consts::TAU { 0.0 } else { a }
 }
 
+/// The number halfway round, CCW, from column number `early` to `late` — itself a column's number,
+/// in `[0, τ)`, so the check that judges the point there and the set that lays the column read one
+/// number.
+fn ccw_midpoint(early: f64, late: f64) -> f64 {
+    in_turn(early + (late - early).rem_euclid(std::f64::consts::TAU) / 2.0)
+}
+
 /// **A cylindrical face's θ set: every curve of the face is sampled on it, and the face's
 /// interior lattice lays its columns on it** — so the samples of any two curves stand on common
 /// generators, and every facet across a band between them spans one.
@@ -669,15 +676,18 @@ impl FaceThetas {
         }
     }
 
-    /// **Lay a column at `theta`** (any turn), standing with no vertex — `false` where the set
-    /// already holds that very number, and nothing changes.
+    /// **Lay a column at `theta`**, a column's number in `[0, τ)`, standing with no vertex —
+    /// `false` where the set already holds that very number, and nothing changes.
     ///
     /// A crossing chord's middle ([`arc_midpoint`]) is placed apart on purpose, so it is not one of
     /// the two numbers [`ON_RULING`] merges (geometry made them equal, or rounding split them): a
     /// column is refused only where it would add nothing. Like a vertex's column, it withholds a
     /// lattice column within [`FaceThetas::near`] of it ([`FaceThetas::columns`]).
     fn add(&mut self, theta: f64) -> bool {
-        let theta = in_turn(theta);
+        debug_assert!(
+            (0.0..std::f64::consts::TAU).contains(&theta),
+            "a column's number is in [0, τ): {theta}"
+        );
         let k = self.columns.partition_point(|c| c.0 < theta);
         if self.columns.get(k).is_some_and(|c| c.0 == theta) {
             return false;
@@ -701,25 +711,57 @@ impl FaceThetas {
         in_turn(angle_about(&self.cyl, p))
     }
 
-    /// **The set's columns in `[lo, hi]`**, ascending, each with the vertices standing there (none
-    /// for a lattice column or a crossing's) — `lo` and `hi` unwrapped, so a range past `τ` or
-    /// below `0` gets the columns whole turns away.
+    /// **Where curve `edge` of the face starts and how far it turns, CCW**, by the set's angle of
+    /// its two vertices — the one range [`sample_curve`] lays its columns over and
+    /// [`arc_midpoint`] bounds its cutting by. A closed edge turns once from its vertex; an arc's
+    /// stored `[v0, v1]` order is CCW about the axis (the convention `Model::derive_edge_curve`'s
+    /// circle arm states).
+    fn span(&self, model: &Model, edge: &Edge) -> (f64, f64) {
+        let [v0, v1] = edge.vertices;
+        let t0 = self.angle(model.vertex_point(v0));
+        let dt = if v0 == v1 {
+            std::f64::consts::TAU
+        } else {
+            in_turn(self.angle(model.vertex_point(v1)) - t0)
+        };
+        (t0, dt)
+    }
+
+    /// **The number of the column vertex `v` stands at** — the stored θ, which is another
+    /// vertex's where [`ON_RULING`] made them one column. `None` for a vertex the set does not
+    /// hold; a curve's own two vertices it always holds (`of_face` reads every vertex of the face,
+    /// `of_curve` the curve's two).
+    fn column_of(&self, v: Handle<Vertex>) -> Option<f64> {
+        self.columns.iter().find(|c| c.1.contains(&v)).map(|c| c.0)
+    }
+
+    /// **The set's columns in `[lo, hi]`**, ascending, each as `(place, number, vertices)` — the
+    /// vertices standing there (none for a lattice column or a crossing's). `lo` and `hi` are
+    /// unwrapped, so a range past `τ` or below `0` gets the columns whole turns away: `place` is
+    /// where the column stands in that range, `number` the column's own, in `[0, τ)` — a held
+    /// column's stored θ, a lattice column's `τk/N` with `k < N`.
+    ///
+    /// **A column has one number.** `place` only picks and orders the columns along a range (and
+    /// sets a chart's coordinate); everything that names the column — a sample's position and its
+    /// `t`, a crossing chord's middle — uses `number`. `place` is `number` plus whole turns in
+    /// `f64`, which is not `number` again: two curves holding one column on different turns (a
+    /// curve that starts a hair below `0` takes its range a turn up) would name it ulps apart.
     ///
     /// Every column the set holds (a vertex's or a crossing's) in the range is laid, and every
     /// lattice column `τk/N` that stands farther than [`FaceThetas::near`] from every held column —
     /// including one just outside the range, so a lattice column a hair inside a curve's end is not
     /// laid beside it.
-    fn columns(&self, lo: f64, hi: f64) -> Vec<(f64, &[Handle<Vertex>])> {
+    fn columns(&self, lo: f64, hi: f64) -> Vec<(f64, f64, &[Handle<Vertex>])> {
         use std::f64::consts::TAU;
         let near = self.near();
         // The vertex columns over `[lo − near, hi + near]`: turn by turn, each turn's ascending.
-        let mut anchors: Vec<(f64, &[Handle<Vertex>])> = Vec::new();
+        let mut anchors: Vec<(f64, f64, &[Handle<Vertex>])> = Vec::new();
         let mut turn = ((lo - near) / TAU).floor();
         while turn * TAU <= hi + near {
             for (theta, vs) in &self.columns {
                 let c = theta + turn * TAU;
                 if lo - near <= c && c <= hi + near {
-                    anchors.push((c, vs));
+                    anchors.push((c, *theta, vs));
                 }
             }
             turn += 1.0;
@@ -731,7 +773,7 @@ impl FaceThetas {
         while k <= k1 || next < anchors.len() {
             let lattice = (k <= k1).then(|| TAU * k / n);
             match (lattice, anchors.get(next)) {
-                (Some(c), Some(&(a, _))) if c > a => {
+                (Some(c), Some(&(a, _, _))) if c > a => {
                     if (lo..=hi).contains(&a) {
                         out.push(anchors[next]);
                     }
@@ -744,11 +786,11 @@ impl FaceThetas {
                         .flatten()
                         .all(|a| (a - c).abs() > near);
                     if clear {
-                        out.push((c, &[]));
+                        out.push((c, TAU * k.rem_euclid(n) / n, &[]));
                     }
                     k += 1.0;
                 }
-                (None, Some(&(a, _))) => {
+                (None, Some(&(a, _, _))) => {
                     if (lo..=hi).contains(&a) {
                         out.push(anchors[next]);
                     }
@@ -795,7 +837,8 @@ impl FaceThetas {
 ///
 /// **A model with no crossing gets no column** — and a boundary with no crossing gets new samples
 /// only where it shares a lateral with one that crossed. Measured over the workspace suite, the
-/// census, the ignored sweep, nacre-kit and the playground's suite: no face crosses.
+/// census, the ignored sweep, nacre-kit and the playground's suite: no face crosses but those of
+/// this crate's own crossing tests.
 ///
 /// A crossing that lands on a vertex (`Crossing::Through`) asks for the chord it passes through and
 /// both chords at the vertex. Every crossing measured was `Segments` — that arm is argued, its
@@ -805,6 +848,7 @@ fn crossing_chords(
     model: &Model,
     face: &Face,
     plane: &nacre_geom::Plane,
+    sets: &ThetaSets,
 ) -> Option<BoundaryScan> {
     use polygon::Crossing;
     let loops: Vec<&Loop> = loops_of(face).collect();
@@ -858,7 +902,8 @@ fn crossing_chords(
     for i in chords {
         let (ring, k) = place(i);
         let (positions, closing) = &traced[ring];
-        if let Some(w) = arc_midpoint(t, model, positions[k], arriving(positions, *closing, k).0) {
+        let step = arriving(positions, *closing, k).0;
+        if let Some(w) = arc_midpoint(t, model, sets, positions[k], step) {
             wanted.push(w);
         }
     }
@@ -881,10 +926,23 @@ struct BoundaryScan {
 /// along — or `None` when the chord is not an arc's, its edge is already cut as finely as
 /// [`FINEST_CIRCLE`] lets it be, or the midpoint is one of its ends in `f64`.
 ///
-/// The polyline runs CCW about the circle ([`curve_turn`]), so the chord's earlier end is `from`
-/// walked forward and the arrival walked backward; θ is read off both ends with
-/// `Ellipse::angle_of`, the curve's own parameter, which is its lateral's angle ([`angle_about`]),
-/// and stands halfway round between.
+/// The polyline runs CCW about the circle ([`FaceThetas::span`]), so the chord's earlier end is
+/// `from` walked forward and the arrival walked backward. **The θ stands halfway round between the
+/// numbers of the two columns the chord joins** — a sample's `t`, a vertex's column
+/// ([`FaceThetas::column_of`]) — so two curves of one lateral crossing between the same two
+/// columns (a bore's two rims, each crossing on its cap) ask for one number, and the set lays one
+/// column. That number is in `[0, τ)` ([`ccw_midpoint`]), so the `f64`-floor check below judges
+/// the point the sample will stand at. Read off the ends' positions instead, about each rim's own
+/// centre (`Ellipse::angle_of`), the two asks were ulps apart on a tilted axis: two columns
+/// `1.1e-16` to `2.2e-16` apart left each rim a chord of next to no length, and 33 of 270 disks
+/// bored or fused with a column near the rim, on four axes, were refused by the mesh, all on the
+/// two 3-4-5 axes with a zero component
+/// (measured); read off the samples' unwrapped places, the asks parted wherever one rim's range
+/// started a hair below `0`, which far from the origin refused 57 of 270 (at `(1000, −2000, 3000)`).
+///
+/// The sets are read while the round's scans grow them ([`finish_polylines`]): a vertex's column
+/// is never moved by [`FaceThetas::add`], which lays only columns with no vertex, and the samples'
+/// `t` are the round's.
 ///
 /// **At the `f64` floor the midpoint need not lie between its ends** — for chords under about
 /// `1e-12` rad about 1% of the midpoints land outside them, whatever the formula (the angle
@@ -895,6 +953,7 @@ struct BoundaryScan {
 fn arc_midpoint(
     t: &Tessellation,
     model: &Model,
+    sets: &ThetaSets,
     from: Traced,
     step: Traced,
 ) -> Option<(Handle<Edge>, f64)> {
@@ -902,22 +961,35 @@ fn arc_midpoint(
         return None;
     };
     let edge = model.edge(step.edge);
+    let set = sets.of(step.edge);
     let poly = &t.by_edge[&step.edge];
     let chords = if edge.vertices[0] == edge.vertices[1] {
         poly.len()
     } else {
         poly.len() - 1
     };
-    if chords >= segments_over(FINEST_CIRCLE, edge, curve_turn(model, edge, c)) {
+    if chords >= segments_over(FINEST_CIRCLE, edge, set.span(model, edge).1) {
         return None;
     }
+    // A chord's two ends are samples of this edge or its own vertices (`traced_ring` takes a
+    // shared vertex once), so each has its number.
+    let number = |h: Handle<TessVertex>| match t.vertices.get(h).origin {
+        TessOrigin::OnEdge { t, .. } => t,
+        TessOrigin::OnVertex(v) => set
+            .column_of(v)
+            .expect("a curve's set holds its two vertices"),
+        TessOrigin::OnFace { .. } => unreachable!("a polyline holds no face sample"),
+    };
+    let (early, late) = if step.forward {
+        (from.handle, step.handle)
+    } else {
+        (step.handle, from.handle)
+    };
+    let theta = ccw_midpoint(number(early), number(late));
     let (a, b) = (
         t.vertices.get(from.handle).pos,
         t.vertices.get(step.handle).pos,
     );
-    let (early, late) = if step.forward { (a, b) } else { (b, a) };
-    let t0 = c.angle_of(early);
-    let theta = t0 + (c.angle_of(late) - t0).rem_euclid(std::f64::consts::TAU) / 2.0;
     let pos = c.point_at(theta);
     if pos == a || pos == b {
         return None;
@@ -1384,6 +1456,10 @@ fn vertex_of(
 /// round from it; an arc ends on its second vertex, a whole rim closes on its first without
 /// repeating it. The lattice columns are absolute (`τk/N`), so a plain rim's samples are where an
 /// even cut from its seam vertex puts them.
+///
+/// Each sample stands at its column's own number and carries it as its `t`
+/// ([`FaceThetas::columns`]), so two curves sampled at one column hold one number there, whatever
+/// turn each one's range takes it on.
 fn sample_curve(
     t: &mut Tessellation,
     vmap: &mut HashMap<Handle<Vertex>, Handle<TessVertex>>,
@@ -1399,20 +1475,18 @@ fn sample_curve(
         "a curve shares its face's frame: {c:?} on {:?}",
         set.cyl
     );
-    let t0 = set.angle(model.vertex_point(v0));
-    let dt = if v0 == v1 {
-        std::f64::consts::TAU
-    } else {
-        in_turn(set.angle(model.vertex_point(v1)) - t0)
-    };
+    let (t0, dt) = set.span(model, edge);
     let mut poly = vec![vertex_of(t, vmap, model, v0)];
-    for (theta, at) in set.columns(t0, t0 + dt) {
+    for (_, number, at) in set.columns(t0, t0 + dt) {
         if at.contains(&v0) || at.contains(&v1) {
             continue;
         }
         let h = t.vertices.push(TessVertex {
-            pos: c.point_at(theta),
-            origin: TessOrigin::OnEdge { edge: eh, t: theta },
+            pos: c.point_at(number),
+            origin: TessOrigin::OnEdge {
+                edge: eh,
+                t: number,
+            },
         });
         poly.push(h);
     }
@@ -1420,19 +1494,6 @@ fn sample_curve(
         poly.push(vertex_of(t, vmap, model, v1));
     }
     poly
-}
-
-/// How far a curve edge turns, CCW, on the curve's own parameter — what
-/// [`crossing_chords`] bounds its cutting by. A closed edge is the whole turn; an arc's
-/// stored `[v0, v1]` order is CCW about the axis — the convention `derive_edge_curve`'s circle arm
-/// states — so it turns from θ(v0) to θ(v1), read by `Ellipse::angle_of`.
-fn curve_turn(model: &Model, edge: &Edge, c: &Ellipse) -> f64 {
-    let [v0, v1] = edge.vertices;
-    if v0 == v1 {
-        return std::f64::consts::TAU;
-    }
-    (c.angle_of(model.vertex_point(v1)) - c.angle_of(model.vertex_point(v0)))
-        .rem_euclid(std::f64::consts::TAU)
 }
 
 /// The segments a circle edge turning `dt` gets out of `per_turn` for the whole circle: all of
@@ -2095,6 +2156,10 @@ struct Cut {
 /// ([`curve_place`] — a circle's centre, where every arc of one circle agrees bitwise; an
 /// ellipse's own height there) rather than the computed point's, which carries rounding. Two
 /// points at one place would be two loops touching on the cut.
+///
+/// **Around it, one number.** Every ring's point stands at the generator's number in `[0, τ)` and
+/// carries it as its `t`, as a sample of a column does ([`FaceThetas::columns`]) — so a crossing
+/// chord ending there names the same number on every rim ([`arc_midpoint`]).
 #[allow(clippy::too_many_arguments)]
 fn band_cut(
     t: &mut Tessellation,
@@ -2105,8 +2170,6 @@ fn band_cut(
     wrapping: [usize; 2],
     c: f64,
 ) -> BandCut {
-    let axis = cyl.axis();
-    let (x, y) = (cyl.ref_dir(), axis.direction().cross(cyl.ref_dir()));
     // Every crossing is found before any insertion moves a polyline index (`Traced::at`).
     let mut found: Vec<(usize, Traced, bool)> = Vec::new(); // (ring, where the step arrives, closing wrap)
     for (ring, (positions, closing)) in traced.iter().enumerate() {
@@ -2128,23 +2191,19 @@ fn band_cut(
             found.push((ring, step, wraps));
         }
     }
+    // The generator's one number, every ring's point standing at it.
+    let number = in_turn(c);
     let mut points: Vec<(usize, Handle<TessVertex>, f64)> = Vec::with_capacity(found.len());
     for (ring, step, wraps) in found {
         let Curve::Ellipse(circle) = model.edge_curve(step.edge) else {
             return None;
         };
-        let round = circle.center() + (x * c.cos() + y * c.sin()) * circle.radius();
-        let z = circle.z_at(c);
-        let pos = if z == 0.0 {
-            round
-        } else {
-            round + axis.direction() * z
-        };
+        let pos = circle.point_at(number);
         let h = t.vertices.push(TessVertex {
             pos,
             origin: TessOrigin::OnEdge {
                 edge: step.edge,
-                t: circle.angle_of(pos),
+                t: number,
             },
         });
         let poly = t.by_edge.get_mut(&step.edge)?;
@@ -2451,7 +2510,7 @@ fn interior_nodes(
             .iter()
             .filter(|(a, b)| a[0].min(b[0]) - near <= u && u <= a[0].max(b[0]) + near)
             .collect();
-        for &(theta, _) in &columns {
+        for &(theta, _, _) in &columns {
             let p = [u, r * theta];
             if !here.iter().any(|&&(a, b)| distance_to_step(p, a, b) < near) {
                 out.push(p);
