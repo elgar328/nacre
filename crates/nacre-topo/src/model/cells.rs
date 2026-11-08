@@ -302,9 +302,8 @@ impl Model {
     ///   `[A, B]` means the piece from A to B **counter-clockwise about the axis direction**,
     ///   and the two complementary arcs between one vertex pair are the two orders. Producers
     ///   uphold this (`boolean`'s edge welding keys arcs in CCW order); the curve stored here is
-    ///   the whole circle either way. Every consumer reads it the same way: tessellation's
-    ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Ellipse::angle_of` as the one spelling of
-    ///   θ, and the three that add each arc's circular segment to a chord polygon take Δθ from the
+    ///   the whole circle either way. Every consumer reads it the same way: tessellation
+    ///   samples from `θ(v0)` round to `θ(v1)` (`sample_curve`), and the three that add each arc's circular segment to a chord polygon take Δθ from the
     ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
     ///   `outer_tri`. **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
     ///   runs is its half-edge's `forward` — its ends, being one vertex, say neither. Every one of

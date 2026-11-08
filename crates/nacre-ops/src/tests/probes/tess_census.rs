@@ -46,6 +46,14 @@ pub(crate) fn record(model: &Model) {
             kinked.is_empty(),
             "a boolean built a solid whose curve's polyline kinks past the budget: {kinked:?}"
         );
+        // And each lateral's curves stand their samples on common generators
+        // (`unshared_columns`) — a band between two curves sampled off each other's θs tilts.
+        let unshared = nacre_tess::unshared_columns(model, t);
+        assert!(
+            unshared.is_empty(),
+            "a boolean built a solid whose lateral's curves are sampled off each other's θs: \
+             {unshared:?}"
+        );
     }
     // **The claim is asserted here, where the fact exists — not in a later test.**
     // A `#[test]` that reads the ledger sees only the booleans that ran *before* it, so a solid

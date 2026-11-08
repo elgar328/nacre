@@ -518,6 +518,12 @@ fn record(
                 kinked.is_empty(),
                 "{tag}: a curve's polyline that kinks past the budget: {kinked:?}"
             );
+            // And the curves of each lateral stand their samples on common generators.
+            let unshared = nacre_tess::unshared_columns(m, t);
+            assert!(
+                unshared.is_empty(),
+                "{tag}: a lateral's curves sampled off each other's θs: {unshared:?}"
+            );
         }
     }
     print!("c {tag} in:{inputs} ");

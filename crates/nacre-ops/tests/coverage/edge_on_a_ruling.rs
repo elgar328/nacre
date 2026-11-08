@@ -239,6 +239,8 @@ fn drawn(c: &Case<'_, '_>, m: &Model, solids: &[Handle<Solid>], volume: f64) {
     assert_eq!(non_watertight(&t), 0, "{c}: the mesh leaks");
     let leaning = nacre_tess::leaning_laterals(m, &t, cfg.max_angle_deg);
     assert!(leaning.is_empty(), "{c}: {leaning:?}");
+    let unshared = nacre_tess::unshared_columns(m, &t);
+    assert!(unshared.is_empty(), "{c}: {unshared:?}");
     let mut slack = 0.0;
     for &s in solids {
         let solid = m.solid(s);

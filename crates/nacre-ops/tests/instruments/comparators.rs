@@ -55,7 +55,7 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         2,
         "`Handle`'s `Ord`/`PartialOrd`: its integer index",
     ),
-    ("nacre-tess/src/lib.rs", 3, "`f64::total_cmp`"),
+    ("nacre-tess/src/lib.rs", 5, "`f64::total_cmp`"),
     (
         "nacre-tess/src/polygon/monotone.rs",
         2,

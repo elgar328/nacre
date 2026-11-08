@@ -222,7 +222,7 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
                         // The **whole** curve's extent, whatever the edge's endpoints say — so
                         // an arc grows the box too much, never too little. A bound that
                         // errs outward stays a bound, which is why this one needs no change when
-                        // arcs arrive; `sample_edge` in `nacre-tess` is the one that would not.
+                        // arcs arrive; `sample_curve` in `nacre-tess` is the one that would not.
                         grow(curve.center(), curve.half_extent());
                     }
                 }

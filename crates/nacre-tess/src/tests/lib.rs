@@ -128,7 +128,7 @@ fn unit_cube_obj_shape() {
 /// The eight corners come back as text — **as a set**.
 ///
 /// Ordered comparison would pass today (measured: the mesh's vertices come out in the
-/// model's order for a cuboid, because `sample_edge` walks the edge store and dedups on first
+/// model's order for a cuboid, because `sample_live_edges` walks the edge store and dedups on first
 /// sight). It is not a contract, though — nothing promises that traversal — so asserting it
 /// would pin an artifact.
 #[test]
@@ -318,7 +318,16 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
     match m.surface_cache(face.surface) {
         nacre_topo::SurfaceCache::Plane { plane: p, .. } => planar_chart(t, face, p).unwrap(),
         nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => {
-            cylinder_chart(t, m, cfg, face, c, whole_rims_cut(t, m, face, c).map(Some)).unwrap()
+            let thetas = FaceThetas::of_face(cfg, m, face, c);
+            cylinder_chart(
+                t,
+                m,
+                face,
+                c,
+                whole_rims_cut(t, m, face, c).map(Some),
+                &thetas,
+            )
+            .unwrap()
         }
     }
 }
@@ -1601,7 +1610,7 @@ fn drawn_right(m: &Model, name: &str) -> Tessellation {
 /// the bands cut (which puts samples into arcs of its own).
 fn before_cutting(m: &Model) -> usize {
     let mut t = Tessellation::default();
-    let live = sample_live_edges(&mut t, m, &TessConfig::default(), &m.reachable());
+    let (live, _) = sample_live_edges(&mut t, m, &TessConfig::default(), &m.reachable());
     cut_seamless_bands(&mut t, m, &live);
     t.by_edge.values().map(Vec::len).sum()
 }
@@ -1708,33 +1717,184 @@ fn near_contact_past_the_finest_sampling_is_refused_by_name() {
     );
 }
 
-/// **A band too thin between rims off each other's samples is refused by name** — a known defect,
-/// in `docs/todo.md`. A disk of radius 50 with a box taking `z ≥ h` off its rim beyond `x = 15`:
-/// the rim drops to `h` on an arc from the box's wall, cut evenly between its own ends, so its
-/// samples stand on none of the bottom circle's, and every facet across the band tilts by about the
-/// offset sag over `h`. At `h = 0.1` that is past the angular budget and the mesh is `OverBudget`;
-/// at `0.4` it is drawn. Cutting every curve on one cylinder on one θ grid would draw the first
-/// too.
+/// **A thin band between an arc and the rim beside it is drawn**, its facets on the
+/// surface — the curves of one lateral stand on one θ set ([`FaceThetas`]). A disk of radius `r`
+/// with a box taking `z ≥ h` off its rim beyond `x = 0.3 r`: the rim drops to `h` on an arc from the
+/// box's wall. Cut evenly between its own ends, that arc's samples stood on none of the bottom
+/// circle's, and every facet across the band tilted by about the offset sag over `h` — past the
+/// angular budget at `h = 0.1` for `r = 50`, which the mesh refused. Down to `h = 1e-6` the band
+/// is now drawn inside the budget, and no curve misses a θ another stands a sample at.
 #[test]
-fn a_band_too_thin_between_rims_off_each_others_samples_is_refused() {
+fn a_band_thin_between_an_arc_and_its_rim_is_drawn() {
     use nacre_ops::{BoolKind, boolean, fixtures};
-    let cut = |h: f64| {
-        let mut m = Model::new();
-        let disk = fixtures::cylinder_with_seam(
-            &mut m,
-            Point3::origin(),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            Vector3::from_array([-1.0, 0.0, 0.0]),
-            50.0,
-            1.0,
-        )
-        .solid;
-        let block = fixtures::cuboid(&mut m, [15.0, -100.0, h], [100.0, 100.0, 2.0]);
-        let out = boolean(&mut m, BoolKind::Cut, disk, block).expect("the box cuts");
-        tessellate_solids(&m, &out, &TessConfig::default()).map(|_| ())
+    let cfg = TessConfig::default();
+    for r in [50.0, 2.0] {
+        for h in [0.4, 0.1, 1e-3, 1e-6] {
+            let mut m = Model::new();
+            let disk = fixtures::cylinder_with_seam(
+                &mut m,
+                Point3::origin(),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                Vector3::from_array([-1.0, 0.0, 0.0]),
+                r,
+                1.0,
+            )
+            .solid;
+            let block = fixtures::cuboid(&mut m, [0.3 * r, -100.0, h], [100.0, 100.0, 2.0]);
+            let out = boolean(&mut m, BoolKind::Cut, disk, block).expect("the box cuts");
+            let t = tessellate_solids(&m, &out, &cfg)
+                .unwrap_or_else(|e| panic!("r {r}, a band {h} high: {e:?}"));
+            let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
+            assert!(leaning.is_empty(), "r {r}, h {h}: {leaning:?}");
+            let unshared = unshared_columns(&m, &t);
+            assert!(unshared.is_empty(), "r {r}, h {h}: {unshared:?}");
+        }
+    }
+}
+
+/// **A row of the lattice stands on the face's θ set too**, so a band between a row and a rim is
+/// spanned by generators as a band between two rims is. A disk of radius 50 and height 100 with a
+/// step taking the top down by `0.02` beyond `x = 15` — a row lies at `99.98` across the uncut
+/// side — and a notch at the bottom of that side, whose two rulings put their θs into the top
+/// rim's samples. The row has a point on both of those generators. On the lattice's columns alone
+/// it had neither, and its facets against the rim leaned up to 1.16° (the budget is 2°).
+#[test]
+fn a_lattice_row_stands_on_the_faces_vertex_columns() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let mut m = Model::new();
+    let disk = fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::origin(),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([-1.0, 0.0, 0.0]),
+        50.0,
+        100.0,
+    )
+    .solid;
+    let step = fixtures::cuboid(&mut m, [15.0, -100.0, 99.98], [100.0, 100.0, 101.0]);
+    let out = boolean(&mut m, BoolKind::Cut, disk, step).expect("the step cuts");
+    let notch = fixtures::cuboid(&mut m, [-100.0, -7.3, -1.0], [-45.0, 11.1, 0.3]);
+    let out = boolean(&mut m, BoolKind::Cut, out[0], notch).expect("the notch cuts");
+    let t = tessellate_solids(&m, &out, &TessConfig::default()).expect("it meshes");
+    // The notch's walls `y = −7.3` and `y = 11.1` meet the circle on its `x < 0` side; θ runs from
+    // `ref_dir = −x̂` towards `ẑ × ref_dir = −ŷ`.
+    let thetas = [-7.3f64, 11.1].map(|y| (-y).atan2((2500.0 - y * y).sqrt()));
+    let row: Vec<f64> = t
+        .vertices
+        .iter()
+        .filter_map(|(_, v)| match v.origin {
+            TessOrigin::OnFace { uv: [theta, h], .. } if (h - 99.98).abs() < 1e-9 => Some(theta),
+            _ => None,
+        })
+        .collect();
+    let gap = |a: f64, b: f64| {
+        let d = (a - b).rem_euclid(std::f64::consts::TAU);
+        d.min(std::f64::consts::TAU - d)
     };
-    assert_eq!(cut(0.1), Err(TessError::OverBudget), "a band 0.1 high");
-    assert_eq!(cut(0.4), Ok(()), "a band 0.4 high");
+    for theta in thetas {
+        assert!(
+            row.iter().any(|&p| gap(p, theta) < 1e-9),
+            "the row has no point on the generator at {theta}"
+        );
+    }
+}
+
+/// **`unshared_columns` names a curve missing a θ its partner stands a sample at** — on a plain
+/// cylinder's mesh, whose two rims share every column, one sample taken out of the top rim is
+/// named with the bottom rim's angle there, and nothing else is.
+#[test]
+fn a_rim_missing_its_partners_sample_is_named() {
+    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+    let mut t = tessellate(&m, &TessConfig::default()).expect("a cylinder meshes");
+    assert!(
+        unshared_columns(&m, &t).is_empty(),
+        "the rims share every column"
+    );
+    let (&rim, poly) = t
+        .by_edge
+        .iter_mut()
+        .filter(|(e, _)| matches!(m.edge_curve(**e), Curve::Ellipse(_)))
+        .max_by_key(|(e, _)| e.index())
+        .expect("a rim");
+    let gone = poly.remove(7);
+    let unshared = unshared_columns(&m, &t);
+    assert_eq!(unshared.len(), 1, "{unshared:?}");
+    assert_eq!(unshared[0].edge, rim);
+    let cyl = m
+        .surface_cache(m.face(unshared[0].face).surface)
+        .cylinder()
+        .expect("a lateral");
+    let theta = in_turn(angle_about(cyl, t.vertices.get(gone).pos));
+    assert!(
+        (unshared[0].theta - theta).abs() < 1e-9,
+        "{unshared:?} at {theta}"
+    );
+}
+
+/// **A face's θ set lays its columns over any range**: every vertex column inside it, whole turns
+/// away included, and every lattice column farther than [`FaceThetas::near`] from every vertex
+/// column — one just outside the range too.
+#[test]
+fn the_theta_set_lays_vertex_and_lattice_columns() {
+    use std::f64::consts::TAU;
+    let cyl = nacre_geom::Cylinder::from_axis(
+        Point3::origin(),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        1.0,
+    )
+    .expect("a cylinder");
+    let n = 180.0;
+    let step = TAU / n;
+    let near = step * ON_RULING;
+    let set = |at: &[f64]| FaceThetas {
+        cyl,
+        count: 180,
+        columns: at.iter().map(|&a| (a, Vec::new())).collect(),
+    };
+    let laid = |set: &FaceThetas, lo: f64, hi: f64| -> Vec<f64> {
+        set.columns(lo, hi).into_iter().map(|(c, _)| c).collect()
+    };
+    let lattice = |k: f64| TAU * k / n;
+    // Vertices a hair either side of `0`: both laid, and the lattice's `0` between them.
+    let eps = 1e-3;
+    let s = set(&[eps, TAU - eps]);
+    assert_eq!(
+        laid(&s, -2.0 * eps, 2.0 * eps),
+        [TAU - eps - TAU, 0.0, eps],
+        "across 0"
+    );
+    // A span crossing `0`, and the same span whole turns away.
+    let s = set(&[]);
+    assert_eq!(laid(&s, -0.05, 0.05), [lattice(-1.0), 0.0, lattice(1.0)]);
+    assert_eq!(
+        laid(&s, 2.0 * TAU - 0.05, 2.0 * TAU + 0.05),
+        [lattice(359.0), lattice(360.0), lattice(361.0)],
+        "two turns on"
+    );
+    // A lattice column within `near` of a vertex either side is not laid; one farther is.
+    let s = set(&[
+        lattice(5.0) + near / 2.0,
+        lattice(7.0) - near / 2.0,
+        lattice(9.0) + 2.0 * near,
+    ]);
+    assert_eq!(
+        laid(&s, lattice(4.5), lattice(9.5)),
+        [
+            lattice(5.0) + near / 2.0,
+            lattice(6.0),
+            lattice(7.0) - near / 2.0,
+            lattice(8.0),
+            lattice(9.0),
+            lattice(9.0) + 2.0 * near
+        ],
+    );
+    // A vertex just outside the range still keeps its lattice neighbour out, and is not laid.
+    let s = set(&[lattice(3.0) - near / 2.0]);
+    assert_eq!(
+        laid(&s, lattice(3.0) - near / 4.0, lattice(4.5)),
+        [lattice(4.0)]
+    );
 }
 
 /// **A facet whose normal its own points do not determine is outside the budget, asked in any
@@ -1845,20 +2005,29 @@ fn a_non_positive_angle_asks_nothing_of_the_angle() {
     }
 }
 
-/// **A band too thin for its rims' misaligned samples is refused by name** — a known defect, in
-/// `docs/todo.md`. A rod of radius 2 less a prism over the plane `z = low + 0.15 + 0.05·x` (the
-/// rod's oblique end at `k = 1/20`, so `a/b ≈ 1.00125`): the ellipse is cut into 181 pieces against
-/// its bottom circle's 180, the two rims' samples stand on no common ruling, and every facet across
-/// the band tilts by about the samples' offset sag over the band's height. Where the band is
-/// `0.004` at its lowest that is past the angular budget and the mesh is `OverBudget`; at `0.05` it
-/// is drawn.
+/// **A thin band between an ellipse and the circle of its rod is drawn** — the ellipse is
+/// cut finer than its circle (by its turn, `a/b`), and the circle stands on the ellipse's face's
+/// lattice with it ([`FaceThetas`]). A rod of radius 2 less a prism over an oblique plane through
+/// its lower part, at slopes `1/20`, `1/2` and `2`, the band between the plane and the bottom rim
+/// `0.004` and `1e-5` high at its lowest. Cut each on its own count, the two rims' samples stood on
+/// no common ruling, and every facet across the band tilted by the offset sag over its height —
+/// past the budget below about `0.008` at `1/20`, which the mesh refused.
 #[test]
-fn a_band_too_thin_for_its_rims_misaligned_samples_is_refused() {
+fn a_band_thin_between_an_ellipse_and_its_circle_is_drawn() {
     use nacre_exact::Axis;
     use nacre_ops::{
         BoolKind, OpOutput, Operation, Ring2d, SketchFrame, apply, boolean, fixtures, from_paths,
     };
-    let cut = |low: f64, high: f64| {
+    let cfg = TessConfig::default();
+    let cuts = [
+        (-0.046, 0.254),
+        (-0.04999, 0.25001),
+        (-1.496, 1.504),
+        (-1.4999, 1.5001),
+        (-5.994, 6.006),
+        (-5.9999, 6.0001),
+    ];
+    for (low, high) in cuts {
         let mut m = Model::new();
         let rod = fixtures::cylinder_with_seam(
             &mut m,
@@ -1866,11 +2035,11 @@ fn a_band_too_thin_for_its_rims_misaligned_samples_is_refused() {
             Vector3::from_array([0.0, 0.0, 1.0]),
             Vector3::from_array([1.0, 0.0, 0.0]),
             2.0,
-            10.0,
+            20.0,
         )
         .solid;
         // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
-        let pts = [(low, -3.0), (high, 3.0), (12.0, 3.0), (12.0, -3.0)]
+        let pts = [(low, -3.0), (high, 3.0), (19.0, 3.0), (19.0, -3.0)]
             .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
         let ring = Ring2d::polygon_decimal(pts.to_vec()).expect("a quadrilateral");
         let profile = from_paths(vec![ring]).expect("one profile").remove(0);
@@ -1886,12 +2055,11 @@ fn a_band_too_thin_for_its_rims_misaligned_samples_is_refused() {
             panic!("the prism extrudes")
         };
         let out = boolean(&mut m, BoolKind::Cut, rod, prism).expect("the rod cuts");
-        tessellate_solids(&m, &out, &TessConfig::default()).map(|_| ())
-    };
-    assert_eq!(
-        cut(-0.046, 0.254),
-        Err(TessError::OverBudget),
-        "a band 0.004 high"
-    );
-    assert_eq!(cut(0.0, 0.3), Ok(()), "a band 0.05 high");
+        let t = tessellate_solids(&m, &out, &cfg)
+            .unwrap_or_else(|e| panic!("cut from {low} to {high}: {e:?}"));
+        let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
+        assert!(leaning.is_empty(), "{low}..{high}: {leaning:?}");
+        let unshared = unshared_columns(&m, &t);
+        assert!(unshared.is_empty(), "{low}..{high}: {unshared:?}");
+    }
 }

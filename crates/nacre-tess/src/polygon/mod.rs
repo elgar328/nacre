@@ -484,11 +484,11 @@ fn strictly_between(a: P2, b: P2, p: P2) -> bool {
 ///
 /// | face | inside | on an edge | dropped |
 /// |---|---|---|---|
-/// | `−x` wall | 37 | 141 | 178 |
-/// | `+x` wall | 162 | 16 | 178 |
-/// | `−y` wall | 32 | 146 | 178 |
-/// | `+y` wall | 82 | 96 | 178 |
-/// | corner | 147 | 121 | 88 |
+/// | `−x` wall | 136 | 42 | 178 |
+/// | `+x` wall | 163 | 15 | 178 |
+/// | `−y` wall | 130 | 48 | 178 |
+/// | `+y` wall | 163 | 15 | 178 |
+/// | corner | 156 | 112 | 88 |
 ///
 /// (The dropped ones lie on the face's own arcs. Four more per face never reach here: the chart
 /// withholds a lattice point standing on a ruling — [`crate::interior_nodes`].)

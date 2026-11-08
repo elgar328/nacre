@@ -180,6 +180,8 @@ fn a_rods_oblique_end_meshes() {
         assert!(leaning.is_empty(), "{leaning:?}");
         let kinked = nacre_tess::kinked_edges(&m, &t, cfg.max_angle_deg);
         assert!(kinked.is_empty(), "{k}: {kinked:?}");
+        let unshared = nacre_tess::unshared_columns(&m, &t);
+        assert!(unshared.is_empty(), "{k}: {unshared:?}");
         let mut volume = 0.0;
         for f in &m.reachable_from(&[s]).faces {
             for &tri in &t.by_face[f] {
