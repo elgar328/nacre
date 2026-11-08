@@ -127,9 +127,8 @@ fn unit_cube_obj_shape() {
 
 /// The eight corners come back as text — **as a set**.
 ///
-/// Ordered comparison would pass today (measured: the mesh's vertices come out in the
-/// model's order for a cuboid, because `sample_live_edges` walks the edge store and dedups on first
-/// sight). It is not a contract, though — nothing promises that traversal — so asserting it
+/// Ordered comparison passes too (measured: the mesh's vertices come out in the model's order for
+/// a cuboid, because `sample_edges` walks the edge store and dedups on first sight). It is not a contract, though — nothing promises that traversal — so asserting it
 /// would pin an artifact.
 #[test]
 fn vertices_round_trip() {
@@ -1279,6 +1278,68 @@ fn a_mesh_of_chosen_solids_holds_theirs_as_the_whole_mesh_does() {
     );
 }
 
+/// **A solid whose cap's chords cross is meshed alone as in the whole mesh**, beside one that needs
+/// more rounds ([`finish_polylines`]): the playground's hole fused with a column just above the
+/// disk, and far off a bore near-concentric with its disk, `1e-6` from its rim all the way round.
+/// The columns each asks for go on its own laterals only, so a round the other needs lays the same
+/// samples again — each face has the same triangles, corner for corner, alone and together. And the
+/// mesh holds only the last round's samples: every vertex it holds is a triangle's corner.
+#[test]
+fn a_mesh_of_solids_whose_chords_cross_holds_theirs_as_the_whole_mesh_does() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let z = Vector3::from_array([0.0, 0.0, 1.0]);
+    let mut m = Model::new();
+    let disk = fixtures::cylinder(&mut m, Point3::origin(), z, 10.0, 2.0).solid;
+    let column = fixtures::cylinder(
+        &mut m,
+        Point3::from_array([3.0, 4.0, -1.0]),
+        z,
+        4.9995,
+        3.01,
+    )
+    .solid;
+    let [fused] = boolean(&mut m, BoolKind::Fuse, disk, column).expect("the column fuses")[..]
+    else {
+        panic!("one solid");
+    };
+    let far = fixtures::cylinder(&mut m, Point3::from_array([100.0, 0.0, 0.0]), z, 1.0, 2.0).solid;
+    let bore = fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([100.0000006, 0.0000008, -1.0]),
+        z,
+        Vector3::from_array([0.6, 0.8, 0.0]),
+        0.999998,
+        4.0,
+    )
+    .solid;
+    boolean(&mut m, BoolKind::Cut, far, bore).expect("the bore cuts");
+
+    let cfg = TessConfig::default();
+    let whole = tessellate(&m, &cfg).unwrap();
+    let alone = tessellate_solids(&m, &[fused], &cfg).unwrap();
+    let corners = |t: &Tessellation, f: &Handle<Face>| -> Vec<[u64; 3]> {
+        let mut c: Vec<[u64; 3]> = t.by_face[f]
+            .iter()
+            .flat_map(|&th| t.triangles.get(th).vertices)
+            .map(|vh| t.vertices.get(vh).pos.as_array().map(f64::to_bits))
+            .collect();
+        c.sort();
+        c
+    };
+    assert!(!alone.by_face.is_empty());
+    for f in alone.by_face.keys() {
+        assert_eq!(corners(&alone, f), corners(&whole, f), "{f:?}");
+    }
+    for t in [&whole, &alone] {
+        let used: HashSet<Handle<TessVertex>> = t
+            .triangles
+            .iter()
+            .flat_map(|(_, tri)| tri.vertices)
+            .collect();
+        assert_eq!(used.len(), t.vertices.len(), "a vertex no triangle uses");
+    }
+}
+
 /// **Each OBJ corner carries its face's outward normal — so a cylinder is round and its rims
 /// are sharp.** Without `vn` a viewer shades each facet flat (a cylinder reads as bands) or
 /// averages a shared vertex's normals — and the mesh shares every rim point between cap and side,
@@ -1615,24 +1676,32 @@ fn before_cutting(m: &Model) -> usize {
     t.by_edge.values().map(Vec::len).sum()
 }
 
-/// **A boundary nearer another than a chord sags is drawn** ([`separate_crossing_chords`]).
-/// Each of these is a valid solid whose cap the sweep would refuse with the arcs there left uncut —
-/// the chords of two curves `1e-8` to `5e-4` apart passing through each other:
+/// **A boundary nearer another than a chord sags is drawn** ([`crossing_chords`]) — **and the
+/// θ an arc is cut at stands on every curve of its lateral.** Each of these is a valid solid whose
+/// cap the sweep would refuse with the arcs there left uncut — the chords of two curves `1e-8` to
+/// `5e-4` apart passing through each other:
 ///
 /// * the playground's `d: 9.999` hole at `(3, 4)` in a disk of radius 10, its rim `0.0005` from the
-///   disk's — cut, and fused with a column standing past both caps;
-/// * a hole of the unit disk at `(0.3, 0.4)`, its rim `1e-8` from the disk's;
+///   disk's — cut; fused with a column standing past both caps; and fused with a column whose top
+///   stands only `0.01` above the disk;
+/// * a hole of the unit disk at `(0.3, 0.4)`, its rim `1e-8` from the disk's — cut, and fused with
+///   a column whose top stands `0.001` above the disk;
 /// * a groove's tip `1e-8` inside the rim (`wedge_on_a_rim` with its apex off the circle);
 /// * a groove's tip on the rim at `(0.6, 0.8)`, one side leaving it `0.1°` inside the tangent —
 ///   inside the half segment's turn (1°) the rim's first chord leaves at.
 ///
 /// Each finished boundary holds more samples than sampling and the band cut laid: the arcs were
-/// cut, not the shape spared.
+/// cut, not the shape spared. And no curve misses a θ another curve of its lateral stands a sample
+/// at ([`unshared_columns`]): a fused column's arc on the disk's top is cut where the crossing is,
+/// and its top rim must be cut there too. Cut on that arc alone, the band up to a top `0.01` above
+/// leans past the budget and the mesh is refused (`OverBudget`) — the cut hole passes that way only
+/// because both caps cross at the same θs.
 #[test]
 fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let z = Vector3::from_array([0.0, 0.0, 1.0]);
-    let disk_and_column = |kind: BoolKind, r: f64, centre: [f64; 2], rho: f64| -> Model {
+    // The disk stands on `z ∈ [0, 2]`, the column on `[−1, top]`.
+    let disk_and_column = |kind: BoolKind, r: f64, centre: [f64; 2], rho: f64, top: f64| -> Model {
         let mut m = Model::new();
         let disk = fixtures::cylinder(&mut m, Point3::origin(), z, r, 2.0).solid;
         let column = fixtures::cylinder(
@@ -1640,7 +1709,7 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
             Point3::from_array([centre[0], centre[1], -1.0]),
             z,
             rho,
-            4.0,
+            top + 1.0,
         )
         .solid;
         boolean(&mut m, kind, disk, column).expect("the column's boolean");
@@ -1654,15 +1723,23 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
     let shapes = [
         (
             "the playground's hole, cut",
-            disk_and_column(BoolKind::Cut, 10.0, [3.0, 4.0], 4.9995),
+            disk_and_column(BoolKind::Cut, 10.0, [3.0, 4.0], 4.9995, 3.0),
         ),
         (
             "the playground's hole, fused",
-            disk_and_column(BoolKind::Fuse, 10.0, [3.0, 4.0], 4.9995),
+            disk_and_column(BoolKind::Fuse, 10.0, [3.0, 4.0], 4.9995, 3.0),
+        ),
+        (
+            "the playground's hole, fused with a column just above the disk",
+            disk_and_column(BoolKind::Fuse, 10.0, [3.0, 4.0], 4.9995, 2.01),
         ),
         (
             "a hole 1e-8 from the rim",
-            disk_and_column(BoolKind::Cut, 1.0, [0.3, 0.4], 0.49999999),
+            disk_and_column(BoolKind::Cut, 1.0, [0.3, 0.4], 0.49999999, 3.0),
+        ),
+        (
+            "a hole 1e-8 from the rim, fused with a column just above the disk",
+            disk_and_column(BoolKind::Fuse, 1.0, [0.3, 0.4], 0.49999999, 2.001),
         ),
         (
             "a groove tip 1e-8 inside the rim",
@@ -1680,6 +1757,8 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
             finished > before_cutting(&m),
             "{name}: no arc was cut finer"
         );
+        let unshared = unshared_columns(&m, &t);
+        assert!(unshared.is_empty(), "{name}: {unshared:?}");
     }
 }
 
@@ -1688,7 +1767,8 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
 /// the chords cross all the way round, and every arc must be cut until its sagitta is under the
 /// gap. At `1e-6` that is about 2,300 samples a circle and the cap is drawn; at `1e-8` it would be
 /// over 20,000, past [`FINEST_CIRCLE`], and the face comes back [`TessError::DegenerateRing`] — in
-/// about 0.9 s (release), where cutting on would draw it in about 20.
+/// about 0.6 s (release), where cutting on past the cap, the samples put on the one arc, draws it
+/// in about 20.
 #[test]
 fn near_contact_past_the_finest_sampling_is_refused_by_name() {
     use nacre_ops::{BoolKind, boolean, fixtures};
