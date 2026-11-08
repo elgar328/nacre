@@ -39,8 +39,8 @@ toml=''.join(io.open(p,encoding='utf-8').read()
 def uses(name, roots, exts=('*.rs',)):
     """(uses outside comments, uses in comments)"""
     pat=re.compile(r'(?<!'+W+r')'+re.escape(name)+r'(?!'+W+r')')
-    # `--no-ignore`/`--hidden`: search what grep -r would, not what the ignore files admit (the
-    # repo's `.ignore` re-admits `graft/`). `-F`: a name is an identifier; `pat` checks the boundary.
+    # `--no-ignore`/`--hidden`: search what grep -r would, not what the ignore files admit.
+    # `-F`: a name is an identifier; `pat` checks the boundary.
     args=['rg','-n','--no-heading','--no-ignore','--hidden','-F']+sum([['-g',e] for e in exts],[])+['-g','!target/','--',name]+list(roots)
     out=subprocess.run(args,capture_output=True,text=True).stdout
     live=cmt=0
