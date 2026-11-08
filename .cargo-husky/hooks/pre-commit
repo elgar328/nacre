@@ -16,8 +16,8 @@ echo '+cargo fmt --all -- --check'
 cargo fmt --all -- --check
 echo '+cargo clippy --workspace --all-targets -- -D warnings'
 cargo clippy --workspace --all-targets -- -D warnings
-echo '+cargo test --workspace'
-cargo test --workspace
+echo '+cargo test --workspace -q'
+cargo test --workspace -q
 # Private items too: the public build does not render their docs, so a broken link there would
 # pass. Every doc warning is an error except a public doc linking a private item, which stays a
 # link so a rename still breaks it (overview's gate paragraph on `cargo doc`; the gate also runs
