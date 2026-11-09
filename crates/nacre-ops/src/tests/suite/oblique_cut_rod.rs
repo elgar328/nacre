@@ -208,36 +208,226 @@ fn a_rods_oblique_end_writes_an_ellipse() {
     }
 }
 
-/// **A result with an elliptical edge is refused as an operand, at the door** — every kind, both
-/// orders, against a box beside it: `ObliqueCylinderCut`, raised by the boolean's entrance (the
-/// stages behind it read a curve on a cylinder as a circle across its axis), not by any of them.
-#[test]
-fn a_cut_rod_fed_back_is_refused_at_the_door() {
+/// **A tool fed against the cut rod** (`k = 1/2`) — the re-entry scoreboard's rows. `volume` is the
+/// tool's and `common` its common part with the rod, both derived; with `R = 20π` the rod's, a cell
+/// that builds has `Fuse = R + T − C`, `rod − tool = R − C`, `tool − rod = T − C`.
+struct Tool {
+    name: &'static str,
+    build: fn(&mut Model) -> Handle<Solid>,
+    volume: f64,
+    common: f64,
+}
+
+fn rod_on(m: &mut Model, at: [f64; 2], r: f64, z: [f64; 2]) -> Handle<Solid> {
+    crate::fixtures::cylinder_with_seam(
+        m,
+        Point3::from_array([at[0], at[1], z[0]]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        r,
+        z[1] - z[0],
+    )
+    .solid
+}
+
+/// The tools, each against the rod `x² + (y − 3)² ≤ 4`, `0 ≤ z ≤ 5 + x/2`. The commons integrate the
+/// rod's height over the part of its disk the tool covers: above `z = c` the rod reaches only where
+/// `x > 2c − 10`, a segment of the disk.
+fn tools() -> Vec<Tool> {
+    let s3 = 3.0f64.sqrt();
+    vec![
+        Tool {
+            name: "a coaxial bore of radius 1",
+            build: |m| rod_on(m, [0.0, 3.0], 1.0, [-1.0, 11.0]),
+            volume: 12.0 * PI,
+            common: 5.0 * PI,
+        },
+        Tool {
+            name: "a box over the rod's foot",
+            build: |m| crate::fixtures::cuboid(m, [1.0, 1.0, -1.0], [4.0, 5.0, 2.0]),
+            volume: 36.0,
+            common: 2.0 * (4.0 * PI / 3.0 - s3),
+        },
+        Tool {
+            name: "a second slant, z = 5 − x/2 and above",
+            build: |m| prism(m, -0.5),
+            volume: 252.0,
+            common: 16.0 / 3.0,
+        },
+        Tool {
+            name: "a box above z = 5.5",
+            build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 5.5], [3.0, 6.0, 8.0]),
+            volume: 90.0,
+            common: 1.5 * s3 - 2.0 * PI / 3.0,
+        },
+        Tool {
+            name: "a box above z = 4.5",
+            build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 4.5], [3.0, 6.0, 8.0]),
+            volume: 126.0,
+            common: 4.0 * PI / 3.0 + 1.5 * s3,
+        },
+        Tool {
+            name: "a box above z = 5",
+            build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 5.0], [3.0, 6.0, 8.0]),
+            volume: 108.0,
+            common: 8.0 / 3.0,
+        },
+        Tool {
+            name: "a pin of radius 1/2 through (1, 3)",
+            build: |m| rod_on(m, [1.0, 3.0], 0.5, [-1.0, 11.0]),
+            volume: 3.0 * PI,
+            common: 11.0 * PI / 8.0,
+        },
+        Tool {
+            name: "a pin of radius 1/2 sunk on the axis",
+            build: |m| rod_on(m, [0.0, 3.0], 0.5, [4.0, 8.0]),
+            volume: PI,
+            common: PI / 4.0,
+        },
+        Tool {
+            name: "a wall box from x = 1.5 up to z = 5.5",
+            build: |m| crate::fixtures::cuboid(m, [1.5, 0.0, -1.0], [4.0, 6.0, 5.5]),
+            volume: 97.5,
+            common: 22.0 * 0.75f64.acos() - 33.0 * 7.0f64.sqrt() / 8.0,
+        },
+        Tool {
+            name: "the slant's own prism",
+            build: |m| prism(m, 0.5),
+            volume: 252.0,
+            common: 0.0,
+        },
+        Tool {
+            name: "a far box",
+            build: |m| crate::fixtures::cuboid(m, [10.0, 10.0, 10.0], [11.0, 11.0, 11.0]),
+            volume: 1.0,
+            common: 0.0,
+        },
+        Tool {
+            name: "a box touching the rim's top at z = 6",
+            build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 6.0], [3.0, 6.0, 8.0]),
+            volume: 72.0,
+            common: 0.0,
+        },
+    ]
+}
+
+/// A boolean's entry: the front door, or the stages behind it.
+type Entry =
+    fn(&mut Model, BoolKind, Handle<Solid>, Handle<Solid>) -> Result<Vec<Handle<Solid>>, BoolError>;
+
+/// Every cell of every tool — each kind with the rod first, then swapped — through `run`, refused
+/// by `name`, raised in a file ending in `file`.
+fn every_cell_refused(run: Entry, name: RejectReason, file: &str) {
     use crate::error::raise_probe::RAISED;
     crate::ledger::owned(|| {
-        for swap in [false, true] {
-            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-                let (mut m, s) = cut_rod(0.5);
-                let block = crate::fixtures::cuboid(&mut m, [1.0, 1.0, -1.0], [4.0, 5.0, 2.0]);
-                let (x, y) = if swap { (block, s) } else { (s, block) };
-                let r0 = RAISED.len();
-                match crate::boolean(&mut m, kind, x, y) {
-                    Err(BoolError::Rejected {
-                        reason: RejectReason::ObliqueCylinderCut,
-                        ..
-                    }) => {}
-                    other => panic!("{kind:?} swap={swap}: {other:?}"),
+        for tool in tools() {
+            for swap in [false, true] {
+                for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                    let at = format!("{} — {kind:?} swap={swap}", tool.name);
+                    let (mut m, s) = cut_rod(0.5);
+                    let t = (tool.build)(&mut m);
+                    let (x, y) = if swap { (t, s) } else { (s, t) };
+                    let r0 = RAISED.len();
+                    match run(&mut m, kind, x, y) {
+                        Err(BoolError::Rejected { reason, .. }) if reason == name => {
+                            let sites: Vec<&str> =
+                                RAISED.mine_since(r0).into_iter().map(|(_, f)| f).collect();
+                            assert!(
+                                sites.iter().any(|f| f.ends_with(file)),
+                                "{at}: raised at {sites:?}, not {file}"
+                            );
+                        }
+                        out => panic!("{at}: want {name:?}, got {out:?}"),
+                    }
                 }
-                let sites: Vec<&str> = RAISED.mine_since(r0).into_iter().map(|(_, f)| f).collect();
-                assert!(
-                    sites
-                        .iter()
-                        .all(|f| f.ends_with("nacre-ops/src/boolean.rs")),
-                    "{kind:?} swap={swap}: raised at {sites:?}"
-                );
             }
         }
     });
+}
+
+/// **The scoreboard's commons are what the forward road builds** — every operand on it has no
+/// elliptical edge, so the door admits it: a flat tool is cut by the slant first and then met with
+/// the rod; a tool with a cylinder is met with the rod first (the slant would leave an ellipse on
+/// it) and the piece then cut by the slant. Either way the volume is the derived `common`, so a cell
+/// that builds behind the door is held to a number a road already answers, not to arithmetic alone.
+#[test]
+fn the_scoreboards_commons_are_what_the_forward_road_builds() {
+    let solids = |m: &Model, out: Vec<Handle<Solid>>| -> f64 {
+        out.into_iter()
+            .map(|s| nacre_props::mass_props(m, s).expect("props").volume)
+            .sum()
+    };
+    for tool in tools() {
+        let mut m = Model::new();
+        let r = rod(&mut m);
+        let t = (tool.build)(&mut m);
+        let tv = nacre_props::mass_props(&m, t).expect("props").volume;
+        assert!(close(tv, tool.volume, 1e-12), "{}: tool {tv}", tool.name);
+        let flat = m.reachable_from(&[t]).faces.iter().all(|&f| {
+            matches!(
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Plane { .. }
+            )
+        });
+        let p = prism(&mut m, 0.5);
+        let got = if flat {
+            let below = crate::boolean(&mut m, BoolKind::Cut, t, p)
+                .unwrap_or_else(|e| panic!("{}: tool − slant {e:?}", tool.name));
+            let mut v = 0.0;
+            let mut r = Some(r);
+            for s in below {
+                // Each piece meets a fresh rod: a boolean consumes its operands.
+                let rod_here = r.take().unwrap_or_else(|| rod(&mut m));
+                let out = crate::boolean(&mut m, BoolKind::Common, rod_here, s)
+                    .unwrap_or_else(|e| panic!("{}: rod ∩ piece {e:?}", tool.name));
+                v += solids(&m, out);
+            }
+            v
+        } else {
+            let piece = crate::boolean(&mut m, BoolKind::Common, r, t)
+                .unwrap_or_else(|e| panic!("{}: rod ∩ tool {e:?}", tool.name));
+            let mut v = 0.0;
+            let mut p = Some(p);
+            for s in piece {
+                let slant = p.take().unwrap_or_else(|| prism(&mut m, 0.5));
+                let out = crate::boolean(&mut m, BoolKind::Cut, s, slant)
+                    .unwrap_or_else(|e| panic!("{}: piece − slant {e:?}", tool.name));
+                v += solids(&m, out);
+            }
+            v
+        };
+        assert!(
+            close(got, tool.common, 1e-9),
+            "{}: {got} vs {}",
+            tool.name,
+            tool.common
+        );
+    }
+}
+
+/// **A result with an elliptical edge is refused as an operand, at the door** — every tool, every
+/// kind, both orders: `ObliqueCylinderCut`, raised by the boolean's entrance (the stages behind it
+/// read a curve on a cylinder as a circle across its axis), not by any of them.
+#[test]
+fn a_cut_rod_fed_back_is_refused_at_the_door() {
+    every_cell_refused(
+        crate::boolean,
+        RejectReason::ObliqueCylinderCut,
+        "nacre-ops/src/boolean.rs",
+    );
+}
+
+/// **What the stages behind the door answer for the cut rod** — the scoreboard the re-entry work
+/// flips row by row. Today every cell stops at the cylinder gate: the rod's lateral face is
+/// bounded by its slanted rim, which the gate's reading of a lateral's axial span skips, so the
+/// rod's own cap plane cannot be drawn against its cylinder (`ClassMeet::Undrawable`).
+#[test]
+fn a_cut_rod_behind_the_door_stops_at_the_gate() {
+    every_cell_refused(
+        crate::boolean::behind_the_elliptical_door,
+        RejectReason::ObliqueCylinderCut,
+        "nacre-ops/src/planes/cyl_gate.rs",
+    );
 }
 
 /// **A moved cut rod keeps its edges' kinds** — translated by a third and turned a quarter about

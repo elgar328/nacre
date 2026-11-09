@@ -42,6 +42,20 @@ pub fn boolean_with_report(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<(Vec<Handle<Solid>>, BoolReport), BoolError> {
+    admit(model, a, b)?;
+    // An operand bounded along a section of a cylinder by an oblique plane — a result this kernel
+    // built — is read by no stage: the gate, the plane rows and the lateral readers take a curve on
+    // a cylinder for a circle across its axis. The coverage ends at the door, once, rather than at
+    // each reader.
+    if [a, b].into_iter().any(|s| has_elliptical_edge(model, s)) {
+        return Err(surfacing(reject(RejectReason::ObliqueCylinderCut)));
+    }
+    arranged(model, kind, a, b)
+}
+
+/// What every boolean asks of its operands before anything is arranged: both live, and no edge
+/// between two cylinders ([`RejectReason::CylinderPairEdge`]).
+fn admit(model: &Model, a: Handle<Solid>, b: Handle<Solid>) -> Result<(), BoolError> {
     // A foreign handle answers "yes" here: `Handle`'s equality is its index, deliberately (it has
     // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
     // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
@@ -52,13 +66,16 @@ pub fn boolean_with_report(
     if [a, b].into_iter().any(|s| has_cylinder_pair_edge(model, s)) {
         return Err(surfacing(reject(RejectReason::CylinderPairEdge)));
     }
-    // An operand bounded along a section of a cylinder by an oblique plane — a result this kernel
-    // built — is read by no stage: the gate, the plane rows and the lateral readers take a curve on
-    // a cylinder for a circle across its axis. The coverage ends at the door, once, rather than at
-    // each reader.
-    if [a, b].into_iter().any(|s| has_elliptical_edge(model, s)) {
-        return Err(surfacing(reject(RejectReason::ObliqueCylinderCut)));
-    }
+    Ok(())
+}
+
+/// The boolean past its door: the arrangement, the result's self-check, and the report.
+fn arranged(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<(Vec<Handle<Solid>>, BoolReport), BoolError> {
     // The arrangement engine (`arrangement`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
@@ -92,6 +109,20 @@ pub fn boolean_with_report(
     #[cfg(test)]
     tess_census::record(model);
     Ok((result, BoolReport::of(&notes)))
+}
+
+/// [`boolean`] with the elliptical-edge door left out — what the stages behind it answer for an
+/// operand bounded along an oblique section, which the re-entry scoreboard records row by row
+/// (`tests/suite/oblique_cut_rod.rs`).
+#[cfg(test)]
+pub(crate) fn behind_the_elliptical_door(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    admit(model, a, b)?;
+    arranged(model, kind, a, b).map(|(solids, _)| solids)
 }
 
 /// Does `solid` have an edge whose two carriers are different cylinders
