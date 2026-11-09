@@ -74,10 +74,10 @@ pub(crate) struct CellRead<'a> {
     /// a present cell is the stages disagreeing. `None` when there is a chamber.
     pub(crate) unread: Option<RejectReason>,
     /// Is this lateral face here at all — the existence question, answered by the trace
-    /// where an end is cut ([`face_spans`]) and by the row's span where none is.
+    /// where an end is cut ([`face_spans`]) and by the row's ends where none is.
     pub(crate) present: bool,
-    /// The trace says the face is here while no row's span covers the cell — the one direction
-    /// of disagreement that is a defect (the other is a hole in a spanned face).
+    /// The trace says the face is here while no row's ends hold the cell between them — the one
+    /// direction of disagreement that is a defect (the other is a hole in a face's band).
     pub(crate) exist_disagree: bool,
     /// Would the cell be a result face: present, with a chamber, and `keep` differing across the
     /// wall. `None` when the chamber is unknown.
@@ -331,21 +331,18 @@ impl Chart {
             (None, false) => Some(RejectReason::CylinderStagesDisagree),
         };
 
-        // ── Existence: the trace where an end is cut, the span where none is. ──
-        // A row's span is its two rims, planes across the axis stated by their axis parameter: the
-        // cell lies within it where its gap lies between those two lines in its slab.
+        // ── Existence: the trace where an end is cut, the face's ends where none is. ──
+        // A row's ends are its lowest and highest boundary sections, by their planes: the cell lies
+        // within the face where its gap lies between those two lines in its slab.
         let mut by_span = false;
         for r in rows.iter().filter(|r| r.class == k) {
-            let line_at_t = |t: Rat| {
-                self.axis_t
+            let line_of = |w: &[Rat; 4]| {
+                self.line_planes
                     .iter()
-                    .position(|&x| x == Some(t))
+                    .position(|x| x == w)
                     .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))
             };
-            let (a, b) = (
-                line_at_t(r.span[0].min(r.span[1]))?,
-                line_at_t(r.span[0].max(r.span[1]))?,
-            );
+            let (a, b) = (line_of(&r.ends[0])?, line_of(&r.ends[1])?);
             let u = cell.slab;
             if self.rank(u, a) <= cell.gap && cell.gap < self.rank(u, b) {
                 by_span = true;
@@ -427,7 +424,7 @@ impl Chart {
 /// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
 /// gets `true` from this same test — one sentence about every rim. What is out of reach is only an
 /// **uncut** outer rim: it never becomes an [`ArcLabels`](crate::arrangement::ArcLabels) entry at
-/// all (a whole circle goes to `DiskLabels`, and existence at an uncut end is the row's span), so
+/// all (a whole circle goes to `DiskLabels`, and existence at an uncut end is the row's ends), so
 /// today only cut rims ask here.
 ///
 /// **How often each row actually fires** (the lib suite, marks read): `Transversal` **23,744** ·

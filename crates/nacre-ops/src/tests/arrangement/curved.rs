@@ -1229,20 +1229,22 @@ fn a_cut_circle_bounds_the_bands() {
     assert_eq!(rows.len(), 1);
     // A cut circle is a band boundary: the chart's boundary rule names the two cut rims beside the
     // caps, and the chart's own lines are exactly those four.
-    let def = &setup.cyls[0].def;
-    let t_of = |c: usize| crate::bands::axis_param(&jd, c, def).unwrap();
-    let expect: Vec<Rat> = [cap_lo, z0, z20, cap_hi].map(t_of).to_vec();
+    let plane_of = |c: usize| jd.world_rat(c).unwrap();
+    // Low to high, as a slab orders its lines.
+    let expect: Vec<[Rat; 4]> = [cap_lo, z0, z20, cap_hi].map(plane_of).to_vec();
+    let mut sorted = expect.clone();
+    sorted.sort();
     assert_eq!(
-        crate::arrangement::cyl_chart::boundary_lines(&jd, 0, def, &plane_faces, &curved, &rows)
+        crate::arrangement::cyl_chart::boundary_lines(&jd, 0, &plane_faces, &curved, &rows)
             .unwrap(),
-        expect,
+        sorted,
         "three intervals, cut circles included"
     );
     let chart = crate::arrangement::cyl_chart::chart_of(&jd, &setup.cyls, 0, &curved).unwrap();
     assert_eq!(
         chart.slabs[0]
             .iter()
-            .map(|&l| chart.axis_t[l].expect("a line across the axis"))
+            .map(|&l| chart.line_planes[l])
             .collect::<Vec<_>>(),
         expect,
         "the chart's lines are the boundaries and nothing else here"

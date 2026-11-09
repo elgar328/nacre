@@ -72,7 +72,7 @@
 
 use crate::arrangement::{ArcLabel, Curved, Label, SegKind};
 use crate::draft::LocalFace;
-use crate::planes::{SolidSide, WorkingCyl, WorkingPlane, class_carries_circle};
+use crate::planes::{SolidSide, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, combinatorics, reject};
 use core::cmp::Ordering;
@@ -186,9 +186,9 @@ pub(crate) struct Chart {
     /// class across the axis is a circle at one height. Ordered nowhere: their order is a slab's
     /// ([`Chart::slabs`]).
     pub(crate) lines: Vec<usize>,
-    /// A line's axis parameter where it is a circle — the one join a row's span ends (rims of
-    /// planes across the axis, stated as `Rat`) are read through.
-    pub(crate) axis_t: Vec<Option<Rat>>,
+    /// Each line's plane, world coefficients — the join a row's ends (`bands::CylRow`, the face's
+    /// lowest and highest boundary sections) are read through.
+    pub(crate) line_planes: Vec<[Rat; 4]>,
     pub(crate) theta: Vec<ThetaSeg>,
     /// **Every θ something happens at, in θ order** ([`combinatorics::theta_groups`], the seam
     /// first): a ruling's station, a node a rim is cut at, a point two lines cross or touch at.
@@ -350,8 +350,8 @@ impl Chart {
 /// **Every section the arrangement traced on this cylinder, and every ruling on it** — per cylinder
 /// *class*.
 ///
-/// **No clip to a face.** Clipping the lines to a face's span would answer about a face; a class
-/// has no such span — one lateral surface can carry several faces with gaps between them, which is
+/// **No clip to a face.** Clipping the lines to a face's ends would answer about a face; a class
+/// has no such ends — one lateral surface can carry several faces with gaps between them, which is
 /// why `CylRow` is per-face. So there is no clip: `CylRow`'s own doc warns that merging the spans
 /// into one `min..max` would **invent a band where the solid has no face at all**, and on a chart
 /// that gap is simply a cell that keeps nothing — the argument the plane side already makes for its
@@ -405,17 +405,10 @@ pub(crate) fn chart_of(
             return Err(reject(RejectReason::CylinderStagesDisagree));
         }
     }
-    let axis_t: Vec<Option<Rat>> = lines
+    let line_planes: Vec<[Rat; 4]> = lines
         .iter()
-        .map(|&c| {
-            let w = jd.world_rat(c).expect("a line has a world statement");
-            if class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
-                crate::bands::axis_param(jd, c, def).map(Some)
-            } else {
-                Ok(None)
-            }
-        })
-        .collect::<Result<_, BoolError>>()?;
+        .map(|&c| jd.world_rat(c).expect("a line has a world statement"))
+        .collect();
     let line_of = |c: usize| lines.iter().position(|&x| x == c);
     let height = |a: usize, b: usize, at: &combinatorics::ExactPoint| {
         combinatorics::line_order(jd, def, lines[a], lines[b], Some(at), Toward::At).map_err(reject)
@@ -471,7 +464,7 @@ pub(crate) fn chart_of(
     };
     Ok(Chart {
         lines,
-        axis_t,
+        line_planes,
         theta,
         events,
         rim_events,

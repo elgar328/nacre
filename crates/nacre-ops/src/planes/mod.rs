@@ -103,18 +103,25 @@ pub(crate) struct CylFaceInfo {
     /// boundary section is a circle** — the least and greatest height of its rims, `t = −(n·o + d)/(n·m)`
     /// per cap plane (`cyl_geom::lateral_t_range`). `None` when a cap has no narrow rational name, the
     /// rims stand at fewer than two heights, or a boundary section is oblique: an ellipse has no one
-    /// height. The readers that need the face's ends read this; the readers that need only how far it
-    /// reaches read the footprint's span.
+    /// height. It is the face's ends **as heights**, for the readers that compare them with heights
+    /// on a line (the graze fold, `cyl_gate::lateral_stretches`, and the tangency rows' fallback,
+    /// `cyl_gate::tangency_rows`); the chart reads the ends by plane ([`CylFaceInfo::ends`]), and the
+    /// readers that need only how far the face reaches read the footprint's span.
     ///
     /// **This is a range, not a promise about the loop's shape.** The face's shape — its whole rims
     /// and every other cycle (a panel, a chain rim, a hole) — is
     /// `combinatorics::FaceLoops::cycles`' question (`arrangement::lateral_shape`), and the two
-    /// lateral roads ask it there before they read anything. The range is what the chart's rows
-    /// carry once the tracer has cut every circle the face covers only partly.
+    /// lateral roads ask it there before they read anything.
     ///
     /// It is read from the ⊥ carriers' stations, not from "the face's two whole rims": a panel
     /// or a chain rim has no such pair.
     pub(crate) stretch: Option<[nacre_exact::Rat; 2]>,
+    /// The planes (world coefficients) of this face's lowest and highest boundary sections — its
+    /// ends along the axis (`cyl_geom::lateral_ends`), a circle's plane or an ellipse's alike. `None`
+    /// where the boundary cannot be read or no section stands at or below (or at or above) every other
+    /// ([`section_ends`]). The chart reads a cell's
+    /// existence at an uncut end between the lines of these planes (`bands::CylRow`).
+    pub(crate) ends: Option<[[nacre_exact::Rat; 4]; 2]>,
     /// The face's [`Footprint`] on its own chart: how far it reaches along the axis — the hull of the
     /// bands its boundary sections sweep (`cyl_geom::lateral_axial_reach`), [`CylFaceInfo::stretch`]
     /// where every section is a circle — and its angular extent. The population gate's rectangle

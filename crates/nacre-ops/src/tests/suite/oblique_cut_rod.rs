@@ -219,8 +219,18 @@ struct Tool {
     /// A plane of the tool's faces touches the rod's slanted rim at one point — its highest,
     /// `(2, 3, 6)`, or its lowest, `(−2, 3, 4)` — whether or not the face reaches it.
     touches_rim: bool,
-    /// A plane of the tool's faces across the axis crosses the slanted rim (`4 < z < 6`).
-    crosses_rim: bool,
+    /// The bodies a cell that builds leaves — `[Fuse, Cut, Common]`, the rod first, then the tool.
+    bodies: [[usize; 3]; 2],
+    /// The tool's volume inside the windowed rod's window ([`windowed_cut_rod`]) — the part of
+    /// `common` that rod lacks.
+    in_window: f64,
+    /// That part is a body of its own in `tool − rod` (rod material above and below it).
+    window_piece: bool,
+    /// The tool's surface touches the window's face `x = 1` along a line: the windowed rod less the
+    /// tool touches itself there.
+    touches_window: bool,
+    /// The tool closes the window's rest into a sealed cavity — fused with the windowed rod.
+    seals_window: bool,
 }
 
 fn rod_on(m: &mut Model, at: [f64; 2], r: f64, z: [f64; 2]) -> Handle<Solid> {
@@ -247,7 +257,11 @@ fn tools() -> Vec<Tool> {
             volume: 12.0 * PI,
             common: 5.0 * PI,
             touches_rim: false,
-            crosses_rim: false,
+            bodies: [[1, 1, 1], [1, 2, 1]],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: true,
+            seals_window: false,
         },
         Tool {
             name: "a box over the rod's foot",
@@ -255,7 +269,11 @@ fn tools() -> Vec<Tool> {
             volume: 36.0,
             common: 2.0 * (4.0 * PI / 3.0 - s3),
             touches_rim: false,
-            crosses_rim: false,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a second slant, z = 5 − x/2 and above",
@@ -263,7 +281,11 @@ fn tools() -> Vec<Tool> {
             volume: 252.0,
             common: 16.0 / 3.0,
             touches_rim: false,
-            crosses_rim: false,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a box above z = 5.5",
@@ -271,7 +293,11 @@ fn tools() -> Vec<Tool> {
             volume: 90.0,
             common: 1.5 * s3 - 2.0 * PI / 3.0,
             touches_rim: false,
-            crosses_rim: true,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a box above z = 4.5",
@@ -279,7 +305,11 @@ fn tools() -> Vec<Tool> {
             volume: 126.0,
             common: 4.0 * PI / 3.0 + 1.5 * s3,
             touches_rim: false,
-            crosses_rim: true,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a box above z = 5",
@@ -287,7 +317,11 @@ fn tools() -> Vec<Tool> {
             volume: 108.0,
             common: 8.0 / 3.0,
             touches_rim: false,
-            crosses_rim: true,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a pin of radius 1/2 through (1, 3)",
@@ -295,7 +329,11 @@ fn tools() -> Vec<Tool> {
             volume: 3.0 * PI,
             common: 11.0 * PI / 8.0,
             touches_rim: false,
-            crosses_rim: false,
+            bodies: [[1, 1, 1], [1, 2, 1]],
+            in_window: PI / 8.0,
+            window_piece: true,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a pin of radius 1/2 sunk on the axis",
@@ -303,7 +341,11 @@ fn tools() -> Vec<Tool> {
             volume: PI,
             common: PI / 4.0,
             touches_rim: true,
-            crosses_rim: false,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a wall box from x = 1.5 up to z = 5.5",
@@ -311,7 +353,11 @@ fn tools() -> Vec<Tool> {
             volume: 97.5,
             common: 22.0 * 0.75f64.acos() - 33.0 * 7.0f64.sqrt() / 8.0,
             touches_rim: false,
-            crosses_rim: true,
+            bodies: [[1; 3]; 2],
+            in_window: 2.0 * PI / 3.0 + s3 - 3.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: true,
         },
         Tool {
             name: "the slant's own prism",
@@ -319,7 +365,11 @@ fn tools() -> Vec<Tool> {
             volume: 252.0,
             common: 0.0,
             touches_rim: false,
-            crosses_rim: false,
+            bodies: [[1, 1, 0], [1, 1, 0]],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a far box",
@@ -327,7 +377,11 @@ fn tools() -> Vec<Tool> {
             volume: 1.0,
             common: 0.0,
             touches_rim: false,
-            crosses_rim: false,
+            bodies: [[2, 1, 0], [2, 1, 0]],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
         Tool {
             name: "a box touching the rim's top at z = 6",
@@ -335,7 +389,11 @@ fn tools() -> Vec<Tool> {
             volume: 72.0,
             common: 0.0,
             touches_rim: true,
-            crosses_rim: false,
+            bodies: [[1; 3]; 2],
+            in_window: 0.0,
+            window_piece: false,
+            touches_window: false,
+            seals_window: false,
         },
     ]
 }
@@ -344,44 +402,49 @@ fn tools() -> Vec<Tool> {
 type Entry =
     fn(&mut Model, BoolKind, Handle<Solid>, Handle<Solid>) -> Result<Vec<Handle<Solid>>, BoolError>;
 
-/// A refusal a cell is held to: by its name, or — a tracer's decline — by the decline's kind (the
-/// face it names is the model's handle, which the cell does not state).
+/// One cell's answer: refused by this name, raised in a file ending as the `str` says (empty: any),
+/// built into this many bodies, or a known defect another test pins (named where it is set).
 #[derive(Clone, Copy, Debug)]
-enum Refusal {
-    Name(RejectReason),
-    Decline(crate::DeclineKind),
+enum Cell {
+    Refused(RejectReason, &'static str),
+    Built(usize),
+    Known,
 }
 
-impl Refusal {
-    fn is(self, reason: RejectReason) -> bool {
-        match (self, reason) {
-            (Self::Name(name), r) => r == name,
-            (Self::Decline(kind), RejectReason::TraceDeclined { kind: k, .. }) => k == kind,
-            (Self::Decline(_), _) => false,
-        }
+/// The cut rod, plain or with its window ([`windowed_cut_rod`]), and its volume.
+fn operand(windowed: bool) -> (Model, Handle<Solid>, f64) {
+    let rod = 20.0 * PI;
+    if windowed {
+        let (m, s) = windowed_cut_rod();
+        (m, s, rod - (3f64.sqrt() + 2.0 * PI / 3.0 - 2.0))
+    } else {
+        let (m, s) = cut_rod(0.5);
+        (m, s, rod)
     }
 }
 
-/// Every cell of every tool against `operand` — each kind with the operand first, then swapped —
-/// through `run`, refused as `want(tool)` says, raised in a file ending as it says.
-fn every_cell_refused(
-    operand: fn() -> (Model, Handle<Solid>),
-    run: Entry,
-    want: impl Fn(&Tool) -> (Refusal, &'static str) + Sync,
-) {
+/// Every cell of every tool against the rod — each kind with the rod first, then swapped — through
+/// `run`, held to `want(tool)`: a refusal to its name and raise file; a build to its bodies,
+/// `validate`, the mesh, its derived volume (relative `1e-9`) and the mesh's enclosed volume (`2e-3`).
+fn scoreboard(windowed: bool, run: Entry, want: impl Fn(&Tool) -> [[Cell; 3]; 2] + Sync) {
     use crate::error::raise_probe::RAISED;
     crate::ledger::owned(|| {
         for tool in tools() {
-            for swap in [false, true] {
-                for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-                    let at = format!("{} — {kind:?} swap={swap}", tool.name);
-                    let (name, file) = want(&tool);
-                    let (mut m, s) = operand();
+            for (swap, row) in [false, true].into_iter().zip(want(&tool)) {
+                for (kind, cell) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+                    .into_iter()
+                    .zip(row)
+                {
+                    let at = format!("{} — {kind:?} swap={swap} windowed={windowed}", tool.name);
+                    let (mut m, s, rod) = operand(windowed);
                     let t = (tool.build)(&mut m);
                     let (x, y) = if swap { (t, s) } else { (s, t) };
                     let r0 = RAISED.len();
-                    match run(&mut m, kind, x, y) {
-                        Err(BoolError::Rejected { reason, .. }) if name.is(reason) => {
+                    match (cell, run(&mut m, kind, x, y)) {
+                        (Cell::Known, _) => {}
+                        (Cell::Refused(name, file), Err(BoolError::Rejected { reason, .. }))
+                            if reason == name =>
+                        {
                             let sites: Vec<&str> =
                                 RAISED.mine_since(r0).into_iter().map(|(_, f)| f).collect();
                             assert!(
@@ -389,7 +452,20 @@ fn every_cell_refused(
                                 "{at}: raised at {sites:?}, not {file}"
                             );
                         }
-                        out => panic!("{at}: want {name:?}, got {out:?}"),
+                        (Cell::Built(n), Ok(out)) => {
+                            let got = built_volume(&m, &out, n, &at);
+                            let c = tool.common - if windowed { tool.in_window } else { 0.0 };
+                            let derived = match (kind, swap) {
+                                (BoolKind::Fuse, _) => rod + tool.volume - c,
+                                (BoolKind::Cut, false) => rod - c,
+                                (BoolKind::Cut, true) => tool.volume - c,
+                                (BoolKind::Common, _) => c,
+                            };
+                            assert!(close(got, derived, 1e-9), "{at}: {got} vs {derived}");
+                            let mesh = mesh_volume(&m, &out);
+                            assert!(close(mesh, derived, 2e-3), "{at}: mesh {mesh} vs {derived}");
+                        }
+                        (cell, out) => panic!("{at}: want {cell:?}, got {out:?}"),
                     }
                 }
             }
@@ -397,11 +473,27 @@ fn every_cell_refused(
     });
 }
 
+/// The volume the mesh's triangles enclose over `solids`' faces.
+fn mesh_volume(m: &Model, solids: &[Handle<Solid>]) -> f64 {
+    let t = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("the mesh");
+    let o = Point3::origin();
+    m.reachable_from(solids)
+        .faces
+        .iter()
+        .flat_map(|f| &t.by_face[f])
+        .map(|&tri| {
+            let [a, b, c] = t.triangles.get(tri).vertices.map(|v| t.vertices.get(v).pos);
+            (a - o).dot((b - o).cross(c - o)) / 6.0
+        })
+        .sum()
+}
+
 /// **The scoreboard's commons are what the forward road builds** — every operand on it has no
 /// elliptical edge, so the door admits it: a flat tool is cut by the slant first and then met with
 /// the rod; a tool with a cylinder is met with the rod first (the slant would leave an ellipse on
-/// it) and the piece then cut by the slant. Either way the volume is the derived `common`, so a cell
-/// that builds behind the door is held to a number a road already answers, not to arithmetic alone.
+/// it) and the piece then cut by the slant. Either way the volume is the derived `common` — less the
+/// part inside the window, for the rod with its window — so a cell that builds behind the door is
+/// held to a number a road already answers, not to arithmetic alone.
 #[test]
 fn the_scoreboards_commons_are_what_the_forward_road_builds() {
     let solids = |m: &Model, out: Vec<Handle<Solid>>| -> f64 {
@@ -409,100 +501,110 @@ fn the_scoreboards_commons_are_what_the_forward_road_builds() {
             .map(|s| nacre_props::mass_props(m, s).expect("props").volume)
             .sum()
     };
-    for tool in tools() {
-        let mut m = Model::new();
-        let r = rod(&mut m);
-        let t = (tool.build)(&mut m);
-        let tv = nacre_props::mass_props(&m, t).expect("props").volume;
-        assert!(close(tv, tool.volume, 1e-12), "{}: tool {tv}", tool.name);
-        let flat = m.reachable_from(&[t]).faces.iter().all(|&f| {
-            matches!(
-                m.surface(m.face(f).surface),
-                nacre_topo::Surface::Plane { .. }
-            )
-        });
-        let p = prism(&mut m, 0.5);
-        let got = if flat {
-            let below = crate::boolean(&mut m, BoolKind::Cut, t, p)
-                .unwrap_or_else(|e| panic!("{}: tool − slant {e:?}", tool.name));
-            let mut v = 0.0;
-            let mut r = Some(r);
-            for s in below {
-                // Each piece meets a fresh rod: a boolean consumes its operands.
-                let rod_here = r.take().unwrap_or_else(|| rod(&mut m));
-                let out = crate::boolean(&mut m, BoolKind::Common, rod_here, s)
-                    .unwrap_or_else(|e| panic!("{}: rod ∩ piece {e:?}", tool.name));
-                v += solids(&m, out);
+    for windowed in [false, true] {
+        // The rod as the slant finds it: with its window cut first, or plain.
+        let body = |m: &mut Model| {
+            let r = rod(m);
+            if !windowed {
+                return r;
             }
-            v
-        } else {
-            let piece = crate::boolean(&mut m, BoolKind::Common, r, t)
-                .unwrap_or_else(|e| panic!("{}: rod ∩ tool {e:?}", tool.name));
-            let mut v = 0.0;
-            let mut p = Some(p);
-            for s in piece {
-                let slant = p.take().unwrap_or_else(|| prism(&mut m, 0.5));
-                let out = crate::boolean(&mut m, BoolKind::Cut, s, slant)
-                    .unwrap_or_else(|e| panic!("{}: piece − slant {e:?}", tool.name));
-                v += solids(&m, out);
-            }
-            v
+            let w = crate::fixtures::cuboid(m, [1.0, 2.0, 2.0], [3.0, 4.0, 3.0]);
+            crate::boolean(m, BoolKind::Cut, r, w).expect("the window")[0]
         };
-        assert!(
-            close(got, tool.common, 1e-9),
-            "{}: {got} vs {}",
-            tool.name,
-            tool.common
-        );
+        for tool in tools() {
+            let mut m = Model::new();
+            let r = body(&mut m);
+            let t = (tool.build)(&mut m);
+            let tv = nacre_props::mass_props(&m, t).expect("props").volume;
+            assert!(close(tv, tool.volume, 1e-12), "{}: tool {tv}", tool.name);
+            let flat = m.reachable_from(&[t]).faces.iter().all(|&f| {
+                matches!(
+                    m.surface(m.face(f).surface),
+                    nacre_topo::Surface::Plane { .. }
+                )
+            });
+            let p = prism(&mut m, 0.5);
+            let got = if flat {
+                let below = crate::boolean(&mut m, BoolKind::Cut, t, p)
+                    .unwrap_or_else(|e| panic!("{}: tool − slant {e:?}", tool.name));
+                let mut v = 0.0;
+                let mut r = Some(r);
+                for s in below {
+                    // Each piece meets a fresh rod: a boolean consumes its operands.
+                    let rod_here = r.take().unwrap_or_else(|| body(&mut m));
+                    let out = crate::boolean(&mut m, BoolKind::Common, rod_here, s)
+                        .unwrap_or_else(|e| panic!("{}: rod ∩ piece {e:?}", tool.name));
+                    v += solids(&m, out);
+                }
+                v
+            } else {
+                let piece = crate::boolean(&mut m, BoolKind::Common, r, t)
+                    .unwrap_or_else(|e| panic!("{}: rod ∩ tool {e:?}", tool.name));
+                let mut v = 0.0;
+                let mut p = Some(p);
+                for s in piece {
+                    let slant = p.take().unwrap_or_else(|| prism(&mut m, 0.5));
+                    let out = crate::boolean(&mut m, BoolKind::Cut, s, slant)
+                        .unwrap_or_else(|e| panic!("{}: piece − slant {e:?}", tool.name));
+                    v += solids(&m, out);
+                }
+                v
+            };
+            let want = tool.common - if windowed { tool.in_window } else { 0.0 };
+            assert!(
+                close(got, want, 1e-9),
+                "{} (windowed {windowed}): {got} vs {want}",
+                tool.name
+            );
+        }
     }
 }
 
 /// **A result with an elliptical edge is refused as an operand, at the door** — every tool, every
-/// kind, both orders: `ObliqueCylinderCut`, raised by the boolean's entrance (the stages behind it
-/// read a curve on a cylinder as a circle across its axis), not by any of them.
+/// kind, both orders: `ObliqueCylinderCut`, raised by the boolean's entrance, not by any stage
+/// behind it.
 #[test]
 fn a_cut_rod_fed_back_is_refused_at_the_door() {
-    every_cell_refused(
-        || cut_rod(0.5),
-        crate::boolean,
-        |_| {
-            (
-                Refusal::Name(RejectReason::ObliqueCylinderCut),
-                "nacre-ops/src/boolean.rs",
-            )
-        },
-    );
+    let door = Cell::Refused(RejectReason::ObliqueCylinderCut, "nacre-ops/src/boolean.rs");
+    scoreboard(false, crate::boolean, |_| [[door; 3]; 2]);
 }
 
 /// **What the stages behind the door answer for the cut rod** — the scoreboard the re-entry work
 /// flips row by row, for the rod and the rod with a window in its side. A tool with a plane touching
-/// the slanted rim at a point stops at the cylinder gate (`ClassMeet::Undrawable`); every other cell
-/// passes it — the rod's own cap reaches its lateral and is recorded as its section — and the
-/// tracer. A tool with a plane across the axis crossing the slanted rim stops at a straight angle
-/// past the arrangement (`StraightAngle`); the rest stop at the lateral's band rows, which read the face's ends by
-/// their heights, and a slanted rim has none (`DeclineKind::CylSpan`).
+/// the slanted rim at a point stops at the cylinder gate (`ClassMeet::Undrawable`). Every other cell
+/// builds, at its derived volume — a plane across the axis crossing the slanted rim included — but
+/// the windowed rod less a tool touching its window along a line, which touches itself
+/// (`SelfTouchingResult`), and the windowed rod fused from the tool's side with the wall box that
+/// seals its window, a known defect with a test of its own on an operand with no slanted rim.
 #[test]
-fn a_cut_rod_behind_the_door_stops_at_the_tracer() {
-    for operand in [|| cut_rod(0.5), windowed_cut_rod] {
-        every_cell_refused(
-            operand,
+fn a_cut_rod_behind_the_door_builds_but_where_a_plane_meets_its_slanted_rim() {
+    for windowed in [false, true] {
+        scoreboard(
+            windowed,
             crate::boolean::behind_the_elliptical_door,
             |tool| {
                 if tool.touches_rim {
-                    (
-                        Refusal::Name(RejectReason::ObliqueCylinderCut),
+                    let gate = Cell::Refused(
+                        RejectReason::ObliqueCylinderCut,
                         "nacre-ops/src/planes/cyl_gate.rs",
-                    )
-                } else if tool.crosses_rim {
-                    // By name alone: the classes are read in parallel past a first refusal and one
-                    // at a time in the serial build, so the guard that rings first differs.
-                    (Refusal::Name(RejectReason::StraightAngle), "")
-                } else {
-                    (
-                        Refusal::Decline(crate::DeclineKind::CylSpan),
-                        "nacre-ops/src/bands.rs",
-                    )
+                    );
+                    return [[gate; 3]; 2];
                 }
+                let mut cells = tool.bodies.map(|row| row.map(Cell::Built));
+                if windowed && tool.window_piece {
+                    cells[1][1] = Cell::Built(tool.bodies[1][1] + 1);
+                }
+                if windowed && tool.seals_window {
+                    // `tests::loop_nesting::a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only`
+                    cells[1][0] = Cell::Known;
+                }
+                if windowed && tool.touches_window {
+                    cells[0][1] = Cell::Refused(
+                        RejectReason::SelfTouchingResult,
+                        "nacre-ops/src/assembly/self_touch.rs",
+                    );
+                }
+                cells
             },
         );
     }

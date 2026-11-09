@@ -32,19 +32,19 @@ pub(crate) fn census(
         // clipped span. The chart has one line set for the whole class.
         let mine: Vec<&crate::bands::CylRow> = rows.iter().filter(|r| r.class == k).collect();
         // The boundary lines, for the merge counters; a refusal is a skip, as for the chart.
-        let Ok(boundary) = boundary_lines(jd, k, &cyls[k].def, plane_faces, curved, rows) else {
+        let Ok(boundary) = boundary_lines(jd, k, plane_faces, curved, rows) else {
             continue;
         };
         // **The chart's lines cover its own boundary rule, asserted where the fact is made.**
-        // The load-bearing half is the rows' span ends — a *different spelling* of the axis
-        // parameter (the face row's `stretch`) than the classes' `axis_param` — so this says
-        // every lateral face's rim lands, with exact `Rat` equality, on a line the chart collected.
-        // Not a tautology: a rim on a class `chart_of` skipped (no rational coefficients) or a span
-        // end the two spellings disagree on would both fail here.
-        for t in &boundary {
+        // The load-bearing half is the rows' ends — read off the model face's boundary (the face
+        // row's `ends`) rather than off the classes the chart collects — so this says every lateral
+        // face's end lands, with exact equality of its plane, on a line the chart collected. Not a
+        // tautology: an end on a class `chart_of` skipped (no rational coefficients) or an end the
+        // two readings disagree on would both fail here.
+        for w in &boundary {
             assert!(
-                chart.axis_t.contains(&Some(*t)),
-                "a chart lost a line its own boundary rule names: cyl {k}, t {t:?}"
+                chart.line_planes.contains(w),
+                "a chart lost a line its own boundary rule names: cyl {k}, plane {w:?}"
             );
         }
         // And every circle of this cylinder a plane face is bounded by is on a line: the faces are
@@ -137,7 +137,10 @@ pub(crate) fn census(
             );
         }
         // A line that is no circle: an oblique section.
-        let oblique = |l: usize| chart.axis_t[l].is_none();
+        let oblique = |l: usize| {
+            let w = chart.line_planes[l];
+            !crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &cyls[k].def.dir())
+        };
         let cells = chart.cells();
 
         // ── The cells, read off the horizontal lines. ──
@@ -532,29 +535,25 @@ pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) 
 }
 
 /// **The lines a lateral face's band may not run across** — the rim classes (both kinds,
-/// [`rim_classes`]) and every row's own span ends, as axis parameters. A band-shaped emission may
-/// continue across any other line, so [`emit_lateral`] merges there and nowhere else, and the
-/// census asserts the chart's lines' heights ⊇ this list where it is made.
+/// [`rim_classes`]) and every row's own ends, by their planes. A band-shaped emission may continue
+/// across any other line, so [`emit_lateral`] merges there and nowhere else, and the census asserts
+/// the chart's lines' planes ⊇ this list where it is made.
 pub(crate) fn boundary_lines(
     jd: &Judge<'_, WorkingPlane>,
     k: usize,
-    def: &nacre_topo::CylinderDef,
     plane_faces: &[LocalFace],
     curved: &Curved,
     rows: &[crate::bands::CylRow],
-) -> Result<Vec<Rat>, BoolError> {
-    // A rim's height is a parameter only where the rim is a circle; an oblique section's is no
-    // one height.
-    let mut out: Vec<Rat> = rim_classes(k, plane_faces, curved)
+) -> Result<Vec<[Rat; 4]>, BoolError> {
+    let mut out: Vec<[Rat; 4]> = rim_classes(k, plane_faces, curved)
         .into_iter()
-        .filter(|&c| {
+        .map(|c| {
             jd.world_rat(c)
-                .is_none_or(|w| class_carries_circle(&[w[0], w[1], w[2]], &def.dir()))
+                .ok_or_else(|| crate::reject(crate::RejectReason::WitnessNotRational))
         })
-        .map(|c| crate::bands::axis_param(jd, c, def))
         .collect::<Result<_, _>>()?;
     for r in rows.iter().filter(|r| r.class == k) {
-        out.extend(r.span);
+        out.extend(r.ends);
     }
     out.sort();
     out.dedup();

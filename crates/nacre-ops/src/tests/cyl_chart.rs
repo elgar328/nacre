@@ -271,7 +271,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
 /// effectively axis-aligned: the kit builder raises cylinders on world XY (`+z` only), the ops
 /// corpus is `+z`/`+x`/`+y`, and all three *tilted* cylinders in it are **reject** fixtures — so
 /// without this fixture no tilted axis reaches the chart. On `+z` against an axis-aligned box a
-/// class's axis parameter is just a `z` coordinate and the division in `bands::axis_param` is
+/// class's axis parameter is just a `z` coordinate and the division in `axis_param_of_plane` is
 /// trivial; tilted, it is a real rational one.
 ///
 /// **Both halves are stated on the exact road, and that is the whole trick.**

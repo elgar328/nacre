@@ -1,10 +1,10 @@
-//! **The lateral face's row, and the axis station of a plane class.**
+//! **The lateral face's row.**
 //!
 //! Which parts of a cylinder's lateral surface survive a boolean is
 //! `cyl_chart::emit_lateral`'s decision, cell by cell, and the vocabulary it reads that decision
 //! with lives beside it (`cyl_chart::read_cell`). What is here is the two facts the chart needs
-//! *before* it can read anything, one spelling each: [`cyl_rows`]/[`CylRow`] (which lateral faces
-//! there are, and the axis span of each) and [`axis_param`] (where a ⊥ plane class cuts the axis).
+//! *before* it can read anything: [`cyl_rows`]/[`CylRow`] (which lateral faces
+//! there are, and the two boundary sections each ends at).
 //!
 //! The prose below is the theory [`cyl_rows`] rests on — the uniform-slab theorem, and the gate
 //! that admits only the population it holds for.
@@ -34,7 +34,7 @@
 //! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
 //! clear on either one misses the rectangle (`planes`' `face_clears_footprint`). With several
 //! lateral faces there are several rectangles, and that is exactly the granularity the theorem
-//! needs: a row's span is the existence truth at an uncut end and its ends are band boundaries
+//! needs: a row's ends are the existence truth at an uncut end and band boundaries
 //! (`cyl_chart::boundary_lines`), so no band is ever built in the gap between two of them, and a
 //! wall sitting in such a gap breaks no premise — there is none there to break. Reading the spans
 //! as one `min..max` would invent both the band and the refusal.
@@ -50,8 +50,7 @@ use crate::BoolKind;
 #[cfg(test)]
 use crate::draft::{Bound, LocalFace};
 use crate::planes::SolidSide;
-use crate::planes::{ClassIx, FaceRow, WorkingPlane, axis_param_of_plane};
-use crate::tolerant::Judge;
+use crate::planes::{ClassIx, FaceRow};
 use crate::{BoolError, RejectReason, reject};
 use nacre_exact::Rat;
 
@@ -74,17 +73,20 @@ pub(crate) struct CylRow {
     /// The [`ClassIx::Cyl`] payload — which lateral surface this face lies on. Several rows may
     /// share it.
     pub(crate) class: usize,
-    /// **This face's** own extent in the axis parameter (its two rims).
-    pub(crate) span: [Rat; 2],
+    /// **This face's** own ends: the planes (world coefficients) of its lowest and highest boundary
+    /// sections, low first — the lines a cell between which exists at an uncut end.
+    pub(crate) ends: [[Rat; 4]; 2],
+    /// How far this face reaches along the axis (its footprint's span) — the rows' order.
+    pub(crate) reach: [Rat; 2],
     /// Which operand this face belongs to.
     pub(crate) side: SolidSide,
 }
 
-/// One row per lateral **face**, ordered by `(class, lower t)`.
+/// One row per lateral **face**, ordered by `(class, lowest reach)`.
 ///
 /// That order is the replay contract stated at the row level, and the chart's emitter keeps it
-/// (classes ascending, then lines ascending). A class's faces have disjoint spans, so sorting by
-/// `(class, span[0])` keeps each class's bands in ascending `t`; with one face per class it *is*
+/// (classes ascending, then lines ascending). A class's faces have disjoint reaches, so sorting by
+/// `(class, reach[0])` keeps each class's bands in ascending `t`; with one face per class it *is*
 /// class-index order.
 ///
 /// **That disjointness holds where every lateral face that reaches here is a
@@ -94,7 +96,7 @@ pub(crate) struct CylRow {
 /// lateral per class (the cleaning pass merged the pieces one operation earlier). Named here so
 /// the day it is exercised is a thing a reader can check, not a surprise.
 ///
-/// A face whose ⊥ range cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
+/// A face whose ends cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
 /// declines it for the same reason.
 pub(crate) fn cyl_rows(
     faces: &[FaceRow],
@@ -108,14 +110,14 @@ pub(crate) fn cyl_rows(
             continue;
         };
         n_class = n_class.max(k + 1);
-        let Some(span) = cf.stretch else {
+        let (Some(ends), Some(reach)) = (cf.ends, cf.footprint.span) else {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,
             }));
         };
-        // A lateral with no world statement declines the same way a missing span does — the
-        // chart states every axis parameter against world planes (`axis_param`).
+        // A lateral with no world statement declines the same way missing ends do — the chart
+        // states every line against world planes.
         if cf.def.is_none() {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
@@ -124,11 +126,12 @@ pub(crate) fn cyl_rows(
         }
         out.push(CylRow {
             class: k,
-            span,
+            ends,
+            reach,
             side: if i < n_a { SolidSide::A } else { SolidSide::B },
         });
     }
-    out.sort_by(|a, b| (a.class, a.span[0]).cmp(&(b.class, b.span[0])));
+    out.sort_by(|a, b| (a.class, a.reach[0]).cmp(&(b.class, b.reach[0])));
     // A class exists because a face made it, so a class with no row is the class table and the
     // face rows disagreeing rather than an input. It has never fired; an unfired guard stays,
     // under the name its whole class of guards shares (`CylinderStagesDisagree`).
@@ -138,32 +141,6 @@ pub(crate) fn cyl_rows(
         }
     }
     Ok(out)
-}
-
-/// The same question asked of a **cylinder** rather than one of its faces — the chart road
-/// (`crate::cyl_chart`) has a class and a def but no row, and this rule may not be spelled twice.
-pub(crate) fn axis_param(
-    jd: &Judge<'_, WorkingPlane>,
-    c: usize,
-    def: &nacre_topo::CylinderDef,
-) -> Result<Rat, BoolError> {
-    param_opt(jd, c, def).ok_or_else(|| reject(RejectReason::WitnessNotRational))
-}
-
-/// **The height class `c` stands at on the cylinder's axis** — `Some` only for a class across the
-/// axis, whose section is a circle at that one height. An oblique plane meets the axis too, but its
-/// section is an ellipse with no one height; answering with the axis meet would read the ellipse as
-/// the circle there.
-pub(crate) fn param_opt(
-    jd: &Judge<'_, WorkingPlane>,
-    c: usize,
-    def: &nacre_topo::CylinderDef,
-) -> Option<Rat> {
-    let coeffs = jd.world_rat(c)?;
-    if !crate::planes::class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
-        return None;
-    }
-    axis_param_of_plane(&coeffs, def)
 }
 
 #[cfg(test)]

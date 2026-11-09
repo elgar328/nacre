@@ -68,6 +68,45 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
     }
 }
 
+/// **A window sealed into a rod is a cavity from the rod's side only — a known defect.** The rod
+/// `x² + (y − 3)² ≤ 4`, `z ∈ [0, 10]`, with a window cut through its side (`x ∈ [1, 3]`,
+/// `y ∈ [2, 4]`, `z ∈ [2, 3]`), fused with the box `x ∈ [1.5, 4]`, `y ∈ [0, 6]`, `z ∈ [−1, 5.5]`:
+/// the box closes the window's rest (`x ∈ [1, 1.5]`, volume `1`) into a sealed cavity, every face of
+/// it a plane. With the rod first the result is one solid carrying that cavity; with the box first
+/// it is two solids — the cavity's shell comes out as a solid of its own, of volume `−1` — though
+/// both pass `validate`, and the planar twin (`a_slab_between_the_lid_and_the_floor_nests_two_loops`)
+/// seals its cavity in both orders. Today's answers, pinned until the fix flips the second.
+#[test]
+fn a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only() {
+    for swap in [false, true] {
+        let mut m = Model::new();
+        let r = crate::tests::slant_rod(&mut m);
+        let w = crate::fixtures::cuboid(&mut m, [1.0, 2.0, 2.0], [3.0, 4.0, 3.0]);
+        let rod = boolean(&mut m, BoolKind::Cut, r, w).expect("the window")[0];
+        let wall = crate::fixtures::cuboid(&mut m, [1.5, 0.0, -1.0], [4.0, 6.0, 5.5]);
+        let (x, y) = if swap { (wall, rod) } else { (rod, wall) };
+        let out = boolean(&mut m, BoolKind::Fuse, x, y).expect("the fuse builds");
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "swap={swap}: {vs:?}");
+        let mut volumes: Vec<f64> = out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+            .collect();
+        volumes.sort_by(f64::total_cmp);
+        if swap {
+            assert_eq!(
+                volumes.len(),
+                2,
+                "box first: the cavity comes out as a solid"
+            );
+            assert!((volumes[0] + 1.0).abs() < 1e-9, "box first: {volumes:?}");
+        } else {
+            assert_eq!(volumes.len(), 1, "rod first: one solid");
+            assert_eq!(m.solid(out[0]).cavities.len(), 1, "rod first: its cavity");
+        }
+    }
+}
+
 /// A ring's nodes as coordinates — each triple is three planes, so its point is their meet.
 fn ring_points(planes: &[WorkingPlane], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
     ring.iter()

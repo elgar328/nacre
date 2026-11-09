@@ -39,6 +39,7 @@ pub(crate) fn collect_planes(
                         // question is exactly "which frames are in play here".
                         motion: motion.filter(|_| def.is_none()),
                         stretch: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
+                        ends: def.as_ref().and_then(|d| lateral_ends(model, face, d)),
                         footprint: Footprint {
                             span: def
                                 .as_ref()

@@ -114,7 +114,7 @@ fn cyl_rows_gives_one_row_per_lateral_face() {
     let rows = cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).expect("rows");
     let spans: Vec<[f64; 2]> = rows
         .iter()
-        .map(|r| [r.span[0].to_f64(), r.span[1].to_f64()])
+        .map(|r| [r.reach[0].to_f64(), r.reach[1].to_f64()])
         .collect();
     assert_eq!(
         spans,
@@ -187,7 +187,7 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
 //
 // With several lateral faces there are several rectangles: the strip is shared, the spans
 // are not. That is why the gap between two bands is passable at all, and it is not a special
-// case bolted on — a row's span is the existence truth at an uncut end, so no band is ever
+// case bolted on — a row's ends are the existence truth at an uncut end, so no band is ever
 // built in a gap and there is no premise there for a wall to break.
 
 /// **The case this opened.** The two-banded bore of `plate_with_a_split_bore` has bands at

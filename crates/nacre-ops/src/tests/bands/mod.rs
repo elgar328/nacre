@@ -1,4 +1,5 @@
 use super::*;
+use crate::tolerant::Judge;
 
 use crate::arrangement::{PlaneSetup, plane_index_setup};
 
@@ -66,7 +67,11 @@ fn bands(
     let ts = (0..geom.len())
         .filter_map(|c| {
             let def = &cyls[0].def;
-            let t = param_opt(&jd, c, def)?;
+            let w = jd.world_rat(c)?;
+            if !crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &def.dir()) {
+                return None;
+            }
+            let t = crate::planes::axis_param_of_plane(&w, def)?;
             // The class's world z, via the axis point at that parameter.
             let (o, m) = (def.origin(), def.dir());
             let z = o[2].checked_add(t.checked_mul(m[2])?)?;

@@ -49,7 +49,29 @@ pub(super) fn chord_stations(
     // the same two pierce names the tracer ends the ellipse's arcs at. A line missing the circle
     // leaves no chord; a touch the gate refused (`planes::boundary_stand`), and the radius
     // premise below — a distance from the axis — means nothing for a plane that crosses the axis.
-    if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
+    // **A class across the axis meets a disk only if the disk's plane is not parallel to it.** Two
+    // planes across the axis (a cap and another cap) share no line; a slanted disk — an operand's
+    // cap on an oblique section — crosses it in a line that meets the disk's boundary at the same
+    // two points, asked by the one meet of two sections first so a touch or the class's own plane
+    // is answered rather than refused.
+    let across = match (jd.world_rat(wc), def_of()) {
+        (Some(w), Some(d)) => crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &d.dir()),
+        _ => false,
+    };
+    if across {
+        let def = def_of().ok_or(ChordUnstatable)?;
+        let (Some(w), Some(f)) = (jd.world_rat(wc), jd.world_rat(fc)) else {
+            return Err(ChordUnstatable);
+        };
+        match nacre_exact::quad::section_meet(&w, &f, def) {
+            Some(nacre_exact::quad::SectionMeet::Cross) => {}
+            Some(nacre_exact::quad::SectionMeet::Apart | nacre_exact::quad::SectionMeet::Same) => {
+                return Ok(None);
+            }
+            Some(nacre_exact::quad::SectionMeet::Touch) | None => return Err(ChordUnstatable),
+        }
+    }
+    if across || cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
         let def = def_of().ok_or(ChordUnstatable)?;
         return match combinatorics::rim_crossings(jd, def, wc, fc, cyl) {
             Some(Some([lo, hi])) => Ok(Some([node(lo), node(hi)])),

@@ -246,8 +246,8 @@ fn trace_on_face(
 /// classes of its lowest and highest boundary sections, ordered as sections are
 /// ([`nacre_exact::quad::section_height_order`], with no generator: a face's boundary sections do
 /// not cross its ends) — and every other cycle — a panel, a chain rim, a hole — with whether it is
-/// an inner loop. The ends' bands span the face's reach, a second derivation of
-/// `CylFaceInfo::footprint`'s span (the model side's), and the two are held equal where they meet.
+/// an inner loop. The ends are a second derivation of `CylFaceInfo::ends` (the model side's, off the
+/// face's own boundary planes), and the two are held equal where they meet.
 ///
 /// Declines by the one name: `None` cycles (a loop could not be named), a class with no world
 /// statement, a boundary section crossing an end, a single boundary section, more than two rims,
@@ -321,15 +321,9 @@ pub(super) fn lateral_shape(
         return Err(DeclineKind::CylSpan);
     }
     debug_assert_eq!(
-        (|| {
-            let ([a, _], [_, b]) = (
-                crate::planes::trace_band(&jd.world_rat(lo)?, def)?,
-                crate::planes::trace_band(&jd.world_rat(hi)?, def)?,
-            );
-            Some([a, b])
-        })(),
-        cf.footprint.span,
-        "the cycles' ends by name and the face's reach by model disagree"
+        jd.world_rat(lo).zip(jd.world_rat(hi)).map(|(l, h)| [l, h]),
+        cf.ends,
+        "the cycles' ends by name and the face's ends by model disagree"
     );
     Ok(LateralShape {
         rims: rims.into_iter().map(|c| (c, c == lo)).collect(),
