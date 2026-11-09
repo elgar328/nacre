@@ -12,7 +12,9 @@ mod delaunay;
 mod monotone;
 mod sos;
 
-pub(crate) use monotone::{Crossing, Meets, Touch, TouchKind, Witness};
+#[cfg(test)]
+pub(crate) use monotone::self_touch_runs;
+pub(crate) use monotone::{Asked, Crossing, Meets, Touch, TouchKind, Witness};
 use sos::Twins;
 
 /// What [`triangulate_uv`] hands back: the triangles, and the rings it actually triangulated —
@@ -167,9 +169,15 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
 /// [`triangulate_uv`] links them but where it cuts a ring in two at a point the ring bounds two
 /// lobes at — that changes which edge follows which there and nothing that crosses or touches, so
 /// the answer is the one the sweep would refuse on.
-pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
+///
+/// `prior` is a scan made before; where it asked this very chart it is the answer ([`Asked`]).
+pub(crate) fn meets(
+    uv: &[P2],
+    rings: &[&[usize]],
+    prior: Option<Asked>,
+) -> Result<Asked, TessError> {
     let (prev, next) = monotone::link(uv.len(), rings)?;
-    Ok(monotone::self_touch(uv, &prev, &next))
+    Ok(Asked::of(uv, rings, &prev, &next, prior))
 }
 
 /// Triangulate rings that are **already in a chart** — the chart-free core of this layer's one
@@ -217,12 +225,17 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// edges and facets outside it and lowers it where it can ([`delaunay::refine`]). Each corner comes
 /// with its index, so the caller judges the point it will ship for it, not the chart's image of it;
 /// a bare polygon with no surface under it has no budget to leave and passes `&|_| true`.
+///
+/// **`asked` — a scan of the boundary made before** ([`meets`]): where it asked the very chart the
+/// decomposition is handed — the rings as triangulated, after any splice or cut — its answer is
+/// the decomposition's, and the boundary is not scanned again ([`Asked`]).
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
     candidates: &[P2],
     revisits: &[Revisit],
     within: &dyn Fn(Element) -> bool,
+    asked: Option<&Asked>,
 ) -> Result<Triangulated, TessError> {
     if ring_orientation(rings[0], uv) != 1 {
         return Err(TessError::DegenerateRing);
@@ -277,7 +290,7 @@ pub(crate) fn triangulate_uv(
     }
     let refs: Vec<&[usize]> = rings_used.iter().map(|r| r.as_slice()).collect();
     let mut out = Vec::new();
-    for piece in monotone::decompose(uv, &refs, &twins)? {
+    for piece in monotone::decompose(uv, &refs, &twins, asked)? {
         monotone::triangulate_monotone(uv, &piece, &mut out, &twins)?;
     }
     // The decomposition answers *whether* the face meshes; this keeps it within the budget and

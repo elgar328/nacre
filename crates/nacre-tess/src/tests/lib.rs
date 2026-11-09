@@ -1340,6 +1340,58 @@ fn a_mesh_of_solids_whose_chords_cross_holds_theirs_as_the_whole_mesh_does() {
     }
 }
 
+/// **A chart is asked once** ([`polygon::Asked`]): a face whose boundary no round moves has its
+/// boundary scanned once in a whole mesh — the rounds' scan and its triangulation are one ask, and
+/// a lateral, which no round scans, is asked by its triangulation alone. So a bored disk is
+/// asked once a face, alone and beside a model whose cap's chords cross (the hole `1e-8` from the
+/// rim, fused with a column just above the disk), which takes nine rounds and asks the faces whose
+/// boundaries those rounds move again.
+#[test]
+fn a_face_no_round_moves_is_asked_once() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let z = Vector3::from_array([0.0, 0.0, 1.0]);
+    let crossing = |m: &mut Model| {
+        let disk = fixtures::cylinder(m, Point3::origin(), z, 1.0, 2.0).solid;
+        let column = fixtures::cylinder(
+            m,
+            Point3::from_array([0.3, 0.4, -1.0]),
+            z,
+            0.49999999,
+            3.001,
+        )
+        .solid;
+        boolean(m, BoolKind::Fuse, disk, column).expect("the column fuses");
+    };
+    let bored = |m: &mut Model| {
+        let disk = fixtures::cylinder(m, Point3::from_array([100.0, 0.0, 0.0]), z, 10.0, 2.0).solid;
+        let bore = fixtures::cylinder(m, Point3::from_array([101.0, 0.0, -1.0]), z, 4.0, 4.0).solid;
+        boolean(m, BoolKind::Cut, disk, bore).expect("the bore cuts");
+    };
+    let cfg = TessConfig::default();
+    let asks = |m: &Model| {
+        let before = polygon::self_touch_runs();
+        tessellate(m, &cfg).expect("it meshes");
+        polygon::self_touch_runs() - before
+    };
+    let faces = |m: &Model| m.reachable().faces.len();
+
+    let mut disk = Model::new();
+    bored(&mut disk);
+    assert_eq!(asks(&disk), faces(&disk), "the bored disk alone");
+    let mut cap = Model::new();
+    crossing(&mut cap);
+    let theirs = asks(&cap);
+    assert!(
+        theirs > faces(&cap),
+        "no face was asked again: {theirs} asks, {} faces",
+        faces(&cap)
+    );
+    let mut both = Model::new();
+    crossing(&mut both);
+    bored(&mut both);
+    assert_eq!(asks(&both) - theirs, faces(&disk), "the bored disk beside");
+}
+
 /// **Each OBJ corner carries its face's outward normal — so a cylinder is round and its rims
 /// are sharp.** Without `vn` a viewer shades each facet flat (a cylinder reads as bands) or
 /// averages a shared vertex's normals — and the mesh shares every rim point between cap and side,
@@ -1827,7 +1879,7 @@ fn a_curves_samples_stand_at_their_columns_numbers() {
     for (name, m) in &shapes {
         let reach = m.reachable();
         let (live, mut sets) = theta_sets(m, &cfg, &reach);
-        let (t, cuts, _) = finish_polylines(m, &reach, &live, &mut sets);
+        let (Finished { t, cuts, .. }, _) = finish_polylines(m, &reach, &live, &mut sets);
         let mut cut_at: std::collections::HashMap<Handle<TessVertex>, Handle<Face>> =
             std::collections::HashMap::new();
         for (&fh, cut) in &cuts {

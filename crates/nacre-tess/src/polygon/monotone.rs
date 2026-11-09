@@ -67,17 +67,28 @@ enum Kind {
 /// once. That is the b-rep's own invariant (a face's loops are disjoint), but this
 /// file does not get to assume it — a violation comes back as
 /// [`TessError::DegenerateRing`] rather than as a quietly wrong mesh.
+///
+/// `asked` is a scan of the boundary made before ([`Asked`]): where it asked this very chart, its
+/// answer is the one read here.
 pub(super) fn decompose(
     uv: &[P2],
     rings: &[&[usize]],
     twins: &[Twins],
+    asked: Option<&Asked>,
 ) -> Result<Vec<Vec<usize>>, TessError> {
     let n = uv.len();
     let (prev, next) = link(n, rings)?;
     // "Wrong" outranks "cannot": a crossing means every triangulation of these rings is wrong,
     // a touch only that this decomposition has no answer for them. Neither says a word about
     // the solid — that is `validate`'s business, one crate over.
-    let meets = self_touch(uv, &prev, &next);
+    let fresh;
+    let meets = match asked.filter(|a| a.is_of(uv, rings)) {
+        Some(a) => &a.meets,
+        None => {
+            fresh = self_touch(uv, &prev, &next);
+            &fresh
+        }
+    };
     if !meets.crossings.is_empty() {
         return Err(TessError::DegenerateRing);
     }
@@ -172,6 +183,8 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 /// confident, wrong triangles. This file's charter is that a wrong cache is worse than none, so the
 /// gap is closed rather than documented.
 pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
+    #[cfg(test)]
+    SELF_TOUCH_RUNS.with(|c| c.set(c.get() + 1));
     let box_misses = |p: P2, u: P2, v: P2| {
         p[0] < u[0].min(v[0])
             || p[0] > u[0].max(v[0])
@@ -319,6 +332,70 @@ pub(crate) enum Crossing {
 pub(crate) struct Meets {
     pub(crate) touches: Vec<Touch>,
     pub(crate) crossings: Vec<Crossing>,
+}
+
+/// **A chart's boundary scan, kept with the chart it asked** — so one chart is asked once.
+///
+/// [`self_touch`] reads the points and the rings and nothing else, so its answer for a chart
+/// equal to this one, point for point in bits and ring for ring, is [`Asked::meets`] — what
+/// [`super::meets`] and [`decompose`] take where they are handed one (the crossing rounds and the
+/// triangulation of a face, `finish_polylines`). Bits, not `==`: `0.0` and `-0.0` are two inputs,
+/// and nothing here argues they answer alike.
+#[derive(Clone, Debug)]
+pub(crate) struct Asked {
+    uv: Vec<P2>,
+    rings: Vec<Vec<usize>>,
+    meets: Meets,
+}
+
+impl Asked {
+    /// The scan of `uv`'s `rings` — `prior`'s, where it asked this very chart.
+    pub(super) fn of(
+        uv: &[P2],
+        rings: &[&[usize]],
+        prev: &[usize],
+        next: &[usize],
+        prior: Option<Asked>,
+    ) -> Asked {
+        match prior {
+            Some(a) if a.is_of(uv, rings) => a,
+            _ => Asked {
+                uv: uv.to_vec(),
+                rings: rings.iter().map(|r| r.to_vec()).collect(),
+                meets: self_touch(uv, prev, next),
+            },
+        }
+    }
+
+    /// Whether this is the scan of `uv`'s `rings`.
+    fn is_of(&self, uv: &[P2], rings: &[&[usize]]) -> bool {
+        let bits = |p: &P2| p.map(f64::to_bits);
+        self.rings.len() == rings.len()
+            && self
+                .rings
+                .iter()
+                .zip(rings)
+                .all(|(a, b)| a.as_slice() == *b)
+            && self.uv.len() == uv.len()
+            && self.uv.iter().zip(uv).all(|(a, b)| bits(a) == bits(b))
+    }
+
+    /// What the scan found.
+    pub(crate) fn meets(&self) -> &Meets {
+        &self.meets
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread ran [`self_touch`] — a test reads the difference across a call.
+    static SELF_TOUCH_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times this thread has run [`self_touch`].
+#[cfg(test)]
+pub(crate) fn self_touch_runs() -> usize {
+    SELF_TOUCH_RUNS.with(std::cell::Cell::get)
 }
 
 fn classify(uv: &[P2], prev: &[usize], next: &[usize]) -> Result<Vec<Kind>, TessError> {

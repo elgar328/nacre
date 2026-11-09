@@ -16,7 +16,7 @@ fn tri(uv: &[P2], outer: &[usize], holes: &[&[usize]]) -> Result<Vec<[usize; 3]>
     let refs: Vec<&[usize]> = std::iter::once(outer)
         .chain(holes.iter().copied())
         .collect();
-    triangulate_uv(&mut v, &refs, &[], &[], &|_| true).map(|(t, _)| t)
+    triangulate_uv(&mut v, &refs, &[], &[], &|_| true, None).map(|(t, _)| t)
 }
 
 /// The same road with one bridge named — what the chart layer hands over for a pinched face.
@@ -30,7 +30,14 @@ fn tri_bridged(
     let refs: Vec<&[usize]> = std::iter::once(outer)
         .chain(holes.iter().copied())
         .collect();
-    triangulate_uv(&mut v, &refs, &[], &[Revisit::Bridge(bridge)], &|_| true)
+    triangulate_uv(
+        &mut v,
+        &refs,
+        &[],
+        &[Revisit::Bridge(bridge)],
+        &|_| true,
+        None,
+    )
 }
 
 /// The checks every golden gets, each catching a different fault: the count pins
@@ -313,7 +320,7 @@ fn offered_points_land_inside_and_on_interior_edges() {
     let lattice: Vec<P2> = (1..4)
         .flat_map(|i| (1..4).map(move |j| [f64::from(i), f64::from(j)]))
         .collect();
-    let t = triangulate_uv(&mut uv, &[&ring], &lattice, &[], &|_| true)
+    let t = triangulate_uv(&mut uv, &[&ring], &lattice, &[], &|_| true, None)
         .unwrap()
         .0;
     assert_eq!(uv.len(), 4 + 9, "every offered point was placed");
@@ -350,7 +357,7 @@ fn a_candidate_on_the_boundary_or_outside_is_declined() {
         [-1.0, 2.0], // outside, and level with the interior
     ] {
         let mut uv = base.clone();
-        let t = triangulate_uv(&mut uv, &[&ring], &[p], &[], &|_| true)
+        let t = triangulate_uv(&mut uv, &[&ring], &[p], &[], &|_| true, None)
             .unwrap()
             .0;
         assert_eq!(uv.len(), 4, "{p:?} was placed");
@@ -539,6 +546,7 @@ fn tri_pinched(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Triangul
         &[],
         &[Revisit::Pinch { ring: 0, x, y }],
         &|_| true,
+        None,
     )
 }
 
@@ -610,7 +618,7 @@ fn a_ring_pinched_at_two_points_meshes() {
             y: 8,
         },
     ];
-    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_| true)
+    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_| true, None)
         .expect("the twice-pinched ring meshes");
     check(&p, &tris, 10, 24.0 - 0.5 - 0.5);
     assert_eq!(rings, vec![ring.clone()], "nothing spliced");
@@ -644,7 +652,7 @@ fn a_pinch_with_a_reflex_sector_meshes() {
         x: 1,
         y: 4,
     }];
-    let (tris, rings) = triangulate_uv(&mut v, &[&outer, &hole], &[], &revisits, &|_| true)
+    let (tris, rings) = triangulate_uv(&mut v, &[&outer, &hole], &[], &revisits, &|_| true, None)
         .expect("the pinched hole meshes");
     check(&p, &tris, 10, 36.0 - 1.0 - 0.5);
     check_partition(&tris, &rings[0], &[&rings[1]]);
@@ -683,7 +691,7 @@ fn a_ring_pinched_twice_with_a_reflex_sector_meshes() {
             y: 7,
         },
     ];
-    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_| true)
+    let (tris, rings) = triangulate_uv(&mut v, &[&ring], &[], &revisits, &|_| true, None)
         .expect("the twice-pinched ring meshes");
     check(&p, &tris, 9, 36.0 - 1.0 - 1.0);
     assert_eq!(rings, vec![ring.clone()], "nothing spliced");
@@ -797,6 +805,7 @@ fn a_point_passed_three_times_is_refused_by_its_own_name() {
             },
         ],
         &|_| true,
+        None,
     );
     assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
 }
@@ -831,6 +840,7 @@ fn a_lobe_holds_a_hole_and_a_hole_an_island() {
             y: 3,
         }],
         &|_| true,
+        None,
     )
     .expect("a lobe with a hole");
     assert_eq!(r.1.len(), 3, "two lobes and the hole: {:?}", r.1);
@@ -861,6 +871,7 @@ fn a_lobe_holds_a_hole_and_a_hole_an_island() {
             y: 5,
         }],
         &|_| true,
+        None,
     )
     .expect("an island touching its hole's rim");
     assert_eq!(
@@ -903,6 +914,7 @@ fn a_bridged_ring_bounding_two_lobes_is_refused() {
             y: 0,
         })],
         &|_| true,
+        None,
     );
     assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
 }
@@ -1153,6 +1165,7 @@ fn random_figure_eight_holes_triangulate() {
                 y: 3,
             }],
             &|_| true,
+            None,
         )
         .unwrap_or_else(|e| panic!("{e:?}: {p:?}"));
         check(&p, &tris, 10, 400.0 - lobes);
@@ -1328,7 +1341,7 @@ fn random_pinched_grid_faces_triangulate() {
         }
         let refs: Vec<&[usize]> = idx.iter().map(|r| r.as_slice()).collect();
         let mut v = p.clone();
-        let r = triangulate_uv(&mut v, &refs, &[], &revisits, &|_| true);
+        let r = triangulate_uv(&mut v, &refs, &[], &revisits, &|_| true, None);
         if revisits.iter().any(|r| matches!(r, Revisit::Bridge(_))) {
             assert!(
                 matches!(r, Err(TessError::SelfTouchingBoundary)),
@@ -1364,5 +1377,44 @@ fn random_pinched_grid_faces_triangulate() {
     assert!(
         holed > GRID_SAMPLES / 1000,
         "only {holed} faces of several pieces held a hole"
+    );
+}
+
+/// **A scan is a chart's, point for point** ([`Asked`]): handed the same rings with one point
+/// moved, the scan made before is not the answer. A square hole in a square ring, then the same
+/// rings with one hole corner past the outer edge — the second chart crosses, and is asked.
+/// Handed the first chart again, the scan is taken and the boundary not scanned.
+#[test]
+fn a_scan_answers_for_its_own_chart_only() {
+    let outer = [0, 1, 2, 3];
+    let hole = [4, 5, 6, 7];
+    let rings: [&[usize]; 2] = [&outer, &hole];
+    let apart = pts(&[
+        [0.0, 0.0],
+        [4.0, 0.0],
+        [4.0, 4.0],
+        [0.0, 4.0],
+        [1.0, 1.0],
+        [1.0, 3.0],
+        [3.0, 3.0],
+        [3.0, 1.0],
+    ]);
+    let mut crossing = apart.clone();
+    crossing[6] = [5.0, 3.0];
+
+    let first = meets(&apart, &rings, None).expect("the rings link");
+    assert!(first.meets().crossings.is_empty());
+    let runs = self_touch_runs();
+    let again = meets(&apart, &rings, Some(first)).expect("the rings link");
+    assert_eq!(self_touch_runs(), runs, "the same chart was scanned again");
+    let moved = meets(&crossing, &rings, Some(again)).expect("the rings link");
+    assert_eq!(
+        self_touch_runs(),
+        runs + 1,
+        "the moved chart was not scanned"
+    );
+    assert!(
+        !moved.meets().crossings.is_empty(),
+        "the moved chart took the scan of the chart before"
     );
 }

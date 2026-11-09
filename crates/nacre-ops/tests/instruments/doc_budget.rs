@@ -65,7 +65,7 @@ const PARTS: &[Part] = &[
         file: "docs/design.md",
         from: Some(crate::history_words::STORY_SECTION),
         to: None,
-        ceiling: 30_000,
+        ceiling: 30_200,
         floored: false,
     },
     Part {

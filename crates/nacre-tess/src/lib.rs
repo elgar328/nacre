@@ -316,7 +316,8 @@ pub fn tessellate_solids(
     // 1. Sample every live edge into a shared polyline (the crack-free contract), finished
     // before any face reads them.
     let (live, mut sets) = theta_sets(model, cfg, &reach);
-    let (mut t, cuts, _report) = finish_polylines(model, &reach, &live, &mut sets);
+    let (Finished { mut t, cuts, asked }, _report) =
+        finish_polylines(model, &reach, &live, &mut sets);
     // 2. Triangulate each live face, reusing the shared edge polylines.
     for &(fh, face) in &live {
         triangulate_face(
@@ -327,6 +328,7 @@ pub fn tessellate_solids(
             face,
             cuts.get(&fh).cloned(),
             sets.faces.get(&fh),
+            asked.get(&fh),
         )?;
     }
 
@@ -352,11 +354,18 @@ pub fn tessellate_solids(
 /// exactly on a straight edge, so it changes no polyline's shape). A round that grew a set is
 /// thrown away whole: the store is append-only, so sampling a curve again into the same
 /// tessellation would leave its old samples in it, and an OBJ writes every vertex the mesh holds.
+/// Measured, that resampling and the band cut cost about 1.4 ms a round next to 100 bored disks.
 ///
-/// **Every planar face is asked again each round, not only the one that crossed**: a column a
-/// crossing on one cap asks for goes on every curve of its lateral, the rim another cap is
-/// bounded by among them, so that cap's boundary moves too and can cross where it did not. A model
-/// with no crossing has one round — sampled, cut and scanned once.
+/// **Every planar face's chart is built again each round, not only the crossing one's**: a column
+/// a crossing on one cap asks for goes on every curve of its lateral, the rim another cap is
+/// bounded by among them, so that cap's boundary moves too and can cross where it did not. **A
+/// chart is asked once** ([`polygon::Asked`]): the scan reads the chart's points and rings and
+/// nothing else, so a face whose chart is the previous round's, bit for bit, takes that round's
+/// answer. What comes back is each planar face's last scan, which its triangulation reads the
+/// same way — a face no bridge or pinch changed is not scanned again there. Measured next to 100
+/// bored disks, a model taking nine rounds meshed in 711 ms asking every chart afresh and in
+/// 457 ms asking each once (a one-round model, 437 ms). A model with no crossing has one round —
+/// sampled, cut and scanned once.
 ///
 /// **It ends.** Sets only grow, and a round goes on only when some column was laid. A column an
 /// edge asks for stands inside the edge's own range, so its polyline either gains a chord or, where
@@ -375,7 +384,9 @@ fn finish_polylines(
     reach: &nacre_topo::Reachable,
     live: &[(Handle<Face>, &Face)],
     sets: &mut ThetaSets,
-) -> (Tessellation, HashMap<Handle<Face>, BandCut>, BridgeReport) {
+) -> (Finished, BridgeReport) {
+    // Each planar face's last scan — a map only taken from and put into, never walked.
+    let mut asked: HashMap<Handle<Face>, polygon::Asked> = HashMap::new();
     loop {
         let mut t = Tessellation::default();
         sample_edges(&mut t, model, reach, sets);
@@ -395,22 +406,35 @@ fn finish_polylines(
             // A face whose chart or rings are refused is left for its own triangulation to name.
             let Some(BoundaryScan {
                 chart,
-                meets,
+                scan,
                 wanted,
-            }) = crossing_chords(&t, model, face, plane, sets)
+            }) = crossing_chords(&t, model, face, plane, sets, asked.remove(&fh))
             else {
                 continue;
             };
             for (edge, theta) in wanted {
                 grew |= sets.of_mut(edge).add(theta);
             }
-            bridgeable_touches(fh, &chart, &meets, &mut touches, &mut report);
+            bridgeable_touches(fh, &chart, scan.meets(), &mut touches, &mut report);
+            asked.insert(fh, scan);
         }
         if !grew {
             let report = bridge_shared_edges(&mut t, model, live, touches, report);
-            return (t, cuts, report);
+            return (Finished { t, cuts, asked }, report);
         }
     }
+}
+
+/// What [`finish_polylines`] hands the faces' triangulation — beside the bridge pre-pass's report,
+/// which only a test reads.
+struct Finished {
+    /// The finished edge polylines, and no triangles yet.
+    t: Tessellation,
+    /// Each band's cut ([`cut_seamless_bands`]).
+    cuts: HashMap<Handle<Face>, BandCut>,
+    /// Each planar face's last boundary scan, which its triangulation takes where its chart is the
+    /// scan's ([`polygon::Asked`]).
+    asked: HashMap<Handle<Face>, polygon::Asked>,
 }
 
 /// The live faces in store order, so the later phases walk exactly that set, with each curve's θ
@@ -826,10 +850,12 @@ impl FaceThetas {
 /// `1e-4`, about 2,300 samples a circle at `1e-6` — and at `1e-8` the cap is reached and the face
 /// refused by name.
 ///
-/// **One scan, two readers.** The last round's answer is the boundary as it is shipped, which is
+/// **One scan, three readers.** The last round's answer is the boundary as it is shipped, which is
 /// what the bridge pre-pass reads its touches off ([`bridgeable_touches`]) — asked once, not again
 /// by a second pass over the same polylines. Measured as a separate pass, the second ask was 7.7%
-/// of the census's meshing time.
+/// of the census's meshing time. The face's triangulation takes it too, where its chart is the
+/// scan's ([`polygon::Asked`]); and `prior`, the face's scan from the round before, is this round's
+/// answer where the chart has not moved.
 ///
 /// **Faces that cannot cross are scanned and ask nothing**: one with no circle edge (straight
 /// segments do not sag), and one bounded by one whole circle alone — its samples lie on the circle
@@ -849,6 +875,7 @@ fn crossing_chords(
     face: &Face,
     plane: &nacre_geom::Plane,
     sets: &ThetaSets,
+    prior: Option<polygon::Asked>,
 ) -> Option<BoundaryScan> {
     use polygon::Crossing;
     let loops: Vec<&Loop> = loops_of(face).collect();
@@ -858,14 +885,15 @@ fn crossing_chords(
         .any(|he| matches!(model.edge_curve(he.edge), Curve::Ellipse(_)));
     let one_circle = loops.len() == 1 && face.outer.half_edges.len() == 1;
     let chart = planar_chart(t, face, plane).ok()?;
-    let meets = {
+    let scan = {
         let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
-        polygon::meets(&chart.uv, &refs).ok()?
+        polygon::meets(&chart.uv, &refs, prior).ok()?
     };
+    let meets = scan.meets();
     if !curved || one_circle || meets.crossings.is_empty() {
         return Some(BoundaryScan {
             chart,
-            meets,
+            scan,
             wanted: Vec::new(),
         });
     }
@@ -909,7 +937,7 @@ fn crossing_chords(
     }
     Some(BoundaryScan {
         chart,
-        meets,
+        scan,
         wanted,
     })
 }
@@ -917,7 +945,8 @@ fn crossing_chords(
 /// What [`crossing_chords`] found on one planar face's boundary.
 struct BoundaryScan {
     chart: Chart,
-    meets: polygon::Meets,
+    /// How the boundary meets itself, kept with the chart it asked ([`polygon::Asked`]).
+    scan: polygon::Asked,
     /// Each crossing arc's edge and the θ it asks its lateral's set for.
     wanted: Vec<(Handle<Edge>, f64)>,
 }
@@ -1203,7 +1232,7 @@ fn bridge_shared_edges(
 pub fn bridge_report(model: &Model, cfg: &TessConfig) -> (BridgeReport, Tessellation) {
     let reach = model.reachable();
     let (live, mut sets) = theta_sets(model, cfg, &reach);
-    let (t, _, report) = finish_polylines(model, &reach, &live, &mut sets);
+    let (Finished { t, .. }, report) = finish_polylines(model, &reach, &live, &mut sets);
     (report, t)
 }
 
@@ -2565,6 +2594,9 @@ fn distance_to_step(p: polygon::P2, a: polygon::P2, b: polygon::P2) -> f64 {
 }
 
 /// Triangulate one face: lay its boundary flat in the surface's chart, then run the one sweep.
+/// `asked` is a planar face's last boundary scan ([`finish_polylines`]), which the sweep takes
+/// where it is this chart's.
+#[allow(clippy::too_many_arguments)]
 fn triangulate_face(
     t: &mut Tessellation,
     model: &Model,
@@ -2573,6 +2605,7 @@ fn triangulate_face(
     face: &Face,
     cut: Option<BandCut>,
     thetas: Option<&FaceThetas>,
+    asked: Option<&polygon::Asked>,
 ) -> Result<(), TessError> {
     // The cache: a chart is sampled geometry for a mesh, which is what the realization is
     // for. Nothing here classifies — the kind was decided upstream, on the truth.
@@ -2616,7 +2649,7 @@ fn triangulate_face(
         polygon::Element::Facet(c) => facet_in_budget(cfg, &geom, c.map(|k| (k.0, at(k)))),
     };
     let (tris, rings_used) =
-        polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits, &within)?;
+        polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits, &within, asked)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
     // first minted vertices. Everything before it was already a shared boundary vertex.
     for &p in &uv[boundary..] {
