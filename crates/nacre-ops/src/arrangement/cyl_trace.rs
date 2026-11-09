@@ -316,7 +316,7 @@ fn section_extents(
 /// a panel, a chain rim, a hole — with whether it is an inner loop. The
 /// stations are read
 /// from the planes' world coefficients, so `range` is a second derivation of
-/// `CylFaceInfo::footprint.span` (the model side's: the outer loop's ⊥ carriers), and the two are held
+/// `CylFaceInfo::stretch` (the model side's: the heights its rims stand at), and the two are held
 /// equal where they meet.
 ///
 /// Declines by the one name: `None` cycles (a loop could not be named), a class with no exact
@@ -396,7 +396,7 @@ pub(super) fn lateral_shape(
     }
     debug_assert_eq!(
         Some(range),
-        cf.footprint.span,
+        cf.stretch,
         "the cycles' stations by name and the face's range by model disagree"
     );
     Ok(LateralShape {

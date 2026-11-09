@@ -21,7 +21,7 @@ fn roof(k: f64) -> f64 {
     12.0f64.max(5.0 + 3.0 * k + 1.0)
 }
 
-fn rod(m: &mut Model) -> Handle<Solid> {
+pub(crate) fn rod(m: &mut Model) -> Handle<Solid> {
     crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array([0.0, 3.0, 0.0]),
@@ -33,7 +33,7 @@ fn rod(m: &mut Model) -> Handle<Solid> {
     .solid
 }
 
-fn prism(m: &mut Model, k: f64) -> Handle<Solid> {
+pub(crate) fn prism(m: &mut Model, k: f64) -> Handle<Solid> {
     let top = roof(k);
     // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
     let pts = [
@@ -315,16 +315,21 @@ fn tools() -> Vec<Tool> {
 type Entry =
     fn(&mut Model, BoolKind, Handle<Solid>, Handle<Solid>) -> Result<Vec<Handle<Solid>>, BoolError>;
 
-/// Every cell of every tool — each kind with the rod first, then swapped — through `run`, refused
-/// by `name`, raised in a file ending in `file`.
-fn every_cell_refused(run: Entry, name: RejectReason, file: &str) {
+/// Every cell of every tool against `operand` — each kind with the operand first, then swapped —
+/// through `run`, refused by `name`, raised in a file ending in `file`.
+fn every_cell_refused(
+    operand: fn() -> (Model, Handle<Solid>),
+    run: Entry,
+    name: RejectReason,
+    file: &str,
+) {
     use crate::error::raise_probe::RAISED;
     crate::ledger::owned(|| {
         for tool in tools() {
             for swap in [false, true] {
                 for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
                     let at = format!("{} — {kind:?} swap={swap}", tool.name);
-                    let (mut m, s) = cut_rod(0.5);
+                    let (mut m, s) = operand();
                     let t = (tool.build)(&mut m);
                     let (x, y) = if swap { (t, s) } else { (s, t) };
                     let r0 = RAISED.len();
@@ -411,6 +416,7 @@ fn the_scoreboards_commons_are_what_the_forward_road_builds() {
 #[test]
 fn a_cut_rod_fed_back_is_refused_at_the_door() {
     every_cell_refused(
+        || cut_rod(0.5),
         crate::boolean,
         RejectReason::ObliqueCylinderCut,
         "nacre-ops/src/boolean.rs",
@@ -418,16 +424,34 @@ fn a_cut_rod_fed_back_is_refused_at_the_door() {
 }
 
 /// **What the stages behind the door answer for the cut rod** — the scoreboard the re-entry work
-/// flips row by row. Today every cell stops at the cylinder gate: the rod's lateral face is
-/// bounded by its slanted rim, which the gate's reading of a lateral's axial span skips, so the
-/// rod's own cap plane cannot be drawn against its cylinder (`ClassMeet::Undrawable`).
+/// flips row by row, for the rod and the rod with a window in its side. Today every cell stops at
+/// the cylinder gate: the rod's lateral face is bounded by its slanted rim, which has no one height,
+/// so the gate cannot place the rod's own cap plane against the face's rims and reads it as a
+/// section it cannot draw (`ClassMeet::Undrawable`).
 #[test]
 fn a_cut_rod_behind_the_door_stops_at_the_gate() {
-    every_cell_refused(
-        crate::boolean::behind_the_elliptical_door,
-        RejectReason::ObliqueCylinderCut,
-        "nacre-ops/src/planes/cyl_gate.rs",
-    );
+    for operand in [|| cut_rod(0.5), windowed_cut_rod] {
+        every_cell_refused(
+            operand,
+            crate::boolean::behind_the_elliptical_door,
+            RejectReason::ObliqueCylinderCut,
+            "nacre-ops/src/planes/cyl_gate.rs",
+        );
+    }
+}
+
+/// The cut rod with a window through its side first (`x ≥ 1`, `y ∈ [2, 4]`, `z ∈ [2, 3]`): its
+/// lateral carries two circles at `z = 2, 3` besides its rims, so the circles alone give a range
+/// (`[0, 3]`) — which stops short of the slanted rim.
+fn windowed_cut_rod() -> (Model, Handle<Solid>) {
+    let mut m = Model::new();
+    let r = rod(&mut m);
+    let w = crate::fixtures::cuboid(&mut m, [1.0, 2.0, 2.0], [3.0, 4.0, 3.0]);
+    let r = crate::boolean(&mut m, BoolKind::Cut, r, w).expect("the window")[0];
+    let p = prism(&mut m, 0.5);
+    let out = crate::boolean(&mut m, BoolKind::Cut, r, p).expect("the slant cuts");
+    assert_eq!(out.len(), 1);
+    (m, out[0])
 }
 
 /// **A moved cut rod keeps its edges' kinds** — translated by a third and turned a quarter about

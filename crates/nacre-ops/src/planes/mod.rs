@@ -99,23 +99,26 @@ pub(crate) struct CylFaceInfo {
     /// refuses such a boolean before the arrangement runs. See
     /// [`nacre_topo::Model::world_cylinder_def`].
     pub(crate) def: Option<nacre_topo::CylinderDef>,
-    /// This lateral **face**'s extent in the axis parameter `t` (of the raw `def.dir()`): the
-    /// least and greatest `t` of the ⊥ carriers on its outer loop — `t = −(n·o + d)/(n·m)` per cap
-    /// plane. `None` when a ⊥ carrier has no narrow rational name, or the loop has fewer than two
-    /// distinct ⊥ stations.
+    /// This lateral **face**'s range in the axis parameter `t` (of the raw `def.dir()`) **where every
+    /// boundary section is a circle** — the least and greatest height of its rims, `t = −(n·o + d)/(n·m)`
+    /// per cap plane (`cyl_geom::lateral_t_range`). `None` when a cap has no narrow rational name, the
+    /// rims stand at fewer than two heights, or a boundary section is oblique: an ellipse has no one
+    /// height. The readers that need the face's ends read this; the readers that need only how far it
+    /// reaches read the footprint's span.
     ///
     /// **This is a range, not a promise about the loop's shape.** The face's shape — its whole rims
     /// and every other cycle (a panel, a chain rim, a hole) — is
     /// `combinatorics::FaceLoops::cycles`' question (`arrangement::lateral_shape`), and the two
-    /// lateral roads ask it there before they read anything. The range is what the population
-    /// gate's rectangle reads (`lateral_spans`) — a wider rectangle only refuses more — and what
-    /// the chart's rows carry once the tracer has cut every circle the face covers only partly.
+    /// lateral roads ask it there before they read anything. The range is what the chart's rows
+    /// carry once the tracer has cut every circle the face covers only partly.
     ///
     /// It is read from the ⊥ carriers' stations, not from "the face's two whole rims": a panel
     /// or a chain rim has no such pair.
-    ///
-    /// This range is the first axis of the face's [`Footprint`] on its own chart; the
-    /// second, θ, joins with the angular extent.
+    pub(crate) stretch: Option<[nacre_exact::Rat; 2]>,
+    /// The face's [`Footprint`] on its own chart: how far it reaches along the axis — the hull of the
+    /// bands its boundary sections sweep (`cyl_geom::lateral_axial_reach`), [`CylFaceInfo::stretch`]
+    /// where every section is a circle — and its angular extent. The population gate's rectangle
+    /// reads it (`lateral_spans`): a wider rectangle only refuses more.
     pub(crate) footprint: Footprint,
 }
 
@@ -187,7 +190,7 @@ impl Theta {
 }
 
 /// An arc of a cylinder's cross-section, by two **radial vectors** of the cylinder's radius — a
-/// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
+/// rim point's direction off the axis — `from → to` counter-clockwise about the axis
 /// direction. A whole circle is [`Theta::Whole`] and one direction [`Theta::At`]; a `from` and a
 /// `to` pointing one way (two names of one corner) read as the whole circle ([`arc_contains`],
 /// [`Theta::misses_an_angle`]), which is that arc. Rational, as every corner a prism's rim has is: a seam point when the reference

@@ -108,7 +108,7 @@ pub(crate) fn cyl_rows(
             continue;
         };
         n_class = n_class.max(k + 1);
-        let Some(span) = cf.footprint.span else {
+        let Some(span) = cf.stretch else {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,
@@ -150,12 +150,19 @@ pub(crate) fn axis_param(
     param_opt(jd, c, def).ok_or_else(|| reject(RejectReason::WitnessNotRational))
 }
 
+/// **The height class `c` stands at on the cylinder's axis** — `Some` only for a class across the
+/// axis, whose section is a circle at that one height. An oblique plane meets the axis too, but its
+/// section is an ellipse with no one height; answering with the axis meet would read the ellipse as
+/// the circle there.
 pub(crate) fn param_opt(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<Rat> {
     let coeffs = jd.world_rat(c)?;
+    if !crate::planes::class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
+        return None;
+    }
     axis_param_of_plane(&coeffs, def)
 }
 

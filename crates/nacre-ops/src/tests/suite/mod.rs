@@ -16,6 +16,8 @@ use fixtures::{
 pub(crate) use fixtures::{
     decimal_coincidence, extrude_log_op, plate_with_bore, rounded_corner_walls, rounded_twin_walls,
 };
+// The obliquely cut rod's parts, for the chart geometry's unit tests (`planes::cyl_geom`).
+pub(crate) use oblique_cut_rod::{prism as slant_prism, rod as slant_rod};
 use stated::{Stated, arc_turns, circle, line, stated};
 
 use super::*;

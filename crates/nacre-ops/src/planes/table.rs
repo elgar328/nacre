@@ -38,8 +38,11 @@ pub(crate) fn collect_planes(
                         // the surface. The one reader is the restatement mirror below, whose
                         // question is exactly "which frames are in play here".
                         motion: motion.filter(|_| def.is_none()),
+                        stretch: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
                         footprint: Footprint {
-                            span: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
+                            span: def
+                                .as_ref()
+                                .and_then(|d| lateral_axial_reach(model, face, d)),
                             theta: def
                                 .as_ref()
                                 .map_or(Theta::Whole, |d| lateral_theta_extent(model, face, d)),

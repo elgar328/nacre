@@ -37,7 +37,7 @@ pub(crate) fn census(
         };
         // **The chart's lines cover its own boundary rule, asserted where the fact is made.**
         // The load-bearing half is the rows' span ends — a *different spelling* of the axis
-        // parameter (the tracer's `footprint.span`) than the classes' `axis_param` — so this says
+        // parameter (the face row's `stretch`) than the classes' `axis_param` — so this says
         // every lateral face's rim lands, with exact `Rat` equality, on a line the chart collected.
         // Not a tautology: a rim on a class `chart_of` skipped (no rational coefficients) or a span
         // end the two spellings disagree on would both fail here.

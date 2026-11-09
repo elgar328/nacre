@@ -148,14 +148,63 @@ pub(crate) fn across_axis_plane(
         .find(|w| class_carries_circle(&[w[0], w[1], w[2]], &m))
 }
 
-/// A lateral face's axis-parameter span — the lowest and highest of
-/// [`lateral_circle_heights`]; `None` where those cannot be read or are fewer than two, and the
-/// consumer declines the face.
+/// **How far along its axis a lateral face reaches** — the hull of the bands its boundary sections
+/// sweep ([`trace_band`]), every carrier not along the axis: a circle's band is its own height, an
+/// ellipse's the band about its axis meet, rounded outward. `None` where a band cannot be read or the
+/// hull is a single height, and the consumer declines the face.
+///
+/// **A reach, not the face's ends.** It is never narrower than the face — a section bounds the face
+/// only within its band — so a clearance proved against it holds; where every boundary section is a
+/// circle it is exactly the face's range ([`lateral_t_range`]), which a reader that needs the ends
+/// reads instead.
 ///
 /// **Every loop, not the outer one.** A band's upper rim is an inner loop: read off the outer
 /// loop alone, the span of a lateral over `[0, 4]`
 /// bitten at both ends is `[0, 0.5]`, and the gates prove a cylinder or a slanted wall crossing it
-/// at `z = 2` clear of it. A hole's stations lie inside the span, so they never move its ends.
+/// at `z = 2` clear of it. A hole's bands lie inside the hull, so they never move its ends.
+pub(super) fn lateral_axial_reach(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 2]> {
+    let m = def.dir();
+    let mut hull: Option<[nacre_exact::Rat; 2]> = None;
+    for he in std::iter::once(&face.outer)
+        .chain(&face.inner)
+        .flat_map(|l| &l.half_edges)
+    {
+        let coeffs = *model
+            .world_plane_name(boundary_plane(model, face, he))?
+            .narrow()?;
+        if nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m)
+            == nacre_exact::AxisRelation::Along
+        {
+            continue;
+        }
+        let [lo, hi] = trace_band(&coeffs, def)?;
+        hull = Some(match hull {
+            None => [lo, hi],
+            Some([a, b]) => [a.min(lo), b.max(hi)],
+        });
+    }
+    let [lo, hi] = hull?;
+    (lo < hi).then_some([lo, hi])
+}
+
+/// The plane on the other side of a lateral face's boundary edge.
+fn boundary_plane(
+    model: &Model,
+    face: &nacre_topo::Face,
+    he: &nacre_topo::HalfEdge,
+) -> Handle<Surface> {
+    let [a, b] = model.edge(he.edge).surfaces;
+    if a == face.surface { b } else { a }
+}
+
+/// **A lateral face's range along its axis, where every boundary section is a circle** — the
+/// lowest and highest of [`lateral_circle_heights`], the heights the face's rims stand at.
+/// `None` where those cannot be read, are fewer than two, or a boundary section is not a circle:
+/// an ellipse has no one height, and the face's reach is then [`lateral_axial_reach`]'s band.
 pub(super) fn lateral_t_range(
     model: &Model,
     face: &nacre_topo::Face,
@@ -172,7 +221,9 @@ pub(super) fn lateral_t_range(
 /// Each such edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
 /// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
 /// ⊥-ness guarantees `n·m ≠ 0`). A carrier parallel to the axis is a ruling's wall and gives no
-/// height. `None` where a carrier has no world description or the arithmetic runs out.
+/// height. `None` where a carrier has no world description, the arithmetic runs out, or a carrier
+/// is oblique to the axis — its section is an ellipse with no one height, so the face's boundary is
+/// not a set of circles at all.
 pub(super) fn lateral_circle_heights(
     model: &Model,
     face: &nacre_topo::Face,
@@ -185,18 +236,18 @@ pub(super) fn lateral_circle_heights(
         .chain(&face.inner)
         .flat_map(|l| &l.half_edges)
     {
-        let e = model.edge(he.edge);
-        let [a, b] = e.surfaces;
-        let cap = if a == face.surface { b } else { a };
+        let cap = boundary_plane(model, face, he);
         // **The cap's world coefficients** — a plane's name is stated in the frame its own
         // motion names, and this parameter is read against a *world* axis. One whose chain does
         // not fold has no world description and the face declines (`None`), which is the same
         // answer the whole row already gives for a rim with no narrow name.
         let coeffs = *model.world_plane_name(cap)?.narrow()?;
         // A carrier parallel to the axis is a ruling's wall: it has no station and is not one.
-        // Only a ⊥ carrier — an arc's cap plane — speaks here; `None` past that is overflow.
-        if !class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
-            continue;
+        // An oblique carrier's section has no one height, so the question has no answer.
+        match nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+            nacre_exact::AxisRelation::Along => continue,
+            nacre_exact::AxisRelation::Oblique => return None,
+            nacre_exact::AxisRelation::Across => {}
         }
         let t = axis_param_of_plane(&coeffs, def)?;
         if !ts.contains(&t) {
@@ -215,19 +266,18 @@ pub(super) fn lateral_circle_heights(
 /// [`Theta::Whole`]. The outer loop is enough: a band's outer
 /// loop is a wrapping rim, and that rim's arcs alone close the circle.
 ///
-/// **The extent is never narrower than the face.** A lateral face on this road is bounded on its
-/// chart by arcs and rulings alone — a boolean refuses a result with a face bounded along an
-/// oblique section (`ObliqueCylinderCut`) and two cylinders whose faces meet (`CylinderPairContact`),
-/// so no operand carries anything else — so at every
-/// angle it covers, its upper and lower boundaries are arcs: the face's angular projection is the
-/// union of its arcs'. What the extent does not see is a **hole** in the face, the conservative
+/// **The extent is never narrower than the face.** A lateral face is bounded on its chart by
+/// rulings and arcs of plane sections — a boolean refuses two cylinders whose faces meet
+/// (`CylinderPairContact`), so no operand carries anything else — and every plane section not along
+/// the axis is a graph over θ, so at every angle the face covers, its upper and lower boundaries
+/// are such arcs: the face's angular projection is the union of its arcs'. What the extent does not see is a **hole** in the face, the conservative
 /// side. Every reader of a face's angle leans on this — the reaches ([`arc_extent`]), the box, the
 /// common cross-section, a line off the arc, and the oblique trace's reading of a face its section
 /// crosses nowhere ([`Theta::misses_an_angle`]: a bare angle says the face holds none of it — an
 /// extent too narrow there is a silently missing section, not a refusal).
 ///
-/// A corner's radial vector is its point minus the axis point on the cap: a pierce corner is the
-/// meet line's point at its rank ([`nacre_exact::quad::QuadVal::as_rat`] —
+/// A corner's radial vector is its point's direction off the axis ([`rim_radial`]): a pierce corner
+/// is the meet line's point at its rank ([`nacre_exact::quad::QuadVal::as_rat`] —
 /// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
 /// root).
 pub(super) fn lateral_theta_extent(
@@ -254,14 +304,13 @@ fn rim_arc_union(
         |vh: Handle<Vertex>, cap: [Rat; 4]| rim_radial(model, face, def, vh, &cap)?.as_rat();
     let mut acc: Option<RimArc> = None;
     for he in &face.outer.half_edges {
-        let e = model.edge(he.edge);
-        let [a, b] = e.surfaces;
-        let cap = if a == face.surface { b } else { a };
-        let coeffs = world_coeffs(cap)?;
-        if !class_carries_circle(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+        let coeffs = world_coeffs(boundary_plane(model, face, he))?;
+        if nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m)
+            == nacre_exact::AxisRelation::Along
+        {
             continue; // a ruling on a wall, not a rim
         }
-        let [va, vb] = e.vertices;
+        let [va, vb] = model.edge(he.edge).vertices;
         if va == vb {
             return None; // a whole rim: the whole circle
         }
@@ -364,8 +413,10 @@ impl QuadVec {
     }
 }
 
-/// **A rim corner's radial vector** — the corner minus the axis point on its cap `cap`: a pierce
-/// corner is the meet line's point at its rank, held with its radical. One rule for both readers:
+/// **A rim corner's radial vector** — the corner's direction off the axis: the corner minus the axis
+/// point on its cap `cap`, less any part along the axis (none on a cap across it; an oblique cap
+/// meets the axis away from the corner's own height). A pierce corner is the meet line's point at
+/// its rank, held with its radical. One rule for both readers:
 /// [`lateral_theta_extent`] folds it to a rational vector, [`lateral_cover_on_ruling`] reads it as
 /// it is.
 pub(super) fn rim_radial(
@@ -414,7 +465,13 @@ pub(super) fn rim_radial(
                     .checked_sub(centre[k])?;
                 r1[k] = s.b().checked_mul(d[k])?;
             }
-            Some(QuadVec { r0, r1, c: s.c() })
+            // Both parts off the axis: the projection is linear, and leaves a vector across the
+            // axis as it is.
+            Some(QuadVec {
+                r0: nacre_exact::off_axis_rat(&r0, &m)?,
+                r1: nacre_exact::off_axis_rat(&r1, &m)?,
+                c: s.c(),
+            })
         }
         // A boolean refuses an operand with a two-cylinder edge before the gate reads its rims
         // (`CylinderPairEdge`); unread, the corner answers as one the rule cannot state.

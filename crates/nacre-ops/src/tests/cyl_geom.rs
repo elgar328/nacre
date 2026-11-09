@@ -189,3 +189,80 @@ fn a_traces_band_is_its_axis_meet_widened_by_the_ellipses_reach() {
         "along the axis"
     );
 }
+
+/// `body`, cut by the slant `z = 5 + x/2` (the obliquely cut rod's prism), and its one lateral face
+/// with the cylinder's world statement.
+fn slanted_lateral(
+    body: fn(&mut Model) -> Handle<nacre_topo::Solid>,
+) -> (Model, Handle<nacre_topo::Face>, nacre_topo::CylinderDef) {
+    let mut m = Model::new();
+    let b = body(&mut m);
+    let p = crate::tests::slant_prism(&mut m, 0.5);
+    let out = crate::boolean(&mut m, crate::BoolKind::Cut, b, p).expect("the slant cuts");
+    let laterals: Vec<_> = m
+        .reachable_from(&out)
+        .faces
+        .into_iter()
+        .filter(|&f| {
+            matches!(
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Cylinder { .. }
+            )
+        })
+        .collect();
+    assert_eq!(laterals.len(), 1, "one lateral face");
+    let def = m
+        .world_cylinder_def(m.face(laterals[0]).surface)
+        .expect("a world statement");
+    (m, laterals[0], def)
+}
+
+/// **A lateral bounded by a slanted rim reaches the rim's band, and has no heights** — the rod
+/// (radius 2 about `(0, 3)`, `z ∈ [0, 10]`) cut along `z = 5 + x/2`: its rim sweeps `[4, 6]`, so
+/// the face reaches `[0, 6]` (`lateral_axial_reach`), while its range by rim heights is `None` —
+/// an ellipse has no one height (`lateral_t_range`). A window cut in the side first (`x ≥ 1`,
+/// `z ∈ [2, 3]`) adds two circles at `z = 2, 3`; read past the slanted rim they would make a range
+/// `[0, 3]` that stops short of the face. Both rims are whole, so the angle is the whole turn.
+#[test]
+fn a_lateral_with_a_slanted_rim_reaches_its_band_and_has_no_heights() {
+    let notched = |m: &mut Model| {
+        let r = crate::tests::slant_rod(m);
+        let b = crate::fixtures::cuboid(m, [1.0, 2.0, 2.0], [3.0, 4.0, 3.0]);
+        let out = crate::boolean(m, crate::BoolKind::Cut, r, b).expect("the window");
+        out[0]
+    };
+    for body in [crate::tests::slant_rod as fn(&mut Model) -> _, notched] {
+        let (m, f, def) = slanted_lateral(body);
+        let face = m.face(f);
+        assert_eq!(
+            lateral_axial_reach(&m, face, &def),
+            Some([Rat::from_int(0), Rat::from_int(6)])
+        );
+        assert_eq!(lateral_t_range(&m, face, &def), None);
+        assert_eq!(lateral_theta_extent(&m, face, &def), Theta::Whole);
+    }
+}
+
+/// **A half rod cut by the slant spans its half turn** — the rod less `y < 3`: its lateral's rims
+/// are a half circle below and a half ellipse above, both from the generator through `(2, 3)` to
+/// the one through `(−2, 3)`, so the angular extent is the arc from `+x̂` to `−x̂` counter-clockwise
+/// about `+z`. The slanted rim's corners stand at `z = 6` and `z = 4`, off its axis meet `z = 5`,
+/// so each is read by its direction off the axis (`rim_radial`), not by its offset from that meet.
+#[test]
+fn a_half_rod_cut_by_the_slant_spans_its_half_turn() {
+    let half = |m: &mut Model| {
+        let r = crate::tests::slant_rod(m);
+        let b = crate::fixtures::cuboid(m, [-3.0, -1.0, -1.0], [3.0, 3.0, 11.0]);
+        let out = crate::boolean(m, crate::BoolKind::Cut, r, b).expect("the half");
+        out[0]
+    };
+    let (m, f, def) = slanted_lateral(half);
+    let z = Rat::from_int(0);
+    assert_eq!(
+        lateral_theta_extent(&m, m.face(f), &def),
+        Theta::Arc(RimArc {
+            from: [Rat::from_int(2), z, z],
+            to: [Rat::from_int(-2), z, z],
+        })
+    );
+}

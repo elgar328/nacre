@@ -251,12 +251,16 @@ pub(crate) fn cylinder_gate(
                 {
                     return Err(undecided());
                 }
+                // The fold reads the faces' ends on the line: a face whose ends are not heights (a
+                // slanted rim) leaves the line's extent unstated, which refuses rather than folding
+                // the names past where the face stops.
+                let spans = lateral_stretches(faces, cyl.surf).ok_or_else(undecided)?;
                 grazed.push((
                     ci,
                     GrazeLine {
                         section: x,
                         graze: g,
-                        spans: fps.iter().filter_map(|fp| fp.span).collect(),
+                        spans,
                     },
                 ));
             }
@@ -1263,7 +1267,7 @@ fn tangency_rows(
                     .and_then(|((b, fh), d)| lateral_cover_on_ruling(model, model.face(fh), d, b));
                 let stretches = match &cover {
                     Some(c) => Some(c.clone()),
-                    None => cf.footprint.span.map(|sp| vec![sp]),
+                    None => cf.stretch.map(|sp| vec![sp]),
                 };
                 let held = holder_faces
                     .iter()
@@ -1462,7 +1466,7 @@ fn tangency_rows(
                 }
                 continue;
             }
-            let witness_span = chosen.map(|(sp, _)| sp).or(cf.footprint.span);
+            let witness_span = chosen.map(|(sp, _)| sp).or(cf.stretch);
             let witness = base.as_ref().zip(witness_span).and_then(|(b, span)| {
                 let mid = match contact.contact_at {
                     Some(v) => v,
@@ -1868,6 +1872,21 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_exact::
         .collect()
 }
 
+/// **The ranges of a cylinder class's lateral faces** ([`CylFaceInfo::stretch`]), one per face —
+/// `None` if any face's range is not a pair of heights.
+fn lateral_stretches(
+    faces: &[FaceRow],
+    surf: Handle<Surface>,
+) -> Option<Vec<[nacre_exact::Rat; 2]>> {
+    faces
+        .iter()
+        .filter_map(|row| match row {
+            FaceRow::Cylinder(cf) if cf.surf == surf => Some(cf.stretch),
+            _ => None,
+        })
+        .collect()
+}
+
 /// **The footprints of a cylinder class's lateral faces** — [`lateral_spans`]' rule with the
 /// angular extent alongside: empty if any face's span could not be stated, else one
 /// footprint per face.
@@ -1887,7 +1906,7 @@ fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint
         // The reader below asks "every vertex at or below `span[0]`, or every one at or above
         // `span[1]`", which is only the interval's outside while the pair is ordered — reversed,
         // that same phrasing reads "outside the *union* of two half-lines" and would clear a face
-        // sitting squarely in the band. `lateral_t_range` orders it; this is where that is
+        // sitting squarely in the band. `lateral_axial_reach` orders it; this is where that is
         // relied on, so this is where it is said.
         debug_assert!(span[0] <= span[1], "a span is stated low end first");
         out.push(cf.footprint);
@@ -2450,7 +2469,8 @@ fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
 
 /// **Does oblique class `c` section this cylinder on its own arrangement?** —
 /// [`ClassMeet::Sections`]' proof: the plane touches no circle a lateral face's boundary rides
-/// ([`lateral_circle_heights`] — the rims at its span's ends and the arcs of its holes and panels;
+/// ([`lateral_circle_heights`] — the rims at its range's ends, [`CylFaceInfo::stretch`], and the arcs
+/// of its holes and panels;
 /// [`rim_against_plane`] at each — a touch is a point the section and that circle's plane share
 /// with no crossing to name it by). Then the class draws the section — a whole ellipse, or arcs
 /// of it cut by rims, rulings and the class's other segments — and the tracer reads which from the
@@ -2458,9 +2478,10 @@ fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
 /// chart cuts its cells at like any other; a result face bounded along it carries an elliptical
 /// edge.
 /// The touch test asks each circle whole, also where the face holds only an arc of it (a fillet's
-/// quarter): wider than the faces, never narrower. `Some(Clear)` when every face's span is missed
+/// quarter): wider than the faces, never narrower. `Some(Clear)` when every face's range is missed
 /// ([`section_in_span`]), `Some(Sections)` when one is met, `None` when the proof fails — a
-/// cylinder with no lateral face row, a face with no span or no readable circle, a touch, overflow.
+/// cylinder with no lateral face row, a face with no range (a boundary that is not circles alone)
+/// or no readable circle, a touch, overflow.
 fn oblique_section_meet(
     model: &Model,
     faces: &[FaceRow],
@@ -2480,7 +2501,7 @@ fn oblique_section_meet(
         }
         // Each circle once: a touch anywhere refuses, and the span's two ends — the lowest and the
         // highest of these heights (`lateral_t_range`) — classify it.
-        let [s0, s1] = cf.footprint.span?;
+        let [s0, s1] = cf.stretch?;
         let mut ends = [None, None];
         for t in lateral_circle_heights(model, model.face(cf.face?), &cyl.def)? {
             let meet = rim_against_plane(&cyl.def, t, coeffs)?;
