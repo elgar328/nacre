@@ -16,7 +16,7 @@ use nacre_topo::{Edge, Face, Loop, Model, Solid, SurfaceCache, Vertex};
 use std::collections::HashMap;
 use std::fmt::Write;
 
-/// A face this tessellator cannot mesh. Returned rather than approximated: the
+/// A face or a curve this tessellator cannot mesh. Returned rather than approximated: the
 /// mesh is a cache, but a *wrong* cache is worse than none — silently fanning a
 /// ring that is not star-shaped puts triangles outside the solid.
 ///
@@ -95,10 +95,17 @@ pub enum TessError {
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
     HoleWinding,
-    /// A face's triangulation left an interior edge or a facet outside the declared budget — the
-    /// mesh would misrepresent the surface there. See [`within_budget`]: the boundary is sampled to
-    /// the budget by construction, so this only ever reports triangles the face's boundary and the
-    /// sweep made, and it reports them rather than drawing a face that is quietly the wrong shape.
+    /// The mesh would leave the declared budget ([`TessConfig`]) somewhere — it would misrepresent
+    /// the shape there, so it is reported rather than drawn quietly wrong. Two places:
+    ///
+    /// * **A curve** the budget asks to cut into more than 4,096 chords a turn — the finest this
+    ///   tessellator samples. A circle past `r ≈ 34,000` at the default `tol`, or an ellipse more
+    ///   than about 22.7 times as long as it is wide at the default angle (a cylinder cut within
+    ///   about 2.5° of its axis). The ask is the whole curve's, cut evenly at the pace of its
+    ///   sharpest turn, so an arc of such an ellipse is refused even where the arc itself turns
+    ///   gently.
+    /// * **A face's triangulation** left an interior edge or a facet outside the budget
+    ///   ([`within_budget`]) — its boundary curves are within it by the first point.
     OverBudget,
 }
 
@@ -108,7 +115,7 @@ impl std::fmt::Display for TessError {
             Self::DegenerateRing => "a face's rings are not a polygon with sibling holes",
             Self::SelfTouchingBoundary => "a face's boundary touches itself",
             Self::HoleWinding => "a hole winds the same way as its outer ring",
-            Self::OverBudget => "a face's triangulation left an edge or a facet outside the budget",
+            Self::OverBudget => "the mesh cannot keep the budget: a curve would need more than the finest sampling, or a face's triangulation left an edge or a facet outside it",
         })
     }
 }
@@ -186,8 +193,14 @@ pub struct Tessellation {
 /// budget is what a small circle needs; the absolute one is what a circle much larger
 /// than the tolerance needs. Neither substitutes for the other, so the segment count
 /// takes whichever asks for more.
+///
+/// **A budget asks only when it is a finite positive number**; one that is not asks nothing, and
+/// a curve neither budget asks of is cut into eight. A budget the mesh cannot keep is refused
+/// ([`TessError::OverBudget`]), never kept loosely.
 #[derive(Clone, Copy, Debug)]
 pub struct TessConfig {
+    /// Furthest a chord may stray from its curve, and an interior edge's midpoint from its
+    /// surface, in model units.
     pub tol: f64,
     /// Maximum turn between consecutive chords, in degrees.
     ///
@@ -196,8 +209,8 @@ pub struct TessConfig {
     /// — so it bounds both how polygonal a silhouette looks and how banded its shading
     /// is. `2°` puts a circle that fills an 800px viewport within 0.06px of round. Every facet's
     /// normal, at its centroid, stays within it of its surface's too. An angle that is not finite
-    /// and positive asks nothing: the curves fall back on `tol` alone, and nothing is asked of a
-    /// mesh's angles.
+    /// and positive asks nothing: the curves fall back on `tol`, and nothing is asked of a mesh's
+    /// angles.
     pub max_angle_deg: f64,
 }
 
@@ -315,7 +328,7 @@ pub fn tessellate_solids(
 
     // 1. Sample every live edge into a shared polyline (the crack-free contract), finished
     // before any face reads them.
-    let (live, mut sets) = theta_sets(model, cfg, &reach);
+    let (live, mut sets) = theta_sets(model, cfg, &reach)?;
     let (Finished { mut t, cuts, asked }, _report) =
         finish_polylines(model, &reach, &live, &mut sets);
     // 2. Triangulate each live face, reusing the shared edge polylines.
@@ -447,11 +460,14 @@ struct Finished {
 /// broken model gives two, the first in store order answers — the other face's bands may then
 /// lean, and the facet judgement refuses them rather than draw them ([`facet_in_budget`]); where
 /// it gives none, the curve stands on a set of its own, its count and its two ends.
+///
+/// [`TessError::OverBudget`] where a set's count is more than the finest sampling
+/// ([`segments`]) — before any face is drawn, so a model refused there reports that first.
 fn theta_sets<'m>(
     model: &'m Model,
     cfg: &TessConfig,
     reach: &nacre_topo::Reachable,
-) -> (LiveFaces<'m>, ThetaSets) {
+) -> Result<(LiveFaces<'m>, ThetaSets), TessError> {
     let live: LiveFaces<'m> = (0..model.face_count() as u32)
         .filter_map(|i| model.face_handle_at(i))
         .map(|h| (h, model.face(h)))
@@ -462,8 +478,8 @@ fn theta_sets<'m>(
         let Some(cyl) = model.surface_cache(face.surface).cylinder() else {
             continue;
         };
-        sets.faces
-            .insert(fh, FaceThetas::of_face(cfg, model, face, cyl));
+        let set = FaceThetas::of_face(cfg, model, face, cyl).ok_or(TessError::OverBudget)?;
+        sets.faces.insert(fh, set);
         for he in loops_of(face).flat_map(|lp| &lp.half_edges) {
             if matches!(model.edge_curve(he.edge), Curve::Ellipse(_)) {
                 sets.of_edge.entry(he.edge).or_insert(fh);
@@ -477,11 +493,12 @@ fn theta_sets<'m>(
             continue;
         }
         if let Curve::Ellipse(c) = model.edge_curve(eh) {
-            sets.own
-                .insert(eh, FaceThetas::of_curve(cfg, model, model.edge(eh), c));
+            let set =
+                FaceThetas::of_curve(cfg, model, model.edge(eh), c).ok_or(TessError::OverBudget)?;
+            sets.own.insert(eh, set);
         }
     }
-    (live, sets)
+    Ok((live, sets))
 }
 
 /// **Every curve's θ set** — the face's it bounds on its cylinder, or its own where no live face
@@ -553,7 +570,7 @@ fn sample_live_edges<'m>(
     cfg: &TessConfig,
     reach: &nacre_topo::Reachable,
 ) -> (LiveFaces<'m>, ThetaSets) {
-    let (live, sets) = theta_sets(model, cfg, reach);
+    let (live, sets) = theta_sets(model, cfg, reach).expect("the budget can be kept");
     sample_edges(t, model, reach, &sets);
     (live, sets)
 }
@@ -642,27 +659,33 @@ struct FaceThetas {
 }
 
 impl FaceThetas {
-    /// The set of `face`, a face on `cyl`.
-    fn of_face(cfg: &TessConfig, model: &Model, face: &Face, cyl: &Cylinder) -> FaceThetas {
+    /// The set of `face`, a face on `cyl` — `None` where the budget asks more of one of its curves,
+    /// or of the surface, than [`segments`] gives.
+    fn of_face(cfg: &TessConfig, model: &Model, face: &Face, cyl: &Cylinder) -> Option<FaceThetas> {
         let half_edges = || loops_of(face).flat_map(|lp| &lp.half_edges);
         let count = half_edges()
             .filter_map(|he| match model.edge_curve(he.edge) {
                 Curve::Ellipse(c) => Some(segments(cfg, c.semi_major(), c.max_turn_rate())),
                 Curve::Line(_) => None,
             })
-            .fold(circle_segments(cfg, cyl.radius()), usize::max);
+            .try_fold(circle_segments(cfg, cyl.radius())?, |n, m| Some(n.max(m?)))?;
         let vertices = half_edges().flat_map(|he| model.edge(he.edge).vertices);
-        FaceThetas::new(model, *cyl, count, vertices)
+        Some(FaceThetas::new(model, *cyl, count, vertices))
     }
 
     /// The set a curve no live face of its cylinder bounds stands on alone — its own count and its
-    /// two ends (a broken model's; see [`theta_sets`]).
-    fn of_curve(cfg: &TessConfig, model: &Model, edge: &Edge, c: &Ellipse) -> FaceThetas {
+    /// two ends (a broken model's; see [`theta_sets`]) — `None` as in [`Self::of_face`].
+    fn of_curve(cfg: &TessConfig, model: &Model, edge: &Edge, c: &Ellipse) -> Option<FaceThetas> {
         // The curve's own frame is its cylinder's (see [`angle_about`]); its radius is positive.
         let cyl = Cylinder::from_unit_frame(c.center(), c.axis(), c.ref_dir(), c.radius())
             .expect("a curve's radius is positive");
-        let count = segments(cfg, c.semi_major(), c.max_turn_rate());
-        FaceThetas::new(model, cyl, count, edge.vertices.into_iter())
+        let count = segments(cfg, c.semi_major(), c.max_turn_rate())?;
+        Some(FaceThetas::new(
+            model,
+            cyl,
+            count,
+            edge.vertices.into_iter(),
+        ))
     }
 
     fn new(
@@ -1227,13 +1250,17 @@ fn bridge_shared_edges(
 
 /// What the bridge pre-pass did, for a test that wants to see it before any face is triangulated
 /// (the returned `Tessellation` holds the finished edge polylines and no triangles) — the same
-/// passes [`tessellate`] runs, in its order. Test-only (`test-util`).
+/// passes [`tessellate`] runs, in its order, and refused where it refuses a curve
+/// ([`TessError::OverBudget`]). Test-only (`test-util`).
 #[cfg(feature = "test-util")]
-pub fn bridge_report(model: &Model, cfg: &TessConfig) -> (BridgeReport, Tessellation) {
+pub fn bridge_report(
+    model: &Model,
+    cfg: &TessConfig,
+) -> Result<(BridgeReport, Tessellation), TessError> {
     let reach = model.reachable();
-    let (live, mut sets) = theta_sets(model, cfg, &reach);
+    let (live, mut sets) = theta_sets(model, cfg, &reach)?;
     let (Finished { t, .. }, report) = finish_polylines(model, &reach, &live, &mut sets);
-    (report, t)
+    Ok((report, t))
 }
 
 /// A triangle on a cylinder's lateral that leans off the surface, and by how much: the angle in
@@ -1536,28 +1563,29 @@ fn segments_over(per_turn: usize, edge: &Edge, dt: f64) -> usize {
     }
 }
 
-/// The finest lattice a curve is sampled on. [`segments`] clamps its count to it, and
-/// [`crossing_chords`] stops cutting an edge at its share of it — one statement, read in
-/// two places. A face's vertex columns stand between the lattice's ([`FaceThetas`]), so a curve
-/// on a lattice this fine can hold its share already, and then is not cut further. Where
-/// the declared budget asks for more — a pathological
-/// setting, a circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`), an ellipse too nearly
-/// along its axis for its angle (past `a/b ≈ 22.7` at `2°`) — the polyline is coarser than the
-/// budget and nothing refuses it: a known defect, in `docs/todo.md`.
+/// The finest lattice a curve is sampled on — 4,096 chords a turn. [`segments`] asks no more of
+/// a curve, and [`crossing_chords`] stops cutting an edge at its share of it — one statement, read
+/// in two places. A face's vertex columns stand between the lattice's ([`FaceThetas`]), so a curve
+/// on a lattice this fine can hold its share already, and then is not cut further. A budget that
+/// asks for more — a circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`), an ellipse too
+/// nearly along its axis for its angle (past `a/b ≈ 22.7` at `2°`) — is refused
+/// ([`TessError::OverBudget`]).
 const FINEST_CIRCLE: usize = 4096;
 
 /// The fewest segments a whole curve is cut into, whatever the budget — [`segments`]' floor.
 const COARSEST_CIRCLE: usize = 8;
 
 /// Segments for a whole circle of `radius` — [`segments`] for a curve that turns as a circle does.
-fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
+fn circle_segments(cfg: &TessConfig, radius: f64) -> Option<usize> {
     segments(cfg, radius, 1.0)
 }
 
 /// Segments for a whole curve sampled evenly in θ: **whichever of the two budgets asks for more**
 /// ([`TessConfig`] says why there are two), for a curve that sags no more than a circle of
 /// `radius` and whose tangent turns at most `turn` radians per radian of θ
-/// ([`Ellipse::semi_major`], [`Ellipse::max_turn_rate`] — `r` and `1` for a circle).
+/// ([`Ellipse::semi_major`], [`Ellipse::max_turn_rate`] — `r` and `1` for a circle) — or `None`
+/// where that is more than [`FINEST_CIRCLE`]: the budget cannot be kept, and the mesh is refused
+/// ([`TessError::OverBudget`]).
 ///
 /// * sagitta: `r(1 − cos(π/n)) ≤ tol` ⟹ `n ≥ π / acos(1 − tol/r)` — grows as `√r`, so
 ///   it is the term that speaks for a curve large in model units;
@@ -1565,42 +1593,31 @@ fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
 ///   the term that keeps a small circle from being an octagon, and an ellipse's major ends from
 ///   turning `a/b` times the budget.
 ///
+/// A budget that is not a finite positive number asks nothing ([`asked`]); a curve neither asks
+/// of gets the floor, [`COARSEST_CIRCLE`].
+///
 /// One step in θ for the whole curve, not one that varies along it: a lateral's boundary chord
 /// spans its θ step, so its ends' normals part by exactly that step, and one step keeps both. This
 /// is a curve's own ask; on a lateral every curve stands on its face's lattice, the finest ask of
 /// the face's curves, with the face's vertices' columns between ([`FaceThetas`]) — which only
-/// shorten chords, so each curve keeps its budget.
+/// shorten chords, so each curve keeps its budget. The ask is the whole curve's, at its sharpest
+/// turn, so `None` refuses an arc of an ellipse that turns gently where the arc lies too.
 ///
 /// With the default `2°` the angular term leads a circle until `r ≈ 66` (that is `tol` divided by
 /// `1 − cos(1°)`), which covers ordinary part sizes; past it the sagitta term takes over.
-///
-/// Pathological inputs are clamped rather than refused — a non-positive `tol` asks for
-/// the finest we allow, a non-positive or absurd angle falls back on the other term and
-/// the `[MIN, MAX]` clamp. The mesh is a cache; it answers rather than argues — and a budget
-/// that asks for more than [`FINEST_CIRCLE`] gets that many ([`FINEST_CIRCLE`]'s doc).
-fn segments(cfg: &TessConfig, radius: f64, turn: f64) -> usize {
-    const MIN: usize = COARSEST_CIRCLE;
-    const MAX: usize = FINEST_CIRCLE;
-    let by_sagitta = {
-        let ratio = cfg.tol / radius;
-        if ratio <= 0.0 {
-            MAX // tol ≤ 0: as fine as we allow
-        } else if ratio >= 2.0 {
-            MIN // whole circle already within tol
+fn segments(cfg: &TessConfig, radius: f64, turn: f64) -> Option<usize> {
+    let by_sagitta = asked(cfg.tol).map_or(0.0, |tol| {
+        let ratio = tol / radius;
+        if ratio >= 2.0 {
+            0.0 // the whole circle is already within tol
         } else {
-            let n = (std::f64::consts::PI / (1.0 - ratio).acos()).ceil();
-            (n as usize).clamp(MIN, MAX)
+            // A `tol` so small that `1 − ratio` rounds to `1` asks for infinitely many.
+            (std::f64::consts::PI / (1.0 - ratio).acos()).ceil()
         }
-    };
-    let by_angle = {
-        let n = (360.0 / cfg.max_angle_deg * turn).ceil();
-        if n.is_finite() && n >= 0.0 {
-            (n as usize).clamp(MIN, MAX)
-        } else {
-            MIN
-        }
-    };
-    by_sagitta.max(by_angle)
+    });
+    let by_angle = asked(cfg.max_angle_deg).map_or(0.0, |deg| (360.0 / deg * turn).ceil());
+    let n = by_sagitta.max(by_angle);
+    (n <= FINEST_CIRCLE as f64).then(|| (n as usize).max(COARSEST_CIRCLE))
 }
 
 /// A loop's boundary as an ordered ring of shared mesh vertices — [`traced_ring`]'s walk, so a
@@ -2703,7 +2720,7 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// **The mesh's one rule, asked of the face's *interior* and of every facet.**
 ///
 /// `TessConfig` declares two budgets and [`segments`] enforces **both** on every curved boundary
-/// polyline. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
+/// polyline — or refuses the mesh where it cannot. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
 /// while the boundary samples the curvature (a band's rims do, on common generators —
 /// [`FaceThetas`]), and silently wrong when it does not — a lateral whose boundary leaves a θ
 /// stretch unsampled meshes as flat chords across it (measured on one merged across erased seams:
@@ -2724,7 +2741,8 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// surface kind is a compile error rather than a missing case.
 ///
 /// **A boundary edge cannot fail, so it is not asked.** A curve is cut into [`segments`] pieces,
-/// which is the *larger* of the two budgets' demands for that curve; a straight edge (a ruling, a
+/// which is the *larger* of the two budgets' demands for that curve, and a mesh whose curve would
+/// need more than the finest sampling is refused before any face is drawn; a straight edge (a ruling, a
 /// plane's side) strays zero and its ends share one normal. So of the edges this checks only what
 /// the sweep chose, never what the sampler laid down — but every facet, since a facet with two
 /// boundary edges is still the sweep's choice.
@@ -2773,16 +2791,28 @@ fn within_budget(
 /// differently-rounded routes to the same number.
 const BUDGET_SLACK: f64 = 1.0 + 1e-9;
 
+/// **Whether a budget asks anything**: `budget` itself when it is a finite positive number, `None`
+/// otherwise — one rule for both of [`TessConfig`]'s budgets, read by the sampler ([`segments`])
+/// and by the mesh's check ([`angle_budget`], [`chord_budget`]).
+fn asked(budget: f64) -> Option<f64> {
+    (budget.is_finite() && budget > 0.0).then_some(budget)
+}
+
 /// The angular budget in radians, with [`BUDGET_SLACK`], or `None` when
-/// [`TessConfig::max_angle_deg`] is not a finite positive angle — then nothing is asked of the
-/// angle, as the sampler falls back on the chord budget alone ([`segments`]).
+/// [`TessConfig::max_angle_deg`] asks nothing ([`asked`]) — then nothing is asked of the angle.
 fn angle_budget(cfg: &TessConfig) -> Option<f64> {
-    let deg = cfg.max_angle_deg;
-    (deg.is_finite() && deg > 0.0).then(|| deg.to_radians() * BUDGET_SLACK)
+    asked(cfg.max_angle_deg).map(|deg| deg.to_radians() * BUDGET_SLACK)
+}
+
+/// The chord budget, with [`BUDGET_SLACK`], or `None` when [`TessConfig::tol`] asks nothing
+/// ([`asked`]) — then nothing is asked of how far an edge strays.
+fn chord_budget(cfg: &TessConfig) -> Option<f64> {
+    asked(cfg.tol).map(|tol| tol * BUDGET_SLACK)
 }
 
 /// **Whether the edge `a — b` keeps both budgets on `surface`**: its midpoint within `tol` of it,
-/// and the surface's normals at its ends within the angular budget of each other.
+/// and the surface's normals at its ends within the angular budget of each other — each where its
+/// budget asks ([`asked`]).
 ///
 /// This and [`facet_in_budget`] are the one spelling of the question [`within_budget`] asks of the
 /// finished mesh and the flip pass asks before it flips (`polygon::triangulate_uv`'s `within`).
@@ -2792,7 +2822,7 @@ fn angle_budget(cfg: &TessConfig) -> Option<f64> {
 fn edge_in_budget(cfg: &TessConfig, surface: &Surface, mut ends: [(usize, Point3); 2]) -> bool {
     ends.sort_unstable_by_key(|&(i, _)| i);
     let [a, b] = ends.map(|(_, p)| p);
-    if surface.distance(a + (b - a) * 0.5) > cfg.tol * BUDGET_SLACK {
+    if chord_budget(cfg).is_some_and(|tol| surface.distance(a + (b - a) * 0.5) > tol) {
         return false;
     }
     let Some(limit) = angle_budget(cfg) else {

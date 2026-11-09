@@ -177,7 +177,7 @@ fn cube_tessellates_watertight() {
 #[test]
 fn cylinder_tessellates_watertight() {
     let cfg = TessConfig::default();
-    let n = circle_segments(&cfg, 2.0);
+    let n = circle_segments(&cfg, 2.0).expect("within the finest");
     let t = tessellate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0), &cfg).unwrap();
     assert_eq!(t.vertices.len(), 2 * n); // two rim rings, each rim's vertex shared
     assert_eq!(t.triangles.len(), 4 * n - 4); // 2 caps (n−2) + band (2n)
@@ -279,7 +279,8 @@ fn no_triangle_leaves_the_cylinder() {
     for r in [0.1, 0.5, 3.0, 20.0] {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r, 5.0);
         let t = tessellate(&m, &cfg).unwrap();
-        let step = std::f64::consts::TAU / circle_segments(&cfg, r) as f64;
+        let step =
+            std::f64::consts::TAU / circle_segments(&cfg, r).expect("within the finest") as f64;
         let budget = r * (1.0 - (step / 2.0).cos());
         for (_, tri) in t.triangles.iter() {
             let f = m.face(tri.face);
@@ -317,7 +318,7 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
     match m.surface_cache(face.surface) {
         nacre_topo::SurfaceCache::Plane { plane: p, .. } => planar_chart(t, face, p).unwrap(),
         nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => {
-            let thetas = FaceThetas::of_face(cfg, m, face, c);
+            let thetas = FaceThetas::of_face(cfg, m, face, c).expect("within the finest");
             cylinder_chart(
                 t,
                 m,
@@ -480,7 +481,7 @@ fn an_ordinary_band_is_offered_no_interior_points() {
 #[test]
 fn a_small_circle_is_cut_as_finely_as_a_large_one() {
     let cfg = TessConfig::default();
-    let n = |r| circle_segments(&cfg, r);
+    let n = |r| circle_segments(&cfg, r).expect("within the finest");
     assert_eq!(n(0.2), n(20.0));
     assert_eq!(n(0.2), 180, "360°/2°");
     assert!(n(0.1) > 8, "a small circle is not held to an octagon floor");
@@ -530,7 +531,7 @@ proptest! {
             max_angle_deg: 20.0,
             ..Default::default()
         };
-        let n = circle_segments(&cfg, r);
+        let n = circle_segments(&cfg, r).expect("within the finest");
         let t = tessellate(&cylinder([0.0, 0.0, 0.0], axis, r, h), &cfg).unwrap();
         prop_assert_eq!(t.vertices.len(), 2 * n);
         prop_assert_eq!(t.triangles.len(), 4 * n - 4);
@@ -737,7 +738,7 @@ fn a_bore_is_cut_at_its_rims_vertices() {
     let cfg = TessConfig::default();
     let t = tessellate(&m, &cfg).unwrap();
     assert_eq!(non_watertight_edges(&t), 0);
-    let n = circle_segments(&cfg, 1.0);
+    let n = circle_segments(&cfg, 1.0).expect("within the finest");
     let on_lateral: HashSet<_> = t.by_face[&bore]
         .iter()
         .flat_map(|&th| t.triangles.get(th).vertices)
@@ -1878,7 +1879,7 @@ fn a_curves_samples_stand_at_their_columns_numbers() {
     let (mut generators, mut ellipses, mut merged) = (0, 0, 0);
     for (name, m) in &shapes {
         let reach = m.reachable();
-        let (live, mut sets) = theta_sets(m, &cfg, &reach);
+        let (live, mut sets) = theta_sets(m, &cfg, &reach).expect("within the finest");
         let (Finished { t, cuts, .. }, _) = finish_polylines(m, &reach, &live, &mut sets);
         let mut cut_at: std::collections::HashMap<Handle<TessVertex>, Handle<Face>> =
             std::collections::HashMap::new();
@@ -2284,6 +2285,109 @@ fn a_non_positive_angle_asks_nothing_of_the_angle() {
             .collect();
         assert_eq!(rims, [23, 23], "the rims at {angle}");
     }
+}
+
+/// **A chord budget that is not a finite positive length asks nothing of the chord** — the twin of
+/// the angle's rule ([`asked`]): a box and a cylinder of radius 1 mesh at `0`, `−1`, `NaN` and
+/// `+∞`, the cylinder's rims cut into the 180 pieces the angle alone asks for.
+#[test]
+fn a_non_positive_chord_budget_asks_nothing_of_the_chord() {
+    for tol in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let cfg = TessConfig {
+            tol,
+            ..Default::default()
+        };
+        tessellate(&cube([0.0; 3], [1.0, 2.0, 3.0]), &cfg)
+            .unwrap_or_else(|e| panic!("the box at {tol}: {e:?}"));
+        let m = cylinder([0.0; 3], [0.0, 0.0, 1.0], 1.0, 2.0);
+        let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("the cylinder at {tol}: {e:?}"));
+        let rims: Vec<usize> = t
+            .by_edge
+            .iter()
+            .filter(|(e, _)| matches!(m.edge_curve(**e), Curve::Ellipse(_)))
+            .map(|(_, poly)| poly.len())
+            .collect();
+        assert_eq!(rims, [180, 180], "the rims at {tol}");
+    }
+}
+
+/// **A budget asks no more of a curve than the finest sampling — past it, `None`.** At the
+/// defaults a circle of radius 30,000 asks 3,848 (its chord budget) and one of 40,000 more than
+/// 4,096; an ellipse turning 20 times as fast as its circle at its major ends asks 3,600, one
+/// turning 23 times 4,140. `22.755` sits just inside the finest (`180 · 22.755 = 4,095.9`).
+#[test]
+fn a_budget_past_the_finest_sampling_asks_nothing_it_can_get() {
+    let cfg = TessConfig::default();
+    assert_eq!(circle_segments(&cfg, 30_000.0), Some(3848));
+    assert_eq!(circle_segments(&cfg, 40_000.0), None);
+    assert_eq!(segments(&cfg, 2.0, 20.0), Some(3600));
+    assert_eq!(segments(&cfg, 2.0, 22.755), Some(FINEST_CIRCLE));
+    assert_eq!(segments(&cfg, 2.0, 23.0), None);
+    // A chord budget so small that `1 − tol/r` is `1` asks for infinitely many.
+    let fine = TessConfig {
+        tol: 1e-300,
+        ..Default::default()
+    };
+    assert_eq!(circle_segments(&fine, 1.0), None);
+}
+
+/// **An ellipse its budget would cut past the finest sampling is refused, not drawn coarse.** A rod
+/// sliced lengthwise by the plane `z = 10 + k·x` has an ellipse turning about `k` times as fast as
+/// its circle at its major ends. At `k = 20` it asks 3,605 chords and every curve keeps the angle
+/// along itself; at `k = 23` it would ask about 4,140 — cut at the finest, 4,096, its chords turned
+/// by 2.023° at its ends against the budget's 2°, and the mesh, whose checks read surface normals,
+/// came back `Ok`.
+#[test]
+fn an_ellipse_past_the_finest_sampling_is_refused() {
+    let cfg = TessConfig::default();
+    let (m, out) = rod_sliced_lengthwise(20.0);
+    let t = tessellate_solids(&m, &out, &cfg).expect("k = 20 is within the finest");
+    let kinked = kinked_edges(&m, &t, cfg.max_angle_deg);
+    assert!(kinked.is_empty(), "k = 20: {kinked:?}");
+    let (m, out) = rod_sliced_lengthwise(23.0);
+    assert_eq!(
+        tessellate_solids(&m, &out, &cfg).map(|_| ()),
+        Err(TessError::OverBudget),
+        "k = 23"
+    );
+}
+
+/// A rod of radius 2 on the `z` axis at `(0, 3)`, from `z = −50` to `70`, less the wedge above the
+/// plane `z = 10 + k·x` — the whole ellipse lies on its side — and the boolean's solids.
+fn rod_sliced_lengthwise(k: f64) -> (Model, Vec<Handle<nacre_topo::Solid>>) {
+    use nacre_exact::Axis;
+    use nacre_ops::{
+        BoolKind, OpOutput, Operation, Ring2d, SketchFrame, apply, boolean, fixtures, from_paths,
+    };
+    let mut m = Model::new();
+    let rod = fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.0, 3.0, -50.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        2.0,
+        120.0,
+    )
+    .solid;
+    // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
+    let (low, high) = (10.0 - 3.0 * k, 10.0 + 3.0 * k);
+    let pts = [(low, -3.0), (high, 3.0), (high, -3.0)]
+        .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+    let ring = Ring2d::polygon_decimal(pts.to_vec()).expect("a triangle");
+    let profile = from_paths(vec![ring]).expect("one profile").remove(0);
+    let frame = SketchFrame::world(&m, Axis::Y);
+    let Ok(OpOutput::Extrude { solid: wedge, .. }) = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 6.0,
+        },
+    ) else {
+        panic!("the wedge extrudes")
+    };
+    let out = boolean(&mut m, BoolKind::Cut, rod, wedge).expect("the rod cuts");
+    (m, out)
 }
 
 /// **A thin band between an ellipse and the circle of its rod is drawn** — the ellipse is

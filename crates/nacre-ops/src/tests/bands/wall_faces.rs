@@ -573,7 +573,8 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     .solid;
     let out = crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the through stud fuses");
     assert_eq!(out.len(), 1);
-    let (report, t) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default());
+    let (report, t) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default())
+        .expect("the budget can be kept");
     assert!(
         report.declined.is_empty(),
         "declined: {:?}",
@@ -613,7 +614,8 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     )
     .solid;
     crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the blind stud fuses");
-    let (report, _) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default());
+    let (report, _) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default())
+        .expect("the budget can be kept");
     assert!(report.declined.is_empty(), "{:?}", report.declined);
     assert_eq!(report.splits.len(), 1, "{:?}", report.splits);
 }
