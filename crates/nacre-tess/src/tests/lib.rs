@@ -1853,13 +1853,13 @@ fn shapes_whose_chords_cross() -> Vec<(&'static str, Model)> {
 }
 
 /// **Every sample a curve's polyline holds stands at the number of its column** — the set's own,
-/// in `[0, τ)` ([`FaceThetas::columns`]): its `t` is a column the set holds or a lattice column
-/// `τk/N` (`k < N`), exactly, and its position is the curve at that `t`, bit for bit. A band's cut
+/// in `[0, τ)` ([`FaceThetas::columns`]): its `t` is a column the set holds or a made column
+/// `τu/G` (`u < G`), exactly, and its position is the curve at that `t`, bit for bit. A band's cut
 /// puts one number on every ring it passes ([`band_cut`]). Over the crossing shapes, a band cut
 /// along a generator, and rods cut obliquely (ellipses), with a column merged across `θ = 0` among
 /// them.
 ///
-/// With a sample's `t` its unwrapped place, a column past `τ` — the lattice's `k = N` on an arc
+/// With a sample's `t` its unwrapped place, a column past `τ` — a made column's `u = G` on an arc
 /// across `0`, or every column of a curve whose range starts a hair below `0` — is named a turn up;
 /// with its position at that place, the `t` is right and the point is not the curve's there. The band clause holds a spelling, not a measured
 /// difference: read back off each ring's point (`Ellipse::angle_of`), this band's cut names one
@@ -1914,12 +1914,11 @@ fn a_curves_samples_stand_at_their_columns_numbers() {
                 continue;
             }
             let set = sets.of(edge);
-            let n = set.count as f64;
-            let k = (number * n / TAU).round();
-            let lattice = (0.0..n).contains(&k) && TAU * k / n == number;
+            let g = set.grid as f64;
+            let made = set.made.iter().any(|&u| TAU * u as f64 / g == number);
             let held = set.columns.iter().any(|c| c.0 == number);
             assert!(
-                lattice || held,
+                made || held,
                 "{name}: a sample at {number}, no column's number"
             );
         }
@@ -2085,8 +2084,9 @@ fn a_rim_missing_its_partners_sample_is_named() {
 }
 
 /// **A face's θ set lays its columns over any range**: every vertex column inside it, whole turns
-/// away included, and every lattice column farther than [`FaceThetas::near`] from every vertex
-/// column — one just outside the range too.
+/// away included, and every made column farther than [`FaceThetas::made_near`] from every vertex
+/// column — one just outside the range too. A face with no ellipse: its made columns are the even
+/// lattice.
 #[test]
 fn the_theta_set_lays_vertex_and_lattice_columns() {
     use std::f64::consts::TAU;
@@ -2100,9 +2100,12 @@ fn the_theta_set_lays_vertex_and_lattice_columns() {
     let n = 180.0;
     let step = TAU / n;
     let near = step * ON_RULING;
+    let grid = grid_of(180);
     let set = |at: &[f64]| FaceThetas {
         cyl,
         count: 180,
+        grid,
+        made: (0..180).map(|k| k * (grid / 180)).collect(),
         columns: at.iter().map(|&a| (a, Vec::new())).collect(),
     };
     let laid = |set: &FaceThetas, lo: f64, hi: f64| -> Vec<f64> {
@@ -2311,45 +2314,138 @@ fn a_non_positive_chord_budget_asks_nothing_of_the_chord() {
     }
 }
 
-/// **A budget asks no more of a curve than the finest sampling — past it, `None`.** At the
-/// defaults a circle of radius 30,000 asks 3,848 (its chord budget) and one of 40,000 more than
-/// 4,096; an ellipse turning 20 times as fast as its circle at its major ends asks 3,600, one
-/// turning 23 times 4,140. `22.755` sits just inside the finest (`180 · 22.755 = 4,095.9`).
+/// **A circle's count stops at the finest a set holds; a curve's pace has no ceiling of its own.**
+/// At the defaults a circle of radius 30,000 asks 3,848 (its chord budget) and one of 40,000 more
+/// than 4,096 — `None`. An ellipse turning 20 times as fast as its circle asks a pace of 3,600 a
+/// turn where it does, 23 times 4,140 — a pace read over the chords it bounds ([`walk`]), not a
+/// count; the ceiling is the set's.
 #[test]
-fn a_budget_past_the_finest_sampling_asks_nothing_it_can_get() {
+fn a_circle_past_the_finest_sampling_asks_nothing_it_can_get() {
     let cfg = TessConfig::default();
     assert_eq!(circle_segments(&cfg, 30_000.0), Some(3848));
     assert_eq!(circle_segments(&cfg, 40_000.0), None);
-    assert_eq!(segments(&cfg, 2.0, 20.0), Some(3600));
-    assert_eq!(segments(&cfg, 2.0, 22.755), Some(FINEST_CIRCLE));
-    assert_eq!(segments(&cfg, 2.0, 23.0), None);
+    assert_eq!(per_turn(&cfg, 2.0, 20.0), 3600.0);
+    assert_eq!(per_turn(&cfg, 2.0, 23.0), 4140.0);
     // A chord budget so small that `1 − tol/r` is `1` asks for infinitely many.
     let fine = TessConfig {
         tol: 1e-300,
         ..Default::default()
     };
     assert_eq!(circle_segments(&fine, 1.0), None);
+    assert_eq!(per_turn(&fine, 1.0, 1.0), f64::INFINITY);
 }
 
-/// **An ellipse its budget would cut past the finest sampling is refused, not drawn coarse.** A rod
+/// **An ellipse is cut where it turns, not everywhere at the pace of its sharpest turn.** A rod
 /// sliced lengthwise by the plane `z = 10 + k·x` has an ellipse turning about `k` times as fast as
-/// its circle at its major ends. At `k = 20` it asks 3,605 chords and every curve keeps the angle
-/// along itself; at `k = 23` it would ask about 4,140 — cut at the finest, 4,096, its chords turned
-/// by 2.023° at its ends against the budget's 2°, and the mesh, whose checks read surface normals,
-/// came back `Ok`.
+/// its circle at its major ends. Cut evenly at that pace, `k = 20` asked 3,605 chords a rim and
+/// `k = 23` about 4,140 — past the finest, refused. Walked ([`walk`]), each rim takes 316
+/// samples at `k = 20` and 320 at `k = 23`, and every curve keeps both budgets along itself
+/// — the angle ([`kinked_edges`]) and the chord ([`sagging_edges`]). At `tol = 1e-4` the chord
+/// term leads away from the major ends (the shape of a radius-200 rod at the default `tol`: the
+/// angle term does not depend on size): 530 and 538, both budgets kept there too.
 #[test]
-fn an_ellipse_past_the_finest_sampling_is_refused() {
+fn an_ellipse_is_cut_where_it_turns() {
+    let fine = TessConfig {
+        tol: 1e-4,
+        ..Default::default()
+    };
+    for (cfg, k, samples) in [
+        (TessConfig::default(), 20.0, 316),
+        (TessConfig::default(), 23.0, 320),
+        (fine, 20.0, 530),
+        (fine, 23.0, 538),
+    ] {
+        let (m, out) = rod_sliced_lengthwise(k);
+        let t = tessellate_solids(&m, &out, &cfg).unwrap_or_else(|e| panic!("k = {k}: {e:?}"));
+        let kinked = kinked_edges(&m, &t, cfg.max_angle_deg);
+        assert!(kinked.is_empty(), "k = {k}, tol = {}: {kinked:?}", cfg.tol);
+        let sagging = sagging_edges(&m, &t, &cfg);
+        assert!(
+            sagging.is_empty(),
+            "k = {k}, tol = {}: {sagging:?}",
+            cfg.tol
+        );
+        let rims: Vec<usize> = t
+            .by_edge
+            .iter()
+            .filter(|(e, _)| matches!(m.edge_curve(**e), Curve::Ellipse(_)))
+            .map(|(_, poly)| poly.len())
+            .collect();
+        assert_eq!(rims, [samples, samples], "k = {k}, tol = {}", cfg.tol);
+    }
+}
+
+/// A rod's circle of `radius` tilted by the plane `z = k·x` — an ellipse turning about `k` times
+/// as fast as its circle at its major ends — and the walk's floor and unit for it.
+fn steep_ellipse(radius: f64, k: f64) -> (Ellipse, usize, u64) {
+    let circle = Ellipse::from_center_normal(
+        Point3::origin(),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        radius,
+    )
+    .expect("a circle");
+    let steep = circle
+        .tilted_into(Vector3::from_array([k, 0.0, 1.0]))
+        .expect("an ellipse");
+    let count = circle_segments(&TessConfig::default(), radius).expect("within the finest");
+    (steep, count, grid_of(count))
+}
+
+/// **Every step of the walk is the widest its own range allows** — it fits ([`step_allowed`] over
+/// it is at least it) and one unit more does not — except the last window, which is cut into
+/// equal pieces. And no step — the window's pieces and the one closing the turn among them — is
+/// wider than the surface's own (`grid / count`), though the curve turns slower than its circle
+/// near its minor ends. Over a near-circle, rods of radius 2 cut at slopes 20 and 1,000, and one of
+/// radius 20,000 at slope 2 (the chord term leads there).
+#[test]
+fn every_step_of_the_walk_is_the_widest_that_fits() {
     let cfg = TessConfig::default();
-    let (m, out) = rod_sliced_lengthwise(20.0);
-    let t = tessellate_solids(&m, &out, &cfg).expect("k = 20 is within the finest");
-    let kinked = kinked_edges(&m, &t, cfg.max_angle_deg);
-    assert!(kinked.is_empty(), "k = 20: {kinked:?}");
-    let (m, out) = rod_sliced_lengthwise(23.0);
-    assert_eq!(
-        tessellate_solids(&m, &out, &cfg).map(|_| ()),
-        Err(TessError::OverBudget),
-        "k = 23"
-    );
+    for (radius, k) in [(2.0, 0.25), (2.0, 20.0), (2.0, 1000.0), (20_000.0, 2.0)] {
+        let (e, count, grid) = steep_ellipse(radius, k);
+        let curves = [e];
+        let made = walk(&cfg, &curves, count, grid).expect("within the finest");
+        let allowed = |lo: u64, hi: u64| step_allowed(&cfg, &curves, count, grid, lo, hi);
+        // The last two steps are the window cut evenly.
+        for pair in made.windows(2).take(made.len().saturating_sub(2)) {
+            let (u, w) = (pair[0], pair[1] - pair[0]);
+            assert!(
+                allowed(u, u + w) >= w,
+                "r = {radius}, k = {k}: {w} at {u} does not fit"
+            );
+            assert!(
+                allowed(u, u + w + 1) < w + 1,
+                "r = {radius}, k = {k}: {w} at {u} is not the widest"
+            );
+        }
+        let surface = grid / count as u64;
+        let closing = grid - made.last().expect("the walk starts at 0");
+        let steps = made.windows(2).map(|pair| pair[1] - pair[0]);
+        for w in steps.chain([closing]) {
+            assert!(
+                w <= surface,
+                "r = {radius}, k = {k}: a step of {w} past the surface's {surface}"
+            );
+        }
+    }
+}
+
+/// **A steep cut asks few more columns of a small rod, and the chord's sag decides a large one.**
+/// At the default budget the angle term leads a radius-2 rod's curves: its ellipse's fast turns
+/// are short, so a cut `10⁴` times as steep as it is wide lays 376 columns. A radius-20,000
+/// rod's are led by the chord term, and its ellipse sags like a circle of radius `a` at its major
+/// ends: at slope 2 the walk lays 3,731, at slope 5 more than [`FINEST_CIRCLE`], and the set
+/// is `None`.
+#[test]
+fn a_steep_cut_of_a_large_rod_is_past_the_finest_sampling() {
+    let cfg = TessConfig::default();
+    let laid = |radius: f64, k: f64| {
+        let (e, count, grid) = steep_ellipse(radius, k);
+        walk(&cfg, &[e], count, grid).map(|m| m.len())
+    };
+    assert_eq!(laid(2.0, 1e4), Some(376));
+    assert_eq!(laid(20_000.0, 2.0), Some(3731));
+    assert_eq!(laid(20_000.0, 5.0), None);
 }
 
 /// A rod of radius 2 on the `z` axis at `(0, 3)`, from `z = −50` to `70`, less the wedge above the
@@ -2391,8 +2487,8 @@ fn rod_sliced_lengthwise(k: f64) -> (Model, Vec<Handle<nacre_topo::Solid>>) {
 }
 
 /// **A thin band between an ellipse and the circle of its rod is drawn** — the ellipse is
-/// cut finer than its circle (by its turn, `a/b`), and the circle stands on the ellipse's face's
-/// lattice with it ([`FaceThetas`]). A rod of radius 2 less a prism over an oblique plane through
+/// cut finer than its circle where it turns faster ([`walk`]), and the circle stands on the
+/// ellipse's face's columns with it ([`FaceThetas`]). A rod of radius 2 less a prism over an oblique plane through
 /// its lower part, at slopes `1/20`, `1/2` and `2`, the band between the plane and the bottom rim
 /// `0.004` and `1e-5` high at its lowest. Cut each on its own count, the two rims' samples stood on
 /// no common ruling, and every facet across the band tilted by the offset sag over its height —

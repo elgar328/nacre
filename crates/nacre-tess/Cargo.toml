@@ -20,7 +20,8 @@ nacre-props = { workspace = true }
 [features]
 # Exposes the bridge pre-pass on its own (`bridge_report`) so a crate that can build a boolean
 # can lock what it split — the same shape as nacre-topo's `test-util`. Never on in a product build.
-test-util = []
+# It also turns on geom's, whose `chord_standoff` the curve checks (`sagging_edges`) read.
+test-util = ["nacre-geom/test-util"]
 
 [dev-dependencies]
 # Test cylinders are built the way an application builds one — a datum, a circle, an extrude
@@ -30,6 +31,8 @@ nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
 # Tilts a solid (`Isometry`) for the lattice test: a tilted axis is where a circle's place, read
 # from the curve and from a point on it, came apart by ulps.
 nacre-exact = { workspace = true }
+# The unit tests' build of `sagging_edges` reads geom's `chord_standoff` (`test-util`).
+nacre-geom = { path = "../nacre-geom", features = ["test-util"] }
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

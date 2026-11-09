@@ -16,6 +16,11 @@ nacre-math = { workspace = true }
 # bottom of the dependency graph (no nacre-* deps), so this edge is acyclic.
 nacre-exact = { workspace = true }
 
+[features]
+# Exposes `Ellipse::chord_standoff`, the reading a mesh's polylines are held to the chord budget
+# with (nacre-tess's `sagging_edges`). Off by default, so a product build carries none of it.
+test-util = []
+
 [dev-dependencies]
 proptest.workspace = true
 # The f64 orientation the rational one is differentially checked against (test-only).

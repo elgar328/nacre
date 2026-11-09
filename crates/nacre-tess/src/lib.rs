@@ -43,8 +43,8 @@ pub enum TessError {
     /// **A crossing that is only the chords' doing is not here**: where an arc's chords sag past
     /// a curve near it, the arcs there are cut finer before the sweep sees the rings
     /// (`crossing_chords`). What comes back under this name is a crossing of straight segments, or
-    /// one that arcs cut as finely as `FINEST_CIRCLE` lets them, or down to the `f64` floor, still
-    /// have.
+    /// one that arcs cut until their face's set holds `FINEST_CIRCLE` columns, or down to the `f64`
+    /// floor, still have.
     ///
     /// **The sweep detects these** — ear clipping would notice them only by accident, as a
     /// stall. It is checked rather than
@@ -98,12 +98,13 @@ pub enum TessError {
     /// The mesh would leave the declared budget ([`TessConfig`]) somewhere — it would misrepresent
     /// the shape there, so it is reported rather than drawn quietly wrong. Two places:
     ///
-    /// * **A curve** the budget asks to cut into more than 4,096 chords a turn — the finest this
-    ///   tessellator samples. A circle past `r ≈ 34,000` at the default `tol`, or an ellipse more
-    ///   than about 22.7 times as long as it is wide at the default angle (a cylinder cut within
-    ///   about 2.5° of its axis). The ask is the whole curve's, cut evenly at the pace of its
-    ///   sharpest turn, so an arc of such an ellipse is refused even where the arc itself turns
-    ///   gently.
+    /// * **A lateral** whose curves the budget asks to cut into more than 4,096 chords a turn —
+    ///   the finest this tessellator samples. Each curve is cut as finely as it bends where it
+    ///   lies, so this is a circle past `r ≈ 34,000` at the default `tol`, or a steep ellipse on a
+    ///   large cylinder: its chords sag like a circle of its semi-major axis near its major ends
+    ///   (a rod of radius 20,000 cut at slope 5; at slope 2 it meshes). On a small cylinder a
+    ///   steep cut adds few chords — its fast turns are short (a radius-2 rod cut at slope `10⁴`
+    ///   meshes).
     /// * **A face's triangulation** left an interior edge or a facet outside the budget
     ///   ([`within_budget`]) — its boundary curves are within it by the first point.
     OverBudget,
@@ -382,10 +383,10 @@ pub fn tessellate_solids(
 ///
 /// **It ends.** Sets only grow, and a round goes on only when some column was laid. A column an
 /// edge asks for stands inside the edge's own range, so its polyline either gains a chord or, where
-/// the new column withholds a lattice column beside it ([`FaceThetas::columns`]), keeps its count —
-/// once per lattice column. An edge asks only while it has fewer chords than its share of
-/// [`FINEST_CIRCLE`] ([`arc_midpoint`]), so each edge lays at most that share plus the lattice's
-/// count, and the rounds are bounded.
+/// the new column withholds a made column beside it ([`FaceThetas::columns`]), keeps its count —
+/// once per made column. A curve asks only while its face's set holds fewer than
+/// [`FINEST_CIRCLE`] columns ([`arc_midpoint`], [`FaceThetas::full`]), so each set grows at most to
+/// that, and the rounds are bounded.
 ///
 /// **A band's generator can move between rounds**: it is chosen clear of every sample
 /// ([`band_generator`]), and a column laid beside it moves the clearest step elsewhere. It is
@@ -461,8 +462,8 @@ struct Finished {
 /// lean, and the facet judgement refuses them rather than draw them ([`facet_in_budget`]); where
 /// it gives none, the curve stands on a set of its own, its count and its two ends.
 ///
-/// [`TessError::OverBudget`] where a set's count is more than the finest sampling
-/// ([`segments`]) — before any face is drawn, so a model refused there reports that first.
+/// [`TessError::OverBudget`] where a set would hold more than the finest sampling ([`walk`]) —
+/// before any face is drawn, so a model refused there reports that first.
 fn theta_sets<'m>(
     model: &'m Model,
     cfg: &TessConfig,
@@ -624,13 +625,13 @@ fn ccw_midpoint(early: f64, late: f64) -> f64 {
 /// measured at `h = 0.1` on a disk of radius 50 with its rim cut down by a box, at a band `0.004`
 /// high on a rod of radius 2 cut obliquely at `1/20`.
 ///
-/// The set is the **lattice** `θ_k = τk/N`, the **θ of every vertex of the face**, and **the
-/// columns crossing chords ask for**:
+/// The set is the **made columns**, the **θ of every vertex of the face**, and **the columns
+/// crossing chords ask for**:
 ///
-/// * `N` (`count`) is the finest any curve of the face asks for ([`segments`]: an ellipse turns
-///   faster than its circle) and at least the cylinder's own circle's — so every curve keeps its
-///   budget along itself on the face's lattice, its chords only shortened by the vertices'
-///   columns.
+/// * The made columns are where every curve of the face keeps the budget on each chord where the
+///   chord lies ([`walk`]): the even lattice `τk/N` of the face's floor `N` (`count` — the
+///   cylinder's own circle's) where nothing bends faster, finer only where an ellipse turns or
+///   sags faster. The vertices' columns only shorten chords, so each curve keeps its budget.
 /// * A vertex's θ is read once, about the axis ([`angle_about`]). Vertices at one θ are one
 ///   column, by [`ON_RULING`]: a ruling's two ends, which their own coordinates put a few ulps
 ///   apart, and vertices geometry makes stand on one generator — no stored number is their θ, so
@@ -652,25 +653,31 @@ fn ccw_midpoint(early: f64, late: f64) -> f64 {
 /// lattice is withheld there, the generator being boundary.
 struct FaceThetas {
     cyl: Cylinder,
+    /// The face's floor — the count a turn the surface itself asks everywhere ([`circle_segments`]
+    /// of the cylinder's radius); the made columns' unit is a power-of-two share of its step.
     count: usize,
+    /// The made columns' unit, `count·2ˢ` a turn.
+    grid: u64,
+    /// The made columns ([`walk`]), ascending, in units of `grid`, in `[0, grid)`; the first is `0`.
+    made: Vec<u64>,
     /// Ascending in `[0, τ)`, each with the vertices standing there — none for a column a crossing
     /// asked for.
     columns: Vec<(f64, Vec<Handle<Vertex>>)>,
 }
 
 impl FaceThetas {
-    /// The set of `face`, a face on `cyl` — `None` where the budget asks more of one of its curves,
-    /// or of the surface, than [`segments`] gives.
+    /// The set of `face`, a face on `cyl` — `None` where the budget asks more of its curves, or of
+    /// the surface, than [`FINEST_CIRCLE`] columns ([`walk`]).
     fn of_face(cfg: &TessConfig, model: &Model, face: &Face, cyl: &Cylinder) -> Option<FaceThetas> {
         let half_edges = || loops_of(face).flat_map(|lp| &lp.half_edges);
-        let count = half_edges()
+        let curves: Vec<Ellipse> = half_edges()
             .filter_map(|he| match model.edge_curve(he.edge) {
-                Curve::Ellipse(c) => Some(segments(cfg, c.semi_major(), c.max_turn_rate())),
+                Curve::Ellipse(c) => Some(*c),
                 Curve::Line(_) => None,
             })
-            .try_fold(circle_segments(cfg, cyl.radius())?, |n, m| Some(n.max(m?)))?;
+            .collect();
         let vertices = half_edges().flat_map(|he| model.edge(he.edge).vertices);
-        Some(FaceThetas::new(model, *cyl, count, vertices))
+        FaceThetas::new(cfg, model, *cyl, &curves, vertices)
     }
 
     /// The set a curve no live face of its cylinder bounds stands on alone — its own count and its
@@ -679,22 +686,26 @@ impl FaceThetas {
         // The curve's own frame is its cylinder's (see [`angle_about`]); its radius is positive.
         let cyl = Cylinder::from_unit_frame(c.center(), c.axis(), c.ref_dir(), c.radius())
             .expect("a curve's radius is positive");
-        let count = segments(cfg, c.semi_major(), c.max_turn_rate())?;
-        Some(FaceThetas::new(
-            model,
-            cyl,
-            count,
-            edge.vertices.into_iter(),
-        ))
+        FaceThetas::new(cfg, model, cyl, &[*c], edge.vertices.into_iter())
     }
 
+    /// The set on `cyl` of `curves` and `vertices`: the made columns [`walk`] lays, and the
+    /// vertices' columns — `None` where the budget asks more than [`FINEST_CIRCLE`] columns.
     fn new(
+        cfg: &TessConfig,
         model: &Model,
         cyl: Cylinder,
-        count: usize,
+        curves: &[Ellipse],
         vertices: impl Iterator<Item = Handle<Vertex>>,
-    ) -> FaceThetas {
+    ) -> Option<FaceThetas> {
         use std::f64::consts::TAU;
+        // The floor is the surface's own ask, `(r, 1)`: a chord's ends' normals part by its width,
+        // and it stands off the cylinder as a chord of its circle does. What the curves ask beyond
+        // it, where they bend, the walk reads (`Ellipse::pace_over`) — a curve's own circle is the
+        // cylinder's, and a minor end turns slower than it.
+        let count = circle_segments(cfg, cyl.radius())?;
+        let grid = grid_of(count);
+        let made = walk(cfg, curves, count, grid)?;
         let mut vs: Vec<Handle<Vertex>> = vertices.collect();
         vs.sort_by_key(|v| v.index());
         vs.dedup();
@@ -716,11 +727,13 @@ impl FaceThetas {
             let (_, vs) = columns.pop().expect("more than one");
             columns[0].1.extend(vs);
         }
-        FaceThetas {
+        Some(FaceThetas {
             cyl,
             count,
+            grid,
+            made,
             columns,
-        }
+        })
     }
 
     /// **Lay a column at `theta`**, a column's number in `[0, τ)`, standing with no vertex —
@@ -729,7 +742,7 @@ impl FaceThetas {
     /// A crossing chord's middle ([`arc_midpoint`]) is placed apart on purpose, so it is not one of
     /// the two numbers [`ON_RULING`] merges (geometry made them equal, or rounding split them): a
     /// column is refused only where it would add nothing. Like a vertex's column, it withholds a
-    /// lattice column within [`FaceThetas::near`] of it ([`FaceThetas::columns`]).
+    /// made column within [`FaceThetas::made_near`] of it ([`FaceThetas::columns`]).
     fn add(&mut self, theta: f64) -> bool {
         debug_assert!(
             (0.0..std::f64::consts::TAU).contains(&theta),
@@ -743,10 +756,41 @@ impl FaceThetas {
         true
     }
 
-    /// How close to a held column (a vertex's or a crossing's) a lattice column may stand and still
-    /// be laid, in radians — [`ON_RULING`] of the lattice's step.
+    /// [`ON_RULING`] of the floor's step ([`FaceThetas::count`]) — the widest a made column's
+    /// [`FaceThetas::made_near`] is, so the window held columns are read over; and how close two
+    /// vertices stand to be one column.
     fn near(&self) -> f64 {
         column_tolerance(self.count)
+    }
+
+    /// **How close to a held column (a vertex's or a crossing's) made column `i` may stand and
+    /// still be laid**, in radians — [`ON_RULING`] of its narrower step. Its own step, not the
+    /// floor's: a column withheld moves its chord's end by up to this, so it stays the same share
+    /// of the chord wherever the walk cut finer.
+    fn made_near(&self, i: usize) -> f64 {
+        let n = self.made.len();
+        let (prev, next) = (
+            if i == 0 {
+                self.made[n - 1]
+            } else {
+                self.made[i - 1]
+            },
+            if i + 1 == n {
+                self.grid
+            } else {
+                self.made[i + 1]
+            },
+        );
+        let before = (self.made[i] + self.grid - prev) % self.grid;
+        let before = if before == 0 { self.grid } else { before };
+        let step = before.min(next - self.made[i]);
+        std::f64::consts::TAU * step as f64 / self.grid as f64 * ON_RULING
+    }
+
+    /// **Whether the set holds as many columns as a face's set may** — [`FINEST_CIRCLE`], where
+    /// [`walk`] refuses a face and [`arc_midpoint`] stops asking.
+    fn full(&self) -> bool {
+        self.made.len() + self.columns.len() >= FINEST_CIRCLE
     }
 
     /// `p`'s θ in the set's frame, in `[0, τ)`.
@@ -783,25 +827,28 @@ impl FaceThetas {
     }
 
     /// **The set's columns in `[lo, hi]`**, ascending, each as `(place, number, vertices)` — the
-    /// vertices standing there (none for a lattice column or a crossing's). `lo` and `hi` are
+    /// vertices standing there (none for a made column or a crossing's). `lo` and `hi` are
     /// unwrapped, so a range past `τ` or below `0` gets the columns whole turns away: `place` is
     /// where the column stands in that range, `number` the column's own, in `[0, τ)` — a held
-    /// column's stored θ, a lattice column's `τk/N` with `k < N`.
+    /// column's stored θ, a made column's `τu/G` with `u < G`.
     ///
     /// **A column has one number.** `place` only picks and orders the columns along a range (and
     /// sets a chart's coordinate); everything that names the column — a sample's position and its
-    /// `t`, a crossing chord's middle — uses `number`. `place` is `number` plus whole turns in
-    /// `f64`, which is not `number` again: two curves holding one column on different turns (a
-    /// curve that starts a hair below `0` takes its range a turn up) would name it ulps apart.
+    /// `t`, a crossing chord's middle — uses `number`. A held column's `place` is `number` plus
+    /// whole turns in `f64`, which is not `number` again: two curves holding one column on
+    /// different turns (a curve that starts a hair below `0` takes its range a turn up) would name
+    /// it ulps apart. A made column's `place` is `τ(u + kG)/G`, exact in its integer.
     ///
     /// Every column the set holds (a vertex's or a crossing's) in the range is laid, and every
-    /// lattice column `τk/N` that stands farther than [`FaceThetas::near`] from every held column —
-    /// including one just outside the range, so a lattice column a hair inside a curve's end is not
-    /// laid beside it.
+    /// made column that stands farther than [`FaceThetas::made_near`] from every held column —
+    /// including one just outside the range, so a made column a hair inside a curve's end is not
+    /// laid beside it. A made column is picked by its unit against `lo·G/τ` and `hi·G/τ`; `G` is
+    /// the floor's count times a power of two, so where every made column is the floor's (a face
+    /// with no ellipse) the pick is the floor lattice's `⌈lo·N/τ⌉ ..= ⌊hi·N/τ⌋`, bit for bit.
     fn columns(&self, lo: f64, hi: f64) -> Vec<(f64, f64, &[Handle<Vertex>])> {
         use std::f64::consts::TAU;
         let near = self.near();
-        // The vertex columns over `[lo − near, hi + near]`: turn by turn, each turn's ascending.
+        // The held columns over `[lo − near, hi + near]`: turn by turn, each turn's ascending.
         let mut anchors: Vec<(f64, f64, &[Handle<Vertex>])> = Vec::new();
         let mut turn = ((lo - near) / TAU).floor();
         while turn * TAU <= hi + near {
@@ -813,39 +860,39 @@ impl FaceThetas {
             }
             turn += 1.0;
         }
-        let n = self.count as f64;
-        let (mut k, k1) = ((lo * n / TAU).ceil(), (hi * n / TAU).floor());
-        let mut out = Vec::with_capacity(anchors.len() + (k1 - k).max(0.0) as usize + 1);
-        let mut next = 0;
-        while k <= k1 || next < anchors.len() {
-            let lattice = (k <= k1).then(|| TAU * k / n);
-            match (lattice, anchors.get(next)) {
-                (Some(c), Some(&(a, _, _))) if c > a => {
-                    if (lo..=hi).contains(&a) {
-                        out.push(anchors[next]);
-                    }
-                    next += 1;
+        let g = self.grid as f64;
+        let (first, last) = ((lo * g / TAU).ceil(), (hi * g / TAU).floor());
+        debug_assert!(
+            first.abs() < 16.0 * g && last.abs() < 16.0 * g,
+            "a range within the turns a made column's place is exact over: [{lo}, {hi}]"
+        );
+        let mut out: Vec<(f64, f64, &[Handle<Vertex>])> = anchors
+            .iter()
+            .filter(|a| (lo..=hi).contains(&a.0))
+            .copied()
+            .collect();
+        let mut k = (first / g).floor();
+        while k * g <= last {
+            for (i, &u) in self.made.iter().enumerate() {
+                let unit = u as f64 + k * g;
+                if unit < first || last < unit {
+                    continue;
                 }
-                (Some(c), anchor) => {
-                    let before = next.checked_sub(1).map(|i| anchors[i].0);
-                    let clear = [before, anchor.map(|a| a.0)]
-                        .into_iter()
-                        .flatten()
-                        .all(|a| (a - c).abs() > near);
-                    if clear {
-                        out.push((c, TAU * k.rem_euclid(n) / n, &[]));
-                    }
-                    k += 1.0;
+                let place = TAU * unit / g;
+                let near = self.made_near(i);
+                let at = anchors.partition_point(|a| a.0 < place);
+                let clear = [at.checked_sub(1), Some(at)]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|j| anchors.get(j))
+                    .all(|a| (a.0 - place).abs() > near);
+                if clear {
+                    out.push((place, TAU * u as f64 / g, &[]));
                 }
-                (None, Some(&(a, _, _))) => {
-                    if (lo..=hi).contains(&a) {
-                        out.push(anchors[next]);
-                    }
-                    next += 1;
-                }
-                (None, None) => break,
             }
+            k += 1.0;
         }
+        out.sort_by(|a, b| a.0.total_cmp(&b.0));
         out
     }
 }
@@ -1012,15 +1059,8 @@ fn arc_midpoint(
     let Curve::Ellipse(c) = model.edge_curve(step.edge) else {
         return None;
     };
-    let edge = model.edge(step.edge);
     let set = sets.of(step.edge);
-    let poly = &t.by_edge[&step.edge];
-    let chords = if edge.vertices[0] == edge.vertices[1] {
-        poly.len()
-    } else {
-        poly.len() - 1
-    };
-    if chords >= segments_over(FINEST_CIRCLE, edge, set.span(model, edge).1) {
+    if set.full() {
         return None;
     }
     // A chord's two ends are samples of this edge or its own vertices (`traced_ring` takes a
@@ -1483,6 +1523,73 @@ pub fn kinked_edges(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Kink
     out
 }
 
+/// A chord of a curved edge's polyline that stands off its curve by more than the chord budget,
+/// and by how much: the edge, the chord's first sample (its place in the polyline), and the
+/// farthest the curve over it stands off the chord. Test-only (`test-util`).
+#[cfg(any(test, feature = "test-util"))]
+#[derive(Clone, Copy, Debug)]
+pub struct Sagging {
+    pub edge: Handle<Edge>,
+    pub at: usize,
+    pub standoff: f64,
+}
+
+/// Every chord of a curved edge's polyline (`by_edge`) the curve stands off by more than `cfg`'s
+/// chord budget — a whole rim's closing chord included — or none where the budget asks nothing.
+/// Test-only (`test-util`): the mesh locks call it beside [`kinked_edges`], which holds the other
+/// budget to the same polylines.
+///
+/// **What it holds the sampler to.** The chord a polyline puts in for its curve must stay within
+/// `tol` of it, and the mesh's own check does not ask: `within_budget` reads interior edges
+/// against their surface, and a boundary chord's distance from the cylinder is not its distance
+/// from the curve. A chord's ends are read as angles on the curve — a sample's own `t`, a vertex's
+/// [`Ellipse::angle_of`] — and the curve between them is the shorter way round, a chord being
+/// shorter than half a turn. The reading is [`Ellipse::chord_standoff`].
+#[cfg(any(test, feature = "test-util"))]
+pub fn sagging_edges(model: &Model, t: &Tessellation, cfg: &TessConfig) -> Vec<Sagging> {
+    use std::f64::consts::{PI, TAU};
+    let Some(limit) = chord_budget(cfg) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    // `by_edge` is a `HashMap`; walk the edges in handle order so a report reads the same each run.
+    let mut edges: Vec<_> = t.by_edge.iter().collect();
+    edges.sort_by_key(|(e, _)| e.index());
+    for (&edge, poly) in edges {
+        let Curve::Ellipse(c) = model.edge_curve(edge) else {
+            continue;
+        };
+        let angles: Vec<f64> = poly
+            .iter()
+            .map(|&h| {
+                let v = t.vertices.get(h);
+                match v.origin {
+                    TessOrigin::OnEdge { t, .. } => t,
+                    _ => c.angle_of(v.pos),
+                }
+            })
+            .collect();
+        let closed = {
+            let [v0, v1] = model.edge(edge).vertices;
+            v0 == v1
+        };
+        let n = angles.len();
+        let chords = if closed { n } else { n.saturating_sub(1) };
+        for at in 0..chords {
+            let (from, to) = (angles[at], angles[(at + 1) % n]);
+            let mut span = (to - from).rem_euclid(TAU);
+            if span > PI {
+                span -= TAU;
+            }
+            let standoff = c.chord_standoff(from, from + span);
+            if standoff > limit {
+                out.push(Sagging { edge, at, standoff });
+            }
+        }
+    }
+    out
+}
+
 /// A deduped mesh vertex for a topology vertex (tagged `OnVertex`).
 fn vertex_of(
     t: &mut Tessellation,
@@ -1510,7 +1617,8 @@ fn vertex_of(
 /// own ends are known by handle rather than by how close they stand: a column holding either end
 /// is the end. A whole rim turns once from its vertex. Point 0 is the first vertex and the rest go
 /// round from it; an arc ends on its second vertex, a whole rim closes on its first without
-/// repeating it. The lattice columns are absolute (`τk/N`), so a plain rim's samples are where an
+/// repeating it. The made columns are absolute — a function of the face's curves, walked from the
+/// cylinder's `ref_dir` ([`walk`]) — so on a face with no ellipse a plain rim's samples are where an
 /// even cut from its seam vertex puts them.
 ///
 /// Each sample stands at its column's own number and carries it as its `t`
@@ -1552,40 +1660,33 @@ fn sample_curve(
     poly
 }
 
-/// The segments a circle edge turning `dt` gets out of `per_turn` for the whole circle: all of
-/// them for a full circle, the arc's fraction (at least one) otherwise — how finely an edge may
-/// ever be cut ([`crossing_chords`]).
-fn segments_over(per_turn: usize, edge: &Edge, dt: f64) -> usize {
-    if edge.vertices[0] == edge.vertices[1] {
-        per_turn
-    } else {
-        ((per_turn as f64 * dt / std::f64::consts::TAU).ceil() as usize).max(1)
-    }
-}
-
-/// The finest lattice a curve is sampled on — 4,096 chords a turn. [`segments`] asks no more of
-/// a curve, and [`crossing_chords`] stops cutting an edge at its share of it — one statement, read
-/// in two places. A face's vertex columns stand between the lattice's ([`FaceThetas`]), so a curve
-/// on a lattice this fine can hold its share already, and then is not cut further. A budget that
-/// asks for more — a circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`), an ellipse too
-/// nearly along its axis for its angle (past `a/b ≈ 22.7` at `2°`) — is refused
-/// ([`TessError::OverBudget`]).
+/// The most columns a face's θ set holds — 4,096 a turn. [`walk`] refuses a face whose budget asks
+/// for more, and [`arc_midpoint`] stops cutting a face's curves there ([`FaceThetas::full`]) — one
+/// statement, read in two places. A circle too large for its `tol` (past `r ≈ 34,000` at `1e-2`)
+/// asks more everywhere and is refused ([`TessError::OverBudget`]); an ellipse asks more only
+/// where it turns or sags fast — short stretches on a small cylinder, where the angle leads, but
+/// on a large one its sag near the major ends grows with the slope (`OverBudget` names both).
 const FINEST_CIRCLE: usize = 4096;
 
-/// The fewest segments a whole curve is cut into, whatever the budget — [`segments`]' floor.
+/// The fewest segments a whole curve is cut into, whatever the budget — [`per_turn`]'s floor.
 const COARSEST_CIRCLE: usize = 8;
 
-/// Segments for a whole circle of `radius` — [`segments`] for a curve that turns as a circle does.
+/// The ceiling of a θ set's unit count a turn ([`FaceThetas::grid`]): `2⁴⁹`, so a made column's
+/// place `u + kG` is an exact integer in `f64` for `|k| < 16`.
+const GRID_CEILING: u64 = 1 << 49;
+
+/// Segments for a whole circle of `radius` — [`per_turn`] for a curve that turns as a circle does,
+/// or `None` past [`FINEST_CIRCLE`].
 fn circle_segments(cfg: &TessConfig, radius: f64) -> Option<usize> {
-    segments(cfg, radius, 1.0)
+    let n = per_turn(cfg, radius, 1.0);
+    (n <= FINEST_CIRCLE as f64).then_some(n as usize)
 }
 
-/// Segments for a whole curve sampled evenly in θ: **whichever of the two budgets asks for more**
-/// ([`TessConfig`] says why there are two), for a curve that sags no more than a circle of
-/// `radius` and whose tangent turns at most `turn` radians per radian of θ
-/// ([`Ellipse::semi_major`], [`Ellipse::max_turn_rate`] — `r` and `1` for a circle) — or `None`
-/// where that is more than [`FINEST_CIRCLE`]: the budget cannot be kept, and the mesh is refused
-/// ([`TessError::OverBudget`]).
+/// **The pace a curve bending as `(radius, turn)` asks, as chords a turn**: whichever of the two
+/// budgets asks for more ([`TessConfig`] says why there are two), for a curve that sags no more
+/// than a circle of `radius` and whose tangent turns at most `turn` radians per radian of θ
+/// ([`Ellipse::pace_over`] — `(r, 1)` for a circle). A chord no wider than a turn over this keeps
+/// both. With no ceiling: `∞` where a budget cannot be met at all.
 ///
 /// * sagitta: `r(1 − cos(π/n)) ≤ tol` ⟹ `n ≥ π / acos(1 − tol/r)` — grows as `√r`, so
 ///   it is the term that speaks for a curve large in model units;
@@ -1596,16 +1697,9 @@ fn circle_segments(cfg: &TessConfig, radius: f64) -> Option<usize> {
 /// A budget that is not a finite positive number asks nothing ([`asked`]); a curve neither asks
 /// of gets the floor, [`COARSEST_CIRCLE`].
 ///
-/// One step in θ for the whole curve, not one that varies along it: a lateral's boundary chord
-/// spans its θ step, so its ends' normals part by exactly that step, and one step keeps both. This
-/// is a curve's own ask; on a lateral every curve stands on its face's lattice, the finest ask of
-/// the face's curves, with the face's vertices' columns between ([`FaceThetas`]) — which only
-/// shorten chords, so each curve keeps its budget. The ask is the whole curve's, at its sharpest
-/// turn, so `None` refuses an arc of an ellipse that turns gently where the arc lies too.
-///
 /// With the default `2°` the angular term leads a circle until `r ≈ 66` (that is `tol` divided by
 /// `1 − cos(1°)`), which covers ordinary part sizes; past it the sagitta term takes over.
-fn segments(cfg: &TessConfig, radius: f64, turn: f64) -> Option<usize> {
+fn per_turn(cfg: &TessConfig, radius: f64, turn: f64) -> f64 {
     let by_sagitta = asked(cfg.tol).map_or(0.0, |tol| {
         let ratio = tol / radius;
         if ratio >= 2.0 {
@@ -1616,8 +1710,116 @@ fn segments(cfg: &TessConfig, radius: f64, turn: f64) -> Option<usize> {
         }
     });
     let by_angle = asked(cfg.max_angle_deg).map_or(0.0, |deg| (360.0 / deg * turn).ceil());
-    let n = by_sagitta.max(by_angle);
-    (n <= FINEST_CIRCLE as f64).then(|| (n as usize).max(COARSEST_CIRCLE))
+    by_sagitta.max(by_angle).max(COARSEST_CIRCLE as f64)
+}
+
+/// **A face's made columns: every chord of every curve keeps the budget where it lies** — a
+/// chord `h` wide in θ, with `(ρ, R)` the most its curves bend over it ([`Ellipse::pace_over`],
+/// and the surface's own `(r, 1)`), has `h·R ≤ Δθ` and sags at most `ρ(1 − cos(h/2)) ≤ tol`
+/// ([`per_turn`] over the chord's range). The tangent at a sample turns, between its two chords'
+/// middles, by at most `R` of each half-step, so consecutive chords turn by at most `Δθ`; and the
+/// chord's ends' surface normals part by `h ≤ Δθ`. A chord cut further keeps it — both its width
+/// and its bend shrink — so the vertices' and crossings' columns laid among these leave it true.
+/// The turn between consecutive chords would not serve as the rule: a column laid inside a chord
+/// makes a new pair of chords, and their turn can be up to the whole chord's.
+///
+/// **A walk from `0`** (the cylinder's `ref_dir`), in units of `grid` (`count·2ˢ` a turn): from
+/// each column the widest step `w` its own range allows ([`step_allowed`] over `[u, u + w]` at
+/// least `w`). A wider range asks no less, so the steps that fit are every `w` up to the widest,
+/// and a bisection between what the column's own point allows (which no step outruns) and a step
+/// known to fit finds it; the lower end is always a step measured to fit, so a rounding that
+/// bends that order by an ulp still leaves a step inside the budget. Where the next step reaches
+/// the turn's end, the last column laid is taken back and the window from the one before to the
+/// end is cut into the fewest equal pieces its ask allows — the window is at least a step, so no
+/// piece is a sliver of one. On a face with no ellipse every ask is `count`, every step `2ˢ`, and
+/// the columns are the even lattice `τk/count`, bit for bit. Where a curve turns or sags faster
+/// the steps are shorter there and only there: an ellipse turning `20` times as fast as its
+/// circle at its major ends gets 316 samples a rim, against the 3,605 an even cut at its sharpest
+/// took (`an_ellipse_is_cut_where_it_turns`).
+///
+/// A face's set is the face's own, not its cylinder's ([`FaceThetas`]), and the walk reads only
+/// the face's curves whole — not their spans — so it is a function of the face's geometry.
+///
+/// `None` where the set would hold more than [`FINEST_CIRCLE`] columns, or a step narrower than one
+/// unit (a budget that cannot be met there).
+fn walk(cfg: &TessConfig, curves: &[Ellipse], count: usize, grid: u64) -> Option<Vec<u64>> {
+    let allowed = |lo: u64, hi: u64| step_allowed(cfg, curves, count, grid, lo, hi);
+    let fits = |u: u64, w: u64| allowed(u, u + w) >= w;
+    let mut made = vec![0u64];
+    loop {
+        let u = *made.last().expect("the walk starts at 0");
+        let most = allowed(u, u);
+        let w = if fits(u, most) {
+            most
+        } else {
+            let first = allowed(u, u + most);
+            let (mut lo, mut hi) = (if fits(u, first) { first } else { 0 }, most);
+            while hi - lo > 1 {
+                let mid = lo + (hi - lo) / 2;
+                if fits(u, mid) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            lo
+        };
+        if w == 0 {
+            return None;
+        }
+        if u + w >= grid {
+            if made.len() > 1 {
+                made.pop();
+            }
+            let from = *made.last().expect("the walk starts at 0");
+            let window = grid - from;
+            let step = allowed(from, grid);
+            if step == 0 {
+                return None;
+            }
+            let pieces = window.div_ceil(step);
+            made.extend((1..pieces).map(|i| from + window * i / pieces));
+            return (made.len() <= FINEST_CIRCLE).then_some(made);
+        }
+        made.push(u + w);
+        if made.len() > FINEST_CIRCLE {
+            return None;
+        }
+    }
+}
+
+/// **The widest step, in units of `grid`, that the ask over `[lo, hi]` allows** — the ask being the
+/// most any of `curves` bends there ([`Ellipse::pace_over`] read by [`per_turn`]) and at least the
+/// face's floor `count`. [`walk`] lays a step `w` from `u` where this over `[u, u + w]` is at least
+/// `w`; a wider range asks no less, so this never grows as `hi` does.
+fn step_allowed(
+    cfg: &TessConfig,
+    curves: &[Ellipse],
+    count: usize,
+    grid: u64,
+    lo: u64,
+    hi: u64,
+) -> u64 {
+    use std::f64::consts::TAU;
+    let theta = |u: u64| TAU * u as f64 / grid as f64;
+    let ask = curves
+        .iter()
+        .map(|c| {
+            let (radius, turn) = c.pace_over(theta(lo), theta(hi));
+            per_turn(cfg, radius, turn)
+        })
+        .fold(count as f64, f64::max);
+    (grid as f64 / ask).floor() as u64
+}
+
+/// The made columns' unit for a floor of `count` a turn: `count·2ˢ`, the largest within
+/// [`GRID_CEILING`].
+fn grid_of(count: usize) -> u64 {
+    let mut grid = count as u64;
+    while 2 * grid <= GRID_CEILING {
+        grid *= 2;
+    }
+    grid
 }
 
 /// A loop's boundary as an ordered ring of shared mesh vertices — [`traced_ring`]'s walk, so a
@@ -2566,13 +2768,13 @@ fn interior_nodes(
     out
 }
 
-/// How close two numbers that stand on one generator may stand and still be two, in units of the
-/// lattice's own step ([`column_tolerance`]) — the one tolerance of the lateral's columns, for two
-/// numbers no one computation gives both of: geometry made them equal, or rounding split them. A
-/// lattice point beside a rising boundary step (a ruling) is not offered ([`interior_nodes`]), a
-/// lattice column beside a held column — a vertex's, or one a crossing chord asked for — is not
-/// laid, and two vertices at one θ — a ruling's two ends among them — are one column
-/// ([`FaceThetas`]). Two held columns are never merged by it unless both are vertices': a crossing's
+/// How close two numbers that stand on one generator may stand and still be two, as a share of a
+/// column's step — the one tolerance of the lateral's columns, for two numbers no one computation
+/// gives both of: geometry made them equal, or rounding split them. A lattice point beside a rising
+/// boundary step (a ruling) is not offered ([`interior_nodes`]) and two vertices at one θ — a
+/// ruling's two ends among them — are one column ([`FaceThetas`]), both by the face's floor step
+/// ([`column_tolerance`]); a made column beside a held column — a vertex's, or one a crossing chord
+/// asked for — is not laid, by its own narrower step ([`FaceThetas::made_near`]). Two held columns are never merged by it unless both are vertices': a crossing's
 /// column is placed apart on purpose ([`FaceThetas::add`]).
 ///
 /// **Not a knob** — measured over the workspace suite, the census and the ignored sweep, against
@@ -2719,8 +2921,8 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 
 /// **The mesh's one rule, asked of the face's *interior* and of every facet.**
 ///
-/// `TessConfig` declares two budgets and [`segments`] enforces **both** on every curved boundary
-/// polyline — or refuses the mesh where it cannot. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
+/// `TessConfig` declares two budgets and [`walk`] enforces **both** on every chord of every curved
+/// boundary polyline — or refuses the mesh where it cannot. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
 /// while the boundary samples the curvature (a band's rims do, on common generators —
 /// [`FaceThetas`]), and silently wrong when it does not — a lateral whose boundary leaves a θ
 /// stretch unsampled meshes as flat chords across it (measured on one merged across erased seams:
@@ -2740,8 +2942,8 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// its points do not determine is outside there (none in the corpus or the suites) — and a new
 /// surface kind is a compile error rather than a missing case.
 ///
-/// **A boundary edge cannot fail, so it is not asked.** A curve is cut into [`segments`] pieces,
-/// which is the *larger* of the two budgets' demands for that curve, and a mesh whose curve would
+/// **A boundary edge cannot fail, so it is not asked.** A curve is cut so that each chord keeps the
+/// *larger* of the two budgets' demands where it lies ([`walk`]), and a mesh whose curves would
 /// need more than the finest sampling is refused before any face is drawn; a straight edge (a ruling, a
 /// plane's side) strays zero and its ends share one normal. So of the edges this checks only what
 /// the sweep chose, never what the sampler laid down — but every facet, since a facet with two
@@ -2792,7 +2994,7 @@ fn within_budget(
 const BUDGET_SLACK: f64 = 1.0 + 1e-9;
 
 /// **Whether a budget asks anything**: `budget` itself when it is a finite positive number, `None`
-/// otherwise — one rule for both of [`TessConfig`]'s budgets, read by the sampler ([`segments`])
+/// otherwise — one rule for both of [`TessConfig`]'s budgets, read by the sampler ([`per_turn`])
 /// and by the mesh's check ([`angle_budget`], [`chord_budget`]).
 fn asked(budget: f64) -> Option<f64> {
     (budget.is_finite() && budget > 0.0).then_some(budget)

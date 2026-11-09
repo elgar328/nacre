@@ -229,20 +229,39 @@ impl Ellipse {
         }
     }
 
-    /// The most the tangent turns per radian of θ — `1` for a circle, `a/b` for an ellipse (at the
-    /// ends of its major axis; `b` is the cylinder's radius).
+    /// **How the curve bends over `[theta0, theta1]`** (`theta0 ≤ theta1`, unwrapped) — `(ρ, R)`:
+    /// the largest radius a chord there sags by and the most the tangent turns per radian of θ
+    /// there. `(r, 1)` for a circle everywhere; for an ellipse `(a, a/b)` over a range holding an
+    /// end of the major axis (`a` the [`semi_major`](Ellipse::semi_major), `b` the cylinder's
+    /// radius), less away from it — down to `(b, b/a)` over one holding an end of the minor axis,
+    /// where the curve turns slower than its circle.
     ///
     /// The curve is the circle of radius `r` lifted linearly along the axis, θ kept, so a chord
     /// from θ₀ to θ₁ is parallel to the tangent at `(θ₀ + θ₁)/2` (a linear map keeps the circle's
-    /// parallels). Two consecutive chords of one θ step `h` therefore turn by what the tangent
-    /// turns over `h`: at most this times `h`. Their sag is the circle's `r(1 − cos(h/2))` carried
-    /// by the map, so at most [`semi_major`](Ellipse::semi_major)`·(1 − cos(h/2))` — the sag of
-    /// a circle of radius `a`. Those two bound a polyline sampled evenly in θ.
+    /// parallels). With `|P′(θ)|² = r²·q`, `q = 1 + (A/r)²·sin²(θ − θ*)` (`A = √(t₀² + t₁²)`, `θ*`
+    /// where the major axis points), the tangent turns at `a/(r·q)` and the chord over a step `h`
+    /// stands off the arc by `a(1 − cos(h/2))/√q` at its middle. Both are largest where `q` is
+    /// least on the range — `1` where it holds `θ*` or `θ* + π`, else at its nearer end. So two
+    /// consecutive chords inside the range turn by at most `R` times their two half-steps, and
+    /// each sags at most `ρ(1 − cos(h/2))`.
     #[inline]
-    pub fn max_turn_rate(&self) -> f64 {
+    pub fn pace_over(&self, theta0: f64, theta1: f64) -> (f64, f64) {
         match self.tilt {
-            None => 1.0,
-            Some(_) => self.semi_major() / self.radius,
+            None => (self.radius, 1.0),
+            Some([t0, t1]) => {
+                let pi = std::f64::consts::PI;
+                let major = t1.atan2(t0);
+                let (lo, hi) = (theta0 - major, theta1 - major);
+                let least = if (lo / pi).ceil() * pi <= hi {
+                    0.0
+                } else {
+                    lo.sin().powi(2).min(hi.sin().powi(2))
+                };
+                let lift = (t0 * t0 + t1 * t1) / (self.radius * self.radius);
+                let q = 1.0 + lift * least;
+                let a = self.semi_major();
+                (a / q.sqrt(), a / self.radius / q)
+            }
         }
     }
 
@@ -313,6 +332,28 @@ impl Ellipse {
             None => round,
             Some([t0, t1]) => round + self.axis * (t0 * cos + t1 * sin),
         }
+    }
+
+    /// **The farthest the curve from `theta0` to `theta1` stands off the chord between its two
+    /// ends** — the distance from the chord's line of the curve at 65 even angles over the range,
+    /// both ends and the middle among them (the middle is where a chord's sag is greatest —
+    /// [`pace_over`](Ellipse::pace_over) — so the reading is that sag, not a sampled guess under
+    /// it). A chord of no length reads the distance from its one point. Test-only (`test-util`):
+    /// the bound [`pace_over`](Ellipse::pace_over) gives is held to it here, and a mesh's
+    /// polylines are held to the chord budget with it.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn chord_standoff(self, theta0: f64, theta1: f64) -> f64 {
+        let (a, b) = (self.point_at(theta0), self.point_at(theta1));
+        let along = (b - a).normalize();
+        (0..=64)
+            .map(|i| {
+                let p = self.point_at(theta0 + (theta1 - theta0) * f64::from(i) / 64.0) - a;
+                match along {
+                    Some(d) => (p - d * p.dot(d)).norm(),
+                    None => p.norm(),
+                }
+            })
+            .fold(0.0f64, f64::max)
     }
 
     /// The angle θ ∈ [0, 2π) of `p`'s direction from the axis — the inverse of
