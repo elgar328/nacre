@@ -10,6 +10,11 @@
 //! finished items are deleted (rule 3); nor does the section of rejected approaches, which grows a
 //! row per rejected approach (rule 2).
 //!
+//! The section of rejected approaches counts only its first column: a session reads that column
+//! whole before a plan, and a row's reason only when the plan touches the row (overview's first
+//! paragraph), so nothing here measures the reasons. The cut is the one that paragraph's `awk`
+//! command makes — each line up to its first ` | `.
+//!
 //! design is split at two headings, each of which must start exactly one line. The second is
 //! [`crate::history_words::STORY_SECTION`], matched as a prefix there and here. That section runs
 //! to the end of the file here, so a section added after it is counted with the rejected
@@ -20,7 +25,8 @@
 use std::path::Path;
 
 /// One part: its name, its file, the heading it starts at and the one it ends before (`None` = the
-/// file's start or end), its ceiling in characters, and whether it has a floor.
+/// file's start or end), its ceiling in characters, whether it has a floor, and whether only each
+/// line's first table column counts.
 struct Part {
     name: &'static str,
     file: &'static str,
@@ -28,6 +34,7 @@ struct Part {
     to: Option<&'static str>,
     ceiling: usize,
     floored: bool,
+    first_column: bool,
 }
 
 const LAYERS: &str = "# 층과 하위 체계";
@@ -43,6 +50,7 @@ const PARTS: &[Part] = &[
         to: None,
         ceiling: 20_100,
         floored: true,
+        first_column: false,
     },
     Part {
         name: "design: the always-read rules part",
@@ -51,6 +59,7 @@ const PARTS: &[Part] = &[
         to: Some(LAYERS),
         ceiling: 22_800,
         floored: true,
+        first_column: false,
     },
     Part {
         name: "design: the body",
@@ -59,14 +68,16 @@ const PARTS: &[Part] = &[
         to: Some(crate::history_words::STORY_SECTION),
         ceiling: 171_500,
         floored: true,
+        first_column: false,
     },
     Part {
-        name: "design: rejected approaches",
+        name: "design: rejected, first column",
         file: "docs/design.md",
         from: Some(crate::history_words::STORY_SECTION),
         to: None,
-        ceiling: 30_600,
+        ceiling: 5_900,
         floored: false,
+        first_column: true,
     },
     Part {
         name: "todo: the always-read part",
@@ -75,6 +86,7 @@ const PARTS: &[Part] = &[
         to: Some(PARKED),
         ceiling: 21_200,
         floored: false,
+        first_column: false,
     },
     Part {
         name: "todo: parked items",
@@ -83,6 +95,7 @@ const PARTS: &[Part] = &[
         to: None,
         ceiling: 13_500,
         floored: false,
+        first_column: false,
     },
 ];
 
@@ -115,6 +128,21 @@ fn slice<'a>(text: &'a str, from: Option<&str>, to: Option<&str>) -> &'a str {
     &text[start..end]
 }
 
+/// The characters of `text` a session reads: all of them, or with `first_column` each line only up
+/// to its first ` | ` (the cell separator; a pipe inside a code span has no spaces around it or is
+/// escaped).
+fn read_size(text: &str, first_column: bool) -> usize {
+    if !first_column {
+        return text.chars().count();
+    }
+    text.split_inclusive('\n')
+        .map(|line| match line.split_once(" | ") {
+            Some((cell, _)) => cell.chars().count() + 1,
+            None => line.chars().count(),
+        })
+        .sum()
+}
+
 #[test]
 fn each_doc_part_is_inside_its_budget() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -126,7 +154,7 @@ fn each_doc_part_is_inside_its_budget() {
     for part in PARTS {
         let text = std::fs::read_to_string(root.join(part.file))
             .unwrap_or_else(|e| panic!("{} does not read: {e}", part.file));
-        let size = slice(&text, part.from, part.to).chars().count();
+        let size = read_size(slice(&text, part.from, part.to), part.first_column);
         let floor = part.floored.then_some(part.ceiling / 10 * 9);
         let verdict = if size > part.ceiling {
             "over the ceiling"
@@ -168,6 +196,15 @@ fn the_split_reads_what_it_should() {
         "## 보류 — 인구가 생기면\n### item\n"
     );
     assert_eq!(heading_at("# title\n", LAYERS), Err(0), "a missing heading");
+    let rows = "## 가지 말 것 — rows\n| a `x|y` | why `x|y` | `c` |\n|---|---|---|\n";
+    assert_eq!(
+        read_size(rows, true),
+        "## 가지 말 것 — rows\n| a `x|y`\n|---|---|---|\n"
+            .chars()
+            .count(),
+        "the first column, a code-span pipe kept"
+    );
+    assert_eq!(read_size(rows, false), rows.chars().count());
     assert_eq!(
         heading_at("# 층과 하위 체계\n# 층과 하위 체계 again\n", LAYERS),
         Err(2),
