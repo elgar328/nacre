@@ -227,13 +227,16 @@ fn crossing_measured(
     if nacre_exact::dot_sign_rat(&n, &m) != nacre_exact::Orient::Zero {
         return None;
     }
-    // The ruling as a piece: its two ends' axis parameters (rational — each end's other plane is
-    // ⊥ the axis), the whole circle round. The arc's axis parameter is the class's own.
+    // The ruling as a piece: how far it reaches along the axis — each end stands on its section
+    // ([`combinatorics::section_of`]), within the band that section sweeps, so the hull of the two
+    // bands — the whole circle round. The arc's band is the class's own.
     let ruling_piece = (|| {
-        let t0 = combinatorics::pierce_axis_param(jd, ruling_def, ruling.end[0])?;
-        let t1 = combinatorics::pierce_axis_param(jd, ruling_def, ruling.end[1])?;
+        let band = |n: NodeId| {
+            crate::planes::trace_band(&combinatorics::section_of(jd, ruling_def, n)?, ruling_def)
+        };
+        let ([a0, a1], [b0, b1]) = (band(ruling.end[0])?, band(ruling.end[1])?);
         Some(crate::planes::Footprint {
-            span: Some([t0.min(t1), t0.max(t1)]),
+            span: Some([a0.min(b0), a1.max(b1)]),
             theta: crate::planes::Theta::Whole,
         })
     })();

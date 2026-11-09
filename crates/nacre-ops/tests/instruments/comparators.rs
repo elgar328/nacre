@@ -31,11 +31,6 @@ const ENTRIES: [&str; 5] = [
 /// Every product use, per file (relative to `crates/`), with why its comparison is a total order.
 const ALLOWED: &[(&str, usize, &str)] = &[
     (
-        "nacre-ops/src/arrangement/rulings.rs",
-        1,
-        "an exact `Rat` axis parameter, then the derived order of the event",
-    ),
-    (
         "nacre-ops/src/assembly/grouping.rs",
         1,
         "f64 coordinates under the finite-vertex invariant, which the `expect` states",

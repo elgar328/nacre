@@ -830,24 +830,49 @@ impl NodePoint {
     }
 }
 
-/// **A pierce point's axis parameter** — read off the plane of its name that crosses the axis
-/// ([`crate::planes::across_axis_plane`]), so a rational, and the ordering along a ruling needs no
-/// quadratic comparison at all. `None` where no plane of the name crosses the axis (the point's
-/// height is then no single rational plane's), a plane without a world statement, overflow, or a
-/// three-plane name where a pierce was expected.
+/// **The plane whose section of the cylinder places pierce point `n` along its generator** — a
+/// plane of the point's name not along the axis ([`crate::planes::section_plane`]). The point lies
+/// on that plane's section, so on the generator through the point the section stands exactly at the
+/// point. `None` for a three-plane name, a name with no such plane, or a plane with no world
+/// statement.
 ///
 /// The name need not carry the wall whose ruling the point is on (a station the sweep minted
 /// does). A corner the operand named (`Pierce{[cap, t], Double}`, a fillet's tangent corner) lies
-/// on that ruling too when the wall contains it, and its parameter is read the same way: from its
-/// cap.
-pub(crate) fn pierce_axis_param(
+/// on that ruling too when the wall contains it, and is placed the same way: by its cap.
+pub(crate) fn section_of(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
-) -> Option<nacre_exact::Rat> {
+) -> Option<[nacre_exact::Rat; 4]> {
     let (planes, _, _) = pierce_name(n)?;
-    let w = crate::planes::across_axis_plane(planes.iter().filter_map(|&c| jd.world_rat(c)), def)?;
-    crate::planes::axis_param_of_plane(&w, def)
+    crate::planes::section_plane(planes.iter().filter_map(|&c| jd.world_rat(c)), def)
+}
+
+/// **Which of two points on one generator of cylinder `k` stands higher along its axis** — the
+/// order of their sections ([`section_of`]) on that generator, the one spelling
+/// ([`nacre_exact::quad::section_height_order`]): asked with no generator where the two sections
+/// cross nowhere — always so for two circles, which compare as their heights do — and on the
+/// generator through `a` ([`exact_point`]) where they cross. `None` where a point has no section, or
+/// the sections cross and `a` has no exact point.
+pub(crate) fn height_order_on_generator(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    a: NodeId,
+    b: NodeId,
+) -> Option<core::cmp::Ordering> {
+    use nacre_exact::quad::{SectionOrder, Toward, section_height_order};
+    let (wa, wb) = (section_of(jd, def, a)?, section_of(jd, def, b)?);
+    match section_height_order(&wa, &wb, def, None, Toward::At)? {
+        SectionOrder::Ordered(o) => Some(o),
+        SectionOrder::Crosses => {
+            let (line, s) = exact_point(jd, k, def, a).ok()?;
+            match section_height_order(&wa, &wb, def, Some((&line, &s)), Toward::At)? {
+                SectionOrder::Ordered(o) => Some(o),
+                SectionOrder::Crosses => None,
+            }
+        }
+    }
 }
 
 /// Whether a node is a pierce point one of whose planes has no world statement — the population

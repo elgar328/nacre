@@ -622,38 +622,46 @@ fn curved_wall(
             // never from their realizations.** A ruling edge's stored pair carries no order:
             // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
             // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
-            // ends have to be compared — and each end is a pierce point of two planes and the
-            // cylinder, of which the one ⊥ to the axis (`crate::planes::across_axis_plane`) **cuts**
-            // the ruling: where it crosses the axis is a rational question
-            // (`crate::planes::axis_param_of_plane`). Which plane of the pair holds the ruling —
-            // `near`, or another plane through the same line where the end is a corner on three
-            // planes, named by the pair its definition chose — does not enter.
+            // ends have to be compared — each end is a pierce point of two planes and the
+            // cylinder, and stands on the section of the plane of its name not along the axis
+            // (`crate::planes::section_plane`); on the ruling's generator the two ends stand as
+            // their sections do ([`nacre_exact::quad::section_height_order`], the one spelling).
+            // Which plane of the pair holds the ruling — `near`, or another plane through the same
+            // line where the end is a corner on three planes, named by the pair its definition
+            // chose — does not enter.
             //
-            // **The two parameters cannot tie**: each is where the plane ⊥ to the axis through its
-            // end crosses the axis — that end's height on the ruling — and an edge's two ends are
-            // two points of the ruling. An end with no ⊥ plane among its names (a ruling ending on
-            // an oblique section — an operand with such an edge is refused at the boolean's door)
-            // has no parameter, and the boundary is read as curved (`curved`). The strict `>` therefore
-            // restates the comparison it replaces exactly, rather than growing a decline for a
-            // case that has none.
-            let axial_param = |v: Handle<Vertex>| -> Option<nacre_exact::Rat> {
+            // Two sections that cross somewhere are compared on a generator, which a model vertex
+            // does not carry here; the boundary is then read as curved (`curved`), as it is where
+            // an end has no section or the two stand level (two ends of an edge are two points).
+            let section = |v: Handle<Vertex>| -> Option<[nacre_exact::Rat; 4]> {
                 let nacre_topo::Vertex::Pierce { planes, .. } = *model.vertex(v) else {
                     return None;
                 };
-                let w = crate::planes::across_axis_plane(
+                crate::planes::section_plane(
                     planes
                         .iter()
                         .filter_map(|&h| model.world_plane_name(h)?.narrow().copied()),
                     &def,
-                )?;
-                crate::planes::axis_param_of_plane(&w, &def)
+                )
             };
             let [v0, v1] = model.edge(he.edge).vertices;
-            let (t0, t1) = (
-                axial_param(v0).ok_or_else(curved)?,
-                axial_param(v1).ok_or_else(curved)?,
+            let (w0, w1) = (
+                section(v0).ok_or_else(curved)?,
+                section(v1).ok_or_else(curved)?,
             );
-            let ascends = t1 > t0;
+            let ascends = match nacre_exact::quad::section_height_order(
+                &w1,
+                &w0,
+                &def,
+                None,
+                nacre_exact::quad::Toward::At,
+            ) {
+                Some(nacre_exact::quad::SectionOrder::Ordered(core::cmp::Ordering::Greater)) => {
+                    true
+                }
+                Some(nacre_exact::quad::SectionOrder::Ordered(core::cmp::Ordering::Less)) => false,
+                _ => return Err(curved()),
+            };
             Ok(crate::combinatorics::Wall::Ruling {
                 cyl,
                 side,

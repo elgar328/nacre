@@ -110,9 +110,7 @@ pub(super) fn rulings_on_class(
             .any(|(_, kind)| matches!(kind, SegKind::Graze { .. }))
         {
             let o = def.origin().map(|x| x.to_f64());
-            let at = |n: NodeId| {
-                combinatorics::pierce_axis_param(jd, def, n).map_or(f64::NAN, |t| t.to_f64())
-            };
+            let at = |n: NodeId| ruling_probe::height(jd, def, n);
             ruling_probe::CARVED.push(ruling_probe::Carved {
                 origin: o,
                 span: [at(pieces[0].0[0]), at(pieces[pieces.len() - 1].0[1])],
@@ -191,23 +189,23 @@ fn ruling_sweep(
     let on_ruling = |c: usize| {
         combinatorics::crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling)
     };
-    let mut stations: Vec<(Rat, LineEvent, NodeId)> = Vec::new();
-    for &(t, c) in rims {
-        stations.push((t, LineEvent::Toggle, on_ruling(c)?));
+    let mut stations: Vec<(LineEvent, NodeId)> = Vec::new();
+    for &(_, c) in rims {
+        stations.push((LineEvent::Toggle, on_ruling(c)?));
     }
+    // **Where two points stand on this ruling** — their sections' order on its generator, the one
+    // spelling ([`combinatorics::height_order_on_generator`]); a point it cannot place declines.
+    let order = |a: NodeId, b: NodeId| {
+        combinatorics::height_order_on_generator(jd, k, def, a, b).ok_or(DeclineKind::Ruling)
+    };
     // The side of `wc` the face's body lies on along an edge of this cycle that runs on the
     // ruling from `start` to `end` — see [`plus_theta_is_above`], the one spelling of the product.
-    let body_side = |start: NodeId, end: NodeId| -> Result<(Rat, Rat, i8, bool), DeclineKind> {
-        let (Some(ta), Some(tb)) = (
-            combinatorics::pierce_axis_param(jd, def, start),
-            combinatorics::pierce_axis_param(jd, def, end),
-        ) else {
-            return Err(DeclineKind::Ruling);
+    let body_side = |start: NodeId, end: NodeId| -> Result<(i8, bool), DeclineKind> {
+        let tau: i8 = match order(end, start)? {
+            core::cmp::Ordering::Greater => 1,
+            core::cmp::Ordering::Less => -1,
+            core::cmp::Ordering::Equal => return Err(DeclineKind::CylHoleFeature), // no length
         };
-        if ta == tb {
-            return Err(DeclineKind::CylHoleFeature); // an extent of no length
-        }
-        let tau: i8 = if tb > ta { 1 } else { -1 };
         let theta_dot_stored: i8 =
             if plus_theta_is_above(jd, wc, side).ok_or(DeclineKind::Ruling)? {
                 1
@@ -216,7 +214,7 @@ fn ruling_sweep(
             };
         let body_above =
             i32::from(material_theta_sign(cf.orient_sign, tau)) * i32::from(theta_dot_stored) > 0;
-        Ok((ta, tb, tau, body_above))
+        Ok((tau, body_above))
     };
     for (inner, ring) in cycles {
         // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair.
@@ -269,7 +267,7 @@ fn ruling_sweep(
             nr,
             which,
             aliases,
-            &|a, b| body_side(a, b).map(|(_, _, _, above)| above),
+            &|a, b| body_side(a, b).map(|(_, above)| above),
             &mut grazes,
             &mut quiet_nodes,
         )?;
@@ -292,23 +290,22 @@ fn ruling_sweep(
             else {
                 return Err(DeclineKind::Ruling); // a run's neighbours are arcs
             };
-            let (ta, tb, tau, body_above) = body_side(start, end)?;
+            let (tau, body_above) = body_side(start, end)?;
             let toggle = arc_flank(nu_in, true) != arc_flank(nu_out, false);
-            let ((t_lo, n_lo), (t_hi, n_hi)) = if tau > 0 {
-                ((ta, start), (tb, end))
-            } else {
-                ((tb, end), (ta, start))
-            };
+            let (n_lo, n_hi) = if tau > 0 { (start, end) } else { (end, start) };
             #[cfg(test)]
             ruling_probe::GRAZE_SIDE.push(ruling_probe::GrazeSide {
                 inner: *inner,
                 body_above,
                 ny: jd.planes[wc].plane.normal().as_array()[1],
                 origin: def.origin().map(|x| x.to_f64()),
-                span: [t_lo.to_f64(), t_hi.to_f64()],
+                span: [
+                    ruling_probe::height(jd, def, n_lo),
+                    ruling_probe::height(jd, def, n_hi),
+                ],
             });
-            stations.push((t_lo, LineEvent::GrazeStart { body_above }, n_lo));
-            stations.push((t_hi, LineEvent::GrazeEnd { toggle }, n_hi));
+            stations.push((LineEvent::GrazeStart { body_above }, n_lo));
+            stations.push((LineEvent::GrazeEnd { toggle }, n_hi));
             run_nodes.push(start);
             run_nodes.push(end);
         }
@@ -338,8 +335,7 @@ fn ruling_sweep(
                         true
                     }
                     combinatorics::ThetaPlace::Inside => {
-                        let t = crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::Ruling)?;
-                        stations.push((t, LineEvent::Toggle, node));
+                        stations.push((LineEvent::Toggle, node));
                         false
                     }
                     combinatorics::ThetaPlace::Outside => false,
@@ -352,11 +348,10 @@ fn ruling_sweep(
                 // silently. A rim split into arcs, a corner on the ruling, is read as a rim
                 // (`lateral_shape`) and is not a cycle of this sweep.
                 // A run or line end at the crossing's height on this ruling is the crossing too.
-                let t_node = combinatorics::pierce_axis_param(jd, def, node);
                 for &r in run_nodes.iter().chain(quiet_nodes.iter()) {
                     if !same(found, r, node)
-                        && t_node.is_some()
-                        && combinatorics::pierce_axis_param(jd, def, r) == t_node
+                        && combinatorics::height_order_on_generator(jd, k, def, r, node)
+                            == Some(core::cmp::Ordering::Equal)
                     {
                         found.record_same_point_traced(jd, cyls, r, node)?;
                     }
@@ -371,17 +366,22 @@ fn ruling_sweep(
             }
         }
     }
-    stations.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.cmp(&y.1)));
-    let same: Vec<bool> = stations.windows(2).map(|w| w[0].0 == w[1].0).collect();
-    // Two names at one height on this ruling are one point — the heights are exact. Recorded for
+    combinatorics::try_sort_by(&mut stations, |x, y| {
+        Ok(order(x.1, y.1)?.then(x.0.cmp(&y.0)))
+    })?;
+    let same: Vec<bool> = stations
+        .windows(2)
+        .map(|w| Ok(order(w[0].1, w[1].1)? == core::cmp::Ordering::Equal))
+        .collect::<Result<_, DeclineKind>>()?;
+    // Two names at one height on this ruling are one point — the order is exact. Recorded for
     // the next round and read under the first name, as the plane road's sweep does.
     for i in 0..same.len() {
-        if same[i] && stations[i].2 != stations[i + 1].2 {
-            found.record_same_point_traced(jd, cyls, stations[i].2, stations[i + 1].2)?;
-            stations[i + 1].2 = stations[i].2;
+        if same[i] && stations[i].1 != stations[i + 1].1 {
+            found.record_same_point_traced(jd, cyls, stations[i].1, stations[i + 1].1)?;
+            stations[i + 1].1 = stations[i].1;
         }
     }
-    let events: Vec<(LineEvent, NodeId)> = stations.iter().map(|&(_, e, n)| (e, n)).collect();
+    let events: Vec<(LineEvent, NodeId)> = stations;
     let pieces = sweep_line(&events, &same, |n| n, mat)?;
     Ok((pieces, grazes))
 }

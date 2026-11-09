@@ -68,3 +68,17 @@ pub(crate) struct GrazeSide {
     pub origin: [f64; 3],
     pub span: [f64; 2],
 }
+
+/// A station's height on its ruling as the fixtures read it — the axis parameter of the circle its
+/// section is, `NaN` for a section that is no circle (an ellipse has no one height) or a point no
+/// section places. The fixtures' own identity, read beside the entries above.
+pub(crate) fn height(
+    jd: &crate::tolerant::Judge<'_, crate::planes::WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    n: crate::combinatorics::NodeId,
+) -> f64 {
+    crate::combinatorics::section_of(jd, def, n)
+        .filter(|w| crate::planes::class_carries_circle(&[w[0], w[1], w[2]], &def.dir()))
+        .and_then(|w| crate::planes::axis_param_of_plane(&w, def))
+        .map_or(f64::NAN, |t| t.to_f64())
+}

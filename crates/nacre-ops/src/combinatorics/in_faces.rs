@@ -554,7 +554,14 @@ fn rim_up(
     c: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_exact::Rat; 4]> {
-    let w = jd.world_rat(c)?;
+    turned_up(jd.world_rat(c)?, def)
+}
+
+/// [`rim_up`] of a plane given by its world coefficients.
+fn turned_up(
+    w: [nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 4]> {
     let along = nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &def.dir())?;
     match along.numer().signum() {
         0 => None,
@@ -588,7 +595,7 @@ fn rim_up(
 /// plane its side was measured against — the predicate `crossing_on_ruling` names stations with).
 ///
 /// `OnBoundary` = `x` on a rim, an arc or a ruling of the face. `None` = a zero-span arc inside
-/// `arc_span`, a ruling `x` lies on whose end has no axis parameter (an end on a section), a plane
+/// `arc_span`, a ruling `x` lies on whose end no section places, a plane
 /// carrier, or checked arithmetic running out. Above or below is asked before `θ`: an arc below
 /// `x` needs no order.
 pub(crate) fn loop_parity(
@@ -600,8 +607,6 @@ pub(crate) fn loop_parity(
 ) -> Option<RingSide> {
     use nacre_exact::Orient;
     use nacre_exact::quad::plane_side;
-    let above =
-        |t: nacre_exact::Rat| -> Option<Orient> { Some(plane_side(&rim_plane(def, t)?, meet, s)) };
     let below_curve =
         |c: usize| -> Option<Orient> { Some(plane_side(&rim_up(jd, c, def)?, meet, s)) };
     let mut crossings = 0usize;
@@ -664,15 +669,21 @@ pub(crate) fn loop_parity(
                             {
                                 continue;
                             }
-                            let (Some(t0), Some(t1)) = (
-                                pierce_axis_param(jd, def, e.node),
-                                pierce_axis_param(jd, def, e.to),
-                            ) else {
-                                return None;
+                            // Between the piece's two ends on its generator, ends included: on
+                            // it. Each end stands on its section ([`section_of`]), so `x` is
+                            // between them where it is on neither end's far side — at or above
+                            // one and at or below the other.
+                            let side = |n: NodeId| -> Option<Orient> {
+                                Some(plane_side(
+                                    &turned_up(section_of(jd, def, n)?, def)?,
+                                    meet,
+                                    s,
+                                ))
                             };
-                            let (lo, hi) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
-                            // Inside the piece's closed axial range: on it.
-                            if above(lo)? != Orient::Negative && above(hi)? != Orient::Positive {
+                            let (s0, s1) = (side(e.node)?, side(e.to)?);
+                            if (s0 != Orient::Negative && s1 != Orient::Positive)
+                                || (s1 != Orient::Negative && s0 != Orient::Positive)
+                            {
                                 return Some(RingSide::OnBoundary);
                             }
                         }

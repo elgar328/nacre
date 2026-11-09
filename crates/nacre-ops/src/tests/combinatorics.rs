@@ -802,17 +802,17 @@ fn swapping_the_planes_trades_the_two_roots_names() {
     );
 }
 
-/// **A point's height along an axis is read off the plane of its name that crosses the axis,
-/// never off an oblique one.** A triangular prism `(0,0), (2,0), (0,2)` over `z ∈ [0, 1]` has
-/// walls `x = 0`, `y = 0` and the slanted `x + y = 2`. With the axis along `x` through
-/// `(−3, 5, 7)` (or along `y` through `(5, −3, 7)`), the wall across the axis meets it at `t = 3`
-/// and the slanted wall at `t = 0` — so a reader taking the first plane that meets the axis at all
-/// answers `0` for a point the slanted wall shares with the cap, and a height for a point on no
-/// cap. The axis is chosen so the cap's class is numbered after the slanted one, and the test
-/// asserts that it is: a pierce name sorts its pair, so only then does it list the slanted wall
-/// first.
+/// **A point is placed along its generator by the section of a plane of its name not along the
+/// axis — the one across it where the name holds one.** A triangular prism `(0,0), (2,0), (0,2)`
+/// over `z ∈ [0, 1]` has walls `x = 0`, `y = 0` and the slanted `x + y = 2`. With the axis along `x`
+/// through `(−3, 5, 7)` (or along `y` through `(5, −3, 7)`), one wall is across the axis (the cap),
+/// one along it and the slanted wall oblique to it. A point the cap shares with either other wall is
+/// placed by the cap — a circle, one height on every generator — also where the name lists the
+/// slanted wall first (a pierce name sorts its pair; the axis is chosen so the cap's class is
+/// numbered after the slanted one, and the test asserts that it is). A point the wall along the axis
+/// shares with the slanted one is placed by the slanted wall's section.
 #[test]
-fn a_pierce_points_height_is_its_caps_not_an_oblique_planes() {
+fn a_pierce_point_is_placed_by_its_cap_else_by_its_oblique_plane() {
     use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
     use nacre_exact::{BigRat, Rat};
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
@@ -859,22 +859,22 @@ fn a_pierce_points_height_is_its_caps_not_an_oblique_planes() {
         slant < cap,
         "the cap must be numbered after the slanted wall: {msg}"
     );
-    assert_eq!(
-        pierce_axis_param(&jd, &def, pierce(cap, along)),
-        Some(ri(3)),
-        "{msg}"
-    );
-    assert_eq!(
-        pierce_axis_param(&jd, &def, pierce(cap, slant)),
-        Some(ri(3)),
-        "{msg}"
-    );
-    assert_eq!(
-        pierce_axis_param(&jd, &def, pierce(along, slant)),
-        None,
-        "{msg}"
-    );
     let w = |c: usize| jd.world_rat(c).expect("a named class");
+    assert_eq!(
+        section_of(&jd, &def, pierce(cap, along)),
+        Some(w(cap)),
+        "{msg}"
+    );
+    assert_eq!(
+        section_of(&jd, &def, pierce(cap, slant)),
+        Some(w(cap)),
+        "{msg}"
+    );
+    assert_eq!(
+        section_of(&jd, &def, pierce(along, slant)),
+        Some(w(slant)),
+        "{msg}"
+    );
     assert_eq!(
         crate::planes::across_axis_plane([w(slant), w(cap)], &def),
         Some(w(cap)),
@@ -884,6 +884,85 @@ fn a_pierce_points_height_is_its_caps_not_an_oblique_planes() {
         crate::planes::across_axis_plane([w(along), w(slant)], &def),
         None,
         "{msg}"
+    );
+}
+
+/// **Two points on one ruling stand as their sections do on its generator, not as their planes
+/// meet the axis.** A prism over the `zx` quadrilateral `(z, x)`: `(5.5, 1.5)`, `(5.5, 3)`,
+/// `(6.5, 3)`, `(5.75, 1.5)`, along `y ∈ [0, 6]`, has the walls `x = 3/2`, `z = 11/2` and the slant
+/// `z = 5 + x/2`. Against the cylinder of radius 2 about `z` through `(0, 3)`, the wall `x = 3/2`
+/// holds a ruling; the slant stands on it at `5.75`, above `z = 5.5` — though the slant meets the
+/// axis at `5`, below. The sections cross, so the order is asked on the generator through the
+/// first point, both ways round.
+#[test]
+fn two_points_on_a_ruling_stand_as_their_sections_do_there() {
+    use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
+    use core::cmp::Ordering::{Greater, Less};
+    use nacre_exact::{BigRat, Rat};
+    let p2 = |u: f64, v: f64| nacre_math::Point2::from_array([u, v]);
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, nacre_exact::Axis::Y);
+    let profile = from_rings(vec![vec![
+        p2(5.5, 1.5),
+        p2(5.5, 3.0),
+        p2(6.5, 3.0),
+        p2(5.75, 1.5),
+    ]])
+    .expect("a quadrilateral")
+    .remove(0);
+    let Ok(OpOutput::Extrude { solid, .. }) = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 6.0,
+        },
+    ) else {
+        panic!("the prism")
+    };
+    let faces = crate::planes::collect_planes(&m, solid).expect("the face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+    let (planes, _, _) = crate::planes::dense_planes(&faces, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    // The class with this normal's zero pattern through this point.
+    let class = |n: [i128; 3], p: [Rat; 3]| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = jd.world_rat(c).expect("a named class");
+                (0..3).all(|i| (w[i] == ri(0)) == (n[i] == 0))
+                    && nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &p)
+                        .and_then(|d| d.checked_add(w[3]))
+                        == Some(ri(0))
+            })
+            .expect("the prism holds that wall")
+    };
+    let at = [
+        Rat::new(3, 2).expect("3/2"),
+        ri(0),
+        Rat::new(23, 4).expect("23/4"),
+    ];
+    let (wall, flat, slant) = (
+        class([1, 0, 0], at),
+        class([0, 0, 1], [ri(2), ri(0), Rat::new(11, 2).expect("11/2")]),
+        class([1, 0, 1], at),
+    );
+    let def = nacre_topo::CylinderDef::new(
+        [ri(0), ri(3), ri(0)],
+        [ri(0), ri(0), ri(1)],
+        [ri(1), ri(0), ri(0)],
+        BigRat::from(ri(4)),
+    )
+    .expect("a cylinder");
+    let low = crossing_on_ruling(&jd, &def, flat, wall, 0, 1).expect("the flat's point");
+    let high = crossing_on_ruling(&jd, &def, slant, wall, 0, 1).expect("the slant's point");
+    assert_eq!(
+        height_order_on_generator(&jd, 0, &def, low, high),
+        Some(Less)
+    );
+    assert_eq!(
+        height_order_on_generator(&jd, 0, &def, high, low),
+        Some(Greater)
     );
 }
 

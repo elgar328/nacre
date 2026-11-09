@@ -222,10 +222,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   z = 2.4).
 - **타원 × 룰링** — 클래스 위 단면 호와 다른 원통의 룰링이 만나는지를 그물이 재지 못하면 `ObliqueCylinderCut` 이다
   (`per_class` 의 `circle_crosses_ruling`). 인구는 재지 않았다.
-- **단면에서 끝나는 룰링의 높이** — `pierce_axis_param` 은 축을 가로지르는 평면이 없는 이름에 `None` 이라, 룰링이 단면에서 끝나는
-  정거장을 읽는 자리(`rulings.rs` 의 `body_side`·`per_class.rs` 의 `crossing_measured`·`in_faces.rs` 의 광선과 `loop_parity` 의 룰링
-  갈래 — 점이 그 룰링 위일 때만)가 기권한다. 높이는 근호 하나(`QuadVal`)라 그 비교는 `section_height_order` 의 일이다. 이 기권으로
-  끝난 불리언의 인구는 재지 않았다.
 - **두 림이 한 점에서 맞닿는 철자** — 비스듬한 절단이 옆면의 두 림을 한 점에서 맞닿게 할 때 두 림 루프가 꼭짓점을 나누는가, 한
   루프인가(한 루프는 감김 0 이라 tess 의 두 림 전제와 부딪힌다)와 집힘 검사의 전제(`nacre_topo::nonmanifold_vertices` 는 한 면이 한
   꼭짓점을 두 루프로 지나면 그 자리를 집힘으로 읽는다; 오늘 그 철자는 validate 가 보는 모델과 불리언 결과에서 0 이고, 나오면 χ 가

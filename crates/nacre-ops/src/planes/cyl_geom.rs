@@ -148,6 +148,25 @@ pub(crate) fn across_axis_plane(
         .find(|w| class_carries_circle(&[w[0], w[1], w[2]], &m))
 }
 
+/// **The plane of a point's name whose section places the point along its generator** — one not
+/// along the axis: a plane across it where the name holds one ([`across_axis_plane`] — a circle
+/// stands at one height on every generator, so two such points compare with no generator), else an
+/// oblique one, whose section passes the point on its generator too. `None` when every plane of the
+/// name runs along the axis.
+pub(crate) fn section_plane(
+    planes: impl IntoIterator<Item = [nacre_exact::Rat; 4]>,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_exact::Rat; 4]> {
+    let m = def.dir();
+    let planes: Vec<[nacre_exact::Rat; 4]> = planes.into_iter().collect();
+    across_axis_plane(planes.iter().copied(), def).or_else(|| {
+        planes.into_iter().find(|w| {
+            nacre_exact::axis_relation(&[w[0], w[1], w[2]], &m)
+                == nacre_exact::AxisRelation::Oblique
+        })
+    })
+}
+
 /// **How far along its axis a lateral face reaches** — the hull of the bands its boundary sections
 /// sweep ([`trace_band`]), every carrier not along the axis: a circle's band is its own height, an
 /// ellipse's the band about its axis meet, rounded outward. `None` where a band cannot be read or the
@@ -517,15 +536,15 @@ fn arc_holds_half_open(
 /// `foot` (a point on the cylinder) shares with the face, in the parameter
 /// [`axis_param_of_plane`] gives a station.
 ///
-/// On its chart a lateral face is bounded by arcs (a rim on a cap ⊥ the axis, `t` fixed) and
+/// On its chart a lateral face is bounded by arcs of plane sections (each a graph over `θ`) and
 /// rulings (`θ` fixed), so the vertical line `θ = θ₀` meets its boundary only where an arc's
-/// angular range holds `θ₀`: those stations, sorted, alternate in and out, and paired they are
-/// the face's stretches of the line. Every loop counts — a window is an inner loop, as the rim
+/// angular range holds `θ₀` — at the height its section stands on that generator: those stations,
+/// sorted, alternate in and out, and paired they are the face's stretches of the line. Every loop counts — a window is an inner loop, as the rim
 /// opposite the outer loop is — which is what the face's angular extent and axial span, a
 /// bounding rectangle, cannot say.
 ///
 /// `None` is a face this cannot read, and the caller keeps its conservative answer: a corner off
-/// the rational seam, a carrier neither ⊥ nor ∥ the axis, a ruling edge on the line itself (its
+/// the rational seam, a ruling edge on the line itself (its
 /// plane holds the line — the face ends there, which is the gate's own question, not this one's),
 /// or stations that do not pair.
 pub(super) fn lateral_cover_on_ruling(
@@ -543,6 +562,12 @@ pub(super) fn lateral_cover_on_ruling(
         w[k] = foot[k].checked_sub(o[k])?;
     }
     let x = nacre_exact::off_axis_rat(&w, &m)?;
+    // The generator's point at the axis origin's height, `o + x`: a section's height on this
+    // generator is where the plane meets it — for a plane across the axis, its height everywhere.
+    let mut g = o;
+    for k in 0..3 {
+        g[k] = o[k].checked_add(x[k])?;
+    }
     let mut stations: Vec<Rat> = Vec::new();
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for he in &lp.half_edges {
@@ -551,7 +576,13 @@ pub(super) fn lateral_cover_on_ruling(
             let other = if a == face.surface { b } else { a };
             let coeffs = world_plane_coeffs(model, other)?;
             let n = [coeffs[0], coeffs[1], coeffs[2]];
-            if class_carries_circle(&n, &m) {
+            if nacre_exact::axis_relation(&n, &m) == nacre_exact::AxisRelation::Along {
+                // A ruling edge: off the line it never meets it; on it, the face ends there.
+                let side = nacre_exact::dot3_rat(&n, foot)?.checked_add(coeffs[3])?;
+                if side == zero {
+                    return None;
+                }
+            } else {
                 let [va, vb] = e.vertices;
                 let held = va == vb
                     || arc_holds_half_open(
@@ -561,16 +592,8 @@ pub(super) fn lateral_cover_on_ruling(
                         &m,
                     )?;
                 if held {
-                    stations.push(axis_param_of_plane(&coeffs, def)?);
+                    stations.push(nacre_exact::axis_param_of_plane(&coeffs, &g, &m)?);
                 }
-            } else if nacre_exact::dot3_rat(&n, &m)? == zero {
-                // A ruling edge: off the line it never meets it; on it, the face ends there.
-                let side = nacre_exact::dot3_rat(&n, foot)?.checked_add(coeffs[3])?;
-                if side == zero {
-                    return None;
-                }
-            } else {
-                return None;
             }
         }
     }
