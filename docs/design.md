@@ -1815,7 +1815,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 읽어 짓지 못하는 것을 이름으로 거절하며(`ObliqueCylinderCut`·`TangentLineInAnotherPlane`·`CylinderPairContact`, 기하는
 `CylinderGateUndecided`, 폭은 `WitnessNotRational`), 남은 것을 기록으로 넘긴다(`CylRecord`·`Silence`, `SharedRuling`,
 `GrazeLine`, `Tangency`). 갈래와 거절 이름은 `cylinder_gate`·`class_meet` 의 doc(비스듬한 평면은 `laterals_clear_plane`·
-`oblique_section_meet`, 림 원 대 평면의 판정은 `rim_against_plane` 하나). 조각끼리의 물음은 `pieces_clear` 하나
+`oblique_section_meet`, 경계 단면 대 평면의 판정은 `boundary_stand` 하나). 조각끼리의 물음은 `pieces_clear` 하나
 (`Footprint`, `separating_dirs`, `lateral_reach`, `lateral_box`)이고, 면의 경계 조각은 `planes::corners::corner_of` 가 읽는다.
 
 - **한 클래스가 드는 원통의 닫힌 자취는 축이 평행한 원통들의 것뿐이다** — 원 셀 둘의 중첩을 답하는

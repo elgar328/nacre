@@ -186,8 +186,28 @@ pub(super) fn lateral_axial_reach(
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_exact::Rat; 2]> {
-    let m = def.dir();
     let mut hull: Option<[nacre_exact::Rat; 2]> = None;
+    for w in lateral_boundary_sections(model, face, def)? {
+        let [lo, hi] = trace_band(&w, def)?;
+        hull = Some(match hull {
+            None => [lo, hi],
+            Some([a, b]) => [a.min(lo), b.max(hi)],
+        });
+    }
+    let [lo, hi] = hull?;
+    (lo < hi).then_some([lo, hi])
+}
+
+/// **The planes whose sections bound a lateral face** — the world coefficients of every boundary
+/// carrier not along the axis (a rim's, an arc's: a circle's or an ellipse's), each once, over every
+/// loop. `None` where a carrier has no narrow world description.
+pub(crate) fn lateral_boundary_sections(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Option<Vec<[nacre_exact::Rat; 4]>> {
+    let m = def.dir();
+    let mut out: Vec<[nacre_exact::Rat; 4]> = Vec::new();
     for he in std::iter::once(&face.outer)
         .chain(&face.inner)
         .flat_map(|l| &l.half_edges)
@@ -196,18 +216,13 @@ pub(super) fn lateral_axial_reach(
             .world_plane_name(boundary_plane(model, face, he))?
             .narrow()?;
         if nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m)
-            == nacre_exact::AxisRelation::Along
+            != nacre_exact::AxisRelation::Along
+            && !out.contains(&coeffs)
         {
-            continue;
+            out.push(coeffs);
         }
-        let [lo, hi] = trace_band(&coeffs, def)?;
-        hull = Some(match hull {
-            None => [lo, hi],
-            Some([a, b]) => [a.min(lo), b.max(hi)],
-        });
     }
-    let [lo, hi] = hull?;
-    (lo < hi).then_some([lo, hi])
+    Some(out)
 }
 
 /// The plane on the other side of a lateral face's boundary edge.

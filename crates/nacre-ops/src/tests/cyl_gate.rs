@@ -756,22 +756,28 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
     );
 }
 
-/// **Where an oblique plane meets a band, read off its two rims.** The cylinder stands on the `z`
-/// axis, radius 2, over `z ∈ [0, 10]`; each plane is `z = k·y + c`, and its section's height runs
-/// over `c ± 2k`. Between the rims it is a whole ellipse, beyond both it misses, and a plane that
-/// reaches a rim — even at one point, `c − 2k = 0` — crosses it: the answer is about closed rims.
+/// **A plane against a face's boundary sections: clear of them, reaching them, or touching one.**
+/// The cylinder about the `z` axis, radius 2; each plane is `z = k·y + c`, its section's height
+/// running over `c ± 2k`. Against a band bounded by the circles `z = 0` and `z = 10` (or `dir =
+/// (0, 0, 2)`, which leaves the planes as they are): between them the section reaches the band,
+/// beyond both it is clear, across a rim it reaches it, and ending exactly at a rim — one point,
+/// `c − 2k = 0` — it touches. Against the one circle `z = 0` a section beside it is clear, across it
+/// reaches, and ending on it from above or below touches. A boundary section that is the plane
+/// itself reaches it (a face's own slanted cap), and two circles never touch.
 #[test]
-fn an_oblique_plane_meets_a_span_within_beyond_or_across_its_rims() {
+fn a_plane_stands_clear_of_reaching_or_touching_a_faces_boundary() {
+    use crate::planes::BoundaryStand::{Clear, Sections, Touch};
     let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let z = |v: i128| Rat::from_int(v);
-    let def = nacre_topo::CylinderDef::new(
-        [z(0); 3],
-        [z(0), z(0), z(1)],
-        [z(1), z(0), z(0)],
-        nacre_exact::BigRat::from(z(4)),
-    )
-    .unwrap();
-    let span = [z(0), z(10)];
+    let def = |dz: i128| {
+        nacre_topo::CylinderDef::new(
+            [z(0); 3],
+            [z(0), z(0), z(dz)],
+            [z(1), z(0), z(0)],
+            nacre_exact::BigRat::from(z(4)),
+        )
+        .unwrap()
+    };
     // `z = k·y + c` is `−k·y + z − c = 0`.
     let plane = |k: Rat, c: Rat| {
         [
@@ -781,100 +787,37 @@ fn an_oblique_plane_meets_a_span_within_beyond_or_across_its_rims() {
             z(0).checked_sub(c).unwrap(),
         ]
     };
-    let at = |k: Rat, c: Rat| section_in_span(&def, span, &plane(k, c));
-    assert_eq!(
-        at(q(1, 4), q(5, 2)),
-        Some(SectionSpan::Within),
-        "z ∈ [2, 3]"
-    );
-    assert_eq!(
-        at(q(1, 4), z(-5)),
-        Some(SectionSpan::Clear),
-        "below the band"
-    );
-    assert_eq!(at(q(1, 4), z(13)), Some(SectionSpan::Clear), "above it");
-    assert_eq!(
-        at(z(3), z(5)),
-        Some(SectionSpan::Crosses),
-        "z ∈ [−1, 11]: across both rims"
-    );
-    assert_eq!(
-        at(q(1, 4), q(1, 2)),
-        Some(SectionSpan::Crosses),
-        "z ∈ [0, 1]: a rim's point"
-    );
-    assert_eq!(
-        at(q(1, 4), q(19, 2)),
-        Some(SectionSpan::Crosses),
-        "z ∈ [9, 10]"
-    );
-    // A raw axis that is not a unit scales the stations, not the answer: `dir = (0, 0, 2)` puts
-    // `z = 10` at station 5.
-    let long = nacre_topo::CylinderDef::new(
-        [z(0); 3],
-        [z(0), z(0), z(2)],
-        [z(1), z(0), z(0)],
-        nacre_exact::BigRat::from(z(4)),
-    )
-    .unwrap();
-    assert_eq!(
-        section_in_span(&long, [z(0), z(5)], &plane(q(1, 4), q(5, 2))),
-        Some(SectionSpan::Within)
-    );
-    assert_eq!(
-        section_in_span(&long, [z(0), z(5)], &plane(q(1, 4), q(19, 2))),
-        Some(SectionSpan::Crosses)
-    );
-}
-
-/// **One rim circle against an oblique plane: a side, two crossings, or a touch.** The cylinder of
-/// [`an_oblique_plane_meets_a_span_within_beyond_or_across_its_rims`], its rim at `z = 0`; the
-/// plane `z = k·y + c` reaches it over `c ± 2k`. A reach clear of `0` is a side — below the plane,
-/// `−1` against its normal `(0, −k, 1)` — a reach with `0` strictly inside it is two crossings, and
-/// a reach ending exactly at `0`, from above or from below, is one point: a touch, which the gate
-/// refuses and the tracer would have no crossing to name by.
-#[test]
-fn a_rim_circle_meets_an_oblique_plane_on_a_side_across_or_at_a_touch() {
-    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
-    let z = |v: i128| Rat::from_int(v);
-    let def = nacre_topo::CylinderDef::new(
-        [z(0); 3],
-        [z(0), z(0), z(1)],
-        [z(1), z(0), z(0)],
-        nacre_exact::BigRat::from(z(4)),
-    )
-    .unwrap();
-    let plane = |k: Rat, c: Rat| {
-        [
-            z(0),
-            z(0).checked_sub(k).unwrap(),
-            z(1),
-            z(0).checked_sub(c).unwrap(),
-        ]
-    };
-    let rim = |k: Rat, c: Rat| rim_against_plane(&def, z(0), &plane(k, c));
-    assert_eq!(
-        rim(q(1, 4), z(1)),
-        Some(RimMeet::Side(-1)),
-        "z ∈ [1/2, 3/2]"
-    );
-    assert_eq!(
-        rim(q(1, 4), z(-1)),
-        Some(RimMeet::Side(1)),
-        "z ∈ [−3/2, −1/2]"
-    );
-    assert_eq!(rim(z(3), z(5)), Some(RimMeet::Crosses), "z ∈ [−1, 11]");
-    assert_eq!(
-        rim(q(1, 4), q(2, 5)),
-        Some(RimMeet::Crosses),
-        "z ∈ [−1/10, 9/10]"
-    );
-    assert_eq!(rim(q(1, 4), q(1, 2)), Some(RimMeet::Touches), "z ∈ [0, 1]");
-    assert_eq!(
-        rim(q(1, 4), q(-1, 2)),
-        Some(RimMeet::Touches),
-        "z ∈ [−1, 0]"
-    );
+    let circle = |h: i128| [z(0), z(0), z(1), z(-h)];
+    for dz in [1, 2] {
+        let band = [circle(0), circle(10)];
+        let at = |k: Rat, c: Rat| boundary_stand(&def(dz), &band, &plane(k, c));
+        assert_eq!(at(q(1, 4), q(5, 2)), Some(Sections), "z ∈ [2, 3]");
+        assert_eq!(at(q(1, 4), z(-5)), Some(Clear), "below the band");
+        assert_eq!(at(q(1, 4), z(13)), Some(Clear), "above it");
+        assert_eq!(
+            at(z(3), z(5)),
+            Some(Sections),
+            "z ∈ [−1, 11]: across both rims"
+        );
+        assert_eq!(
+            at(q(1, 4), q(1, 2)),
+            Some(Touch),
+            "z ∈ [0, 1]: a rim's point"
+        );
+        assert_eq!(at(q(1, 4), q(19, 2)), Some(Touch), "z ∈ [9, 10]");
+        assert_eq!(at(z(0), z(5)), Some(Sections), "the circle z = 5, between");
+        assert_eq!(at(z(0), z(10)), Some(Sections), "the rim's own plane");
+    }
+    let rim = [circle(0)];
+    let at = |k: Rat, c: Rat| boundary_stand(&def(1), &rim, &plane(k, c));
+    assert_eq!(at(q(1, 4), z(1)), Some(Clear), "z ∈ [1/2, 3/2]");
+    assert_eq!(at(q(1, 4), z(-1)), Some(Clear), "z ∈ [−3/2, −1/2]");
+    assert_eq!(at(z(3), z(5)), Some(Sections), "z ∈ [−1, 11]");
+    assert_eq!(at(q(1, 4), q(2, 5)), Some(Sections), "z ∈ [−1/10, 9/10]");
+    assert_eq!(at(q(1, 4), q(1, 2)), Some(Touch), "z ∈ [0, 1]");
+    assert_eq!(at(q(1, 4), q(-1, 2)), Some(Touch), "z ∈ [−1, 0]");
+    // The circle's own plane, with no other boundary to stand between: reached by being it.
+    assert_eq!(at(z(0), z(0)), Some(Sections), "the circle z = 0 itself");
 }
 
 /// **A class carries closed traces no road nests** when an oblique section stands beside a circle

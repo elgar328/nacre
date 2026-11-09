@@ -344,7 +344,7 @@ pub(crate) fn arc_crossings(
 /// class `plane`, across the axis: the line `wc ∩ plane` meets it in the two roots named on the
 /// cylinder (`NodeId::pierce(wc, plane, cyl, Lo | Hi)`), the names a cap's chord and the section's
 /// arcs both end at. `Some(Some(_))` for the two crossings, `Some(None)` for a line that misses
-/// the circle, `None` for any other meet — a touch (`planes::rim_against_plane` refuses it at the
+/// the circle, `None` for any other meet — a touch (`planes::boundary_stand` refuses it at the
 /// gate), or one that cannot be stated. The two readers take a miss differently: a chord is then
 /// absent, while the section's tracer asks only of a rim it has read as crossed.
 pub(crate) fn rim_crossings(

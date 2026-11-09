@@ -179,8 +179,8 @@ fn circle_spans(
 /// — the boundary's, which says where its material is, and the section's own climb along the axis
 /// ([`section_climb`]). Then [`assemble_spans`] lays the extents over the whole, unchanged.
 ///
-/// - **A rim** has no ring to walk ([`lateral_shape`] gives its station): the plane meets the rim
-///   circle by [`crate::planes::rim_against_plane`] — the gate's reading — and a crossing rim
+/// - **A rim** has no ring to walk ([`lateral_shape`] gives its station): the plane meets the rim's
+///   section by [`nacre_exact::quad::section_meet`] — the gate's reading — and a crossing rim
 ///   meets the section in the two roots of the line `wc ∩ plane`
 ///   ([`combinatorics::rim_crossings`], the names a cap's chord ends at too). The face lies toward `+t`
 ///   from its low rim and `−t` from its high one, so going counter-clockwise from a root the
@@ -199,7 +199,7 @@ fn circle_spans(
 /// ([`crate::planes::Theta::misses_an_angle`] of its extent, never narrower than the face) holds
 /// none of it. A face with two whole rims covers every angle between them — a hole that does not
 /// meet the section cannot hold it, since the section winds round the cylinder and a hole does not
-/// — so the rims' sides decide ([`crate::planes::section_in_span`]: `Within` is the whole ellipse,
+/// — so the rims decide ([`crate::planes::boundary_stand`]: between them is the whole ellipse,
 /// the gate's whole-section case); any other face is declined, because a chain of boundary can
 /// still wrap the cylinder at some heights and hold the whole section, which this does not read.
 /// So are a touch from inside the face, a corner that is not a ruling meeting an arc, and a meet
@@ -252,15 +252,19 @@ fn section_extents(
     rings: &[(bool, &combinatorics::NamedRing)],
     ties: &mut Vec<(NodeId, NodeId)>,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
-    use crate::planes::{RimMeet, SectionSpan};
+    use crate::planes::BoundaryStand;
+    use nacre_exact::quad::{SectionMeet, section_meet};
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let up = crate::planes::plus_t_is_above(world, def);
+    let world_of = |c: usize| jd.world_rat(c).ok_or(DeclineKind::ObliqueSection);
     let mut carved: Vec<Carved> = Vec::new();
     for &(s, plane) in rims {
-        match crate::planes::rim_against_plane(def, s, coeffs) {
-            Some(RimMeet::Side(_)) => continue,
-            Some(RimMeet::Crosses) => {}
-            Some(RimMeet::Touches) | None => return Err(DeclineKind::ObliqueSection),
+        match section_meet(coeffs, &world_of(plane)?, def) {
+            Some(SectionMeet::Apart) => continue,
+            Some(SectionMeet::Cross) => {}
+            Some(SectionMeet::Touch | SectionMeet::Same) | None => {
+                return Err(DeclineKind::ObliqueSection);
+            }
         }
         let Some(Some(roots)) = combinatorics::rim_crossings(jd, def, wc, plane, cyl) else {
             return Err(DeclineKind::ObliqueSection);
@@ -298,13 +302,18 @@ fn section_extents(
         if rims.len() != 2 {
             return Err(DeclineKind::ObliqueSection);
         }
-        return match crate::planes::section_in_span(def, range, coeffs) {
-            Some(SectionSpan::Within) => Ok(vec![CircleSpan {
+        // No rim was crossed, so between the two rims is the whole ellipse and beside both none.
+        let rim_planes = rims
+            .iter()
+            .map(|&(_, c)| world_of(c))
+            .collect::<Result<Vec<_>, _>>()?;
+        return match crate::planes::boundary_stand(def, &rim_planes, coeffs) {
+            Some(BoundaryStand::Sections) => Ok(vec![CircleSpan {
                 arc: None,
                 on: CylOnClass::Crosses,
             }]),
-            Some(SectionSpan::Clear) => Ok(Vec::new()),
-            Some(SectionSpan::Crosses) | None => Err(DeclineKind::ObliqueSection),
+            Some(BoundaryStand::Clear) => Ok(Vec::new()),
+            Some(BoundaryStand::Touch) | None => Err(DeclineKind::ObliqueSection),
         };
     }
     assemble_spans(jd, cyl, def, &carved, Some(CylOnClass::Crosses), ties)
@@ -979,7 +988,7 @@ fn carve_between(
 /// axis parameter grows in): the axial part of its tangent,
 /// [`nacre_exact::quad::ccw_tangent_side`] against `m` for the class of normal `n`. Never `0` where
 /// a boundary crosses the section transversally — a level tangent there is a touch, which
-/// `planes::rim_against_plane` refuses at a rim and [`combinatorics::arc_crossings`] reads as no
+/// `planes::boundary_stand` refuses at a boundary and [`combinatorics::arc_crossings`] reads as no
 /// crossing elsewhere — so a `0` declines rather than guessing.
 fn section_climb(
     jd: &Judge<'_, WorkingPlane>,

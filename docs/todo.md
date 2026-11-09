@@ -209,7 +209,7 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   (`lateral_circle_heights`·`rim_arc_union` 이 원이 아닌 담체를 건너뛴다), 평면 표(`planes/mod.rs` 의 뉴얼 접기, `table.rs`), 코너
   (`corners.rs`)와 옆면 도로(`loops.rs` 의 `curved_wall`, `cyl_trace.rs` 의 `lateral_shape`·`cycle_on_class`)가 원통 위 곡선을 축에
   수직인 원으로 읽는다 — 입구를 열려면 이 독자들이 피연산자의 단면 간선을 그 클래스의 기록(`CylRecord::Sections`)으로 읽어야 한다.
-- **단면 위의 접점과 남은 꼭짓점** — 평면이 옆면 경계의 원에 한 점으로 접하면 게이트가 거절한다(`rim_against_plane`, 원마다).
+- **단면 위의 접점과 남은 꼭짓점** — 평면이 옆면 경계의 단면에 한 점으로 접하면 게이트가 거절한다(`boundary_stand`, 경계 단면마다).
   추적기가 읽는 꼭짓점과 기권하는 갈래는 `section_on_class` 의 doc 이다; 기권의 예 — 면 안에서 닿는 오목 꼭짓점, 체인 링의 호–호,
   곧게 지나는 이름 있는 꼭짓점의 룰링–룰링, 가로지름이 없고 θ 범위가 한 바퀴를 도는 띠 아닌 면(계단 체인 림, 무리수 꼭짓점이라
   범위를 진술하지 못한 사분원 — 볼록 꼭짓점에 닿기만 해도 이 갈래다). 점수판 `cylinder_gate.rs` 의
@@ -236,9 +236,8 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 배치가 없다. 다음 단계는 게이트 산술을 폭에서 자유롭게 하는 것(부호 질문을 BigInt 로 total 하게 만든 원칙을 서술
 읽기까지). 같은 일로 사라질 자리:
 
-- 게이트 안의 checked 산술이 «통과 못 함»으로 접히는 곳(`laterals_clear_plane`·`lateral_reach`, 단면 판정의
-  `oblique_section_meet` — `rim_against_plane`·`lateral_circle_heights`) — 넘침이 `ObliqueCylinderCut` 으로 나갈 수
-  있다(잰 인구 0).
+- 게이트 안의 checked 산술이 «통과 못 함»으로 접히는 곳(`laterals_clear_plane`·`lateral_reach`) — 넘침이
+  `ObliqueCylinderCut` 으로 나갈 수 있다(잰 인구 0).
 - 좁은 이름이라도 계수가 큰 비스듬한 평면은 게이트를 지난 뒤 분할의 선 만남(`circle_crossings` 의 `LineMeet::Overflow`, checked
   `i128`)에서 `WitnessNotRational` 이다 — `wide_datum_cost.rs` 의 좁은 판이 기둥을 자르는 배치.
 - 접선 행의 `undecided` 는 원인이 섞여 있다 — 면이 자기 세계 이름을 안 든 것(이름 짓기)과 checked 산술(폭)이 한

@@ -47,7 +47,7 @@ pub(super) fn chord_stations(
     // **An oblique section's chord is the rim's own two crossings.** A circle a face carries is a
     // rim of a lateral face, and the class line meets it where the section crosses that rim —
     // the same two pierce names the tracer ends the ellipse's arcs at. A line missing the circle
-    // leaves no chord; a touch the gate refused (`planes::rim_against_plane`), and the radius
+    // leaves no chord; a touch the gate refused (`planes::boundary_stand`), and the radius
     // premise below — a distance from the axis — means nothing for a plane that crosses the axis.
     if cyls.get(cyl).is_some_and(|cy| cy.sections_oblique(wc)) {
         let def = def_of().ok_or(ChordUnstatable)?;

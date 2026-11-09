@@ -544,8 +544,8 @@ pub(crate) enum CylRecord {
     /// roads that would ask the class's coefficients about this cylinder answer from the record
     /// instead.
     Silent(Silence),
-    /// A named class oblique to the axis whose plane touches none of the circles the lateral
-    /// faces' boundaries ride ([`rim_against_plane`]). The class's own arrangement draws the
+    /// A named class oblique to the axis whose plane touches none of the sections the lateral
+    /// faces' boundaries ride ([`boundary_stand`]). The class's own arrangement draws the
     /// cylinder's section truly — the ellipse, whole between a band's rims or cut into arcs where a
     /// rim, a ruling or a segment of the class crosses it — and on the lateral chart the section is
     /// a line like any other (`arrangement::cyl_chart`'s module doc). A face of the class bounded

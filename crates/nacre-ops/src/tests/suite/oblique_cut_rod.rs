@@ -216,6 +216,9 @@ struct Tool {
     build: fn(&mut Model) -> Handle<Solid>,
     volume: f64,
     common: f64,
+    /// A plane of the tool's faces touches the rod's slanted rim at one point — its highest,
+    /// `(2, 3, 6)`, or its lowest, `(−2, 3, 4)` — whether or not the face reaches it.
+    touches_rim: bool,
 }
 
 fn rod_on(m: &mut Model, at: [f64; 2], r: f64, z: [f64; 2]) -> Handle<Solid> {
@@ -241,72 +244,84 @@ fn tools() -> Vec<Tool> {
             build: |m| rod_on(m, [0.0, 3.0], 1.0, [-1.0, 11.0]),
             volume: 12.0 * PI,
             common: 5.0 * PI,
+            touches_rim: false,
         },
         Tool {
             name: "a box over the rod's foot",
             build: |m| crate::fixtures::cuboid(m, [1.0, 1.0, -1.0], [4.0, 5.0, 2.0]),
             volume: 36.0,
             common: 2.0 * (4.0 * PI / 3.0 - s3),
+            touches_rim: false,
         },
         Tool {
             name: "a second slant, z = 5 − x/2 and above",
             build: |m| prism(m, -0.5),
             volume: 252.0,
             common: 16.0 / 3.0,
+            touches_rim: false,
         },
         Tool {
             name: "a box above z = 5.5",
             build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 5.5], [3.0, 6.0, 8.0]),
             volume: 90.0,
             common: 1.5 * s3 - 2.0 * PI / 3.0,
+            touches_rim: false,
         },
         Tool {
             name: "a box above z = 4.5",
             build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 4.5], [3.0, 6.0, 8.0]),
             volume: 126.0,
             common: 4.0 * PI / 3.0 + 1.5 * s3,
+            touches_rim: false,
         },
         Tool {
             name: "a box above z = 5",
             build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 5.0], [3.0, 6.0, 8.0]),
             volume: 108.0,
             common: 8.0 / 3.0,
+            touches_rim: false,
         },
         Tool {
             name: "a pin of radius 1/2 through (1, 3)",
             build: |m| rod_on(m, [1.0, 3.0], 0.5, [-1.0, 11.0]),
             volume: 3.0 * PI,
             common: 11.0 * PI / 8.0,
+            touches_rim: false,
         },
         Tool {
             name: "a pin of radius 1/2 sunk on the axis",
             build: |m| rod_on(m, [0.0, 3.0], 0.5, [4.0, 8.0]),
             volume: PI,
             common: PI / 4.0,
+            touches_rim: true,
         },
         Tool {
             name: "a wall box from x = 1.5 up to z = 5.5",
             build: |m| crate::fixtures::cuboid(m, [1.5, 0.0, -1.0], [4.0, 6.0, 5.5]),
             volume: 97.5,
             common: 22.0 * 0.75f64.acos() - 33.0 * 7.0f64.sqrt() / 8.0,
+            touches_rim: false,
         },
         Tool {
             name: "the slant's own prism",
             build: |m| prism(m, 0.5),
             volume: 252.0,
             common: 0.0,
+            touches_rim: false,
         },
         Tool {
             name: "a far box",
             build: |m| crate::fixtures::cuboid(m, [10.0, 10.0, 10.0], [11.0, 11.0, 11.0]),
             volume: 1.0,
             common: 0.0,
+            touches_rim: false,
         },
         Tool {
             name: "a box touching the rim's top at z = 6",
             build: |m| crate::fixtures::cuboid(m, [-3.0, 0.0, 6.0], [3.0, 6.0, 8.0]),
             volume: 72.0,
             common: 0.0,
+            touches_rim: true,
         },
     ]
 }
@@ -315,13 +330,30 @@ fn tools() -> Vec<Tool> {
 type Entry =
     fn(&mut Model, BoolKind, Handle<Solid>, Handle<Solid>) -> Result<Vec<Handle<Solid>>, BoolError>;
 
+/// A refusal a cell is held to: by its name, or — a tracer's decline — by the decline's kind (the
+/// face it names is the model's handle, which the cell does not state).
+#[derive(Clone, Copy, Debug)]
+enum Refusal {
+    Name(RejectReason),
+    Decline(crate::DeclineKind),
+}
+
+impl Refusal {
+    fn is(self, reason: RejectReason) -> bool {
+        match (self, reason) {
+            (Self::Name(name), r) => r == name,
+            (Self::Decline(kind), RejectReason::TraceDeclined { kind: k, .. }) => k == kind,
+            (Self::Decline(_), _) => false,
+        }
+    }
+}
+
 /// Every cell of every tool against `operand` — each kind with the operand first, then swapped —
-/// through `run`, refused by `name`, raised in a file ending in `file`.
+/// through `run`, refused as `want(tool)` says, raised in a file ending as it says.
 fn every_cell_refused(
     operand: fn() -> (Model, Handle<Solid>),
     run: Entry,
-    name: RejectReason,
-    file: &str,
+    want: impl Fn(&Tool) -> (Refusal, &'static str) + Sync,
 ) {
     use crate::error::raise_probe::RAISED;
     crate::ledger::owned(|| {
@@ -329,12 +361,13 @@ fn every_cell_refused(
             for swap in [false, true] {
                 for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
                     let at = format!("{} — {kind:?} swap={swap}", tool.name);
+                    let (name, file) = want(&tool);
                     let (mut m, s) = operand();
                     let t = (tool.build)(&mut m);
                     let (x, y) = if swap { (t, s) } else { (s, t) };
                     let r0 = RAISED.len();
                     match run(&mut m, kind, x, y) {
-                        Err(BoolError::Rejected { reason, .. }) if reason == name => {
+                        Err(BoolError::Rejected { reason, .. }) if name.is(reason) => {
                             let sites: Vec<&str> =
                                 RAISED.mine_since(r0).into_iter().map(|(_, f)| f).collect();
                             assert!(
@@ -418,24 +451,40 @@ fn a_cut_rod_fed_back_is_refused_at_the_door() {
     every_cell_refused(
         || cut_rod(0.5),
         crate::boolean,
-        RejectReason::ObliqueCylinderCut,
-        "nacre-ops/src/boolean.rs",
+        |_| {
+            (
+                Refusal::Name(RejectReason::ObliqueCylinderCut),
+                "nacre-ops/src/boolean.rs",
+            )
+        },
     );
 }
 
 /// **What the stages behind the door answer for the cut rod** — the scoreboard the re-entry work
-/// flips row by row, for the rod and the rod with a window in its side. Today every cell stops at
-/// the cylinder gate: the rod's lateral face is bounded by its slanted rim, which has no one height,
-/// so the gate cannot place the rod's own cap plane against the face's rims and reads it as a
-/// section it cannot draw (`ClassMeet::Undrawable`).
+/// flips row by row, for the rod and the rod with a window in its side. A tool with a plane touching
+/// the slanted rim at a point stops at the cylinder gate (`ClassMeet::Undrawable`); every other cell
+/// passes it — the rod's own cap reaches its lateral and is recorded as its section — and stops at
+/// the tracer, which reads a lateral's rims by their heights, and a slanted rim has none
+/// (`DeclineKind::CylSpan`).
 #[test]
-fn a_cut_rod_behind_the_door_stops_at_the_gate() {
+fn a_cut_rod_behind_the_door_stops_at_the_tracer() {
     for operand in [|| cut_rod(0.5), windowed_cut_rod] {
         every_cell_refused(
             operand,
             crate::boolean::behind_the_elliptical_door,
-            RejectReason::ObliqueCylinderCut,
-            "nacre-ops/src/planes/cyl_gate.rs",
+            |tool| {
+                if tool.touches_rim {
+                    (
+                        Refusal::Name(RejectReason::ObliqueCylinderCut),
+                        "nacre-ops/src/planes/cyl_gate.rs",
+                    )
+                } else {
+                    (
+                        Refusal::Decline(crate::DeclineKind::CylSpan),
+                        "nacre-ops/src/arrangement/result.rs",
+                    )
+                }
+            },
         );
     }
 }

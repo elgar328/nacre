@@ -453,9 +453,9 @@ enum ClassMeet {
     /// draws the section — a whole ellipse or arcs of one — on its own arrangement
     /// ([`CylRecord::Sections`]).
     Sections,
-    /// An oblique plane not shown to miss the lateral faces whose section the class cannot draw:
-    /// the plane touches one of those circles at a point, or a lateral face's circles cannot be
-    /// read.
+    /// A section the class cannot draw: an oblique plane not shown to miss the lateral faces that
+    /// touches one of their boundary sections at a point, or whose faces' boundaries cannot be
+    /// read; or a plane across the axis touching a slanted boundary section at a point.
     Undrawable,
 }
 
@@ -735,6 +735,11 @@ fn class_meet(
             ),
             None => (ClassMeet::Clear, Vec::new()),
         });
+    }
+    // A plane across the axis touching a slanted rim at a point is the touch the oblique arm
+    // refuses: one point of the two sections, no crossing to name it by.
+    if touches_a_boundary(model, faces, cyl, &coeffs) {
+        return Ok((ClassMeet::Undrawable, Vec::new()));
     }
     Ok((ClassMeet::Across, Vec::new()))
 }
@@ -2365,97 +2370,60 @@ fn carries_unnested(row: &[([nacre_exact::Rat; 3], &ClassMeet)]) -> bool {
             .any(|w| !nacre_exact::parallel_rat(w[0], w[1]))
 }
 
-/// Where a plane oblique to a cylinder's axis meets a span of it — [`section_in_span`]'s answer.
+/// **How a plane's section stands to a lateral face's boundary** — [`boundary_stand`]'s answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SectionSpan {
-    /// Both rim circles lie strictly on one side of the plane: the plane misses the span.
+pub(crate) enum BoundaryStand {
+    /// Every boundary section lies apart from the plane's section, all on one side of it: the
+    /// section misses the face's band.
     Clear,
-    /// The rim circles lie strictly on opposite sides: every generator crosses the plane once,
-    /// strictly between the rims, so the section is a whole ellipse inside the span.
-    Within,
-    /// A rim circle touches or crosses the plane: the section reaches a rim.
-    Crosses,
+    /// The section crosses a boundary section, is one, or lies between two: it reaches the face's
+    /// band.
+    Sections,
+    /// The section touches a boundary section at one point — a point the two share with no
+    /// crossing to name it by.
+    Touch,
 }
 
-/// How one rim circle of a cylinder meets a plane oblique to its axis — [`rim_against_plane`]'s
-/// answer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RimMeet {
-    /// The circle lies strictly on this side of the plane (`+1` toward its normal).
-    Side(i8),
-    /// The plane cuts the circle in two points: the section crosses the rim there.
-    Crosses,
-    /// The plane touches the circle in one point: the section meets the rim there and turns back.
-    Touches,
-}
-
-/// **How the plane `n·p + d = 0` meets the rim circle of cylinder `def` at station `s`** — the
-/// circle reaches along `n` over `n·o + s(n·m) ± r|n⊥|` ([`lateral_reach`] of the whole circle at
-/// `[s, s]`) and the plane's station is `−d`: clear of that reach is a side, at one of its ends a
-/// touch, strictly inside it two crossings. The one reading of a rim against an oblique plane — the
-/// gate's ([`section_in_span`], and the touch it refuses) and the tracer's
-/// (`arrangement::section_on_class`, which names the two crossings) — so the two cannot part. `None`
-/// is `Rat` overflow or a radius wider than `Rat`.
-pub(crate) fn rim_against_plane(
+/// **Where the plane `coeffs` stands against a lateral face's boundary sections `boundary`**
+/// ([`crate::planes::lateral_boundary_sections`]) — each pair asked the one question
+/// ([`nacre_exact::quad::section_meet`]; for two apart, which is higher,
+/// [`nacre_exact::quad::section_height_order`] — two circles compare as their heights). The face
+/// lies between its boundary sections, so a section apart from all of them and on one side of all
+/// misses it; one crossing, coinciding with or between them reaches it; a touch anywhere is
+/// [`BoundaryStand::Touch`], which takes precedence. The gate's ([`oblique_section_meet`], and the
+/// touch it refuses across the axis too) and the tracer's (`arrangement::section_on_class`), so the
+/// two cannot part. `None` is a plane along the axis among them.
+pub(crate) fn boundary_stand(
     def: &nacre_topo::CylinderDef,
-    s: nacre_exact::Rat,
+    boundary: &[[nacre_exact::Rat; 4]],
     coeffs: &[nacre_exact::Rat; 4],
-) -> Option<RimMeet> {
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let station = nacre_exact::Rat::from_int(0).checked_sub(coeffs[3])?;
-    let rim = Footprint {
-        span: Some([s, s]),
-        theta: Theta::Whole,
+) -> Option<BoundaryStand> {
+    use nacre_exact::quad::{
+        SectionMeet, SectionOrder, Toward, section_height_order, section_meet,
     };
-    let reach = lateral_reach(def, &rim, &n)?;
-    // A reach clear of the station lies wholly on one side of it, so its base says which.
-    if reach_clears(&reach, station, station)? {
-        return Some(RimMeet::Side(if reach.lo > station { 1 } else { -1 }));
+    let mut side: Option<core::cmp::Ordering> = None;
+    let mut reaches = false;
+    for w in boundary {
+        match section_meet(coeffs, w, def)? {
+            SectionMeet::Touch => return Some(BoundaryStand::Touch),
+            SectionMeet::Same | SectionMeet::Cross => reaches = true,
+            SectionMeet::Apart => {
+                // Apart, so ordered with no generator.
+                let SectionOrder::Ordered(o) =
+                    section_height_order(coeffs, w, def, None, Toward::At)?
+                else {
+                    return None;
+                };
+                reaches |= side.is_some_and(|s| s != o);
+                side = Some(o);
+            }
+        }
     }
-    // Not clear: the station is in the closed reach `[lo − √ρ²_lo, hi + √ρ²_hi]`. At an end it is
-    // a touch — `lo − station ≥ 0` with its square `ρ²_lo`, or the mirror at `hi`.
-    let at_end = |gap: nacre_exact::Rat, rho2: nacre_exact::Rat| -> Option<bool> {
-        Some(gap >= nacre_exact::Rat::from_int(0) && gap.checked_mul(gap)? == rho2)
-    };
-    Some(
-        if at_end(reach.lo.checked_sub(station)?, reach.rho2_lo)?
-            || at_end(station.checked_sub(reach.hi)?, reach.rho2_hi)?
-        {
-            RimMeet::Touches
-        } else {
-            RimMeet::Crosses
-        },
-    )
-}
-
-/// **Where the plane `n·p + d = 0` meets the cylinder between the stations `span`** — read off
-/// the two rim circles ([`rim_against_plane`]). Along one generator the plane's sign is linear in
-/// the station, so the two rims' sides decide the whole span: one side is [`SectionSpan::Clear`],
-/// opposite sides [`SectionSpan::Within`], a rim the plane touches or crosses
-/// [`SectionSpan::Crosses`].
-///
-/// The tracer's (`arrangement::section_on_class`), over the face's [`Footprint::span`]; the gate
-/// ([`oblique_section_meet`]) reads the same two rims off every circle it asks, through the one
-/// classification [`span_of_rims`], so the two cannot part. `None` is `Rat` overflow or a radius
-/// wider than `Rat`.
-pub(crate) fn section_in_span(
-    def: &nacre_topo::CylinderDef,
-    span: [nacre_exact::Rat; 2],
-    coeffs: &[nacre_exact::Rat; 4],
-) -> Option<SectionSpan> {
-    Some(span_of_rims([
-        rim_against_plane(def, span[0], coeffs)?,
-        rim_against_plane(def, span[1], coeffs)?,
-    ]))
-}
-
-/// [`section_in_span`] of a span's two rim readings.
-fn span_of_rims(rims: [RimMeet; 2]) -> SectionSpan {
-    match rims {
-        [RimMeet::Side(a), RimMeet::Side(b)] if a == b => SectionSpan::Clear,
-        [RimMeet::Side(_), RimMeet::Side(_)] => SectionSpan::Within,
-        _ => SectionSpan::Crosses,
-    }
+    Some(if reaches {
+        BoundaryStand::Sections
+    } else {
+        BoundaryStand::Clear
+    })
 }
 
 /// **Is this loop a whole circle** — one edge that closes on itself, the spelling a rim is read by
@@ -2468,20 +2436,19 @@ fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
 }
 
 /// **Does oblique class `c` section this cylinder on its own arrangement?** —
-/// [`ClassMeet::Sections`]' proof: the plane touches no circle a lateral face's boundary rides
-/// ([`lateral_circle_heights`] — the rims at its range's ends, [`CylFaceInfo::stretch`], and the arcs
-/// of its holes and panels;
-/// [`rim_against_plane`] at each — a touch is a point the section and that circle's plane share
-/// with no crossing to name it by). Then the class draws the section — a whole ellipse, or arcs
-/// of it cut by rims, rulings and the class's other segments — and the tracer reads which from the
-/// faces' boundaries. Where the class's faces reach the lateral the section is a line the lateral's
-/// chart cuts its cells at like any other; a result face bounded along it carries an elliptical
-/// edge.
-/// The touch test asks each circle whole, also where the face holds only an arc of it (a fillet's
-/// quarter): wider than the faces, never narrower. `Some(Clear)` when every face's range is missed
-/// ([`section_in_span`]), `Some(Sections)` when one is met, `None` when the proof fails — a
-/// cylinder with no lateral face row, a face with no range (a boundary that is not circles alone)
-/// or no readable circle, a touch, overflow.
+/// [`ClassMeet::Sections`]' proof: the plane touches no section a lateral face's boundary rides — a
+/// rim's or an arc's, a circle's or an ellipse's ([`boundary_stand`] over
+/// [`crate::planes::lateral_boundary_sections`] — a touch is a point the section and that boundary's
+/// plane share with no crossing to name it by). Then the class draws the section — a whole ellipse,
+/// or arcs of it cut by rims, rulings and the class's other segments — and the tracer reads which
+/// from the faces' boundaries. Where the class's faces reach the lateral the section is a line the
+/// lateral's chart cuts its cells at like any other; a result face bounded along it carries an
+/// elliptical edge. A class whose plane is a boundary section of the face — an operand's own slanted
+/// cap — reaches it too.
+/// The touch test asks each boundary section whole, also where the face holds only an arc of it (a
+/// fillet's quarter): wider than the faces, never narrower. `Some(Clear)` when every face's boundary
+/// is missed, `Some(Sections)` when one is reached, `None` when the proof fails — a cylinder with no
+/// lateral face row, a face with no readable boundary, a touch.
 fn oblique_section_meet(
     model: &Model,
     faces: &[FaceRow],
@@ -2499,30 +2466,41 @@ fn oblique_section_meet(
         if cf.surf != cyl.surf {
             continue;
         }
-        // Each circle once: a touch anywhere refuses, and the span's two ends — the lowest and the
-        // highest of these heights (`lateral_t_range`) — classify it.
-        let [s0, s1] = cf.stretch?;
-        let mut ends = [None, None];
-        for t in lateral_circle_heights(model, model.face(cf.face?), &cyl.def)? {
-            let meet = rim_against_plane(&cyl.def, t, coeffs)?;
-            if meet == RimMeet::Touches {
-                return None;
-            }
-            for (end, at) in ends.iter_mut().zip([s0, s1]) {
-                if t == at {
-                    *end = Some(meet);
-                }
-            }
-        }
-        let span = span_of_rims([ends[0]?, ends[1]?]);
-        if span != SectionSpan::Clear {
-            sectioned = true;
+        let boundary = lateral_boundary_sections(model, model.face(cf.face?), &cyl.def)?;
+        match boundary_stand(&cyl.def, &boundary, coeffs)? {
+            BoundaryStand::Touch => return None,
+            BoundaryStand::Sections => sectioned = true,
+            BoundaryStand::Clear => {}
         }
     }
     Some(if sectioned {
         ClassMeet::Sections
     } else {
         ClassMeet::Clear
+    })
+}
+
+/// **Does a plane across the axis touch a boundary section of cylinder `cyl`'s lateral faces at a
+/// point?** — the across arm's half of the touch [`oblique_section_meet`] refuses: a slanted rim's
+/// highest or lowest point on the plane. Two planes across the axis never touch (their sections are
+/// one or apart), so a face bounded by circles alone answers `false`; a face whose boundary cannot
+/// be read is left to the tracer, which reads the same boundary and declines by its own name.
+fn touches_a_boundary(
+    model: &Model,
+    faces: &[FaceRow],
+    cyl: &WorkingCyl,
+    coeffs: &[nacre_exact::Rat; 4],
+) -> bool {
+    faces.iter().any(|row| {
+        let FaceRow::Cylinder(cf) = row else {
+            return false;
+        };
+        cf.surf == cyl.surf
+            && cf.face.is_some_and(|f| {
+                lateral_boundary_sections(model, model.face(f), &cyl.def)
+                    .and_then(|b| boundary_stand(&cyl.def, &b, coeffs))
+                    == Some(BoundaryStand::Touch)
+            })
     })
 }
 
