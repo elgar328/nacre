@@ -1873,7 +1873,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 
 스케치의 원·호가 프리즘 빌더에서 원통 옆면과 관통점이 되고(`ops::prism`, kit `build.rs`), 클래스 위의 자취는 축에 수직이면
 원, 비스듬하면 단면이다(`planes::cyl_geom` 의 `class_carries_circle`·`trace_band`·`arc_extent`,
-`arrangement::cyl_trace::section_on_class`). 한 클래스가 원과 룰링을 함께 드는 규칙은 `per_class` 의 `ClassEdges::of` 가 진다.
+`arrangement::cyl_trace::trace_on_face`). 한 클래스가 원과 룰링을 함께 드는 규칙은 `per_class` 의 `ClassEdges::of` 가 진다.
 
 - **`cylinder()` 는 원 스케치 + 돌출의 설탕이다**(kit) — 원시체 연산은 없다. 프리즘 빌더가 원·호를 원통 조각 벽과 관통점
   꼭짓점으로 세우고(호–호 접합은 원통 둘 위의 점), 사분각 밖의 호는 `refuse_non_quarter_arcs` 가 거절한다.
@@ -1890,10 +1890,11 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   **단면**(타원)이고 게이트가 `CylRecord::Sections` 로 기록한 쌍에만 선다. 이 쓰임이 서는 까닭은 **평면 단면이 모두 θ 의
   그래프**라는 것이다(`cyl_chart` 모듈 doc): θ 순서(`circular_order_about_seam`)·호 포함(`theta_between`)은 단면에도 참이고,
   원에만 맞던 «점에서의 반경에 축 성분이 없다»는 `nacre_exact::quad::axial_side`·`ccw_tangent_side` 한 술어로 묻는다
-  (극점 평면의 `g*` 는 `combinatorics::winding` 의 그 주석). 호의 상자는 `trace_band`. 추적은 ⊥ 클래스와 같은
-  덜어내기(`section_on_class`; 꼭짓점은 `corner_on_section`, 가로지름이 없으면 `Theta::misses_an_angle`)이고, 그리지 못하는
+  (극점 평면의 `g*` 는 `combinatorics::winding` 의 그 주석). 호의 상자는 `trace_band`. 추적은 ⊥ 클래스와 한
+  덜어내기(`trace_on_face` — 면의 경계 단면마다 `section_meet`, 넘는 쪽은 두 단면의 바로 뒤 순서 `climb_over`; 꼭짓점은
+  `corner_on_section`, 가로지름이 없으면 `Theta::misses_an_angle`)이고, 그리지 못하는
   단면은 기권 하나(`DeclineKind::ObliqueSection`)라 불리언은 게이트와 같은 이름 `ObliqueCylinderCut` 으로 거절한다 — 기권의
-  목록은 `section_on_class` doc. 게이트는 평면이 옆면 경계의 어느 원에도 한 점으로 접하지 않을 때 단면을 들이고(면이 옆면에
+  목록은 `trace_on_face`·`cycle_on_class` doc. 게이트는 평면이 옆면 경계의 어느 단면에도 한 점으로 접하지 않을 때 단면을 들이고(면이 옆면에
   닿는지는 묻지 않는다 — `oblique_section_meet`), 단면의 딱지와 절단점(`CutRim`)은 차트로 가 다른 선처럼 칸을 가른다. 결과 면이 단면을
   따라 경계 지어지면 결과에 타원 간선이 남는다(`Model::derive_edge_curve` — 원을 그 평면에 기울인 곡선). 단면을 따라 끝나는 옆면에는
   그 단면을 경계로 든 평면 면이 짝으로 있다(차트 census 가 단언한다). 결과를 읽는 쪽은 단면 위 호를 원과 같은 길로 읽는다 — 덩어리를

@@ -165,7 +165,7 @@ fn ruling_sweep(
     wc: usize,
     k: usize,
     side: i8,
-    rims: &[(Rat, usize)],
+    rims: &[(usize, bool)],
     cycles: &[(bool, combinatorics::LoopRing)],
     mat: SegKind,
     which: SolidSide,
@@ -190,7 +190,7 @@ fn ruling_sweep(
         combinatorics::crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling)
     };
     let mut stations: Vec<(LineEvent, NodeId)> = Vec::new();
-    for &(_, c) in rims {
+    for &(c, _) in rims {
         stations.push((LineEvent::Toggle, on_ruling(c)?));
     }
     // **Where two points stand on this ruling** — their sections' order on its generator, the one

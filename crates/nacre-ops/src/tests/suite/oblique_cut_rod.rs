@@ -219,6 +219,8 @@ struct Tool {
     /// A plane of the tool's faces touches the rod's slanted rim at one point — its highest,
     /// `(2, 3, 6)`, or its lowest, `(−2, 3, 4)` — whether or not the face reaches it.
     touches_rim: bool,
+    /// A plane of the tool's faces across the axis crosses the slanted rim (`4 < z < 6`).
+    crosses_rim: bool,
 }
 
 fn rod_on(m: &mut Model, at: [f64; 2], r: f64, z: [f64; 2]) -> Handle<Solid> {
@@ -245,6 +247,7 @@ fn tools() -> Vec<Tool> {
             volume: 12.0 * PI,
             common: 5.0 * PI,
             touches_rim: false,
+            crosses_rim: false,
         },
         Tool {
             name: "a box over the rod's foot",
@@ -252,6 +255,7 @@ fn tools() -> Vec<Tool> {
             volume: 36.0,
             common: 2.0 * (4.0 * PI / 3.0 - s3),
             touches_rim: false,
+            crosses_rim: false,
         },
         Tool {
             name: "a second slant, z = 5 − x/2 and above",
@@ -259,6 +263,7 @@ fn tools() -> Vec<Tool> {
             volume: 252.0,
             common: 16.0 / 3.0,
             touches_rim: false,
+            crosses_rim: false,
         },
         Tool {
             name: "a box above z = 5.5",
@@ -266,6 +271,7 @@ fn tools() -> Vec<Tool> {
             volume: 90.0,
             common: 1.5 * s3 - 2.0 * PI / 3.0,
             touches_rim: false,
+            crosses_rim: true,
         },
         Tool {
             name: "a box above z = 4.5",
@@ -273,6 +279,7 @@ fn tools() -> Vec<Tool> {
             volume: 126.0,
             common: 4.0 * PI / 3.0 + 1.5 * s3,
             touches_rim: false,
+            crosses_rim: true,
         },
         Tool {
             name: "a box above z = 5",
@@ -280,6 +287,7 @@ fn tools() -> Vec<Tool> {
             volume: 108.0,
             common: 8.0 / 3.0,
             touches_rim: false,
+            crosses_rim: true,
         },
         Tool {
             name: "a pin of radius 1/2 through (1, 3)",
@@ -287,6 +295,7 @@ fn tools() -> Vec<Tool> {
             volume: 3.0 * PI,
             common: 11.0 * PI / 8.0,
             touches_rim: false,
+            crosses_rim: false,
         },
         Tool {
             name: "a pin of radius 1/2 sunk on the axis",
@@ -294,6 +303,7 @@ fn tools() -> Vec<Tool> {
             volume: PI,
             common: PI / 4.0,
             touches_rim: true,
+            crosses_rim: false,
         },
         Tool {
             name: "a wall box from x = 1.5 up to z = 5.5",
@@ -301,6 +311,7 @@ fn tools() -> Vec<Tool> {
             volume: 97.5,
             common: 22.0 * 0.75f64.acos() - 33.0 * 7.0f64.sqrt() / 8.0,
             touches_rim: false,
+            crosses_rim: true,
         },
         Tool {
             name: "the slant's own prism",
@@ -308,6 +319,7 @@ fn tools() -> Vec<Tool> {
             volume: 252.0,
             common: 0.0,
             touches_rim: false,
+            crosses_rim: false,
         },
         Tool {
             name: "a far box",
@@ -315,6 +327,7 @@ fn tools() -> Vec<Tool> {
             volume: 1.0,
             common: 0.0,
             touches_rim: false,
+            crosses_rim: false,
         },
         Tool {
             name: "a box touching the rim's top at z = 6",
@@ -322,6 +335,7 @@ fn tools() -> Vec<Tool> {
             volume: 72.0,
             common: 0.0,
             touches_rim: true,
+            crosses_rim: false,
         },
     ]
 }
@@ -463,9 +477,10 @@ fn a_cut_rod_fed_back_is_refused_at_the_door() {
 /// **What the stages behind the door answer for the cut rod** — the scoreboard the re-entry work
 /// flips row by row, for the rod and the rod with a window in its side. A tool with a plane touching
 /// the slanted rim at a point stops at the cylinder gate (`ClassMeet::Undrawable`); every other cell
-/// passes it — the rod's own cap reaches its lateral and is recorded as its section — and stops at
-/// the tracer, which reads a lateral's rims by their heights, and a slanted rim has none
-/// (`DeclineKind::CylSpan`).
+/// passes it — the rod's own cap reaches its lateral and is recorded as its section — and the
+/// tracer. A tool with a plane across the axis crossing the slanted rim stops at a straight angle
+/// past the arrangement (`StraightAngle`); the rest stop at the lateral's band rows, which read the face's ends by
+/// their heights, and a slanted rim has none (`DeclineKind::CylSpan`).
 #[test]
 fn a_cut_rod_behind_the_door_stops_at_the_tracer() {
     for operand in [|| cut_rod(0.5), windowed_cut_rod] {
@@ -478,10 +493,14 @@ fn a_cut_rod_behind_the_door_stops_at_the_tracer() {
                         Refusal::Name(RejectReason::ObliqueCylinderCut),
                         "nacre-ops/src/planes/cyl_gate.rs",
                     )
+                } else if tool.crosses_rim {
+                    // By name alone: the classes are read in parallel past a first refusal and one
+                    // at a time in the serial build, so the guard that rings first differs.
+                    (Refusal::Name(RejectReason::StraightAngle), "")
                 } else {
                     (
                         Refusal::Decline(crate::DeclineKind::CylSpan),
-                        "nacre-ops/src/arrangement/result.rs",
+                        "nacre-ops/src/bands.rs",
                     )
                 }
             },

@@ -2391,7 +2391,7 @@ pub(crate) enum BoundaryStand {
 /// lies between its boundary sections, so a section apart from all of them and on one side of all
 /// misses it; one crossing, coinciding with or between them reaches it; a touch anywhere is
 /// [`BoundaryStand::Touch`], which takes precedence. The gate's ([`oblique_section_meet`], and the
-/// touch it refuses across the axis too) and the tracer's (`arrangement::section_on_class`), so the
+/// touch it refuses across the axis too) and the tracer's (`arrangement::trace_on_face`), so the
 /// two cannot part. `None` is a plane along the axis among them.
 pub(crate) fn boundary_stand(
     def: &nacre_topo::CylinderDef,

@@ -291,6 +291,52 @@ pub(super) fn lateral_circle_heights(
     Some(ts)
 }
 
+/// **Which of a lateral face's boundary sections are its ends** — by index into `planes`, low
+/// first. The low end is the section at or below every other on every generator, the high end the
+/// one at or above every other, each asked of every other section by the one order of two sections
+/// ([`nacre_exact::quad::section_height_order`], with no generator); the first such section is
+/// taken.
+///
+/// **Every other, not a running extreme.** Two boundary sections that cross somewhere between the
+/// ends (two slanted notch floors on opposite sides of a rod) say nothing about where the face
+/// ends; a scan that keeps the lowest and highest so far and gives up at the first section crossing
+/// them refuses such a face, and in an order that depends on how its loops were walked.
+///
+/// `None` where no section is at or below (or above) every other — two sections cross where the
+/// end would be — where the two ends are one index (a single section, or two spellings of one
+/// plane: `Equal` between planes not along the axis is the same plane), or where an order it asks
+/// has no answer (a plane along the axis).
+pub(crate) fn section_ends(
+    planes: &[[nacre_exact::Rat; 4]],
+    def: &nacre_topo::CylinderDef,
+) -> Option<[usize; 2]> {
+    use core::cmp::Ordering::{Equal, Greater, Less};
+    use nacre_exact::quad::{SectionOrder, Toward, section_height_order};
+    let end = |side: core::cmp::Ordering| -> Option<Option<usize>> {
+        for (i, a) in planes.iter().enumerate() {
+            let mut holds = true;
+            for (j, b) in planes.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                match section_height_order(a, b, def, None, Toward::At)? {
+                    SectionOrder::Ordered(o) if o == side || o == Equal => {}
+                    _ => {
+                        holds = false;
+                        break;
+                    }
+                }
+            }
+            if holds {
+                return Some(Some(i));
+            }
+        }
+        Some(None)
+    };
+    let (lo, hi) = (end(Less)??, end(Greater)??);
+    (lo != hi).then_some([lo, hi])
+}
+
 /// **The angular extent of a lateral face** — the union of the arcs its outer loop's rim
 /// edges trace on the cross-section, as one counter-clockwise arc of radial vectors
 /// ([`Theta::Arc`]). A rim edge is one whose other carrier is a cap (a plane ⊥ the axis); its two

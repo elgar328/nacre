@@ -644,6 +644,12 @@ fn slanted_wedge(m: &mut Model) -> Handle<Solid> {
 /// the arrangement refuses them by the wrong names (`LabelConflict`, `CylinderStagesDisagree`),
 /// and a debug build stops at `cyl_trace`'s span assertion. The crossing at `z = 0.25`, inside the
 /// lower rim's stations, is the control the outer loop alone answers too.
+///
+/// The slanted wall (`slanted_wedge`, `z ≥ 2 + x/6` over `y ∈ [0, 4]`) sections the lateral
+/// between its two cut rims and crosses neither, so the whole ellipse lies in the face: every kind
+/// builds at its derived volume. With `s` the disk's segment past `x = 0.5`, the wedge (volume 96)
+/// takes from the cylinder the half `y ≥ 0` above the plane, `∬(2 − x/6) = π`, and from the upper
+/// bite (fused) its part `y ≥ 0`, `7.5`, less what the two share, `s/4`.
 #[test]
 fn a_lateral_cut_at_both_rims_reads_its_span_from_both() {
     let refused_by = |out: Result<Vec<Handle<Solid>>, BoolError>, want: RejectReason| matches!(out, Err(BoolError::Rejected { reason, .. }) if reason == want);
@@ -659,13 +665,32 @@ fn a_lateral_cut_at_both_rims_reads_its_span_from_both() {
                     "built by {built:?}, {kind:?} with a cylinder across at z = {z}: {out:?}"
                 );
             }
+            let s = 0.5f64.acos() - 0.5 * 0.75f64.sqrt();
+            let pi = std::f64::consts::PI;
+            let (band_volume, common) = match built {
+                BoolKind::Fuse => (4.0 * pi + 30.0 - s, pi + 7.5 - s / 4.0),
+                _ => (4.0 * pi - s, pi - s / 4.0),
+            };
+            let want = match kind {
+                BoolKind::Fuse => band_volume + 96.0 - common,
+                BoolKind::Cut => band_volume - common,
+                BoolKind::Common => common,
+            };
             let mut m = Model::new();
             let band = crate::fixtures::cut_at_both_rims(&mut m, built, -2.0);
             let wall = slanted_wedge(&mut m);
-            let out = boolean(&mut m, kind, band, wall);
+            let out = boolean(&mut m, kind, band, wall).unwrap_or_else(|e| {
+                panic!("built by {built:?}, {kind:?} with a slanted wall: {e:?}")
+            });
+            let got = built_volume(
+                &m,
+                &out,
+                1,
+                &format!("{built:?} {kind:?} with a slanted wall"),
+            );
             assert!(
-                refused_by(out.clone(), RejectReason::ObliqueCylinderCut),
-                "built by {built:?}, {kind:?} with a slanted wall: {out:?}"
+                (got - want).abs() <= 1e-9 * want,
+                "built by {built:?}, {kind:?} with a slanted wall: {got} vs {want}"
             );
         }
     }
