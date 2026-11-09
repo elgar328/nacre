@@ -35,15 +35,24 @@ pub(crate) fn rod(m: &mut Model) -> Handle<Solid> {
 
 pub(crate) fn prism(m: &mut Model, k: f64) -> Handle<Solid> {
     let top = roof(k);
-    // The world `zx` frame: `u = z`, `v = x`, extruded along `+y`.
-    let pts = [
-        (5.0 - 3.0 * k, -3.0),
-        (5.0 + 3.0 * k, 3.0),
-        (top, 3.0),
-        (top, -3.0),
-    ]
-    .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
-    let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a quadrilateral");
+    zx_prism(
+        m,
+        &[
+            (5.0 - 3.0 * k, -3.0),
+            (5.0 + 3.0 * k, 3.0),
+            (top, 3.0),
+            (top, -3.0),
+        ],
+    )
+}
+
+/// A polygon `(z, x)` in the world `zx` frame (`u = z`, `v = x`) extruded along `+y` over `[0, 6]`.
+fn zx_prism(m: &mut Model, pts: &[(f64, f64)]) -> Handle<Solid> {
+    let pts = pts
+        .iter()
+        .map(|&(u, v)| nacre_math::Point2::from_array([u, v]))
+        .collect();
+    let ring = crate::Ring2d::polygon_decimal(pts).expect("a polygon");
     let profile = crate::from_paths(vec![ring])
         .expect("one profile")
         .remove(0);
@@ -398,10 +407,6 @@ fn tools() -> Vec<Tool> {
     ]
 }
 
-/// A boolean's entry: the front door, or the stages behind it.
-type Entry =
-    fn(&mut Model, BoolKind, Handle<Solid>, Handle<Solid>) -> Result<Vec<Handle<Solid>>, BoolError>;
-
 /// One cell's answer: refused by this name, raised in a file ending as the `str` says (empty: any),
 /// built into this many bodies, or a known defect another test pins (named where it is set).
 #[derive(Clone, Copy, Debug)]
@@ -423,10 +428,10 @@ fn operand(windowed: bool) -> (Model, Handle<Solid>, f64) {
     }
 }
 
-/// Every cell of every tool against the rod — each kind with the rod first, then swapped — through
-/// `run`, held to `want(tool)`: a refusal to its name and raise file; a build to its bodies,
+/// Every cell of every tool against the rod — each kind with the rod first, then swapped — held to
+/// `want(tool)`: a refusal to its name and raise file; a build to its bodies,
 /// `validate`, the mesh, its derived volume (relative `1e-9`) and the mesh's enclosed volume (`2e-3`).
-fn scoreboard(windowed: bool, run: Entry, want: impl Fn(&Tool) -> [[Cell; 3]; 2] + Sync) {
+fn scoreboard(windowed: bool, want: impl Fn(&Tool) -> [[Cell; 3]; 2] + Sync) {
     use crate::error::raise_probe::RAISED;
     crate::ledger::owned(|| {
         for tool in tools() {
@@ -440,7 +445,7 @@ fn scoreboard(windowed: bool, run: Entry, want: impl Fn(&Tool) -> [[Cell; 3]; 2]
                     let t = (tool.build)(&mut m);
                     let (x, y) = if swap { (t, s) } else { (s, t) };
                     let r0 = RAISED.len();
-                    match (cell, run(&mut m, kind, x, y)) {
+                    match (cell, crate::boolean(&mut m, kind, x, y)) {
                         (Cell::Known, _) => {}
                         (Cell::Refused(name, file), Err(BoolError::Rejected { reason, .. }))
                             if reason == name =>
@@ -488,12 +493,12 @@ fn mesh_volume(m: &Model, solids: &[Handle<Solid>]) -> f64 {
         .sum()
 }
 
-/// **The scoreboard's commons are what the forward road builds** — every operand on it has no
-/// elliptical edge, so the door admits it: a flat tool is cut by the slant first and then met with
-/// the rod; a tool with a cylinder is met with the rod first (the slant would leave an ellipse on
-/// it) and the piece then cut by the slant. Either way the volume is the derived `common` — less the
-/// part inside the window, for the rod with its window — so a cell that builds behind the door is
-/// held to a number a road already answers, not to arithmetic alone.
+/// **The scoreboard's commons are what a second road builds** — one on which no operand carries a
+/// slanted rim: a flat tool is cut by the slant first and then met with the rod; a tool with a
+/// cylinder is met with the rod first (the slant would leave an ellipse on it) and the piece then
+/// cut by the slant. Either way the volume is the derived `common` — less the part inside the window,
+/// for the rod with its window — so a cell that builds is held to a number a road that never reads a
+/// slanted rim answers, not to arithmetic alone.
 #[test]
 fn the_scoreboards_commons_are_what_the_forward_road_builds() {
     let solids = |m: &Model, out: Vec<Handle<Solid>>| -> f64 {
@@ -560,53 +565,337 @@ fn the_scoreboards_commons_are_what_the_forward_road_builds() {
     }
 }
 
-/// **A result with an elliptical edge is refused as an operand, at the door** — every tool, every
-/// kind, both orders: `ObliqueCylinderCut`, raised by the boolean's entrance, not by any stage
-/// behind it.
-#[test]
-fn a_cut_rod_fed_back_is_refused_at_the_door() {
-    let door = Cell::Refused(RejectReason::ObliqueCylinderCut, "nacre-ops/src/boolean.rs");
-    scoreboard(false, crate::boolean, |_| [[door; 3]; 2]);
-}
-
-/// **What the stages behind the door answer for the cut rod** — the scoreboard the re-entry work
-/// flips row by row, for the rod and the rod with a window in its side. A tool with a plane touching
-/// the slanted rim at a point stops at the cylinder gate (`ClassMeet::Undrawable`). Every other cell
-/// builds, at its derived volume — a plane across the axis crossing the slanted rim included — but
+/// **A cut rod fed back to a boolean** — the rod and the rod with a window in its side, every tool,
+/// every kind, both orders. A tool with a plane touching the slanted rim at a point stops at the
+/// cylinder gate (`ClassMeet::Undrawable`). Every other cell builds, at its derived volume — a plane
+/// across the axis crossing the slanted rim included — but
 /// the windowed rod less a tool touching its window along a line, which touches itself
 /// (`SelfTouchingResult`), and the windowed rod fused from the tool's side with the wall box that
 /// seals its window, a known defect with a test of its own on an operand with no slanted rim.
 #[test]
-fn a_cut_rod_behind_the_door_builds_but_where_a_plane_meets_its_slanted_rim() {
+fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
     for windowed in [false, true] {
-        scoreboard(
-            windowed,
-            crate::boolean::behind_the_elliptical_door,
-            |tool| {
-                if tool.touches_rim {
-                    let gate = Cell::Refused(
-                        RejectReason::ObliqueCylinderCut,
-                        "nacre-ops/src/planes/cyl_gate.rs",
+        scoreboard(windowed, |tool| {
+            if tool.touches_rim {
+                let gate = Cell::Refused(
+                    RejectReason::ObliqueCylinderCut,
+                    "nacre-ops/src/planes/cyl_gate.rs",
+                );
+                return [[gate; 3]; 2];
+            }
+            let mut cells = tool.bodies.map(|row| row.map(Cell::Built));
+            if windowed && tool.window_piece {
+                cells[1][1] = Cell::Built(tool.bodies[1][1] + 1);
+            }
+            if windowed && tool.seals_window {
+                // `tests::loop_nesting::a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only`
+                cells[1][0] = Cell::Known;
+            }
+            if windowed && tool.touches_window {
+                cells[0][1] = Cell::Refused(
+                    RejectReason::SelfTouchingResult,
+                    "nacre-ops/src/assembly/self_touch.rs",
+                );
+            }
+            cells
+        });
+    }
+}
+
+/// **Other bodies with slanted rims fed back** — six more shapes against four tools, every kind,
+/// both orders, each cell at its derived volume (relative `1e-9`), validated and meshed:
+/// - a plate `[−5, 5]² × [0, 4]` drilled along `(0, 3, 4)` with radius 1 — both rims slanted, the
+///   material outside the bore — of volume `400 − 5π` (the bore crosses the slab `5/4` times its
+///   thickness);
+/// - the rod halved at `y = 3` then cut by the slant — a lateral whose slanted rim is an arc ending on
+///   two rulings, the cap a half-ellipse — of volume `10π`;
+/// - the rod notched on both sides (`zx_prism`): `x ≤ −3/2` over `1 ≤ z ≤ 5 + x`, and `x ≥ 3/2` over
+///   `11/2 − x ≤ z ≤ 9` — two slanted notch floors that cross on the cylinder at `x = 1/4`, between
+///   the lateral's ends `z = 0` and `z = 10`, which still stand below and above every boundary
+///   section (`planes::section_ends`). With `S = 4·acos(3/4) − (3/4)√7` the area of the disk past
+///   `|x| = 3/2` and `7√7/12` its first moment, the notches take `(4S − 7√7/12) + (7S/2 + 7√7/12)`,
+///   so the body is `40π − 15S/2`. The pin is refused in every cell by the nesting of a class's rings,
+///   which finds no witness (`RingHasNoWitness`, `nesting`'s `inside`): the notch floors' planes
+///   section the pin's cylinder clear of the floors — the first notch's prism against the pin builds
+///   in every cell;
+/// - the rod cut by the slant and then by `z = 5 − x/2` — two slanted rims crossing on one lateral at
+///   `x = 0` — of volume `20π − 16/3`, which no road fed back can order and every cell refuses by the
+///   lateral's span (`DeclineKind::CylSpan`);
+/// - the rod notched by the wedge between `z = 4 + x` and `z = 6 − x` over `x ≤ 1` — two slanted
+///   notch faces meeting on an edge `x = 1, z = 5` that crosses the lateral — of volume
+///   `104π/3 − 6√3` (the wedge's height `2 − 2x` over the disk short of `x = 1`). Past the far box
+///   every cell is refused: `z = 2` touches the wedge floor's section at its lowest point (the gate,
+///   `ObliqueCylinderCut`), the box `x ≥ 1` stops at the trace of the wedge's upper face
+///   (`DeclineKind::NoPinOnLine`), and the pin as for the two notches;
+/// - the rod with a window through `x ≤ −3/2` between `z = 4 + x` and `z = 6 − x` — a floor and a
+///   ceiling crossing on the cylinder at `x = 1`, the window's sides rulings — of volume
+///   `40π − 2S − 7√7/6`; its rulings run between the two sections, which order only on a generator,
+///   so the operand's boundary is read as curved (`CurvedOperandBoundary`) and the trace declines
+///   a face of the window (`DeclineKind::OuterRing`) in every cell but the touch at `z = 2`.
+///
+/// The tools: a far box, the half-space box `z ≥ 2`, the half-space box `x ≥ 1`, and the pin of
+/// radius ½ about `(0, 3)`. The plate's bore touches `x = 1` along a line, so the plate less that box
+/// touches itself; its bore and the pin are two cylinders of crossing axes, which the gate refuses.
+#[test]
+fn other_bodies_with_slanted_rims_fed_back() {
+    use RejectReason::{
+        CylinderPairContact, ObliqueCylinderCut, RingHasNoWitness, SelfTouchingResult,
+    };
+    let (s3, pi) = (3f64.sqrt(), PI);
+    let plate = |m: &mut Model| {
+        let p = crate::fixtures::cuboid(m, [-5.0, -5.0, 0.0], [5.0, 5.0, 4.0]);
+        let d = crate::fixtures::cylinder_with_seam(
+            m,
+            Point3::from_array([0.0, -2.25, -1.0]),
+            Vector3::from_array([0.0, 0.6, 0.8]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            1.0,
+            7.5,
+        )
+        .solid;
+        crate::boolean(m, BoolKind::Cut, p, d).expect("the drilled plate")[0]
+    };
+    let half = |m: &mut Model| {
+        let r = rod(m);
+        let b = crate::fixtures::cuboid(m, [-3.0, -1.0, -1.0], [3.0, 3.0, 11.0]);
+        let h = crate::boolean(m, BoolKind::Cut, r, b).expect("the half")[0];
+        let p = prism(m, 0.5);
+        crate::boolean(m, BoolKind::Cut, h, p).expect("the slanted half")[0]
+    };
+    let notched = |m: &mut Model| {
+        let mut r = rod(m);
+        for pts in [
+            &[(1.0, -3.0), (1.0, -1.5), (3.5, -1.5), (2.0, -3.0)][..],
+            &[(4.0, 1.5), (2.5, 3.0), (9.0, 3.0), (9.0, 1.5)][..],
+        ] {
+            let n = zx_prism(m, pts);
+            r = crate::boolean(m, BoolKind::Cut, r, n).expect("a notch")[0];
+        }
+        r
+    };
+    let wedged = |m: &mut Model| {
+        let r = rod(m);
+        let w = zx_prism(m, &[(1.0, -3.0), (5.0, 1.0), (9.0, -3.0)]);
+        crate::boolean(m, BoolKind::Cut, r, w).expect("the wedge")[0]
+    };
+    let ruled = |m: &mut Model| {
+        let r = rod(m);
+        let w = zx_prism(m, &[(1.0, -3.0), (2.5, -1.5), (7.5, -1.5), (9.0, -3.0)]);
+        crate::boolean(m, BoolKind::Cut, r, w).expect("the window")[0]
+    };
+    let twice = |m: &mut Model| {
+        let (r, p) = (rod(m), prism(m, 0.5));
+        let a = crate::boolean(m, BoolKind::Cut, r, p).expect("the slant")[0];
+        let q = prism(m, -0.5);
+        crate::boolean(m, BoolKind::Cut, a, q).expect("the second slant")[0]
+    };
+    type Build = fn(&mut Model) -> Handle<Solid>;
+    let tools: [(Build, f64); 4] = [
+        (
+            |m| crate::fixtures::cuboid(m, [20.0, 20.0, 20.0], [21.0, 21.0, 21.0]),
+            1.0,
+        ),
+        (
+            |m| crate::fixtures::cuboid(m, [-6.0, -6.0, 2.0], [6.0, 6.0, 12.0]),
+            1440.0,
+        ),
+        (
+            |m| crate::fixtures::cuboid(m, [1.0, -6.0, -2.0], [6.0, 6.0, 12.0]),
+            840.0,
+        ),
+        (|m| rod_on(m, [0.0, 3.0], 0.5, [-1.0, 11.0]), 3.0 * pi),
+    ];
+    // Per body: its volume, and per tool the common part — `Err` where every cell refuses by that
+    // name — with the cells' bodies `[Fuse, Cut, Common]`, the body first then the tool, and the one
+    // cell (kind, swap) refused by a name of its own.
+    type Row = (
+        Result<f64, RejectReason>,
+        [[usize; 3]; 2],
+        Option<(BoolKind, bool, RejectReason)>,
+    );
+    let far: Row = (Ok(0.0), [[2, 1, 0], [2, 1, 0]], None);
+    let ones = [[1; 3]; 2];
+    let outer_ring = RejectReason::TraceDeclined {
+        kind: crate::DeclineKind::OuterRing,
+        face: None,
+    };
+    // The disk past `|x| = 3/2`: its area and first moment.
+    let (seg, moment) = (
+        4.0 * 0.75f64.acos() - 0.75 * 7f64.sqrt(),
+        7.0 * 7f64.sqrt() / 12.0,
+    );
+    let bodies: [(Build, f64, [Row; 4]); 5] = [
+        (
+            plate,
+            400.0 - 5.0 * pi,
+            [
+                far,
+                (Ok(200.0 - 2.5 * pi), ones, None),
+                (
+                    Ok(160.0),
+                    ones,
+                    Some((BoolKind::Cut, false, SelfTouchingResult)),
+                ),
+                (Err(ObliqueCylinderCut), ones, None),
+            ],
+        ),
+        (
+            half,
+            10.0 * pi,
+            [
+                far,
+                (Ok(6.0 * pi), ones, None),
+                (Ok(5.0 * (2.0 * pi / 3.0 - s3 / 2.0) + s3 / 2.0), ones, None),
+                (Ok(5.0 * pi / 8.0), ones, None),
+            ],
+        ),
+        (
+            notched,
+            40.0 * pi - 7.5 * seg,
+            [
+                far,
+                (Ok(32.0 * pi - 6.5 * seg), ones, None),
+                (
+                    Ok(10.0 * (4.0 * pi / 3.0 - s3) - 3.5 * seg - moment),
+                    ones,
+                    None,
+                ),
+                (Err(RingHasNoWitness), ones, None),
+            ],
+        ),
+        (
+            wedged,
+            104.0 * pi / 3.0 - 6.0 * s3,
+            [
+                far,
+                (Err(ObliqueCylinderCut), ones, None),
+                (
+                    Err(RejectReason::TraceDeclined {
+                        kind: crate::DeclineKind::NoPinOnLine,
+                        face: None,
+                    }),
+                    ones,
+                    None,
+                ),
+                (Err(RingHasNoWitness), ones, None),
+            ],
+        ),
+        (
+            ruled,
+            40.0 * pi - 2.0 * seg - 2.0 * moment,
+            [
+                (Err(outer_ring), far.1, None),
+                (Err(ObliqueCylinderCut), ones, None),
+                (Err(outer_ring), ones, None),
+                (Err(outer_ring), ones, None),
+            ],
+        ),
+    ];
+    // A trace's decline is named by its kind; the face it names is the body's own handle.
+    let same_name = |a: RejectReason, b: RejectReason| match (a, b) {
+        (
+            RejectReason::TraceDeclined { kind: x, .. },
+            RejectReason::TraceDeclined { kind: y, .. },
+        ) => x == y,
+        _ => a == b,
+    };
+    for (body, volume, rows) in bodies {
+        let mut m = Model::new();
+        let b = body(&mut m);
+        let got = nacre_props::mass_props(&m, b).expect("props").volume;
+        assert!(close(got, volume, 1e-12), "the body: {got} vs {volume}");
+        for ((tool, tool_volume), (common, counts, refused)) in tools.iter().zip(rows) {
+            for (swap, row) in [false, true].into_iter().zip(counts) {
+                for (kind, n) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+                    .into_iter()
+                    .zip(row)
+                {
+                    let at = format!(
+                        "body of {volume:.3}, tool of {tool_volume:.3} — {kind:?} swap={swap}"
                     );
-                    return [[gate; 3]; 2];
+                    let mut m = Model::new();
+                    let (b, t) = (body(&mut m), tool(&mut m));
+                    let (x, y) = if swap { (t, b) } else { (b, t) };
+                    let out = crate::boolean(&mut m, kind, x, y);
+                    let own = refused.filter(|&(k, s, _)| k == kind && s == swap);
+                    match (common, out) {
+                        (Err(name), Err(BoolError::Rejected { reason, .. })) => {
+                            assert!(
+                                same_name(reason, name) || reason == CylinderPairContact,
+                                "{at}: {reason:?}"
+                            );
+                        }
+                        (Ok(_), Err(BoolError::Rejected { reason, .. })) if own.is_some() => {
+                            assert_eq!(Some(reason), own.map(|(_, _, r)| r), "{at}");
+                        }
+                        (Ok(c), Ok(out)) => {
+                            let got = built_volume(&m, &out, n, &at);
+                            let derived = match (kind, swap) {
+                                (BoolKind::Fuse, _) => volume + tool_volume - c,
+                                (BoolKind::Cut, false) => volume - c,
+                                (BoolKind::Cut, true) => tool_volume - c,
+                                (BoolKind::Common, _) => c,
+                            };
+                            assert!(close(got, derived, 1e-9), "{at}: {got} vs {derived}");
+                            let mesh = mesh_volume(&m, &out);
+                            assert!(close(mesh, derived, 2e-3), "{at}: mesh {mesh} vs {derived}");
+                        }
+                        (want, got) => panic!("{at}: want {want:?}, got {got:?}"),
+                    }
                 }
-                let mut cells = tool.bodies.map(|row| row.map(Cell::Built));
-                if windowed && tool.window_piece {
-                    cells[1][1] = Cell::Built(tool.bodies[1][1] + 1);
+            }
+        }
+    }
+    let mut m = Model::new();
+    let b = twice(&mut m);
+    let got = nacre_props::mass_props(&m, b).expect("props").volume;
+    assert!(close(got, 20.0 * pi - 16.0 / 3.0, 1e-12), "twice: {got}");
+    for (tool, _) in &tools {
+        for swap in [false, true] {
+            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                let mut m = Model::new();
+                let (b, t) = (twice(&mut m), tool(&mut m));
+                let (x, y) = if swap { (t, b) } else { (b, t) };
+                match crate::boolean(&mut m, kind, x, y) {
+                    Err(BoolError::Rejected {
+                        reason:
+                            RejectReason::TraceDeclined {
+                                kind: crate::DeclineKind::CylSpan,
+                                ..
+                            },
+                        ..
+                    }) => {}
+                    other => panic!("twice, {kind:?} swap={swap}: {other:?}"),
                 }
-                if windowed && tool.seals_window {
-                    // `tests::loop_nesting::a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only`
-                    cells[1][0] = Cell::Known;
-                }
-                if windowed && tool.touches_window {
-                    cells[0][1] = Cell::Refused(
-                        RejectReason::SelfTouchingResult,
-                        "nacre-ops/src/assembly/self_touch.rs",
-                    );
-                }
-                cells
-            },
-        );
+            }
+        }
+    }
+    // The first notch's prism itself against the pin — its floor's plane sections the pin's cylinder
+    // clear of the floor, as on the notched rod, and the two bodies stand apart: every cell builds.
+    // The prism is `6 · 3/2 · (1 + 5/2)/2`.
+    let (notch, prism_volume) = (
+        |m: &mut Model| zx_prism(m, &[(1.0, -3.0), (1.0, -1.5), (3.5, -1.5), (2.0, -3.0)]),
+        15.75,
+    );
+    let (pin, pin_volume) = tools[3];
+    for swap in [false, true] {
+        let cut = if swap { pin_volume } else { prism_volume };
+        for (kind, n, derived) in [
+            (BoolKind::Fuse, 2, prism_volume + pin_volume),
+            (BoolKind::Cut, 1, cut),
+            (BoolKind::Common, 0, 0.0),
+        ] {
+            let at = format!("the notch prism and the pin — {kind:?} swap={swap}");
+            let mut m = Model::new();
+            let (a, b) = (notch(&mut m), pin(&mut m));
+            let (x, y) = if swap { (b, a) } else { (a, b) };
+            let out = crate::boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
+            let got = built_volume(&m, &out, n, &at);
+            assert!(
+                close(got, derived, 1e-9) || n == 0,
+                "{at}: {got} vs {derived}"
+            );
+        }
     }
 }
 
@@ -650,4 +939,37 @@ fn a_moved_cut_rod_keeps_its_elliptical_rim() {
     assert_eq!(ellipses, 1);
     let v = nacre_props::mass_props(&m, s).expect("props").volume;
     assert!(close(v, 20.0 * PI, 1e-12), "{v}");
+}
+
+/// **A box turned off the quarters beside the cut rod is refused by the gate's name** — the box
+/// `[8, 10] × [−1, 1] × [1, 3]` turned 30° about `z`, clear of the rod. Its turned walls have no world
+/// statement; one cuts the rod's infinite cylinder with its faces apart, so its class draws the
+/// rulings on its own arrangement (`Silence::Sectioned`), and where such a ruling ends on the slanted
+/// rim the point is a nameless plane's meet with a section, stated only by intervals, whose height
+/// the ruling split cannot place — every cell refuses `CylinderGateUndecided`. The same box beside
+/// the rod before its cut builds (the common part is empty), so the refusal is the slanted rim's.
+#[test]
+fn a_turned_box_beside_the_cut_rod_is_refused_by_the_gates_name() {
+    let turned = |m: &mut Model| {
+        let b = crate::fixtures::cuboid(m, [8.0, -1.0, 1.0], [10.0, 1.0, 3.0]);
+        super::fixtures::xf(m, b, super::fixtures::rot_iso(Axis::Z, 30))
+    };
+    let mut m = Model::new();
+    let (r, t) = (rod(&mut m), turned(&mut m));
+    let out = crate::boolean(&mut m, BoolKind::Common, r, t).expect("the uncut rod builds");
+    assert!(out.is_empty(), "nothing in common: {out:?}");
+    for swap in [false, true] {
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            let (mut m, s) = cut_rod(0.5);
+            let t = turned(&mut m);
+            let (x, y) = if swap { (t, s) } else { (s, t) };
+            match crate::boolean(&mut m, kind, x, y) {
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CylinderGateUndecided,
+                    ..
+                }) => {}
+                other => panic!("{kind:?} swap={swap}: {other:?}"),
+            }
+        }
+    }
 }

@@ -1891,16 +1891,16 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   그래프**라는 것이다(`cyl_chart` 모듈 doc): θ 순서(`circular_order_about_seam`)·호 포함(`theta_between`)은 단면에도 참이고,
   원에만 맞던 «점에서의 반경에 축 성분이 없다»는 `nacre_exact::quad::axial_side`·`ccw_tangent_side` 한 술어로 묻는다
   (극점 평면의 `g*` 는 `combinatorics::winding` 의 그 주석). 호의 상자는 `trace_band`. 추적은 ⊥ 클래스와 한
-  덜어내기(`trace_on_face` — 면의 경계 단면마다 `section_meet`, 넘는 쪽은 두 단면의 바로 뒤 순서 `climb_over`; 꼭짓점은
-  `corner_on_section`, 가로지름이 없으면 `Theta::misses_an_angle`)이고, 그리지 못하는
+  덜어내기(`trace_on_face`; 꼭짓점은 `corner_on_section`, 가로지름이 없으면 `Theta::misses_an_angle`)이고, 그리지 못하는
   단면은 기권 하나(`DeclineKind::ObliqueSection`)라 불리언은 게이트와 같은 이름 `ObliqueCylinderCut` 으로 거절한다 — 기권의
   목록은 `trace_on_face`·`cycle_on_class` doc. 게이트는 평면이 옆면 경계의 어느 단면에도 한 점으로 접하지 않을 때 단면을 들이고(면이 옆면에
   닿는지는 묻지 않는다 — `oblique_section_meet`), 단면의 딱지와 절단점(`CutRim`)은 차트로 가 다른 선처럼 칸을 가른다. 결과 면이 단면을
   따라 경계 지어지면 결과에 타원 간선이 남는다(`Model::derive_edge_curve` — 원을 그 평면에 기울인 곡선). 단면을 따라 끝나는 옆면에는
   그 단면을 경계로 든 평면 면이 짝으로 있다(차트 census 가 단언한다). 결과를 읽는 쪽은 단면 위 호를 원과 같은 길로 읽는다 — 덩어리를
   가르는 옆면 패리티는 림 평면의 쪽(`in_faces::rim_up`), 면을 잇는 열쇠는 호의 평면까지(`face_components` 의 `JoinKey::Arc` — 캡의 원호와
-  단면의 호가 같은 두 점 사이에 선다). 타원 간선을 든 솔리드를 다시 피연산자로 주면 불리언 입구가 이 이름으로 거절한다(`boolean.rs` 의
-  `has_elliptical_edge`) — 게이트와 평면 표·옆면 독자가 원통 위 곡선을 축에 수직인 원으로 읽기 때문이다. 원 셀의 림 증인은 축에 수직인 클래스에만 낸다 — 비스듬한 클래스의 단면에 내면 `Witness::On` 이 거짓이 되어
+  단면의 호가 같은 두 점 사이에 선다). 타원 간선을 든 솔리드는 다시 피연산자가 된다 — **옆면 면은 룰링과 평면 단면으로 경계 지어지고,
+  면이 어디 있는지를 읽는 자리는 경계 단면을 두 단면의 한 물음(`section_meet`·`section_height_order`)으로 읽지 정거장(축 위 높이
+  하나)으로 읽지 않는다** — 원의 높이 비교는 그 ⊥·⊥ 경우다. 원 셀의 림 증인은 축에 수직인 클래스에만 낸다 — 비스듬한 클래스의 단면에 내면 `Witness::On` 이 거짓이 되어
   거절이 아니라 **조용한 오답**이다(`nesting` 의 그 주석). 「커버리지가 끝난다」(`NotSupported`)와 「닿을 수 없어야 할 백스톱이
   말했다」(`SuspectedDefect`)는 다른 문장이라 거절 이름을 재사용하지 않는다.
 - **한 클래스는 원과 룰링을 둘 다 들어도 되고, 둘이 가로지르면 안 된다.** 규칙은 «간선»에 대한 것이다 — 클래스의 간선은

@@ -112,10 +112,10 @@ pub(crate) fn trace_band(
 /// ([`crate::RejectReason::ObliqueCylinderCut`]) unless it is recorded as the class's section of
 /// the cylinder ([`crate::planes::CylRecord::Sections`]) — drawn on the class's own arrangement,
 /// whole or in arcs, which the roads above ask this of before they read a circle; a result face
-/// bounded along that section carries an elliptical edge. The seated producer has a second, stronger
-/// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
-/// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
-/// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
+/// bounded along that section carries an elliptical edge, and is an operand like any other. A seated
+/// disk (`LoopRing::Circle`, minted from a **single closed edge** lying in the class) is the class's
+/// section whole — a circle on a class across the axis, an ellipse on an oblique one (an operand's
+/// slanted cap) — so its readers ask this too before they read a circle.
 ///
 /// **The argument is easy to misread**,
 /// which is why a consumer that would answer *silently wrong* asks instead of assuming.

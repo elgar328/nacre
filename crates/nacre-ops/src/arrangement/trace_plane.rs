@@ -782,8 +782,9 @@ pub(super) fn trace_one(
     // **The seated walk's silence over a curved edge, checked rather than argued.** It emits
     // no segment there because the cylinder's own lateral face already put the element on this
     // class. That follows from the population gate — a class meeting a cylinder is ⊥ to its axis
-    // (a circle), carries its axis (two rulings), sections it obliquely with every face of the
-    // class apart from it (no ring rides the ellipse), or was refused long before here — but an
+    // (a circle), carries its axis (two rulings), sections it obliquely (a ring riding the ellipse
+    // is an operand's own slanted cap, along which its lateral grazes the class), or was refused
+    // long before here — but an
     // argument is not a measurement, and an element that goes missing does not raise: it silently
     // relabels the class.
     //

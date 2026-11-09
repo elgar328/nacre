@@ -392,11 +392,13 @@ pub enum RejectReason {
     /// that cuts a cylinder builds, and the result keeps the cut as elliptical edges: a rod's end
     /// cut obliquely, a gusset across a plate's bore, a tilted cylinder through a box. So does one
     /// that runs past every lateral face (a gusset beside a plate's holes) or whose faces only
-    /// touch the cylinder's solid (a gusset standing on the plate over a hole). Refused:
-    /// - an operand bounded by such an edge — a result of an oblique cut, fed to a boolean again;
-    /// - the plane touching a circle of a lateral face's boundary (a rim, or the arc of a hole in
-    ///   it) at a single point, or touching a corner of a lateral face's boundary from inside the
-    ///   face, or a section in a shape the trace does not read ([`DeclineKind::ObliqueSection`]);
+    /// touch the cylinder's solid (a gusset standing on the plate over a hole), and a result bounded
+    /// along such a section fed to a boolean again. Refused:
+    /// - a plane touching a curve of a lateral face's boundary (a rim, or the arc of a hole in it —
+    ///   a circle, or an ellipse a slanted cut left) at a single point — a slanted plane, or one
+    ///   across the axis at a slanted rim's highest or lowest point — or touching a corner of a
+    ///   lateral face's boundary from inside the face, or a section in a shape the trace does not
+    ///   read ([`DeclineKind::ObliqueSection`]);
     /// - a ruling another cylinder leaves on the plane not shown apart from the section;
     /// - the plane sectioning two cylinders whose axes are not parallel, or sectioning one while it
     ///   lies across the axis of another — however far that other cylinder stands.
