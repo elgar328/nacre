@@ -600,8 +600,8 @@ pub enum RejectReason {
     // slab, measured per attempt, two of each probe's three rays meet the other half's **lateral**;
     // a lateral's boundary loops answer whether the crossing is on it on the cylinder's own chart,
     // and the crossing census raises this reason nowhere. What can still exhaust a probe list is
-    // the probe on a ring or a tangent ray — a root on the seam is the cyclic order's first point
-    // and decides like any other.
+    // the probe on a ring — a ray tangent to an arc's section touches it and decides, and a root on
+    // the seam is the cyclic order's first point and decides like any other.
     //
     // **Exhaustion is not emptiness**: a probe list that starts **empty** — a ring cut out of a
     // cylinder names its corners with the quadric and `three_plane_probes` keeps only plane triples

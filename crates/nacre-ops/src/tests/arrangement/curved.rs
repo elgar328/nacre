@@ -1629,7 +1629,9 @@ fn the_mixed_parity_reads_a_bitten_ring() {
 /// (negative controls, both measured). It is the oracle for the mixed road as a
 /// whole — the straight arm, the arc arm and their junction on ordinary roots — and the
 /// corner-bitten plate (`a_root_at_an_arc_end_is_a_corner_on_the_ray`) is the watch on the
-/// arc-end arm, where a ray meets one end alone.
+/// arc-end arm, where a ray meets one end alone, and the quarter bite
+/// (`a_tangent_ray_at_an_arc_end_counts_the_side_the_arc_bends_to`) the watch on an end a tangent
+/// ray meets.
 #[test]
 fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
     use nacre_exact::{Orient, Rat};
@@ -1684,11 +1686,9 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
                     (bite, inside_bite, "bite"),
                     (overhang, inside_over, "overhang"),
                 ] {
-                    // **An abstention is allowed and a wrong answer is not.** The ray runs
-                    // along the chart's first axis, so a grid point whose ray meets a ring
-                    // corner has no parity to report — the caller's remedy is another point,
-                    // which is exactly what `coord_probes` does with its candidate list. What
-                    // the sweep locks is that every answer it *does* give is the truth.
+                    // Every answer is the truth, and an abstention off the boundary is counted
+                    // and must be none (below): a ray through a ring corner is decided by the
+                    // half-open rule, and a ray touching the circle by its touch.
                     match combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring) {
                         Some(got) => {
                             assert_eq!(got, want, "{who} at {p:?}");
@@ -1708,10 +1708,9 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
             on_boundary > 0,
             "the grid meets the boundary: {on_boundary}"
         );
-        // Recorded rather than bounded: every abstention here is the tangent ray (the columns
-        // `x = 35, 45` graze the circle — measured: 160 of 160, no corner among
-        // them), and its count is a property of this grid, not of the rule.
-        assert!(abstained > 0, "abstentions: {abstained}");
+        // No point off the boundary abstains: the rays of the columns `x = 35, 45` touch the
+        // circle, and a touch inside an arc's span counts nothing.
+        assert_eq!(abstained, 0, "abstentions off the boundary");
         assert!(
             on_chord > 0,
             "points on the chord inside the circle: {on_chord}"
@@ -1924,13 +1923,11 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                         // **A ring's boundary is its own arc, not the whole circle.** The bite's
                         // arc is the circle on the plate's side (`x ≤ 40 ∧ y ≤ 24`), the
                         // overhang's the rest: on its own arc a ring abstains, off it the point is
-                        // outside that ring. The tangent columns `x = 35, 45` are the exception the
-                        // ray makes, not the ring: a ray along `y` there only touches the circle,
-                        // and that ray abstains before any root is read.
+                        // outside that ring — on the tangent columns `x = 35, 45` too, where a ray
+                        // along `y` only touches the circle and counts nothing.
                         if radial == Orient::Zero {
                             boundary += 1;
                             let on_bite_arc = x <= Rat::from_int(40) && y <= Rat::from_int(24);
-                            let tangent_column = x == Rat::from_int(35) || x == Rat::from_int(45);
                             for (ring, own, who) in [
                                 (bite, on_bite_arc, "bite"),
                                 (overhang, !on_bite_arc, "overhang"),
@@ -1939,8 +1936,6 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                                     combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring);
                                 if own {
                                     assert_eq!(got, None, "{who} must abstain on its arc at {p:?}");
-                                } else if tangent_column {
-                                    assert_ne!(got, Some(true), "{who} off its arc at {p:?}");
                                 } else {
                                     assert_eq!(
                                         got,
@@ -1995,6 +1990,102 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                 assert_eq!(
                     decided, 48,
                     "the arc-end arm decided the single-end rays (seam_off {seam_off})"
+                );
+            },
+        );
+    }
+}
+
+/// **A tangent ray that meets an arc at its own end counts that end by the side the arc bends
+/// to** — the arc leaves the end along the ray, so its tangent says nothing, and the section lies
+/// on its centre's side.
+///
+/// The plate's corner `(40, 20)` is the circle's centre, so the bite is a quarter disk: an arc from
+/// `(35, 20)` to `(40, 15)` and two chords on the plate's walls. The rays run along `y`, and the
+/// lattice column `x = 35` is tangent to the circle at the bite's arc end `(35, 20)`: a ray of that
+/// column meets the corner there, where the chord `y = 20` leaves toward the centre's side and the
+/// arc leaves along the ray and bends to the same side. Both count the corner, so the point is
+/// outside both rings; read with the centre's side flipped, the arc would not count and the point
+/// would come out inside. The column `x = 45` is tangent to the overhang's arc inside its span —
+/// under `seam_off`, on its seam — where the ray touches and counts nothing. Every answer the sweep
+/// gives is the truth, no point off the boundary abstains, and the column `x = 35` decides the
+/// arc's end on every ray through it.
+#[test]
+fn a_tangent_ray_at_an_arc_end_counts_the_side_the_arc_bends_to() {
+    use nacre_exact::{Orient, Rat};
+    for seam_off in [false, true] {
+        with_cut_rings(
+            [40.0, 20.0, 20.0],
+            seam_off,
+            |jd, cyls, wc, _big, overhang, bite| {
+                let coeffs = jd.world_rat(wc).unwrap();
+                let def = cyls
+                    .iter()
+                    .map(|c| &c.def)
+                    .find(|d| *d.r2() == nacre_exact::BigRat::from(Rat::from_int(25)))
+                    .expect("the cut circle");
+                let int = Rat::from_int;
+                let (mut swept, mut inside_seen, mut boundary) = (0usize, 0usize, 0usize);
+                let mut tangent_end = [0usize; 2];
+                for i in 60..=100 {
+                    for j in 20..=60 {
+                        let p = [Rat::new(i, 2).unwrap(), Rat::new(j, 2).unwrap(), int(20)];
+                        let (x, y) = (p[0], p[1]);
+                        let radial = nacre_exact::quad::cylinder_radial_side(
+                            &p,
+                            &def.origin(),
+                            &def.dir(),
+                            def.r2(),
+                        );
+                        let on_chord = (x == int(40) && y >= int(15) && y <= int(20))
+                            || (y == int(20) && x >= int(35) && x <= int(40));
+                        let on_bite_arc = x <= int(40) && y <= int(20);
+                        let on_circle = radial == Orient::Zero;
+                        for (k, (ring, own_arc, who)) in [
+                            (bite, on_bite_arc, "bite"),
+                            (overhang, !on_bite_arc, "overhang"),
+                        ]
+                        .into_iter()
+                        .enumerate()
+                        {
+                            let decided0 = combinatorics::tie_probe::arc_end_decisions_mine();
+                            let got =
+                                combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring);
+                            if on_chord || (on_circle && own_arc) {
+                                boundary += 1;
+                                assert_eq!(
+                                    got, None,
+                                    "{who} must abstain on its boundary at {p:?}"
+                                );
+                                continue;
+                            }
+                            let in_disk = radial == Orient::Negative;
+                            let on_plate = x < int(40) && y < int(20);
+                            let want = if k == 0 {
+                                in_disk && on_plate
+                            } else {
+                                in_disk && !on_plate
+                            };
+                            assert_eq!(got, Some(want), "{who} at {p:?}");
+                            swept += 1;
+                            inside_seen += usize::from(want);
+                            if x == int(35)
+                                && combinatorics::tie_probe::arc_end_decisions_mine() > decided0
+                            {
+                                tangent_end[k] += 1;
+                            }
+                        }
+                    }
+                }
+                assert!(swept > 1_000, "answers swept: {swept}");
+                assert!(inside_seen > 100, "points inside a ring: {inside_seen}");
+                assert!(boundary > 0, "the grid meets the boundary: {boundary}");
+                // The rays of the column `x = 35` that reach `(35, 20)`: the twenty lattice points
+                // on its shooting side, each decided at the arc's end by both rings.
+                assert_eq!(
+                    tangent_end,
+                    [20, 20],
+                    "the tangent end decided (seam_off {seam_off})"
                 );
             },
         );

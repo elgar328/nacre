@@ -1215,8 +1215,10 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 /// * A cuboid `[3, 6] × [−1, 5] × [2.5, 4]`: its lower cap crosses the band above the plate,
 ///   where the circle is whole (the band's rims and holes are read from its cycles, and the
 ///   notch below carves nothing here), and its upper cap is beyond the band. It removes the boss
-///   over `z ∈ [2.5, 3]`, both halves: `π/8`. (A lower cap **on** the plate's top, `z = 2`,
-///   refuses `NoClearRay` today — a coplanar-contact containment question, not this road's.)
+///   over `z ∈ [2.5, 3]`, both halves: `π/8`.
+/// * The same cuboid from `z = 2`: its lower cap lies **on** the plate's top, a coplanar contact
+///   over the plate's `x ∈ [3, 4]` strip, and crosses the band where the circle is whole. It
+///   removes the boss over `z ∈ [2, 3]`, both halves: `π/4`.
 /// * A cuboid `[3, 6] × [−1, 5] × [0.5, 1.5]`: its caps run **through** the notch, where the
 ///   band's circle is only the outer half (the Crossing arm) — and through the plate's wall face
 ///   `x = 4`, whose ring carries the boss's **rulings**; the scan names each crossing there as
@@ -1259,6 +1261,22 @@ fn a_spliced_band_is_cut_across_its_notch() {
             (v - (v0 - pi / 8.0)).abs() < 1e-9,
             "{v} vs {}",
             v0 - pi / 8.0
+        );
+    }
+    // (a') the same caps with the lower one on the plate's top: a coplanar contact.
+    {
+        let (mut m, r0, v0) = build();
+        let tool = crate::fixtures::cuboid(&mut m, [3.0, -1.0, 2.0], [6.0, 5.0, 4.0]);
+        let r = boolean(&mut m, BoolKind::Cut, r0, tool)
+            .unwrap_or_else(|e| panic!("the band is cut from the plate's top: {e:?}"));
+        assert_eq!(r.len(), 1, "one solid");
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let v = nacre_props::mass_props(&m, r[0]).expect("props").volume;
+        assert!(
+            (v - (v0 - pi / 4.0)).abs() < 1e-9,
+            "{v} vs {}",
+            v0 - pi / 4.0
         );
     }
     // (b) caps through the notch: the plate's wall face carries the boss's rulings, and the

@@ -214,10 +214,8 @@ pub(super) fn group_faces(
     /// list that **started empty** is not a list that ran out: a component whose every corner is a
     /// pierce name, whose caps offer no candidate their ring says is inside — a thin segment of a
     /// disk — and whose edges name no interior point has no witness at all, and the tally says so
-    /// by the name the rings use for the same proposition. Measured: the suite's lists run out 20
-    /// times, all by abstentions (`NoClearRay` — a wall tangent to a half cylinder's or a half
-    /// bore's flat edge, in the world frame, where the tilted frame decides:
-    /// `tests/coverage/edge_on_a_ruling.rs`), the census's none. A list run out by
+    /// by the name the rings use for the same proposition. Measured: no list of the suite's or the
+    /// census's runs out. A list run out by
     /// [`Said::Silent`] has no fixture here: the two placements built to reach it (a bar's cavity
     /// in a block with turned boxes across every probe's ray — fused onto the block's sides, or
     /// standing off them on named bridges) were refused first, by the circle nesting on the caps'

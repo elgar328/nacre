@@ -109,6 +109,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A boolean with a wall tangent to a half cylinder or a half bore along the edge where its curved side ends on a flat face, the wall ending on that edge, builds in the world frame; with the solids unrotated, cutting the half cylinder from the wall and intersecting the half bore with it were refused as `no_clear_ray` (on a turned frame they built). The kernel's inside test gave up on a ray that only touched a circle of a face's outline.
 - `ops::realize_vertex` realizes a pierce corner (a straight wall meeting a round one) on a solid turned off the quarter turns — a slot, a fillet, a window through a boss — where it declined with `RealizeError::NoCurvedPoint`, so `ops::refine_caches` leaves no such corner unrealized before an export.
 - A profile with a straight wall meeting an arc extrudes on a face of a body turned off the quarter turns; it was refused with `ops::OpError::PlaneWithoutExactForm`.
 - A body standing on itself at a single point — a slanted prism's lowest corner resting inside another part's flat face, the parts joined elsewhere — is refused as `self_touching_result`; it came back as one solid, `validate` clean and the volume right. The check that refuses a body touching itself asked only its edges; it now asks its vertices too, on the plane faces they do not bound. A corner resting on the face's edge is refused by the same name, where it was `open_result_shell`.

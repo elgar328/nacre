@@ -1977,7 +1977,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   한쪽(σ)이다. 교차 수는 `(s_a ≠ σ) + (σ ≠ s_b)` 이고 패리티는 어느 쪽이든 `s_a ≠ s_b` 다. 정리는 개수만 주고 위치는
   안 주므로, 위치가 필요한 자리에서는 σ 를 쓴다 — 오라클이 있기 때문이다(재연산의 split-run 인구; 부호를 뒤집으면
   `LabelConflict`). 떠나는 간선은 σ 쪽 «가상 노드»로 걷기에 들어간다(`EdgeMeet::Departs { side: σ, .. }`, σ = −`ruling_side`).
-  선을 따라 떠나는 호(접선 성분 0)의 σ 는 단면의 중심 쪽이고(`combinatorics::arc_departure`), 닫힌 호면 선을 다시 건너지 않는다
+  선을 따라 떠나는 호(접선 성분 0)의 σ 는 단면의 중심 쪽이고(`combinatorics::arc_leaving_side` — 혼합 링의 접하는 반직선도 읽는다), 닫힌 호면 선을 다시 건너지 않는다
   (`ring_against_plane`) —
   잰 재연산 셋(접점에서 집힌 판 윗면을 그 접선으로 자르는 — `the_pinched_ring_re_cuts_along_the_rims_tangent`)에서는 그 점의 두
   run 이 접촉을 나눠 가질 뿐이라 이 부호를 뒤집어도 답이 같고, 오라클은 기하로 유도한 단위 시험

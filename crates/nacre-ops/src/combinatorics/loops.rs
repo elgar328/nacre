@@ -472,18 +472,9 @@ fn incident_plane_classes(
 /// point of cylinder `cyl` on that line, and travels counter-clockwise about the axis when `ccw`.
 /// The answer is [`EdgeMeet::Departs`]: the side of `q` the whole excursion lies on (a plane section
 /// of the cylinder meets a second plane in at most two points), and whether the arc leaves along
-/// `q`.
-///
-/// **The side is the first term of the arc's way out that is not zero.** Its counter-clockwise
-/// tangent's component along `n_q` is [`nacre_exact::quad::ccw_tangent_side`] — across the axis that
-/// is minus [`ruling_side_signed`] at the node, `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))`, the very
-/// predicate that names which ruling a lateral point lies on — and a clockwise arc's is its negation.
-/// Where that component is zero, `q` touches the section at the node, and the section — convex —
-/// lies on the side of `q` its centre does, the axis's meet with `p`: the curvature's term, whichever
-/// way the arc runs. Then the same canonical → outward bridge as [`side_of`] ([`Judge::outward_fix`]),
-/// so the answer sits in the walk's frame. `None` when a description is missing, or when the
-/// tangent reads zero with the centre on `q` (a plane through the centre crosses the section, it
-/// does not touch it — a contradiction, refused rather than guessed); the walk answers
+/// `q` — [`arc_leaving_side`] of the two classes' world statements, then the same canonical →
+/// outward bridge as [`side_of`] ([`Judge::outward_fix`]), so the answer sits in the walk's frame.
+/// `None` when a description is missing or [`arc_leaving_side`] cannot say; the walk answers
 /// `Unnameable`.
 ///
 /// Not `direction::arc_side`, which is the *turn* of an arc against a segment in the face's own
@@ -504,36 +495,60 @@ pub(crate) fn arc_departure(
     // leaves across the line (leaving along it needs the centre, which needs the class's plane);
     // over the suite, the census, the ignored sweep and nacre-kit no call with an exact meet in hand
     // comes here on such a class.
-    let np = jd
-        .world_rat(p)
-        .map_or_else(|| def.dir(), |w| [w[0], w[1], w[2]]);
+    let wp = jd.world_rat(p);
     let nq = jd.world_rat(q)?;
     let (line, sv) = pierce_meet(jd, cyl, def, node)?.into_exact()?;
-    let ts = nacre_exact::quad::ccw_tangent_side(
-        &np,
-        &[nq[0], nq[1], nq[2]],
-        &def.origin(),
-        &def.dir(),
-        (&line, &sv),
-    )?;
-    if ts != 0 {
-        return Some(EdgeMeet::Departs {
-            side: jd.outward_fix(q)? * if ccw { ts } else { -ts },
-            tangent: false,
-        });
-    }
-    let centre = nacre_exact::axis_plane_meet(&jd.world_rat(p)?, &def.origin(), &def.dir())?;
-    let at = nacre_exact::dot3_rat(&[nq[0], nq[1], nq[2]], &centre)?.checked_add(nq[3])?;
-    let zero = nacre_exact::Rat::from_int(0);
-    let side = match at.cmp(&zero) {
-        std::cmp::Ordering::Greater => 1,
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => return None,
-    };
+    let (side, along) = arc_leaving_side(wp.as_ref(), &nq, def, (&line, &sv), ccw)?;
     Some(EdgeMeet::Departs {
         side: jd.outward_fix(q)? * side,
-        tangent: true,
+        tangent: along,
     })
+}
+
+/// **Which side of the plane `q` an arc lies on as it leaves the point `at`** — the arc of the
+/// section of the cylinder `def` by the plane `p`, travelling counter-clockwise about the axis when
+/// `ccw` — and whether it leaves along `q`. Planes are coefficients, not classes, so a plane no
+/// class states — a ray's — asks it as a class does.
+///
+/// **The side is the first term of the arc's way out that is not zero.** Its counter-clockwise
+/// tangent's component along `n_q` is [`nacre_exact::quad::ccw_tangent_side`] — across the axis that
+/// is minus [`ruling_side_signed`] at the point, `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))`, the
+/// very predicate that names which ruling a lateral point lies on — and a clockwise arc's is its
+/// negation. Where that component is zero, `q` touches the section at the point, and the section —
+/// convex — lies on the side of `q` its centre does, the axis's meet with `p`: the curvature's term,
+/// whichever way the arc runs (`along` is then `true`). The planar sibling over rational 2-D data
+/// reads the same two terms (`nacre_geom::mixed`, `Arc::departs_up`).
+///
+/// `p` is `None` for a section whose plane has no world statement — a circle across the axis, whose
+/// normal is the axis; its centre term cannot be formed. `None` when a term cannot be formed or
+/// overflows, or when the tangent reads zero with the centre on `q` (a plane through the centre
+/// crosses the section, it does not touch it — a contradiction, refused rather than guessed). The
+/// side is in `q`'s own sense, the sign of its equation.
+pub(crate) fn arc_leaving_side(
+    p: Option<&[nacre_exact::Rat; 4]>,
+    q: &[nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+    at: (&nacre_exact::quad::MeetLine, &nacre_exact::QuadVal),
+    ccw: bool,
+) -> Option<(i8, bool)> {
+    let np = p.map_or_else(|| def.dir(), |w| [w[0], w[1], w[2]]);
+    let ts = nacre_exact::quad::ccw_tangent_side(
+        &np,
+        &[q[0], q[1], q[2]],
+        &def.origin(),
+        &def.dir(),
+        at,
+    )?;
+    if ts != 0 {
+        return Some((if ccw { ts } else { -ts }, false));
+    }
+    let centre = nacre_exact::axis_plane_meet(p?, &def.origin(), &def.dir())?;
+    let at_centre = nacre_exact::dot3_rat(&[q[0], q[1], q[2]], &centre)?.checked_add(q[3])?;
+    match at_centre.cmp(&nacre_exact::Rat::from_int(0)) {
+        std::cmp::Ordering::Greater => Some((1, true)),
+        std::cmp::Ordering::Less => Some((-1, true)),
+        std::cmp::Ordering::Equal => None,
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@
 //! from inside or outside; running across it it is refused by name — see
 //! [`a_tangent_wall_on_a_flats_edge_builds_or_is_refused`],
 //! [`a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused`] and
-//! [`a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused`]; ending there beside a secant of
+//! [`a_tangent_wall_on_a_half_bores_edge_builds`]; ending there beside a secant of
 //! `B`'s own, three planes on one line, it builds ([`three_planes_on_a_laterals_own_edge_build`]);
 //! and a wall through that edge from the side `A` does not fill — see
 //! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`].
@@ -370,9 +370,7 @@ fn a_keyhole_builds() {
 ///   side of the line — both below the wall, the lateral bending to its axis — and the pair flips
 ///   nothing (`arrangement::lateral_half_of_plane_pair_lines` on the tangent ruling). Every
 ///   boolean builds, valid, drawn, the volumes in closed form — `A ∩ B` is the half disk's strip
-///   `y ∈ [0, 1/2]` over the height the two share — but `B − A` in the world frame with `B` on
-///   the base cap or inside the span: there the grouping's rays all abstain (`NoClearRay`) where the
-///   tilted frame builds the same booleans.
+///   `y ∈ [0, 1/2]` over the height the two share.
 /// - **Across**: `TangentLineInAnotherPlane`, from the population gate, in either operand order,
 ///   at every height and in both frames. `B`'s wall runs across the line, and `A`'s flat and
 ///   lateral end on it: around it six regions meet, which the tangency's verdict does not read, and
@@ -400,7 +398,6 @@ fn a_tangent_wall_on_a_flats_edge_builds_or_is_refused() {
         std::f64::consts::PI,
         0.5 * 0.75f64.sqrt() + std::f64::consts::FRAC_PI_6,
     );
-    let mut abstained = 0;
     for (p, six) in &all {
         identities_with(p, six, a);
         let (b, common) = (p.b_volume(), strip * p.height.shared());
@@ -415,22 +412,10 @@ fn a_tangent_wall_on_a_flats_edge_builds_or_is_refused() {
         for (i, (got, want)) in six.iter().zip(want).enumerate() {
             match got {
                 Ok((_, v)) => assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}"),
-                Err(RejectReason::NoClearRay)
-                    if i == 3
-                        && !p.tilted
-                        && matches!(p.height, Height::OnBase | Height::Inside) =>
-                {
-                    abstained += 1;
-                }
                 Err(r) => panic!("{p}: [{i}] {r:?}"),
             }
         }
     }
-    assert_eq!(
-        abstained,
-        2 * 2,
-        "the abstaining rays: two heights, two vertex orders"
-    );
 }
 
 /// **A tangent wall ending on the flat edge from outside the half cylinder** — `B` touches `A`
@@ -555,13 +540,11 @@ fn half_bored_box() -> Profile2d {
 /// cylinder, but its lateral still bends to the axis on both sides of the tangent line, so on
 /// `B`'s wall class the lateral's side of the line is the axis side, as on a boss — the one bit
 /// that holds for both (`arrangement::rulings::axis_above`). Every boolean builds, valid, the
-/// volumes in closed form, and is drawn, but those pinned below: `A ∩ B` over the bore in the world
-/// frame, in either order and at every height, where the grouping's rays all abstain
-/// (`NoClearRay`) and the tilted frame builds the same booleans. `A ∪ B` beside the bore and
+/// volumes in closed form, and is drawn. `A ∪ B` beside the bore and
 /// `A − B` away from it, with `B` short of either of `A`'s caps, leave a vertex part way along the
 /// lateral's ruling edge, with no circle at its height — drawn too, in both frames.
 #[test]
-fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
+fn a_tangent_wall_on_a_half_bores_edge_builds() {
     let below: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 0.0], [1.0, 0.0]];
     let away: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 0.5], [1.0, 0.5]];
     let over: &[[f64; 2]] = &[[-3.0, 0.0], [1.0, 0.0], [1.0, 0.5], [-3.0, 0.5]];
@@ -576,7 +559,6 @@ fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
     );
     assert_eq!(all.len(), 3 * 2 * 2 * 4, "the family");
     let a = 16.0 - std::f64::consts::PI;
-    let mut refused: std::collections::BTreeMap<String, usize> = Default::default();
     for (p, six) in &all {
         identities_with(p, six, a);
         let area = match p.family {
@@ -596,29 +578,10 @@ fn a_tangent_wall_on_a_half_bores_edge_builds_or_is_refused() {
         for (i, (got, want)) in six.iter().zip(want).enumerate() {
             match got {
                 Ok((_, v)) => assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}"),
-                Err(r) => {
-                    *refused
-                        .entry(format!(
-                            "{} {:?} tilted={} [{i}] {r:?}",
-                            p.family, p.height, p.tilted
-                        ))
-                        .or_default() += 1;
-                }
+                Err(r) => panic!("{p}: [{i}] {r:?}"),
             }
         }
     }
-    let want_refused: std::collections::BTreeMap<String, usize> = Height::ALL
-        .iter()
-        .flat_map(|h| {
-            [4, 5].map(|i| {
-                (
-                    format!("above, over the bore {h:?} tilted=false [{i}] NoClearRay"),
-                    2,
-                )
-            })
-        })
-        .collect();
-    assert_eq!(refused, want_refused, "the refusals");
 }
 
 /// **An inward wedge with a third plane through its apex line** — the wedge of

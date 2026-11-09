@@ -146,14 +146,23 @@ impl ChartCorner {
 /// **A corner on the ray is a decision, not a tie**: the rule is the planar roads'
 /// half-open one, spelled once in [`nacre_geom::intersect::ray_step_crossing`] — the corner is
 /// counted by the step that leaves it upward. A line step reads that off its other end's sign;
-/// an arc whose root is its own end reads it off its tangent there (the CCW tangent's side of
-/// the ray's plane, [`nacre_exact::quad::ccw_tangent_side`] — `arc_departure`'s
-/// convention). Abstaining at the corner in both arms is not harmless: eight `NoClearRay`
-/// cells of the crossing census were exactly that abstention exhausting every probe.
+/// an arc whose root is its own end reads it off the side of the ray's plane the arc leaves
+/// toward ([`arc_leaving_side`]). Abstaining at the corner in
+/// both arms is not harmless: eight `NoClearRay` cells of the crossing census were exactly that
+/// abstention exhausting every probe.
+///
+/// **A ray tangent to the section touches it, it does not cross it.** The tangent point inside the
+/// arc's span counts nothing — the section lies on one side of the ray's line and comes back to it.
+/// At the arc's own end it is the corner on the ray again, and the arc leaves it along the ray
+/// toward its centre's side: [`arc_leaving_side`]'s curvature term. The planar sibling over
+/// rational 2-D data reads the same rule (`nacre_geom::mixed` — «a horizontal tangency is no
+/// transition»). Read as an abstention it would not be harmless: a wall tangent to a half
+/// cylinder's or a half bore's flat edge, in the world frame, sends every probe of a component
+/// along such a ray, and the boolean would have no witness (`tests/coverage/edge_on_a_ruling.rs`).
 ///
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
-/// across the ray, at an arc root inside the arc's closed span), a tangent ray, checked-`Rat`
-/// overflow, among them — and its one reader takes it as
+/// across the ray, at an arc root inside the arc's closed span), checked-`Rat` overflow, among
+/// them — and its one reader takes it as
 /// one: the coordinate reading of a ring ([`rational_ring_side`]) as what it cannot say,
 /// [`Said::Abstain`]. A root
 /// on the seam is none of them: the seam point is the cyclic order's first ([`arc_span`]).
@@ -297,18 +306,29 @@ pub(crate) fn point_in_mixed_ring(
                 // The ray's own plane: e2·p − qy = 0 (rational).
                 let ray_plane = [e2[0], e2[1], e2[2], Rat::from_int(0).checked_sub(qy)?];
                 let (o, m, r2) = (arc.def.origin(), arc.def.dir(), arc.def.r2());
+                // A tangent ray meets the section at one root it touches rather than crosses
+                // (`touch`): the span and the arc's ends read it below like any other root.
                 let roots = match nacre_exact::quad::plane_plane_cylinder(
                     wc_coeffs, &ray_plane, &o, &m, r2,
                 )? {
-                    CylinderMeet::Pair { line, s } => Some((line, s)),
+                    CylinderMeet::Pair { line, s: [s0, s1] } => {
+                        Some((line, [Some(s0), Some(s1)], false))
+                    }
+                    CylinderMeet::Tangent { line, s } => {
+                        Some((line, [Some(QuadVal::from_rat(s)), None], true))
+                    }
                     CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_) => None,
-                    // A tangent ray, a ruling, or degenerate planes: ties and shapes the parity
-                    // cannot count — abstain.
+                    // No shape an arc's class can make with the ray's plane: that plane's normal
+                    // `e2` lies in the class's plane, so the two are neither one plane nor
+                    // parallel, and their line runs along a ruling only on a class along the
+                    // axis (`n·m = 0`), which carries no arc. Abstain rather than guess.
                     _ => {
                         return None;
                     }
                 };
-                let Some((line, s)) = roots else { continue };
+                let Some((line, s, touch)) = roots else {
+                    continue;
+                };
                 // The arc's CCW span: the step's ends oriented by the carried `ccw` bit — the
                 // same convention every arc consumer reads (membership is direction-agnostic,
                 // so the *set* is what the CCW pair names).
@@ -320,7 +340,7 @@ pub(crate) fn point_in_mixed_ring(
                 } else {
                     ArcEnds::Open(&e_lo, &e_hi)
                 };
-                for root in s {
+                for root in s.into_iter().flatten() {
                     // Right of the probe along the ray: chart-x of the root.
                     let (bse, dir) = (line.base(), line.dir());
                     let x = QuadVal::from_rat(nacre_exact::dot3_rat(&bse, e1)?)
@@ -350,27 +370,27 @@ pub(crate) fn point_in_mixed_ring(
                     // **A root at the arc's own end is the corner on the ray in the arc's
                     // clothing**, and it takes the rule the line steps and the planar roads take
                     // (`ray_step_crossing`): the corner is counted by the step that leaves it
-                    // upward. The arc leaves an end along its tangent, whose side of the ray's
-                    // plane is the section's counter-clockwise tangent against the ray plane's
-                    // normal (`arc_departure`'s convention, the class's own section whatever
-                    // its tilt): `lo` departs CCW at `ts`, `hi` — walked backwards — at `−ts`.
-                    // With the end on the ray and right of the probe, that sign is the virtual
-                    // tangent step's `side` too (`t × (q − E) = ty·(Ex − qx)`), so the call is
+                    // upward. The arc's first stretch from that end is a short chord of it, and
+                    // the chord lies on the side of the ray's plane the arc leaves toward —
+                    // `arc_leaving_side` against that plane, whose sign is the chart's `y` above
+                    // the ray: the tangent's side, or along a tangent ray the centre's. `lo` departs
+                    // counter-clockwise, `hi` — walked backwards — clockwise. With the end on the
+                    // ray and right of the probe, that side is the chord's `side` too
+                    // (`(E + h − E) × (q − E) = h_y·(Ex − qx)`), so the call is
                     // `ray_step_crossing(Zero, ty, ty)` and no second cross product is spelled.
-                    // A `Pair` root is a simple root, so the ray crosses the section there and `ts`
-                    // is not zero — a ray tangent to the section is a `Tangent` meet, abstained on
-                    // above; the `?` guards that argument, and takes overflow and a class along the
-                    // axis too.
+                    // **Only a tangent ray leaves along it.** A `Pair` root is a simple root: the
+                    // ray's line runs along `n × e2 ∥ e1`, and a section tangent there along it
+                    // would make the line touch the section — a `Tangent` meet, not a `Pair`.
                     let departs_across = |end: &(MeetLine, QuadVal), ccw: bool| -> Option<bool> {
-                        let ts = nacre_exact::quad::ccw_tangent_side(
-                            &[wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]],
-                            e2,
-                            &o,
-                            &m,
+                        let (side, along) = arc_leaving_side(
+                            Some(wc_coeffs),
+                            &ray_plane,
+                            &arc.def,
                             (&end.0, &end.1),
-                        )
-                        .filter(|&ts| ts != 0)?;
-                        let ty = if (if ccw { ts } else { -ts }) > 0 {
+                            ccw,
+                        )?;
+                        debug_assert!(touch || !along, "a simple root left along the ray");
+                        let ty = if side > 0 {
                             Orient::Positive
                         } else {
                             Orient::Negative
@@ -385,8 +405,9 @@ pub(crate) fn point_in_mixed_ring(
                     // itself is one spelling (`arc_span`) the lateral road reads too.
                     // A closed arc's node is both its ends, and each end counts as the step it
                     // is: the arc leaving counter-clockwise and the arc arriving, walked back.
+                    // A tangent point inside the span is touched, not crossed.
                     let contained = match arc_span(&arc.def, ends, &rootp)? {
-                        ArcSpan::Inside => true,
+                        ArcSpan::Inside => !touch,
                         ArcSpan::Outside => false,
                         ArcSpan::AtLo => departs_across(&e_lo, true)?,
                         ArcSpan::AtHi => departs_across(&e_hi, false)?,
