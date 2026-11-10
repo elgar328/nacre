@@ -145,9 +145,9 @@ struct Fixture {
     /// No line numbers: a gate keyed on them goes red on every unrelated edit above a guard, which
     /// is how a lock stops being read. Lines are printed instead.
     raised: &'static [(&'static str, Option<&'static str>, &'static str)],
-    /// **The pinned surfaced shape** — the strong half. `par::try_map_range` returns the
-    /// lowest-index error by construction, so which reason comes back does not depend on the
-    /// schedule or the build.
+    /// **The pinned surfaced shape** — the strong half. `par::try_map_range` and the alias rounds
+    /// return the lowest-index error by construction, so which reason comes back does not depend on
+    /// the schedule or the build.
     surfaced: &'static [(&'static str, Option<&'static str>)],
 }
 

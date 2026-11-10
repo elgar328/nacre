@@ -190,7 +190,7 @@ impl From<TwoCylinders> for RejectReason {
 /// ([`Aliases::rep_rank`] — a point on a cylinder is represented on the cylinder, because the
 /// lateral chart reads the cylinder off the name).
 // `Clone` so a round can hand every class the table as it stood when the round began, and
-// merge their discoveries afterwards — see `trace_result_faces`. In the ordinary model the
+// merge their discoveries afterwards — see `fixed_point`. In the ordinary model the
 // maps are empty, so the copy costs nothing.
 #[derive(Default, Debug, Clone)]
 pub(crate) struct Aliases {
@@ -495,6 +495,12 @@ impl Aliases {
 
     fn union_point(&mut self, a: NodeId, b: NodeId) -> Result<(), TwoCylinders> {
         self.join_points(self.lines.restate(a), self.lines.restate(b))
+    }
+
+    /// [`Aliases::union_point`] for a test outside this module that builds a table by hand.
+    #[cfg(test)]
+    pub(super) fn union_for_test(&mut self, a: NodeId, b: NodeId) -> Result<(), TwoCylinders> {
+        self.union_point(a, b)
     }
 
     /// [`Aliases::union_point`] of the names as given — the table's keys are restated names

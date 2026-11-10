@@ -11,7 +11,9 @@
 //! a census keyed on raises alone would report it as 82% of all rejects, false about everything a
 //! caller saw. The probe's "this node cannot decide" is a typed abstention, not an error to
 //! swallow, so the columns' gap is the count of swallowed raises: near-zero is the goal state, and
-//! a gap opening is news of a new swallow.
+//! a gap opening is news of a new swallow — or of a refusal the alias rounds asked again: a class
+//! refusing in a round whose table grew raises and does not surface (`arrangement::fixed_point`;
+//! measured 0 over the suite).
 //!
 //! **What this does *not* answer: which *site* surfaced.** A reject is raised on a rayon worker
 //! and returned from the main thread, so nothing cheap connects the two (a thread-local cannot

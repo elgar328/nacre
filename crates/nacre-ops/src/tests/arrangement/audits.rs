@@ -763,27 +763,12 @@ pub(crate) fn frame_audit(
         &plane_ix,
         &cyls,
     );
-    // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names for
-    // one another's features, so auditing each class against an empty table is auditing a
-    // *different* pipeline — on a fixture that needs the rounds, its answer diverges from the
-    // boolean's.
-    let mut aliases = Aliases::default();
-    loop {
-        let before = aliases.learned();
-        for wc in 0..geom.len() {
-            let mut tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
-            aliases
-                .absorb(&jd, &std::mem::take(&mut tr.aliases))
-                .expect("absorb");
-            if tr.declined.is_empty() {
-                let merged = merge_coincident(&jd, &tr.segs, wc, &aliases).expect("merge");
-                let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
-            }
-        }
-        if aliases.learned() == before {
-            break;
-        }
-    }
+    // The alias fixpoint, exactly as the boolean runs it ([`settle_rounds`] — one copy): classes
+    // discover names for one another's features, so auditing each class against an empty table is
+    // auditing a *different* pipeline — on a fixture that needs the rounds, its answer diverges
+    // from the boolean's. The classes' refusals are this audit's to report one by one, below.
+    let work = work_classes(&trace_in, &plane_ix);
+    let (aliases, _) = settle_rounds(&jd, &cyls, &faces_tab, &plane_ix, &trace_in, &work)?;
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {

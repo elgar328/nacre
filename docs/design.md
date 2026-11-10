@@ -1734,7 +1734,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 
 ### 병렬 — 판정만 병렬, 순서는 고정
 
-`nacre-ops::par` 의 헬퍼(`map_range`·`try_map_range`, `PARALLEL_FLOOR`; `parallel` 피처, rayon)가 평면 클래스당 독립인 두 루프
+`nacre-ops::par` 의 헬퍼(`map_range`·`map_every`·`try_map_range`, `PARALLEL_FLOOR`; `parallel` 피처, rayon)가 평면 클래스당 독립인 두 루프
 (`trace_result_faces` 의 pass A 트레이스→병합→분할, pass B 셀→중첩→라벨→방출 — 잰 불리언 시간의 90%)와, 모델의 정밀도를
 **점마다** 읽는 `standard_for` 를 나눈다.
 
@@ -1743,7 +1743,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   입력에서 뒤 클래스에 잠복한 패닉이 닿게 되는 대가는 `try_map_range` doc. 문턱은 재서 넣은 비용 손잡이다 — `PARALLEL_FLOOR`
   doc 의 측정 표와 그 시험.
 - **별칭 표는 라운드 스냅샷으로.** 클래스는 라운드 시작의 표와 제 발견을 보고, 순차와 같은 고정점에 이르는 까닭은 스케줄이 아니라
-  `Aliases` 의 성질(최소 대표·단조 누적)이다 — `trace_result_faces` 본문의 라운드 주석. 별칭 36개가 두 라운드에 서는 4평면 모델을
+  `Aliases` 의 성질(최소 대표·단조 누적)이다 — `fixed_point` doc. 별칭 36개가 두 라운드에 서는 4평면 모델을
   한 스레드와 여럿이 같게 푸는 것은 `src/tests/suite/parallel.rs`.
 - **정밀도는 max 리덕션이라 안전하다** — `trial_bound`·`standard_for_points` 의 doc.
 - **브라우저는 순차 빌드다** — 그 까닭과 거기서 병렬에 드는 것은 `par` 모듈 doc.
@@ -1762,7 +1762,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   단위로만 면을 옮기는 `pass_through`, 밴드가 읽는 원판 라벨이 모두 그 가드에 선다(그 자리 주석). 원통 입력에 reuse 를 되살리는
   일은 성능 작업이 아니라 **밴드의 소속 판정**(「밴드와 라벨」)을 다시 설계하는 일이다.
 - **추적 패스(pass A)는 모든 클래스에 돈다** — `PassThrough` 가 정점에 이름을 못 붙이면 배열로 물러나고 그 배열은 그 클래스의
-  분할을 읽는다(`trace_result_faces` 본문; 건너뛰기는 「가지 말 것」). pass B 를 건너뛰는 결정은 `try_map_range` 의 클로저 안에서
+  분할을 읽는다(`settle_rounds` 본문; 건너뛰기는 「가지 말 것」). pass B 를 건너뛰는 결정은 `try_map_range` 의 클로저 안에서
   한다 — 그 자리 주석.
 - **차등 검사가 영구히 남는다** — 디버그 빌드는 같은 불리언을 `ClassReuse::{Off, Proved}` 로 두 번 풀어 같은 면을 요구한다(`Off` 는
   폴백이 아니라 기준이다; 정규형 `reuse::canonical`, 참조 실행의 제 `Notes`) — `arrangement::boolean` 본문과 `ClassReuse`·`canonical`

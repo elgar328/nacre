@@ -380,6 +380,139 @@ pub(super) fn class_skeleton(
     Ok((split, circles, rulings))
 }
 
+/// **Every class that has anything to arrange, in a fixed order.** Only the classes an operand
+/// face lies on: a result face on `W` is part of `∂A` or `∂B`, so `W` carries an operand face.
+pub(super) fn work_classes(
+    trace_in: &combinatorics::TraceInput,
+    plane_ix: &[ClassIx],
+) -> Vec<usize> {
+    // **Plane classes only.** A cylinder row rides in `trace_in` too (its lateral face is
+    // what leaves circles on the ⊥ classes), and a lateral surface *is* not a plane class —
+    // asking which one it is has no answer, which is exactly what `ClassIx::plane`'s panic
+    // says. Filtering here is the upstream filter that panic is a detector for; without it
+    // the first cylinder boolean aborts the kernel.
+    let mut c: Vec<usize> = trace_in
+        .faces
+        .iter()
+        .flatten()
+        .filter_map(|(fp, _)| match plane_ix[*fp] {
+            ClassIx::Plane(i) => Some(i),
+            ClassIx::Cyl(_) => None,
+        })
+        .collect();
+    c.sort_unstable();
+    c.dedup();
+    c
+}
+
+/// **The alias rounds: pass A, run until the table stops growing** — the settled table, and each
+/// class of `work` traced and split on it ([`class_skeleton`]), or the refusal it met there.
+///
+/// Two passes, because an identity must not depend on the order classes happen to be visited.
+/// Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
+/// Doing both in one loop would key an early class's tables before a later class had reported
+/// the alias that renames one of its vertices — the same point would then be assembled under two
+/// names and rejected as a `SeamAlias`, for a reason that is really "we asked too early".
+///
+/// A *new* alias found during a class's steps leaves what ran before it stale, so pass A repeats
+/// until the table stops growing. Discoveries only accumulate and are bounded, so this terminates;
+/// a model with no concurrency at all makes exactly one round. The last round — the one whose
+/// skeletons are kept — ran on a table that did not grow, so each skeleton is the one the settled
+/// table gives.
+pub(super) fn settle_rounds(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    trace_in: &combinatorics::TraceInput,
+    work: &[usize],
+) -> Result<(Aliases, Vec<Result<Skeleton, BoolError>>), BoolError> {
+    let mut aliases = Aliases::default();
+    seed_from_operands(&mut aliases, jd, cyls, trace_in);
+    let absorb = |table: &mut Aliases, local: &Aliases| table.absorb(jd, local).map_err(reject);
+    fixed_point(aliases, absorb, |snapshot| {
+        // Every class, refusals included, in class order — the lowest-numbered refusal is the one
+        // a settled round reports, in both builds.
+        crate::par::map_every(work.len(), |k| {
+            let wc = work[k];
+            // **Pass A runs for every class, including the ones pass B will not arrange.**
+            //
+            // Skipping them is unsound: pass B's reuse can *decline* — a vertex where four planes
+            // meet has four possible names and only the alias table settles which, so the class
+            // falls back to arranging — and the fallback reads the class's skeleton, which skipping
+            // pass A leaves empty, so the class's faces would vanish. It takes a model with a
+            // concurrency in a region the other operand cannot reach, and the corpus has none;
+            // running pass A everywhere keeps the fallback a real one.
+            let mut tr = timed!(
+                TRACE_ON,
+                trace_on_class(trace_in, wc, jd, cyls, faces, plane_ix, snapshot)
+            );
+            // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
+            // which operand face. A class can decline several faces; the first is the one
+            // reported.
+            if let Some(&(fp, kind)) = tr.declined.first() {
+                // The witness is the face handle, read **kind-agnostically**: a lateral face can
+                // decline too (`DeclineKind::CylSpan` is exactly that), and asking it for its
+                // plane row would abort where an honest reject belongs.
+                return Err(reject(decline_to_reject(kind, faces[fp].face())));
+            }
+            let mut local = snapshot.clone();
+            local
+                .absorb(jd, &std::mem::take(&mut tr.aliases))
+                .map_err(reject)?;
+            let skeleton = class_skeleton(jd, cyls, wc, &tr, &mut local)?;
+            Ok((skeleton, local))
+        })
+    })
+}
+
+/// **The fixed point of the alias rounds**, whatever a round computes: `round` maps the table a
+/// round begins with to each class's product and the table it learnt on top, or its refusal; the
+/// products are absorbed and the rounds repeat until the table stops growing, and that round's
+/// products and refusals are the answer.
+///
+/// **Every class in a round sees the table as it stood when the round began**, and its own
+/// discoveries on top — not whatever lower-numbered classes found meanwhile, as a sequential loop
+/// would show it. The fixed point is the same, and for two reasons that are both properties of
+/// `Aliases` rather than of the schedule: a merged class's representative is its **least** name in
+/// one order fixed by the names alone (`Aliases::rep_rank`) — and a name restated onto its line's
+/// name is never greater than the name it restates — so neither the partition nor its
+/// representatives depend on the order the unions and the lines were learnt in; and discoveries
+/// only accumulate, so learning something a round later just costs one more round.
+///
+/// **A round's refusal is read only on the settled table.** A class that refuses in a round whose
+/// table grew is asked again in the next one: what refused it may be a name another class reports
+/// in the same round. A refusal carries no table, so only what succeeded is absorbed — a record can
+/// fail half-made ([`Aliases::record_same_point`] joins the names before the concurrency that
+/// refuses a point on two cylinders), and absorbing the half would grow the table, close the record
+/// behind `one_point` next round, and lose the refusal. A class loses only what its own refused
+/// steps had learnt, which it learns again. `absorb`'s own refusal ends the rounds at once: two
+/// cylinders' components joined is a fact about the geometry that no round undoes.
+fn fixed_point<S>(
+    mut aliases: Aliases,
+    absorb: impl Fn(&mut Aliases, &Aliases) -> Result<(), BoolError>,
+    round: impl Fn(&Aliases) -> Vec<Result<(S, Aliases), BoolError>>,
+) -> Result<(Aliases, Vec<Result<S, BoolError>>), BoolError> {
+    loop {
+        let before = aliases.learned();
+        let snapshot = aliases.clone();
+        let mut classes = Vec::new();
+        for r in round(&snapshot) {
+            classes.push(match r {
+                Ok((product, local)) => {
+                    // Absorbing the snapshot back is a no-op; only the round's discoveries are new.
+                    absorb(&mut aliases, &local)?;
+                    Ok(product)
+                }
+                Err(e) => Err(e),
+            });
+        }
+        if aliases.learned() == before {
+            return Ok((aliases, classes));
+        }
+    }
+}
+
 /// Every result face across all plane classes, before assembly (the driver's risky half, testable
 /// by face count without mutating the model). A declining class aborts the whole boolean.
 ///
@@ -424,98 +557,10 @@ pub(super) fn trace_result_faces(
     };
     let plans = crate::reuse::class_plans(model, reuse, kind, a, b, planes, class_owner);
 
-    // Two passes, because an identity must not depend on the order classes happen to be visited.
-    // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
-    // Doing both in one loop would key an early class's tables before a later class had reported
-    // the alias that renames one of its vertices — the same point would then be assembled under two
-    // names and rejected as a `SeamAlias`, for a reason that is really "we asked too early".
-    //
-    // `split_at_crossings`' output does not depend on the table (it only writes to it), so pass A
-    // is a prefix of the work rather than extra work — except that a *new* alias found
-    // during a split leaves the merge that ran before it stale, so pass A repeats until the table
-    // stops growing. Discoveries only accumulate and are bounded, so this terminates; a model with
-    // no concurrency at all makes exactly one round.
-    // **Every class that has anything to arrange, in a fixed order.** Only the classes an operand
-    // face lies on: a result face on `W` is part of `∂A` or `∂B`, so `W` carries an operand face.
-    let work: Vec<usize> = {
-        // **Plane classes only.** A cylinder row rides in `trace_in` too (its lateral face is
-        // what leaves circles on the ⊥ classes), and a lateral surface *is* not a plane class —
-        // asking which one it is has no answer, which is exactly what `ClassIx::plane`'s panic
-        // says. Filtering here is the upstream filter that panic is a detector for; without it
-        // the first cylinder boolean aborts the kernel.
-        let mut c: Vec<usize> = trace_in
-            .faces
-            .iter()
-            .flatten()
-            .filter_map(|(fp, _)| match plane_ix[*fp] {
-                ClassIx::Plane(i) => Some(i),
-                ClassIx::Cyl(_) => None,
-            })
-            .collect();
-        c.sort_unstable();
-        c.dedup();
-        c
-    };
-    let mut aliases = Aliases::default();
-    seed_from_operands(&mut aliases, jd, cyls, trace_in);
-    #[allow(clippy::type_complexity)]
-    let mut splits: Vec<(Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedRuling>)> = Vec::new();
-    loop {
-        let before = aliases.learned();
-        // **Every class in the round sees the table as it stood when the round began**, and
-        // its own discoveries on top — not whatever lower-numbered classes found meanwhile, as
-        // a sequential loop would show it. The fixed point is the same, and for
-        // two reasons that are both properties of `Aliases` rather than of the schedule:
-        // a merged class's representative is its **least** name in one order fixed by the names
-        // alone (`Aliases::rep_rank`) — and a name restated onto its line's name is never greater
-        // than the name it restates — so neither the partition nor its representatives depend on
-        // the order the unions and the lines were learnt in; and discoveries only
-        // accumulate, so learning something a round later just costs one more round. The last
-        // round — the one whose splits are kept — runs on a table that
-        // has stopped growing either way.
-        let snapshot = aliases.clone();
-        // Class-major, so the reject a decline raises is still the lowest-numbered class's.
-        let round = crate::par::try_map_range(work.len(), |k| {
-            let wc = work[k];
-            // **Pass A runs for every class, including the ones pass B will not arrange.**
-            //
-            // Skipping them is unsound: pass B's reuse can *decline* — a vertex where four planes
-            // meet has four possible names and only the alias table settles which, so the class
-            // falls back to arranging — and the fallback reads `splits[wc]`, which skipping pass A
-            // leaves empty, so the class's faces would vanish. It takes a model with a concurrency
-            // in a region the other operand cannot reach, and the corpus has none; running pass A
-            // everywhere keeps the fallback a real one.
-            let mut tr = timed!(
-                TRACE_ON,
-                trace_on_class(trace_in, wc, jd, cyls, faces, plane_ix, &snapshot)
-            );
-            // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
-            // which operand face. A class can decline several faces; the first is the one
-            // reported, and `try_map_range` picks the lowest-numbered class, which is the one
-            // the sequential loop returned at.
-            if let Some(&(fp, kind)) = tr.declined.first() {
-                // The witness is the face handle, read **kind-agnostically**: a lateral face can
-                // decline too (`DeclineKind::CylSpan` is exactly that), and asking it for its
-                // plane row would abort where an honest reject belongs.
-                return Err(reject(decline_to_reject(kind, faces[fp].face())));
-            }
-            let mut local = snapshot.clone();
-            local
-                .absorb(jd, &std::mem::take(&mut tr.aliases))
-                .map_err(reject)?;
-            let skeleton = class_skeleton(jd, cyls, wc, &tr, &mut local)?;
-            Ok((skeleton, local))
-        })?;
-        splits.clear();
-        for (split, local) in round {
-            splits.push(split);
-            // Absorbing the snapshot back is a no-op; only the round's discoveries are new.
-            aliases.absorb(jd, &local).map_err(reject)?;
-        }
-        if aliases.learned() == before {
-            break;
-        }
-    }
+    let work = work_classes(trace_in, plane_ix);
+    let (aliases, classes) = settle_rounds(jd, cyls, faces, plane_ix, trace_in, &work)?;
+    // The lowest class's refusal, read on the settled table.
+    let splits: Vec<Skeleton> = classes.into_iter().collect::<Result<_, _>>()?;
 
     // Pass B is independent per class — it reads `splits[wc]` and the judging context, and
     // returns owned faces — so it is evaluated across cores. `try_map_range` is what keeps
@@ -623,3 +668,7 @@ pub(super) fn trace_result_faces(
     }
     Ok((local_faces, curved))
 }
+
+#[cfg(test)]
+#[path = "../tests/arrangement/result.rs"]
+mod tests;

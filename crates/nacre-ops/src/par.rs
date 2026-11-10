@@ -76,6 +76,22 @@ pub(crate) fn map_range<R>(n: usize, f: impl Fn(usize) -> R) -> Vec<R> {
     (0..n).map(f).collect()
 }
 
+/// Map `f` over **every** index of `0..n` on every core, collecting **in index order** — no
+/// floor, because the items it is for are whole plane classes, and nothing is skipped after a
+/// failure: a caller that reads every item's result (the alias rounds read each class's,
+/// refusals included) gets the same list in both builds.
+#[cfg(feature = "parallel")]
+pub(crate) fn map_every<R: Send>(n: usize, f: impl Fn(usize) -> R + Sync + Send) -> Vec<R> {
+    use rayon::prelude::*;
+    (0..n).into_par_iter().map(f).collect()
+}
+
+/// Map `f` over every index of `0..n`, collecting **in index order**.
+#[cfg(not(feature = "parallel"))]
+pub(crate) fn map_every<R>(n: usize, f: impl Fn(usize) -> R) -> Vec<R> {
+    (0..n).map(f).collect()
+}
+
 /// Map a fallible `f` over `0..n`, collecting **in index order**, and return the
 /// **lowest-index** error if any item fails.
 ///
@@ -94,10 +110,8 @@ pub(crate) fn try_map_range<R: Send, E: Send>(
     n: usize,
     f: impl Fn(usize) -> Result<R, E> + Sync + Send,
 ) -> Result<Vec<R>, E> {
-    use rayon::prelude::*;
-    let all: Vec<Result<R, E>> = (0..n).into_par_iter().map(f).collect();
     // A *sequential* collect over an ordered vec: the first `Err` by index wins.
-    all.into_iter().collect()
+    map_every(n, f).into_iter().collect()
 }
 
 /// Map a fallible `f` over `0..n`, returning the **lowest-index** error.
