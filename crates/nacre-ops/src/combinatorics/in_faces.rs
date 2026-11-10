@@ -515,10 +515,13 @@ fn curved_count(
             Said::Abstain
         });
     };
-    // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
-    // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
+    // The cut plane through the ray's origin, its normal the line's direction `stored_line_dir` —
+    // the direction `order_along` orders the plane faces of this same ray by, so its negative side
+    // is the half their `fwd == 1` counts, behind the query. A parity is one half's: the cross of
+    // the canonical `world_rat` normals is not that direction (`order_pinned`'s doc), and counted
+    // by it, 334 of the suite's 627 rays counted the lateral faces on the other half.
     let Some(half) = (|| {
-        let d = nacre_exact::cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
+        let d = stored_line_dir(jd, a, b)?;
         let at = nacre_exact::three_planes_rat([ca, cb, cc])?;
         let d0 = nacre_exact::Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&d, &at)?)?;
         Some([d[0], d[1], d[2], d0])
@@ -710,9 +713,10 @@ pub(crate) fn loop_parity(
 /// would come to disagree about a graze. A `half` is a rational plane through the ray's origin,
 /// and a crossing counts exactly when it is on that plane's **negative** side — so each road
 /// states its own half and nothing here has a front or a back: the named road's normal is the
-/// line's own direction `n_a × n_b` (which counts **behind** the query — `plane_plane_cylinder`
-/// builds the meet line's `dir` as `cross3_rat(n_a, n_b)`, the very `d` that `order_along`'s
-/// `fwd == 1` measures against), the coordinate road's is `−dir` (**ahead** of the origin).
+/// line's direction [`stored_line_dir`], the one [`order_along`] orders the ray's plane faces by
+/// (so it counts **behind** the query, as their `fwd == 1` does), the coordinate road's is `−dir`
+/// (**ahead** of the origin). Only the half reads a sense — the roots are points, so which way
+/// the meet line of `line` runs does not change a count.
 ///
 /// Each root asks the face by [`loop_parity`] **before** the half — a root off the face is not
 /// a crossing whichever side it is on, and a root on the face at the ray's own origin is the
@@ -1143,8 +1147,10 @@ pub(crate) fn point_in_component(
                 }
                 continue;
             }
+            // The half behind the query, the one `curved_count` counts the lateral faces on: a
+            // parity is one half's, so every face of the ray counts the same half.
             if fwd == 1 && in_g {
-                count += 1; // one side of the line — parity is the same on either half
+                count += 1;
             }
         }
         Ok(if count % 2 == 1 { Said::In } else { Said::Out })

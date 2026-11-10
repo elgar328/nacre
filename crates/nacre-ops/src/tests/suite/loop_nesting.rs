@@ -68,16 +68,18 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
     }
 }
 
-/// **A window sealed into a rod is a cavity from the rod's side only — a known defect.** The rod
-/// `x² + (y − 3)² ≤ 4`, `z ∈ [0, 10]`, with a window cut through its side (`x ∈ [1, 3]`,
-/// `y ∈ [2, 4]`, `z ∈ [2, 3]`), fused with the box `x ∈ [1.5, 4]`, `y ∈ [0, 6]`, `z ∈ [−1, 5.5]`:
-/// the box closes the window's rest (`x ∈ [1, 1.5]`, volume `1`) into a sealed cavity, every face of
-/// it a plane. With the rod first the result is one solid carrying that cavity; with the box first
-/// it is two solids — the cavity's shell comes out as a solid of its own, of volume `−1` — though
-/// both pass `validate`, and the planar twin (`a_slab_between_the_lid_and_the_floor_nests_two_loops`)
-/// seals its cavity in both orders. Today's answers, pinned until the fix flips the second.
+/// **A window sealed into a rod is a cavity, in either order.** The rod `x² + (y − 3)² ≤ 4`,
+/// `z ∈ [0, 10]`, with a window cut through its side (`x ∈ [1, 3]`, `y ∈ [2, 4]`, `z ∈ [2, 3]`),
+/// fused with the box `x ∈ [1.5, 4]`, `y ∈ [0, 6]`, `z ∈ [−1, 5.5]`: the box closes the window's
+/// rest (`x ∈ [1, 1.5]`, volume `1`) into a sealed cavity, every face of it a plane, while the
+/// rays that place it inside cross the rod's lateral face. Both orders are one solid carrying that
+/// cavity, of volume `40π + 97.5 − 5.5·S − 1` with `S = 4·acos(3/4) − (3/4)√7` the rod's disk past
+/// `x = 1.5` — as the planar twin (`a_slab_between_the_lid_and_the_floor_nests_two_loops`) seals
+/// its cavity in both orders.
 #[test]
-fn a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only() {
+fn a_window_sealed_in_a_rod_is_a_cavity_in_either_order() {
+    let s = 4.0 * 0.75f64.acos() - 0.75 * 7f64.sqrt();
+    let want = 40.0 * std::f64::consts::PI + 97.5 - 5.5 * s - 1.0;
     for swap in [false, true] {
         let mut m = Model::new();
         let r = crate::tests::slant_rod(&mut m);
@@ -88,22 +90,13 @@ fn a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only() {
         let out = boolean(&mut m, BoolKind::Fuse, x, y).expect("the fuse builds");
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "swap={swap}: {vs:?}");
-        let mut volumes: Vec<f64> = out
-            .iter()
-            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
-            .collect();
-        volumes.sort_by(f64::total_cmp);
-        if swap {
-            assert_eq!(
-                volumes.len(),
-                2,
-                "box first: the cavity comes out as a solid"
-            );
-            assert!((volumes[0] + 1.0).abs() < 1e-9, "box first: {volumes:?}");
-        } else {
-            assert_eq!(volumes.len(), 1, "rod first: one solid");
-            assert_eq!(m.solid(out[0]).cavities.len(), 1, "rod first: its cavity");
-        }
+        assert_eq!(out.len(), 1, "swap={swap}: one solid");
+        assert_eq!(m.solid(out[0]).cavities.len(), 1, "swap={swap}: its cavity");
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!(
+            ((v - want) / want).abs() < 1e-9,
+            "swap={swap}: {v} vs {want}"
+        );
     }
 }
 

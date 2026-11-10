@@ -238,8 +238,6 @@ struct Tool {
     /// The tool's surface touches the window's face `x = 1` along a line: the windowed rod less the
     /// tool touches itself there.
     touches_window: bool,
-    /// The tool closes the window's rest into a sealed cavity — fused with the windowed rod.
-    seals_window: bool,
 }
 
 fn rod_on(m: &mut Model, at: [f64; 2], r: f64, z: [f64; 2]) -> Handle<Solid> {
@@ -270,7 +268,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: true,
-            seals_window: false,
         },
         Tool {
             name: "a box over the rod's foot",
@@ -282,7 +279,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a second slant, z = 5 − x/2 and above",
@@ -294,7 +290,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a box above z = 5.5",
@@ -306,7 +301,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a box above z = 4.5",
@@ -318,7 +312,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a box above z = 5",
@@ -330,7 +323,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a pin of radius 1/2 through (1, 3)",
@@ -342,7 +334,6 @@ fn tools() -> Vec<Tool> {
             in_window: PI / 8.0,
             window_piece: true,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a pin of radius 1/2 sunk on the axis",
@@ -354,7 +345,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a wall box from x = 1.5 up to z = 5.5",
@@ -366,7 +356,6 @@ fn tools() -> Vec<Tool> {
             in_window: 2.0 * PI / 3.0 + s3 - 3.0,
             window_piece: false,
             touches_window: false,
-            seals_window: true,
         },
         Tool {
             name: "the slant's own prism",
@@ -378,7 +367,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a far box",
@@ -390,7 +378,6 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
         Tool {
             name: "a box touching the rim's top at z = 6",
@@ -402,18 +389,16 @@ fn tools() -> Vec<Tool> {
             in_window: 0.0,
             window_piece: false,
             touches_window: false,
-            seals_window: false,
         },
     ]
 }
 
 /// One cell's answer: refused by this name, raised in a file ending as the `str` says (empty: any),
-/// built into this many bodies, or a known defect another test pins (named where it is set).
+/// or built into this many bodies.
 #[derive(Clone, Copy, Debug)]
 enum Cell {
     Refused(RejectReason, &'static str),
     Built(usize),
-    Known,
 }
 
 /// The cut rod, plain or with its window ([`windowed_cut_rod`]), and its volume.
@@ -446,7 +431,6 @@ fn scoreboard(windowed: bool, want: impl Fn(&Tool) -> [[Cell; 3]; 2] + Sync) {
                     let (x, y) = if swap { (t, s) } else { (s, t) };
                     let r0 = RAISED.len();
                     match (cell, crate::boolean(&mut m, kind, x, y)) {
-                        (Cell::Known, _) => {}
                         (Cell::Refused(name, file), Err(BoolError::Rejected { reason, .. }))
                             if reason == name =>
                         {
@@ -568,10 +552,9 @@ fn the_scoreboards_commons_are_what_the_forward_road_builds() {
 /// **A cut rod fed back to a boolean** — the rod and the rod with a window in its side, every tool,
 /// every kind, both orders. A tool with a plane touching the slanted rim at a point stops at the
 /// cylinder gate (`ClassMeet::Undrawable`). Every other cell builds, at its derived volume — a plane
-/// across the axis crossing the slanted rim included — but
-/// the windowed rod less a tool touching its window along a line, which touches itself
-/// (`SelfTouchingResult`), and the windowed rod fused from the tool's side with the wall box that
-/// seals its window, a known defect with a test of its own on an operand with no slanted rim.
+/// across the axis crossing the slanted rim included, and the wall box that seals the window's rest
+/// into a cavity, in either order — but the windowed rod less a tool touching its window along a
+/// line, which touches itself (`SelfTouchingResult`).
 #[test]
 fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
     for windowed in [false, true] {
@@ -586,10 +569,6 @@ fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
             let mut cells = tool.bodies.map(|row| row.map(Cell::Built));
             if windowed && tool.window_piece {
                 cells[1][1] = Cell::Built(tool.bodies[1][1] + 1);
-            }
-            if windowed && tool.seals_window {
-                // `tests::loop_nesting::a_window_sealed_in_a_rod_is_a_cavity_from_the_rods_side_only`
-                cells[1][0] = Cell::Known;
             }
             if windowed && tool.touches_window {
                 cells[0][1] = Cell::Refused(
