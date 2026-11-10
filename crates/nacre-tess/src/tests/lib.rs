@@ -639,11 +639,10 @@ fn a_band_cut_at_both_rims_meshes_as_its_surface() {
 #[test]
 fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
     let deg = |d: f64| d.to_radians();
-    let tau = std::f64::consts::TAU;
     let up: Vec<f64> = (0..36).map(|k| deg(10.0 * f64::from(k))).collect();
     let down: Vec<f64> = (0..36).map(|k| deg(360.0 - 10.0 * f64::from(k))).collect();
     let hole = vec![deg(-100.0), deg(100.0)];
-    let turns = vec![(up.clone(), tau), (down.clone(), -tau), (hole, 0.0)];
+    let turns = vec![(up.clone(), 1), (down.clone(), -1), (hole, 0)];
     let c = band_generator(&turns, [0, 1], |_| true).expect("a generator outside the hole");
     let c = c.to_degrees().rem_euclid(360.0);
     assert!(
@@ -657,7 +656,7 @@ fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
     let from_ten: Vec<f64> = (1..=36).map(|k| deg(10.0 * f64::from(k))).collect();
     let mut doubled: Vec<f64> = [10.0, 20.0, 30.0, 20.0, 10.0].map(deg).to_vec();
     doubled.extend((4..=36).map(|k| deg(10.0 * f64::from(k)))); // 40° .. 360°
-    let turns = vec![(from_ten, tau), (doubled, tau)];
+    let turns = vec![(from_ten, 1), (doubled, 1)];
     let c = band_generator(&turns, [0, 1], |_| true).expect("a generator off the fold");
     let c = c.to_degrees().rem_euclid(360.0);
     assert!(
@@ -1163,14 +1162,9 @@ fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
 #[test]
 fn a_band_generator_takes_no_rulings_step() {
     let deg = |d: f64| d.to_radians();
-    let tau = std::f64::consts::TAU;
     let up: Vec<f64> = (0..36).map(|k| deg(10.0 * f64::from(k))).collect();
     let down: Vec<f64> = (0..36).map(|k| deg(360.0 - 10.0 * f64::from(k))).collect();
-    let turns = vec![
-        (up, tau),
-        (down, -tau),
-        (vec![deg(-100.0), deg(100.0)], 0.0),
-    ];
+    let turns = vec![(up, 1), (down, -1), (vec![deg(-100.0), deg(100.0)], 0)];
     let at = |arc: &dyn Fn(usize) -> bool| {
         band_generator(&turns, [0, 1], arc)
             .expect("a generator")
@@ -1198,14 +1192,13 @@ fn a_band_generator_takes_no_rulings_step() {
 #[test]
 fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
     let deg = |d: f64| d.to_radians();
-    let tau = std::f64::consts::TAU;
     let up: Vec<f64> = (0..36).map(|k| deg(10.0 * f64::from(k))).collect();
     let down: Vec<f64> = (0..36).map(|k| deg(360.0 - 10.0 * f64::from(k))).collect();
     let covering = vec![
-        (up.clone(), tau),
-        (down.clone(), -tau),
-        (vec![deg(-100.0), deg(100.0)], 0.0),
-        (vec![deg(-10.0), deg(270.0)], 0.0),
+        (up.clone(), 1),
+        (down.clone(), -1),
+        (vec![deg(-100.0), deg(100.0)], 0),
+        (vec![deg(-10.0), deg(270.0)], 0),
     ];
     let c = band_generator(&covering, [0, 1], |_| true).expect("a generator through one hole");
     let c = c.to_degrees().rem_euclid(360.0);
@@ -1217,9 +1210,9 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
         "the generator {c}° crosses both holes or neither"
     );
     let folded = vec![
-        (up, tau),
-        (down, -tau),
-        (vec![deg(1.0), deg(359.0), deg(3.0), deg(357.0)], 0.0),
+        (up, 1),
+        (down, -1),
+        (vec![deg(1.0), deg(359.0), deg(3.0), deg(357.0)], 0),
     ];
     assert_eq!(band_generator(&folded, [0, 1], |_| true), None);
 }
@@ -2550,4 +2543,202 @@ fn rod_cut_obliquely(low: f64, high: f64) -> (Model, Vec<Handle<nacre_topo::Soli
     };
     let out = boolean(&mut m, BoolKind::Cut, rod, prism).expect("the rod cuts");
     (m, out)
+}
+
+/// **A vertex a ring passes twice on one turn stands at one `θ`, bitwise** — what makes its two
+/// visits one chart point, and so a pinch the sweep is handed ([`shared_vertices`]). A ring of
+/// samples on a real lateral leaves a vertex, wanders a few hundred steps of uneven size (each
+/// under half a turn) and comes back to it — out and back on the same turn, or on round a whole
+/// turn. Every visit of the vertex is then its first `θ` plus whole turns, bitwise. Summing the
+/// steps' `f64` differences instead leaves the returns a few ulps apart.
+#[test]
+fn a_vertex_passed_twice_on_one_turn_has_one_theta() {
+    use std::f64::consts::{PI, TAU};
+    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 4.0);
+    let [fh] = laterals(&m, m.live_solids()[0])[..] else {
+        panic!("one lateral");
+    };
+    let Some(cyl) = m.surface_cache(m.face(fh).surface).cylinder() else {
+        panic!("a lateral");
+    };
+    let (o, x, y) = (
+        cyl.axis().origin(),
+        cyl.ref_dir(),
+        cyl.axis().direction().cross(cyl.ref_dir()),
+    );
+    let mut t = Tessellation::default();
+    let mut at = |a: f64| {
+        t.vertices.push(TessVertex {
+            pos: o + x * (5.0 * a.cos()) + y * (5.0 * a.sin()),
+            origin: TessOrigin::OnFace {
+                face: fh,
+                uv: [0.0, 0.0],
+            },
+        })
+    };
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed >> 11) as f64 / (1u64 << 53) as f64
+    };
+    // The angle of `(3, −4)`, the rim point the wedge scoreboard pinches its lateral at.
+    let home_angle = (-4.0f64).atan2(3.0);
+    let home = at(home_angle);
+    let mut ring = vec![home];
+    for walk in 0..12 {
+        let whole = walk % 3 == 2;
+        let steps = 200 + (next() * 200.0) as usize;
+        let reach = if whole { TAU } else { PI * (0.2 + next()) };
+        for k in 1..steps {
+            let s = k as f64 / steps as f64;
+            let out = if whole {
+                s * reach
+            } else {
+                reach * (1.0 - (2.0 * s - 1.0).abs())
+            };
+            ring.push(at(home_angle + out + 1e-3 * (next() - 0.5)));
+        }
+        ring.push(home);
+    }
+    let (thetas, _) = unwrapped_thetas(&t, cyl, &ring);
+    let wrong: Vec<(usize, f64)> = ring
+        .iter()
+        .zip(&thetas)
+        .enumerate()
+        .filter(|&(_, (&h, _))| h == home)
+        .filter_map(|(k, (_, &theta))| {
+            let turns = ((theta - thetas[0]) / TAU).round();
+            let want = thetas[0] + TAU * turns;
+            (theta.to_bits() != want.to_bits()).then_some((k, theta - want))
+        })
+        .collect();
+    assert!(wrong.is_empty(), "returns off their first θ: {wrong:?}");
+}
+
+/// **Every point of a lateral's chart stands at `r·(its angle + whole turns)`, bitwise — the
+/// holes too.** A hole unwrapped on its own may land a turn away from its material and rides whole
+/// turns into the outer ring's window; the ride is added to the ring's turn count ([`on_turn`]),
+/// not as a distance to `v`, so a hole's point keeps the one spelling every other point has.
+/// Added to `v` instead, `r·θ + k·τr` and `r·(θ + kτ)` part by an ulp here and there, and a vertex
+/// a hole shares with another ring would stand at two chart points. Built the way
+/// [`tessellate_solids`] builds them, on laterals whose holes ride (premise counted).
+#[test]
+fn a_lateral_chart_point_is_its_angle_plus_whole_turns() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    // A window through a boss of radius 3 — at `r = 1` (the shared `windowed_boss`) multiplying by
+    // `r` is exact and the two spellings agree bitwise. `1.8² + 2.4² = 3²` keeps the corners
+    // rational; the seam faces the window or turns away from it.
+    let window = |m: &mut Model, seam_x: f64| -> Handle<Solid> {
+        let boss = fixtures::cylinder_with_seam(
+            m,
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([seam_x, 0.0, 0.0]),
+            3.0,
+            4.0,
+        )
+        .solid;
+        let cut = fixtures::cuboid(m, [1.5, -1.8, 1.5], [6.0, 1.8, 2.5]);
+        boolean(m, BoolKind::Cut, boss, cut).expect("the window")[0]
+    };
+    type Build = fn(&mut Model, &dyn Fn(&mut Model, f64) -> Handle<Solid>);
+    let shapes: [(&str, Build); 3] = [
+        ("a window facing the seam", |m, w| {
+            w(m, 1.0);
+        }),
+        ("a window away from the seam", |m, w| {
+            w(m, -1.0);
+        }),
+        ("both rims cut", |m, _| {
+            fixtures::cut_at_both_rims(m, BoolKind::Cut, -2.0);
+        }),
+    ];
+    let cfg = TessConfig::default();
+    let mut rode = 0usize;
+    let mut wrong: Vec<String> = Vec::new();
+    for (name, build) in shapes {
+        let mut m = Model::new();
+        build(&mut m, &window);
+        let reach = m.reachable();
+        let (live, mut sets) = theta_sets(&m, &cfg, &reach).expect("θ sets");
+        let (Finished { t, cuts, .. }, _) = finish_polylines(&m, &reach, &live, &mut sets);
+        for &(fh, face) in &live {
+            let Some(cyl) = m.surface_cache(face.surface).cylinder() else {
+                continue;
+            };
+            let chart = cylinder_chart(&t, &m, face, cyl, cuts.get(&fh).cloned(), &sets.faces[&fh])
+                .expect("a chart");
+            let r = cyl.radius();
+            for (ri, ring) in chart.rings.iter().enumerate() {
+                let handles: Vec<Handle<TessVertex>> =
+                    ring.iter().map(|&i| chart.handles[i]).collect();
+                let own = ring_turns(&t, cyl, &handles);
+                for (k, &i) in ring.iter().enumerate() {
+                    let angle = own.angle[k];
+                    let turns =
+                        ((chart.uv[i][1] / r - angle) / std::f64::consts::TAU).round() as i64;
+                    if ri > 0 && turns != own.turns[k] {
+                        rode += 1;
+                    }
+                    if chart.uv[i][1].to_bits() != (r * on_turn(angle, turns)).to_bits() {
+                        wrong.push(format!("{name}: ring {ri} position {k}"));
+                    }
+                }
+            }
+        }
+    }
+    assert!(rode > 0, "the premise: some hole rides a turn");
+    assert!(
+        wrong.is_empty(),
+        "{} points off the spelling: {wrong:?}",
+        wrong.len()
+    );
+}
+
+/// **A hole rides the fewest whole turns that put its lowest `θ` at or above the outer ring's
+/// lowest** ([`hole_ride`]), compared in the one spelling. Synthetic rings of one position each.
+/// The ties come first: the hole's lowest point at the outer ring's lowest angle, a turn below it
+/// in the counts, rides one turn — the quotient `(floor − lowest)/τ` rounds to a hair over one
+/// there and its ceiling is two (premise asserted, so the fixture keeps its point). Then a hole
+/// below the window, one already in it, and one far above, which rides down; and the one direction
+/// spelled twice — a hole at `π` over an outer ring at `−π` is a tie at a turn below the counts'
+/// difference (`π − τ` rounds to `−π`), the bracket's lower end, and the mirror rides one turn up.
+#[test]
+fn a_hole_rides_the_fewest_turns_that_put_it_in_the_outer_window() {
+    use std::f64::consts::{PI, TAU};
+    let ring = |angle: f64, turns: i64| RingTurns {
+        angle: vec![angle],
+        turns: vec![turns],
+        total: 0,
+    };
+    let quotient = |(ao, no): (f64, i64), (ah, nh): (f64, i64)| {
+        ((on_turn(ao, no) - on_turn(ah, nh)) / TAU).ceil() as i64
+    };
+    for (outer, hole) in [((2.527, 1), (2.527, 0)), ((-2.184, 0), (-2.184, -1))] {
+        assert_eq!(
+            quotient(outer, hole),
+            2,
+            "the premise: the quotient's ceiling rides {hole:?} a turn too many"
+        );
+        let (o, h) = (ring(outer.0, outer.1), ring(hole.0, hole.1));
+        assert_eq!(hole_ride(&o, &h), Some(1), "{outer:?} {hole:?}");
+    }
+    for (outer, hole, want) in [
+        ((1.0, 0), (-1.0, 0), 1),
+        ((-1.0, 0), (1.0, 0), 0),
+        ((0.5, 0), (0.5, 3), -3),
+        ((0.5, 0), (-0.5, 3), -2),
+        ((-PI, 0), (PI, 0), -1),
+        ((PI, 0), (-PI, 0), 1),
+    ] {
+        let (o, h) = (ring(outer.0, outer.1), ring(hole.0, hole.1));
+        assert_eq!(hole_ride(&o, &h), Some(want), "{outer:?} {hole:?}");
+    }
+    assert_eq!(
+        hole_ride(&ring(0.0, 0), &ring(f64::NAN, 0)),
+        None,
+        "a NaN angle"
+    );
 }

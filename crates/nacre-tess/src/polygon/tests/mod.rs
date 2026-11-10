@@ -1312,7 +1312,7 @@ fn random_pinched_grid_faces_triangulate() {
             .chain((0..idx.len()).filter(|&i| i != outer[0]))
             .collect();
         let idx: Vec<Vec<usize>> = order.iter().map(|&i| idx[i].clone()).collect();
-        // Revisits by coordinate, as `shared_vertices` finds them by handle.
+        // Revisits by chart point, as `shared_vertices` finds them (its handle is the index here).
         let mut first: std::collections::BTreeMap<(u64, u64), (usize, usize)> =
             std::collections::BTreeMap::new();
         let mut revisits = Vec::new();

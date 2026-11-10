@@ -21,7 +21,8 @@
 //! Each wedge either ends inside the plate (`z ∈ [5, 15]` on the top rim's side) or runs through
 //! it (`z ∈ [−5, 15]`), where `B − A` also splits at the plate's far face unless the bore joins the
 //! two parts. Every cell is one boolean on a fresh model: built ones are held to their body count,
-//! `validate` and the mesh, refused ones to their name, and the volumes to the boolean identities
+//! `validate` and the mesh (`drawn` — watertight, upright, its volume within the budget's sagitta),
+//! refused ones to their name, and the volumes to the boolean identities
 //! with `A = 16000 − 250π` and `B` in closed form — its section is the product of two widths
 //! linear in `z` over the one height range both prisms share, so Simpson's rule is exact.
 //!
@@ -31,10 +32,12 @@
 //! bore's seam along `+y`, `(16, 13)` comes before `P` in the rim's order, so that turn does not
 //! start at the rim's first node.
 //!
-//! **One shape answers wrong today**: the outside wedge ending inside the plate on the top rim,
-//! fused — one body, `validate` clean, its volumes right, and the mesher refuses its lateral
-//! (`DegenerateRing`; `SelfTouchingBoundary` with the bridged family's seam). The bottom-rim twin
-//! meshes. todo «띠 옆면의 링이 림 위 한 점을 두 번 지나는 `Fuse` 는 메셔가 거절한다».
+//! **The fused outside wedge pinches the lateral.** Ending inside the plate, its footprint on the
+//! bore's wall hangs from `P`, so the lateral's top-rim loop passes `P` twice — once along the rim,
+//! once round the footprint — and the band the mesher unrolls is a ring pinched at one point. The
+//! mesher draws it as it draws a pinched cap: both visits stand at one chart point and are handed
+//! to the sweep as twins (`nacre_tess` `shared_vertices`). Both seams of the bore are here, the
+//! bridged family's `+y` and the plain one's `−y`, and the bottom-rim twin with them.
 
 use crate::common::*;
 use crate::stated::*;
@@ -238,18 +241,10 @@ fn plate(m: &mut Model, bridged: bool) -> Handle<Solid> {
 
 /// What each of `[A ∪ B, A − B, A ∩ B, B ∪ A, B − A, B ∩ A]` answers, derived in the module doc.
 fn expected(c: Case) -> [Want; 6] {
-    use Want::{Built, Refused, Undrawn};
+    use Want::{Built, Refused};
     let pinch = Refused(RejectReason::NonManifoldVertex);
     match c.quadrant {
-        Quadrant::Outside => {
-            // The mesher's refusal (module doc): its name follows where the bore's seam falls.
-            let fuse = match (c.rim, c.depth, c.bridged) {
-                (Rim::Top, Depth::Inside, false) => Undrawn(1, TessError::DegenerateRing),
-                (Rim::Top, Depth::Inside, true) => Undrawn(1, TessError::SelfTouchingBoundary),
-                _ => Built(1),
-            };
-            [fuse, pinch, Built(1), fuse, Built(2), Built(1)]
-        }
+        Quadrant::Outside => [Built(1), pinch, Built(1), Built(1), Built(2), Built(1)],
         Quadrant::Inside => {
             // Run through, the wedge's part below the plate is apart from the part above it.
             let rest = if c.depth == Depth::Through { 2 } else { 1 };
@@ -329,9 +324,13 @@ fn a_wedge_meeting_a_rim_at_a_point_builds_or_is_refused_by_name() {
                     if !v.is_empty() {
                         wrong.push(format!("{c:?} {kind:?} swap={swap}: invalid {v:?}"));
                     }
-                    vol[i] = Some(out.iter().map(|&s| volume(&m, s)).sum());
+                    let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
+                    vol[i] = Some(v);
                     match nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()) {
-                        Ok(_) => Want::Built(out.len()),
+                        Ok(_) => {
+                            drawn(&format!("{c:?} {kind:?} swap={swap}"), &m, &out, v);
+                            Want::Built(out.len())
+                        }
                         Err(e) => Want::Undrawn(out.len(), e),
                     }
                 }

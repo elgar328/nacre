@@ -224,47 +224,6 @@ fn every_six<'q>(
     out
 }
 
-/// **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
-/// (`tess_census`), which these front-door tests do not pass through. The mesh exists, is
-/// watertight, has no lateral triangle leaning off its surface, and its signed volume is the
-/// solids' own up to what sampling cuts off a curved face:
-/// at most the face's area times the sagitta the budget allows, the smaller of `TessConfig::tol`
-/// and `r(1 − cos(max_angle / 2))` — the two budgets `TessConfig` states. The slack comes from the
-/// budget, not from the fixture: `tol` alone would allow `0.126` on the unit cylinder's lateral,
-/// more than a groove filled in on a cap costs (`0.1`).
-fn drawn(c: &Case<'_, '_>, m: &Model, solids: &[Handle<Solid>], volume: f64) {
-    let cfg = nacre_tess::TessConfig::default();
-    let t = nacre_tess::tessellate(m, &cfg)
-        .unwrap_or_else(|e| panic!("{c}: the mesher refuses it: {e:?}"));
-    assert_eq!(non_watertight(&t), 0, "{c}: the mesh leaks");
-    let leaning = nacre_tess::leaning_laterals(m, &t, cfg.max_angle_deg);
-    assert!(leaning.is_empty(), "{c}: {leaning:?}");
-    let unshared = nacre_tess::unshared_columns(m, &t);
-    assert!(unshared.is_empty(), "{c}: {unshared:?}");
-    let mut slack = 0.0;
-    for &s in solids {
-        let solid = m.solid(s);
-        for &shell in std::iter::once(&solid.outer).chain(&solid.cavities) {
-            for &f in &m.shell(shell).faces {
-                if let Some(cyl) = m.surface_cache(m.face(f).surface).cylinder() {
-                    let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
-                    let sagitta = cfg.tol.min(cyl.radius() * (1.0 - turn));
-                    let area = nacre_props::face_props(m, f)
-                        .expect("a lateral's area")
-                        .area
-                        .abs();
-                    slack += area * sagitta;
-                }
-            }
-        }
-    }
-    let got = mesh_volume(&t);
-    assert!(
-        (got - volume).abs() <= slack + 1e-9,
-        "{c}: mesh volume {got}, solids {volume}, slack {slack}"
-    );
-}
-
 /// The volume identities a wrong answer `validate` cannot see would break, wherever the booleans
 /// they need built: `Fuse + Common = |A| + |B|`, `(A − B) + Common = |A|`, `(B − A) + Common =
 /// |B|`, and each pair of swapped operands alike.

@@ -585,7 +585,7 @@ fn loops_of(face: &Face) -> impl Iterator<Item = &Loop> {
 }
 
 /// **The angle of `p` about `cyl`'s axis, from its `ref_dir`** — the angle the chart unrolls by
-/// ([`unwrapped_thetas`]) and a face's θ set reads its vertices and its curves' spans by
+/// ([`ring_turns`]) and a face's θ set reads its vertices and its curves' spans by
 /// ([`FaceThetas`], [`sample_curve`]). In `[−π, π]`.
 ///
 /// It is also a curve's own parameter, up to rounding: a rim is derived from its cylinder's cached
@@ -2046,13 +2046,25 @@ fn cylinder_chart(
                 .or_insert_with(|| curve_place(cyl, c, t.vertices.get(h).pos));
         }
     }
+    let unwrapped: Vec<RingTurns> = rings
+        .iter()
+        .map(|ring| {
+            let ring_handles: Vec<Handle<TessVertex>> = ring.iter().map(|&i| handles[i]).collect();
+            ring_turns(t, cyl, &ring_handles)
+        })
+        .collect();
+    // Holes ride whole turns into the outer ring's window — an inner loop unwrapped on its own
+    // may land a turn away from the material it is a hole in. The ride is more turns on the
+    // ring's count, not a distance added to its `v`, so every `θ` keeps the one spelling.
     let mut uv: Vec<polygon::P2> = vec![[0.0, 0.0]; handles.len()];
-    let mut spans: Vec<(f64, f64)> = Vec::new();
-    for ring in &rings {
-        let ring_handles: Vec<Handle<TessVertex>> = ring.iter().map(|&i| handles[i]).collect();
-        let (thetas, _) = unwrapped_thetas(t, cyl, &ring_handles);
-        let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-        for (&i, &theta) in ring.iter().zip(&thetas) {
+    for (ri, (ring, turned)) in rings.iter().zip(&unwrapped).enumerate() {
+        // A ring with no position has nothing to place, so its ride is never read.
+        let ride = if ri == 0 || ring.is_empty() {
+            0
+        } else {
+            hole_ride(&unwrapped[0], turned).ok_or(TessError::DegenerateRing)?
+        };
+        for (k, &i) in ring.iter().enumerate() {
             let u = place.get(&handles[i]).copied().unwrap_or_else(|| {
                 let v = t.vertices.get(handles[i]);
                 let u = ruling_break_place(model, face, cyl, &circles, v)
@@ -2060,21 +2072,7 @@ fn cylinder_chart(
                 stations.push(u);
                 u
             });
-            uv[i] = [u, r * theta];
-            lo = lo.min(uv[i][1]);
-            hi = hi.max(uv[i][1]);
-        }
-        spans.push((lo, hi));
-    }
-    // Holes ride whole turns into the outer ring's window — an inner loop unwrapped on its own
-    // may land a turn away from the material it is a hole in.
-    let turn = std::f64::consts::TAU * r;
-    for (ri, ring) in rings.iter().enumerate().skip(1) {
-        let shift = ((spans[0].0 - spans[ri].0) / turn).ceil() * turn;
-        if shift != 0.0 {
-            for &i in ring {
-                uv[i][1] += shift;
-            }
+            uv[i] = [u, r * on_turn(turned.angle[k], turned.turns[k] + ride)];
         }
     }
     let mut negated = false;
@@ -2165,40 +2163,112 @@ fn between(poly: &[Handle<TessVertex>], step: Traced, wraps: bool) -> usize {
     }
 }
 
-/// The cylinder chart's angle at each position of `ring`, unwrapped along it — every step taken the
-/// short way round — and the ring's whole turn **including its closing step**: `±2π` for a ring
-/// that wraps the axis, `0` for one that does not. The one spelling of `θ` on a cylinder's chart:
-/// [`cylinder_chart`] lays its rings out with it and [`cut_seamless_bands`] counts their turns with
-/// it, so the two cannot disagree about which rings wrap.
+/// **A ring's angles on a cylinder's chart, as whole turns.** Each position's angle about the axis
+/// ([`angle_about`], in `[−π, π]`) and the whole turns the ring has made on reaching it — every step
+/// taken the short way round — and the turns of the whole ring **including its closing step**:
+/// `±1` for a ring that wraps the axis, `0` for one that does not.
+///
+/// **A position's `θ` is its angle plus whole turns** ([`on_turn`]) — counted, never accumulated
+/// from the steps' `f64` differences. So a mesh vertex the ring passes twice on one turn stands at
+/// one chart point bitwise, which is what makes it a revisit ([`shared_vertices`]); summed steps put
+/// its two visits a few ulps apart, which the sweep reads as two points crossing there.
+struct RingTurns {
+    angle: Vec<f64>,
+    turns: Vec<i64>,
+    total: i64,
+}
+
+fn ring_turns(t: &Tessellation, cyl: &Cylinder, ring: &[Handle<TessVertex>]) -> RingTurns {
+    use std::f64::consts::PI;
+    let angle: Vec<f64> = ring
+        .iter()
+        .map(|&h| angle_about(cyl, t.vertices.get(h).pos))
+        .collect();
+    // The whole turns a step from `p` to `q` crosses, taken the short way round: both lie in
+    // `[−π, π]`, so their difference is within `2π` of zero and one correction suffices.
+    let crossed = |p: f64, q: f64| -> i64 {
+        let d = q - p;
+        if d > PI {
+            -1
+        } else if d <= -PI {
+            1
+        } else {
+            0
+        }
+    };
+    let mut turns = Vec::with_capacity(angle.len());
+    let mut n = 0i64;
+    for k in 0..angle.len() {
+        if k > 0 {
+            n += crossed(angle[k - 1], angle[k]);
+        }
+        turns.push(n);
+    }
+    let total = match (angle.first(), angle.last()) {
+        (Some(&first), Some(&last)) => n + crossed(last, first),
+        _ => 0,
+    };
+    RingTurns {
+        angle,
+        turns,
+        total,
+    }
+}
+
+impl RingTurns {
+    /// The ring's position with the lowest `θ` ([`on_turn`]), as its angle and turns; `None` for a
+    /// ring with no position.
+    fn lowest(&self) -> Option<(f64, i64)> {
+        self.angle
+            .iter()
+            .copied()
+            .zip(self.turns.iter().copied())
+            .min_by(|&(a, n), &(b, m)| on_turn(a, n).total_cmp(&on_turn(b, m)))
+    }
+}
+
+/// The one spelling of an unwrapped `θ` on a cylinder's chart: an angle plus whole turns.
+fn on_turn(angle: f64, turns: i64) -> f64 {
+    angle + std::f64::consts::TAU * turns as f64
+}
+
+/// **The whole turns a hole rides into the outer ring's window** ([`cylinder_chart`]): the fewest
+/// that put the hole's lowest `θ` at or above the outer ring's lowest, compared in the one spelling
+/// ([`on_turn`]). A difference of the two divided by `τ` is not that comparison: where the hole's
+/// lowest point stands at the outer ring's lowest angle a turn apart in the counts, the quotient
+/// rounds to a hair over one and rides a turn too many.
+///
+/// Both angles lie in `[−π, π]`, so the answer is within a turn of the counts' difference: one
+/// below it holds only where the hole stands at `π` and the outer ring at `−π` (one direction, a tie
+/// rounding decides) and two below never does, `2π` short; one above fails only on the mirror tie
+/// and two above always holds. The search runs over that bracket, so however rounding tips a tie
+/// the answer stays inside it. Nothing in it holds only for a `NaN` angle — `None`, as for a ring
+/// with no position.
+fn hole_ride(outer: &RingTurns, hole: &RingTurns) -> Option<i64> {
+    let (ao, no) = outer.lowest()?;
+    let (ah, nh) = hole.lowest()?;
+    let floor = on_turn(ao, no);
+    (-1..=2)
+        .map(|m| no - nh + m)
+        .find(|&k| on_turn(ah, nh + k) >= floor)
+}
+
+/// [`ring_turns`] as numbers: each position's `θ` ([`on_turn`]) and the ring's whole turns, `±1`
+/// or `0`. [`cylinder_chart`] lays its rings out with the same turns and [`cut_seamless_bands`]
+/// counts their turns with these, so the two cannot disagree about which rings wrap.
 fn unwrapped_thetas(
     t: &Tessellation,
     cyl: &Cylinder,
     ring: &[Handle<TessVertex>],
-) -> (Vec<f64>, f64) {
-    use std::f64::consts::{PI, TAU};
-    let raw = |h: Handle<TessVertex>| angle_about(cyl, t.vertices.get(h).pos);
-    let wrap = |mut step: f64| {
-        while step > PI {
-            step -= TAU;
-        }
-        while step <= -PI {
-            step += TAU;
-        }
-        step
-    };
-    let mut out = Vec::with_capacity(ring.len());
-    let (mut prev, mut theta) = (0.0, 0.0);
-    for (k, &h) in ring.iter().enumerate() {
-        let r = raw(h);
-        theta = if k == 0 { r } else { theta + wrap(r - prev) };
-        prev = r;
-        out.push(theta);
-    }
-    let total = match (out.first(), ring.first()) {
-        (Some(&first), Some(&h0)) => theta + wrap(raw(h0) - prev) - first,
-        _ => 0.0,
-    };
-    (out, total)
+) -> (Vec<f64>, i64) {
+    let r = ring_turns(t, cyl, ring);
+    let thetas = r
+        .angle
+        .iter()
+        .zip(&r.turns)
+        .map(|(&a, &n)| on_turn(a, n))
+        .collect();
+    (thetas, r.total)
 }
 
 /// **The band-cut pre-pass — a lateral face that wraps the axis gets one generator to be cut
@@ -2232,7 +2302,6 @@ fn cut_seamless_bands(
     model: &Model,
     live: &[(Handle<Face>, &Face)],
 ) -> HashMap<Handle<Face>, BandCut> {
-    use std::f64::consts::PI;
     let mut cuts = HashMap::new();
     for &(fh, face) in live {
         let Some(cyl) = model.surface_cache(face.surface).cylinder() else {
@@ -2241,16 +2310,14 @@ fn cut_seamless_bands(
         let loops: Vec<&Loop> = loops_of(face).collect();
         let traced: Vec<(Vec<Traced>, Option<Traced>)> =
             loops.iter().map(|lp| traced_ring(t, lp)).collect();
-        let turns: Vec<(Vec<f64>, f64)> = traced
+        let turns: Vec<(Vec<f64>, i64)> = traced
             .iter()
             .map(|(ring, _)| {
                 let handles: Vec<Handle<TessVertex>> = ring.iter().map(|p| p.handle).collect();
                 unwrapped_thetas(t, cyl, &handles)
             })
             .collect();
-        let wrapping: Vec<usize> = (0..turns.len())
-            .filter(|&i| turns[i].1.abs() > PI)
-            .collect();
+        let wrapping: Vec<usize> = (0..turns.len()).filter(|&i| turns[i].1 != 0).collect();
         if wrapping.is_empty() {
             continue;
         }
@@ -2308,11 +2375,21 @@ fn whole_rims_cut(t: &Tessellation, model: &Model, face: &Face, cyl: &Cylinder) 
     })
 }
 
-/// A ring's steps as `(from, to)` in its unwrapped angle, the closing step last.
-fn ring_steps((th, total): &(Vec<f64>, f64)) -> Vec<(f64, f64)> {
+/// A ring's steps as `(from, to)` in its unwrapped angle, the closing step last — to the first
+/// position's angle (its turns are `0`) on the ring's whole turns, in the one spelling.
+fn ring_steps((th, total): &(Vec<f64>, i64)) -> Vec<(f64, f64)> {
     let n = th.len();
     (0..n)
-        .map(|k| (th[k], if k + 1 < n { th[k + 1] } else { th[0] + total }))
+        .map(|k| {
+            (
+                th[k],
+                if k + 1 < n {
+                    th[k + 1]
+                } else {
+                    on_turn(th[0], *total)
+                },
+            )
+        })
         .collect()
 }
 
@@ -2338,7 +2415,7 @@ fn passes((p, q): (f64, f64), c: f64) -> i64 {
 /// polygon. Fewest holes first, because a hole the cut avoids keeps its polylines and its ring as
 /// they are — and so a face with a hole-free generator is cut where a face without holes would be.
 fn band_generator(
-    turns: &[(Vec<f64>, f64)],
+    turns: &[(Vec<f64>, i64)],
     wrapping: [usize; 2],
     arc: impl Fn(usize) -> bool,
 ) -> Option<f64> {
@@ -2414,7 +2491,7 @@ fn band_cut(
     model: &Model,
     cyl: &Cylinder,
     traced: &[(Vec<Traced>, Option<Traced>)],
-    turns: &[(Vec<f64>, f64)],
+    turns: &[(Vec<f64>, i64)],
     wrapping: [usize; 2],
     c: f64,
 ) -> BandCut {
@@ -2844,15 +2921,7 @@ fn triangulate_face(
     };
     let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
     let boundary = handles.len();
-    // A vertex shared by two rings is the bridge pre-pass's doing (a curved ring's sample put
-    // into the straight edge it touches); one ring passing a vertex twice is a pinched face.
-    let revisits = match surface {
-        SurfaceCache::Plane { .. } => shared_vertices(&handles, &rings),
-        // Only on a plane is a shared handle one point in the chart — a band's cut point is the
-        // same handle at two `θ`s. An arm rather than a boolean, so a third surface kind is a
-        // compile error here rather than a silent "no bridges".
-        SurfaceCache::Cylinder { .. } => Vec::new(),
-    };
+    let revisits = shared_vertices(&handles, &rings, &uv);
     let geom = surface.to_geom();
     // The point the mesh will ship for each corner: a boundary vertex's shared position, or the
     // chart's inverse for a point this face mints.
@@ -2888,15 +2957,34 @@ fn triangulate_face(
     Ok(())
 }
 
-/// The mesh vertices the face's boundary passes twice: in two different rings, the bridges the
-/// sweep should lay there; twice in one ring, a pinch. Handles only — which ring's straight edge
-/// was split, and whether a pinch can be ordered, is `polygon`'s to read off the geometry.
-fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<polygon::Revisit> {
-    let mut seen: HashMap<Handle<TessVertex>, (usize, usize)> = HashMap::new();
+/// **The mesh vertices the face's boundary passes twice — one vertex at one chart point**: in two
+/// different rings, the bridges the sweep should lay there; twice in one ring, a pinch. Which ring's
+/// straight edge was split, and whether a pinch can be ordered, is `polygon`'s to read off the
+/// geometry.
+///
+/// **One vertex at two chart points is not a revisit**: a band's cut point stands at its `θ` and a
+/// turn on ([`joined_band`]), the two ends of the rectangle the sweep draws. On a plane each vertex
+/// is one chart point (its position with an axis dropped), so there the key is the handle alone; on
+/// a cylinder two visits of one vertex are one point bitwise exactly when they lie on one turn,
+/// because every `θ` is its angle plus whole turns ([`ring_turns`]) and a vertex's `u` is a function
+/// of its handle — looked up, or computed afresh at each visit from the same inputs. Two
+/// visits that are not one point after all are refused by name at the twins (`polygon::pinch`).
+/// The key carries the handle, so a signed zero or a `NaN` cannot join two vertices.
+///
+/// On a cylinder a revisit only ever comes from the face's own loops — the bridge pre-pass inserts
+/// samples on planes alone — and two rings sharing a vertex there has not been met: whether its
+/// straight-edge premise ([`polygon::Bridge`]) holds on a chart is unmeasured.
+fn shared_vertices(
+    handles: &[Handle<TessVertex>],
+    rings: &[Vec<usize>],
+    uv: &[polygon::P2],
+) -> Vec<polygon::Revisit> {
+    let mut seen: HashMap<(Handle<TessVertex>, [u64; 2]), (usize, usize)> = HashMap::new();
     let mut out = Vec::new();
     for (ri, ring) in rings.iter().enumerate() {
         for (k, &i) in ring.iter().enumerate() {
-            match seen.get(&handles[i]) {
+            let key = (handles[i], uv[i].map(f64::to_bits));
+            match seen.get(&key) {
                 Some(&(rj, kj)) if rj != ri => {
                     out.push(polygon::Revisit::Bridge(polygon::Bridge {
                         ring_x: rj,
@@ -2911,7 +2999,7 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
                     y: k,
                 }),
                 None => {
-                    seen.insert(handles[i], (ri, k));
+                    seen.insert(key, (ri, k));
                 }
             }
         }
