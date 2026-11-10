@@ -44,6 +44,17 @@ pub enum LoopKind {
     Inner(usize),
 }
 
+/// Which role a shell plays in its solid — the sign its signed volume must have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellRole {
+    /// The solid's outer shell: its faces point out of the material, so it encloses
+    /// positive volume.
+    Outer,
+    /// A cavity (inner void): its faces point into the void, so it encloses negative
+    /// volume.
+    Cavity,
+}
+
 /// A single broken invariant. [`validate`] returns every one it finds.
 ///
 /// The f64 residual/tolerance and `Point3` fields mean this is `PartialEq` but
@@ -185,16 +196,17 @@ pub enum Violation {
         genus: i64,
     },
 
-    /// A cavity (inner void) shell's faces do not point their outward normals
-    /// into the void: its signed self-volume is `≥ 0` (a correct inward void is
-    /// negative). Such a cavity would *add* to the solid's volume instead of
-    /// subtracting it. The other checks miss it — a
-    /// globally-reversed shell keeps edge opposition (so `check_manifold`
-    /// passes) and the same V/E/F/S (so Euler passes). Planar cavities only; a
-    /// non-planar void is not checked here.
-    CavityMisoriented {
+    /// A shell's signed self-volume does not have its role's sign: an outer
+    /// shell must enclose positive volume, a cavity negative ([`ShellRole`]).
+    /// A cavity that points out would *add* to its solid's volume; an outer
+    /// shell that points in is a void standing as a solid of its own. The other
+    /// checks miss both — a globally-reversed shell keeps edge opposition (so
+    /// `check_manifold` passes) and the same V/E/F/S (so Euler passes). Planar
+    /// shells only; a shell with a curved face is not checked here.
+    ShellMisoriented {
         solid: Handle<Solid>,
-        cavity: Handle<Shell>,
+        shell: Handle<Shell>,
+        role: ShellRole,
         signed_volume: f64,
     },
 
@@ -299,7 +311,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     check_surface_keys(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
-    check_cavity_orientation(model, &mut out);
+    check_shell_orientation(model, &mut out);
     check_face_orientation(model, &reach, &mut out);
     check_cylinder_truth(model, &reach, &mut out);
     check_geometric_incidence(model, &reach, &mut out);
@@ -733,25 +745,34 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
     }
 }
 
-/// Each live solid's cavity (void) shells must be inward-oriented: the shell's
-/// signed self-volume (via each face's `plane.normal() × orientation`, the same
-/// normal `nacre-props` integrates) must be negative. A `≥ 0` value means the
-/// void points outward and would add to the solid's volume. Runs after the
-/// reference-integrity short-circuit, so every dereferenced handle is in bounds.
-fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
+/// Each live solid's shells must enclose volume of their role's sign: the
+/// shell's signed self-volume (via each face's `plane.normal() × orientation`,
+/// the same normal `nacre-props` integrates) is positive for the outer shell and
+/// negative for a cavity. Zero is neither. Runs after the reference-integrity
+/// short-circuit, so every dereferenced handle is in bounds.
+fn check_shell_orientation(m: &Model, out: &mut Vec<Violation>) {
     for &sh in m.live_solids() {
         if sh.index() as usize >= m.solid_count() {
             continue;
         }
-        for &cavity in &m.solid(sh).cavities {
-            if let Some(v) = shell_signed_volume(m, cavity) {
-                if v >= 0.0 {
-                    out.push(Violation::CavityMisoriented {
-                        solid: sh,
-                        cavity,
-                        signed_volume: v,
-                    });
-                }
+        let solid = m.solid(sh);
+        let shells = std::iter::once((solid.outer, ShellRole::Outer))
+            .chain(solid.cavities.iter().map(|&c| (c, ShellRole::Cavity)));
+        for (shell, role) in shells {
+            let Some(v) = shell_signed_volume(m, shell) else {
+                continue;
+            };
+            let right = match role {
+                ShellRole::Outer => v > 0.0,
+                ShellRole::Cavity => v < 0.0,
+            };
+            if !right {
+                out.push(Violation::ShellMisoriented {
+                    solid: sh,
+                    shell,
+                    role,
+                    signed_volume: v,
+                });
             }
         }
     }
@@ -762,7 +783,7 @@ fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
 /// `R`-independent; a local `R` avoids the cancellation an origin-far shell
 /// would suffer). Outward-oriented shell ⇒ `+V`; a correct inward cavity ⇒ `−V`.
 /// `None` if any face is non-planar or a loop is unbounded (only a planar
-/// cavity is checked; a curved void is not). Mirrors `nacre-props`'
+/// shell is checked; a curved one is not). Mirrors `nacre-props`'
 /// `face_contribution`, duplicated to keep validate off the props layer.
 fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     let faces = &m.shell(shell).faces;
@@ -774,7 +795,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
         let face = m.face(fh);
         let plane = match m.surface_cache(face.surface) {
             nacre_topo::SurfaceCache::Plane { plane, .. } => plane,
-            // Only a planar cavity is checked; a curved void is not. An arm rather than an
+            // Only a planar shell is checked; a curved one is not. An arm rather than an
             // `else`, so a third surface kind is a compile error here and its author decides
             // whether its flux can be summed.
             nacre_topo::SurfaceCache::Cylinder { .. } => return None,

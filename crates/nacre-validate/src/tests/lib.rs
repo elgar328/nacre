@@ -1356,7 +1356,7 @@ fn a_vertex_nudged_off_its_definition_flags() {
     );
 }
 
-// --- cavity orientation ---
+// --- shell orientation ---
 
 /// A hollow `outer`-cube with a concentric `inner`-cube void. `reverse`
 /// selects a correct inward cavity (`reversed_shell`) or a mis-oriented one
@@ -1401,7 +1401,36 @@ fn misoriented_cavity_is_flagged() {
     let v = validate(&hollow_cube(4.0, 2.0, false));
     assert_eq!(v.len(), 1, "{v:?}");
     assert!(
-        matches!(v[0], Violation::CavityMisoriented { signed_volume, .. } if signed_volume > 0.0),
+        matches!(
+            v[0],
+            Violation::ShellMisoriented { role: ShellRole::Cavity, signed_volume, .. }
+                if signed_volume > 0.0
+        ),
+        "{v:?}"
+    );
+}
+
+#[test]
+fn an_inverted_outer_shell_is_flagged() {
+    // A cube whose outer shell points into its material — the shape a void takes
+    // when it stands as a solid of its own. Manifold and Euler pass, every face's
+    // winding agrees with its flag, so the only violation is the shell's sign.
+    let mut m = Model::new();
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
+    let inverted = m.reversed_shell(m.solid(c).outer);
+    let s = m.push_solid(Solid {
+        outer: inverted,
+        cavities: Vec::new(),
+    });
+    m.restore_live(vec![s]);
+    let v = validate(&m);
+    assert_eq!(v.len(), 1, "{v:?}");
+    assert!(
+        matches!(
+            v[0],
+            Violation::ShellMisoriented { role: ShellRole::Outer, signed_volume, .. }
+                if signed_volume < 0.0
+        ),
         "{v:?}"
     );
 }

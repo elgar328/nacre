@@ -35,6 +35,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- **Breaking:** `validate::Violation::CavityMisoriented` is now `validate::Violation::ShellMisoriented { solid, shell, role, signed_volume }`, with `role` a `validate::ShellRole` (`Outer` or `Cavity`) — match `ShellMisoriented { role: ShellRole::Cavity, .. }` where you matched `CavityMisoriented`. It also reports a solid whose planar outer shell encloses negative volume, the shape a void takes when it comes out as a solid of its own.
 - A planar face whose boundaries come nearer each other than a chord of their curves sags — a hole or a groove's tip within a hair of a disk's rim, a groove side leaving the rim almost along its tangent — meshes where `tess::TessError::DegenerateRing`, `tess::TessError::SelfTouchingBoundary` or `tess::TessError::OverBudget` refused it, on tilted axes and far from the origin as well: the arcs there are cut finer, and every curve of their side face is cut at the same angles.
 - `tess::TessOrigin::OnEdge`'s `t` is the sample's angle on its curve in `[0, 2π)`; an arc across the angle `0` no longer carries values past `2π`.
 - A planar face whose material is two pieces meeting only at a point meshes, where `tess::TessError::SelfTouchingBoundary` refused it — a strip whose top a pin's foot takes away up to the one point it touches on the far edge, or an island touching its hole's rim. A face whose boundary passes one point three times is refused as `tess::TessError::SelfTouchingBoundary`, where some such faces came back as `DegenerateRing`.

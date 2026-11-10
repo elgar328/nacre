@@ -342,7 +342,7 @@ live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋
 
 **축 정렬로 한정하는 이유는 회전과 같다** — 커널의 회전축도 X/Y/Z뿐이다. 임의 평면 반사 `x − 2((x−p)·n)n`은 무리수 법선 때문에 좌표가 근사가 되고, 그러면 모션 포리스트에 tol을 가진 반사 노드가 필요해진다. **임의 축 회전과 임의 평면 미러는 같은 항목**이며 그 설계가 들어올 때 함께 열린다(계획).
 
-**구현의 핵심은 방향 대수다.** 반사는 det = −1이라 `R(a) × R(b) = −R(a × b)`이므로, 좌표만 반사하면 루프의 감김이 함의하는 법선이 뒤집혀 **솔리드가 안팎으로 뒤집힌다**. 그래서 모든 루프(outer + inner)를 **역순으로 감고**(`Loop::reversed` — 순서 역전과 `forward` 반전을 함께 하므로 모서리 짝이 유지된다), `Orientation` 플래그는 **건드리지 않는다**: 반사가 내적을 보존하므로 `sign(plane.normal · n_out)`이 그대로다. `nacre-geom`의 `Plane::mirrored`는 단위 법선의 한 성분 부호만 바꾸므로 비트 그대로 단위이고 다시 정규화하지 않는다. **`validate`의 그물은 절반이다**: 면 단위 orientation↔감김 불일치는 `FaceMisoriented`가 잡지만(반사는 루프 역순과 법선 반사가 함께 가서 이 검사에 불변), 플래그와 감김이 **함께** 뒤집힌 전-셸 반전은 면 단위 검사가 원리적으로 못 보므로 그쪽 그물은 부호 있는 부피와 불리언, 그리고 OCCT 오라클이다.
+**구현의 핵심은 방향 대수다.** 반사는 det = −1이라 `R(a) × R(b) = −R(a × b)`이므로, 좌표만 반사하면 루프의 감김이 함의하는 법선이 뒤집혀 **솔리드가 안팎으로 뒤집힌다**. 그래서 모든 루프(outer + inner)를 **역순으로 감고**(`Loop::reversed` — 순서 역전과 `forward` 반전을 함께 하므로 모서리 짝이 유지된다), `Orientation` 플래그는 **건드리지 않는다**: 반사가 내적을 보존하므로 `sign(plane.normal · n_out)`이 그대로다. `nacre-geom`의 `Plane::mirrored`는 단위 법선의 한 성분 부호만 바꾸므로 비트 그대로 단위이고 다시 정규화하지 않는다. **`validate`의 그물은 둘이다**: 면 단위 orientation↔감김 불일치는 `FaceMisoriented`가 잡지만(반사는 루프 역순과 법선 반사가 함께 가서 이 검사에 불변), 플래그와 감김이 **함께** 뒤집힌 전-셸 반전은 면 단위 검사가 원리적으로 못 보므로, 평면 셸이면 셸의 부호 있는 부피(`ShellMisoriented`)가 잡고 곡면이 낀 셸은 불리언과 OCCT 오라클이 그물이다.
 
 **반사도 모션이다 — 사슬에 들어간다.** `Motion::Mirror { axis, offset }`이 사슬 노드다. 기록 여부는 다른 모션과 **같은 규칙**을 따른다(「모션 사슬 — `MoveNode`」의 옮겨 적기 규칙) — `2c − x` 는 모든 유리수 `c` 에서 유리수라 새 솔리드의 반사는 진술로 옮겨 적힌다.
 
@@ -570,8 +570,8 @@ pub struct Adjacency {
   정점 둘레도 다양체다(`NonManifoldVertex`).
 - **담체 일치** — 정점의 정의가 이름 짓는 곡면(`VertexCarrierMismatch`)과 간선이 진술한 담체 쌍
   (`EdgeCarrierMismatch`)이 그것을 실제로 쓰는 면들과 맞는다.
-- **방향** — 면의 감김과 진술한 바깥 법선이 맞고(`FaceMisoriented`), 공동 껍질은 안쪽을 향한다
-  (`CavityMisoriented`).
+- **방향** — 면의 감김과 진술한 바깥 법선이 맞고(`FaceMisoriented`), 껍질의 부호 있는 부피가 제 역할의 부호다 —
+  바깥 껍질은 양, 공동은 음(`ShellMisoriented`).
 - **기하 접속** — 캐시된 점이 자기 정의의 곡면(`VertexOffDefinition`)·간선의 곡선(`VertexOffCurve`)·
   면의 곡면(`VertexOffSurface`) 위에 tol 안으로 앉아 있다. 원통은 진실과 f64 캐시가 맞는지도 본다
   (`CylinderTruthCacheMismatch`) — 세계에 진술된 원통의 캐시는 문이 그 진술에서 실현하므로, 진술을 생산자가 따로
@@ -2530,7 +2530,7 @@ nacre 는 solid-first 이며 always-closed(모든 결과가 닫힌 솔리드)를
 pub fn validate(model: &Model) -> Vec<Violation>;   // 빈 벡터 = 유효
 ```
 
-`validate` 는 순수 함수이고 위반을 **전부** 모아 돌려준다. 인접 인덱스는 안에서 짓는다. `nacre-ops` 는 이 크레이트를 dev-의존으로만 갖는다 — 연산이 스스로 부르지 않고, 테스트·속성 테스트·오라클이 연산 직후마다 부른다. 검사하는 것은 `Violation` 의 변종 그대로다:
+`validate` 는 위반을 **전부** 모아 돌려준다(누가 부르는가는 overview 「정밀도 인프라」). 인접 인덱스는 안에서 짓는다. 검사하는 것은 `Violation` 의 변종 그대로다:
 
 | 변종 | 불변식 |
 |---|---|
@@ -2546,7 +2546,7 @@ pub fn validate(model: &Model) -> Vec<Violation>;   // 빈 벡터 = 유효
 | `VertexOffSurface` | 루프 정점이 그 면의 곡면 위에 tol 이내. |
 | `VertexOffDefinition` | **모든** 정점의 캐시 좌표가 자기 정의가 말하는 곡면 하나하나에서 tol 이내. 정의가 진실이고 좌표는 캐시이기 때문이다. tol 은 실측값이 있으면 그것, 없으면 `EPS_CONSTRUCTED`. |
 | `EulerParity` · `NegativeGenus` | 오일러–푸앵카레: `V − E + F = 2(S − G) + L_i`. `χ = V − E + F − L_i` 가 홀수면 정수 해가 없고(`EulerParity`), 짝수인데 `G = S − χ/2 < 0` 이면 위상적으로 불가능하다(`NegativeGenus`). |
-| `CavityMisoriented` | 공동(내부 void) 셸의 면 법선이 void 안쪽을 향한다 — 부호 있는 자기 부피가 음수. 통째로 뒤집힌 셸은 엣지 대향도 V/E/F/S 도 그대로라 다른 검사가 전부 놓친다. 평면 공동만 검사한다. |
+| `ShellMisoriented` | 셸의 부호 있는 자기 부피가 제 역할(`ShellRole`)의 부호다 — 바깥 셸은 양, 공동(내부 void)은 음. 통째로 뒤집힌 셸은 엣지 대향도 V/E/F/S 도 그대로라 다른 검사가 전부 놓친다. 평면 셸만 검사한다. |
 | `FaceMisoriented` | 평면 면의 루프 감김과 진술한 방향의 정합. 루프의 증인(다각형의 뉴웰 면적 벡터, 또는 닫힌 림의 원)과 면이 진술한 바깥 법선(`plane.normal()` × `orientation`)의 단위 내적 `cos` 를 잰다: **외곽 루프는 일치**(`cos ≈ +1`), **내부 루프는 반대**(`cos ≈ −1`). `≈ 0` 은 자기 평면을 펴지 못하는 루프. 불리언의 `collect_planes` 가 `debug_assert` 로 지키는 불변식의 release 쪽 그물이다 — 틀린 플래그·감김은 엣지 대향과 오일러를 모두 통과해 «어느 쪽이 재료인가»로 곧장 흘러든다. |
 | `CylinderTruthCacheMismatch` | 원통의 정확한 진실(`CylinderDef`)과 f64 캐시가 같은 원통을 말한다. `field`(`"radius"`·`"origin"`·`"dir"`·`"ref_dir"`)의 성분별로 `\|def − cache\| ≤ CYL_TRUTH_EPS · max(1, \|def\|, \|cache\|)`, `CYL_TRUTH_EPS = 8ε`. 한 곡면의 두 서술은 어긋날 수 있고, 치료는 생산자를 믿는 것이 아니라 소비자 쪽 사후조건이다. 건강한 경로는 절대 1e−17 이내이고, 이 그물이 노리는 결함(seam 타이브레이크 오류로 `ref_dir` 이 ~90° 도는 것, 단위화 누락으로 `dir` 이 길이만큼 커지는 것)은 성분을 ~10¹⁵·ε 움직인다. |
 | `VertexNoPoint` | 세 평면 정의의 이름이 한 프레임을 말하는 곳에서 세 평면이 한 점에서 만난다(`Model::vertex_named_meet` 가 `NoPoint` 가 아니다). |

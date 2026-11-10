@@ -529,6 +529,14 @@ overview 「관문」의 perf 문단, 계측은 `measure_profile_check_wall_cloc
 
 `nacre-ops` 는 `nacre-validate` 에 dev-의존만 한다 — 연산은 validate 를 부르지 않고 테스트·census 가 부른다. 디버그 빌드에서 강제하려면 의존 방향(validate → topo, ops → validate)과 비용을 먼저 잰다. validate 의 tess 검사(crack-free·출처 정합)도 없다 — 그 검사는 `nacre-tess` 의 자기 테스트에 있다.
 
+### 곡면이 낀 셸의 부호 있는 부피
+
+`validate` 의 `ShellMisoriented` 는 평면 셸만 잰다 — `shell_signed_volume` 이 원통 면을 만나면 그 셸을 건너뛴다. 그래서
+원통 면이 낀 셸이 통째로 뒤집혀 나오면(공동이 부피 음수의 솔리드로 따로 서는 꼴) 면 단위 검사도 다양체·오일러도 통과해
+조용하다. 원통 옆면의 플럭스는 `nacre-props` 가 해석적으로 적분한다(`lateral_moments`); validate 는 props 에 기대지 않고
+평면 몫을 옮겨 적었으니, 옆면 몫도 같은 길로 옮길지와 그 정밀도(원통 면의 f64 적분이 0 근처에서 부호를 가르는가)를 먼저
+잰다. 곡면 셸이 뒤집혀 나오는 인구가 생기면.
+
 ### tess 증분 갱신
 
 `tessellate` 는 매번 통째로 짓는다(`Tessellation` 에 무효화 집합이 없다). 면 단위 증분 갱신과 연산별 tolerance override 는 GUI 가 요구할 때.
