@@ -9,9 +9,10 @@ use super::*;
 ///
 /// **And it puts every stage behind one `Result`.**
 ///
-/// **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a
-/// `Result`; this one returns its product outright, and what follows it only reads its faces (the
-/// along-the-axis check).
+/// **`emit_faces` is the last stage**, and it fails only by the name a whole circle's marks are
+/// refused with (`MergedCircle::whole_marks`) — the name `label_cells` meets first, reading the
+/// same marks for every circle's mask; what follows it only reads its faces (the along-the-axis
+/// check).
 pub(super) fn per_class(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -33,7 +34,7 @@ pub(super) fn per_class(
     let (faces, disk_labels, arc_labels) = timed!(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
-    );
+    )?;
     // **A face bounded along a ruling of a section the class draws along the axis**
     // (`Silence::Sectioned`, a class with no world statement): the gate proved every face on the
     // class apart from the lateral boxes, so such a face would have no lateral partner — the stages

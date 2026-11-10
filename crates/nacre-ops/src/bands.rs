@@ -34,9 +34,9 @@
 //! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
 //! clear on either one misses the rectangle (`planes`' `face_clears_footprint`). With several
 //! lateral faces there are several rectangles, and that is exactly the granularity the theorem
-//! needs: a row's ends are the existence truth at an uncut end and band boundaries
-//! (`cyl_chart::boundary_lines`), so no band is ever built in the gap between two of them, and a
-//! wall sitting in such a gap breaks no premise — there is none there to break. Reading the spans
+//! needs: a cell's existence is the trace's marks on the lines at its ends (`Chart::read_cell`), and a
+//! face leaves none in the gap between two of them, so no band is ever built there, and a wall
+//! sitting in such a gap breaks no premise — there is none there to break. Reading the spans
 //! as one `min..max` would invent both the band and the refusal.
 //!
 //! "The band is in the other solid iff its z-range is" reads plausibly and is **false**: an
@@ -64,8 +64,7 @@ use nacre_exact::Rat;
 ///
 /// One row per class, with the first face speaking for the rest, would clip the others' spans away
 /// on the band road and never emit their bands, leaving the result shell open — the boolean would
-/// come back `OpenResultShell`, naming a symptom of the omission. The chart reads the same span as
-/// the cell's existence at an uncut end (`Chart::read_cell`).
+/// come back `OpenResultShell`, naming a symptom of the omission.
 ///
 /// **Merging the spans into one `min..max` is not the fix either**: it would invent a band across
 /// the gap where the solid has no face at all.
@@ -73,9 +72,6 @@ pub(crate) struct CylRow {
     /// The [`ClassIx::Cyl`] payload — which lateral surface this face lies on. Several rows may
     /// share it.
     pub(crate) class: usize,
-    /// **This face's** own ends: the planes (world coefficients) of its lowest and highest boundary
-    /// sections, low first — the lines a cell between which exists at an uncut end.
-    pub(crate) ends: [[Rat; 4]; 2],
     /// How far this face reaches along the axis (its footprint's span) — the rows' order.
     pub(crate) reach: [Rat; 2],
     /// Which operand this face belongs to.
@@ -96,8 +92,7 @@ pub(crate) struct CylRow {
 /// lateral per class (the cleaning pass merged the pieces one operation earlier). Named here so
 /// the day it is exercised is a thing a reader can check, not a surprise.
 ///
-/// A face whose ends cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
-/// declines it for the same reason.
+/// A face whose reach cannot be stated declines by name (`DeclineKind::CylSpan`).
 pub(crate) fn cyl_rows(
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
@@ -110,13 +105,13 @@ pub(crate) fn cyl_rows(
             continue;
         };
         n_class = n_class.max(k + 1);
-        let (Some(ends), Some(reach)) = (cf.ends, cf.footprint.span) else {
+        let Some(reach) = cf.footprint.span else {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,
             }));
         };
-        // A lateral with no world statement declines the same way missing ends do — the chart
+        // A lateral with no world statement declines the same way a missing reach does — the chart
         // states every line against world planes.
         if cf.def.is_none() {
             return Err(reject(RejectReason::TraceDeclined {
@@ -126,7 +121,6 @@ pub(crate) fn cyl_rows(
         }
         out.push(CylRow {
             class: k,
-            ends,
             reach,
             side: if i < n_a { SolidSide::A } else { SolidSide::B },
         });

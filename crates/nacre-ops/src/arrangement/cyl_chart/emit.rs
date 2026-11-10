@@ -37,7 +37,7 @@ pub(crate) fn emit_lateral(
         let cells = chart.cells();
         let reads: Vec<CellRead<'_>> = cells
             .iter()
-            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, rows))
+            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved))
             .collect::<Result<_, _>>()?;
         // A present cell whose chamber could not be read, named by why (`CellRead::unread`).
         if let Some(r) = reads.iter().find(|r| r.present && r.emit.is_none()) {

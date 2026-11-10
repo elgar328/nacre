@@ -70,7 +70,7 @@
 //! class's own pieces → cycles → a `Bound`. The census holds the chart against its own rules
 //! and the emitter's faces against the reads they came from (`census`).
 
-use crate::arrangement::{ArcLabel, Curved, Label, SegKind};
+use crate::arrangement::{ArcLabel, Curved, DiskLabel, Label, SegKind};
 use crate::draft::LocalFace;
 use crate::planes::{SolidSide, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
@@ -186,9 +186,6 @@ pub(crate) struct Chart {
     /// class across the axis is a circle at one height. Ordered nowhere: their order is a slab's
     /// ([`Chart::slabs`]).
     pub(crate) lines: Vec<usize>,
-    /// Each line's plane, world coefficients — the join a row's ends (`bands::CylRow`, the face's
-    /// lowest and highest boundary sections) are read through.
-    pub(crate) line_planes: Vec<[Rat; 4]>,
     pub(crate) theta: Vec<ThetaSeg>,
     /// **Every θ something happens at, in θ order** ([`combinatorics::theta_groups`], the seam
     /// first): a ruling's station, a node a rim is cut at, a point two lines cross or touch at.
@@ -405,10 +402,6 @@ pub(crate) fn chart_of(
             return Err(reject(RejectReason::CylinderStagesDisagree));
         }
     }
-    let line_planes: Vec<[Rat; 4]> = lines
-        .iter()
-        .map(|&c| jd.world_rat(c).expect("a line has a world statement"))
-        .collect();
     let line_of = |c: usize| lines.iter().position(|&x| x == c);
     let height = |a: usize, b: usize, at: &combinatorics::ExactPoint| {
         combinatorics::line_order(jd, def, lines[a], lines[b], Some(at), Toward::At).map_err(reject)
@@ -464,7 +457,6 @@ pub(crate) fn chart_of(
     };
     Ok(Chart {
         lines,
-        line_planes,
         theta,
         events,
         rim_events,

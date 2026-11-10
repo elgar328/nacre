@@ -1282,7 +1282,7 @@ fn armed_curved(
         let edges = ClassEdges::of(&setup.cyls, c, &edges);
         let staged = per_class(jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
         for (cyl, label) in &staged.disk_labels {
-            disk_labels.insert((*cyl, c), *label);
+            disk_labels.insert((*cyl, c), label.clone());
         }
         for (cyl, al) in &staged.arc_labels {
             arc_labels.entry((*cyl, c)).or_default().push(al.clone());
@@ -1309,13 +1309,12 @@ fn armed_curved(
 /// four ⊥ classes are collected the production way (`per_class` on each), and the chart must break
 /// the lateral at the two **cut** circles (z = 0, z = 20) as well as the rims: three intervals, not
 /// one full-height band (`boundary_lines` and the chart's lines agree on the four). The middle
-/// interval is both-cut and is emitted as panel rings. Three controls on the reader: blinding only
-/// the arcs still answers, because the vertical lines speak in their place; blinding **both** of
-/// the chart's axes (the arc labels and the rulings') leaves the reader no answer there; and
-/// turning every ruling label inside out while the arcs stand makes two sides of each cell
-/// contradict each other — `emit_lateral` refuses both by name, neither side believed over the
-/// other: a cell no side reads — its blinded ends read no circle, which a present cell always has
-/// (`CylinderStagesDisagree`) — and labels that disagree (`LabelConflict`).
+/// interval is both-cut and is emitted as panel rings. Two controls on the reader: blinding the
+/// arcs leaves the both-cut cells no end to read existence off — the rulings answer a chamber, not
+/// whether the face is there; and turning every ruling label inside out while the arcs stand makes
+/// two sides of each cell contradict each other — `emit_lateral` refuses both by name, neither
+/// side believed over the other: a cell no end speaks for (`CylinderStagesDisagree`) and labels
+/// that disagree (`LabelConflict`).
 #[test]
 fn a_cut_circle_bounds_the_bands() {
     let (m, plate, boss, setup, wc) = armed_through_boss();
@@ -1337,8 +1336,7 @@ fn a_cut_circle_bounds_the_bands() {
     let mut sorted = expect.clone();
     sorted.sort();
     assert_eq!(
-        crate::arrangement::cyl_chart::boundary_lines(&jd, 0, &plane_faces, &curved, &rows)
-            .unwrap(),
+        crate::arrangement::cyl_chart::boundary_lines(&jd, 0, &plane_faces, &curved).unwrap(),
         sorted,
         "three intervals, cut circles included"
     );
@@ -1346,7 +1344,7 @@ fn a_cut_circle_bounds_the_bands() {
     assert_eq!(
         chart.slabs[0]
             .iter()
-            .map(|&l| chart.line_planes[l])
+            .map(|&l| jd.world_rat(chart.lines[l]).expect("a line's plane"))
             .collect::<Vec<_>>(),
         expect,
         "the chart's lines are the boundaries and nothing else here"
@@ -1412,36 +1410,17 @@ fn a_cut_circle_bounds_the_bands() {
     let (pf, pc) = (arc_on_z0(hole), arc_on_z0(panel));
     assert_eq!(pf, pc, "fuse's hole is cut's panel");
     // Negative control: without the sector labels the both-cut interval's cells have no
-    // speaking end, and the emitter refuses the class rather than guess a chamber. Called
-    // directly, not through the census — this hand-broken input violates the very premise
-    // (`src0_present == 0`) the census asserts where the fact is made.
-    let mut blind = Curved {
+    // speaking end, and the emitter refuses the class rather than guess. Called directly, not
+    // through the census — this hand-broken input violates the very premise
+    // (`src0_present == 0`) the census asserts where the fact is made. The rulings would still
+    // answer the chamber there, but not whether the face is there at all: that is the trace's
+    // marks, which ride with the arc labels.
+    let blind = Curved {
         disk_labels: curved.disk_labels.clone(),
         arc_labels: HashMap::new(),
         split_rims: curved.split_rims.clone(),
         rulings: curved.rulings.clone(),
     };
-    blind.arc_labels.clear();
-    // **Blinding one axis is not blinding the reader** — the chart has two, and the rulings
-    // answer where the rims are silent (the vertical read's own cell). So this says the weaker,
-    // truer thing: with the arcs gone the emitter still gets an answer, and
-    // it is only when **both** axes are blinded that it refuses by name.
-    assert!(
-        crate::arrangement::cyl_chart::emit_lateral(
-            BoolKind::Fuse,
-            &jd,
-            &setup.cyls,
-            &blind,
-            &rows,
-        )
-        .is_ok(),
-        "the vertical lines answer what the blinded rims cannot"
-    );
-    for v in blind.rulings.values_mut() {
-        for r in v.iter_mut() {
-            r.label = None;
-        }
-    }
     assert!(matches!(
         crate::arrangement::cyl_chart::emit_lateral(
             BoolKind::Fuse,
@@ -1503,7 +1482,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         let edges = ClassEdges::of(&setup.cyls, c, &edges);
         let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
         for (cyl, label) in &staged.disk_labels {
-            disk_labels.insert((*cyl, c), *label);
+            disk_labels.insert((*cyl, c), label.clone());
         }
         // This mirrors production's fold by hand (`trace_result_faces`' accumulation). A
         // drift between them is not caught by anything: the test would simply start measuring
@@ -2452,7 +2431,8 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
         &jd,
         wc,
         &nesting.holes,
-    );
+    )
+    .expect("the emitter");
     assert_eq!(out.len(), 1, "{out:?}");
     assert!(matches!(
         out[0].outer,
@@ -2559,7 +2539,8 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         &jd,
         wc,
         &nesting.holes,
-    );
+    )
+    .expect("the emitter");
     assert_eq!(out.len(), 1, "one face: the drilled cap — {out:?}");
     assert_eq!(out[0].outer.expect_ring().len(), 4);
     assert!(

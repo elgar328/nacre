@@ -32,10 +32,22 @@ pub(crate) fn trace_result_faces_full_for_test(
     )
 }
 
-/// Per `(cylinder class, plane class)`, the four bits of that circle's disk cell — see the band
-/// pass. Keyed rather than positional because a class carries a circle only when a cylinder cuts
-/// it, and a cylinder cuts only some classes.
-pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
+/// Per `(cylinder class, plane class)`, that whole circle's [`DiskLabel`] — see the band pass.
+/// Keyed rather than positional because a class carries a circle only when a cylinder cuts it,
+/// and a cylinder cuts only some classes.
+pub(crate) type DiskLabels = HashMap<(usize, usize), DiskLabel>;
+
+/// **A whole circle's disk label and the trace that made it** — [`ArcLabel`] for a circle no split
+/// cut: the four bits of its disk cell answer *membership*, the `(solid, kind)` contributions of the
+/// laterals that traced it ([`MergedCircle::whole_marks`]) answer *existence*. Set together, in one
+/// visit to one circle, for the reason [`ArcLabel`] states.
+#[derive(Clone, Debug)]
+pub(crate) struct DiskLabel {
+    /// The four bits of the circle's disk cell, in the class's stored frame.
+    pub(crate) label: Label,
+    /// The contributions covering the whole circle.
+    pub(crate) marks: Vec<(SolidSide, SegKind)>,
+}
 
 /// **A cut circle's per-arc disk-side labels** — the sector sibling of [`DiskLabels`]: a cut circle
 /// bounds no whole disk, so "the material immediately above and below this plane inside the circle"
@@ -601,7 +613,7 @@ pub(super) fn trace_result_faces(
         // off), the cut rims and the rulings' extents.
         type ClassOut = (
             Vec<LocalFace>,
-            Vec<(usize, Label)>,
+            Vec<(usize, DiskLabel)>,
             Vec<(usize, ArcLabel)>,
             Vec<(usize, CutRim)>,
             Vec<(usize, RulingExtent)>,

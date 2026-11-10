@@ -7,7 +7,7 @@ use super::*;
 /// a disk or an arc ([`Chart::read_cell`] is the one reader).
 pub(crate) enum End<'a> {
     /// The circle on this line is uncut: one label for the whole disk, whatever the slab.
-    Disk(Label),
+    Disk(&'a DiskLabel),
     /// The circle is cut, and the cell's slab lies under one of its arcs — one, because every
     /// node the rim is cut at is an event of the chart ([`Chart::events`]), so no slab runs past
     /// one.
@@ -52,7 +52,7 @@ impl End<'_> {
     /// is [`read_bits`], the one spelling.
     fn chamber(&self, side: SolidSide, above: bool) -> Option<(bool, bool)> {
         match self {
-            End::Disk(l) => Some(read_bits(l, side, above)),
+            End::Disk(d) => Some(read_bits(&d.label, side, above)),
             End::Arc(a) => Some(read_bits(&a.label, side, above)),
             End::Uncovered | End::NoCircle => None,
         }
@@ -60,7 +60,7 @@ impl End<'_> {
 }
 
 /// One cell, read.
-/// `ends` and `exist_disagree` are the census's readers; production reads `chamber`,
+/// `ends` is the census's reader; production reads `chamber`,
 /// `present`, `emit` and `unread` (the emitter) and pays for the rest only as a copy.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
@@ -73,12 +73,9 @@ pub(crate) struct CellRead<'a> {
     /// other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking over
     /// a present cell is the stages disagreeing. `None` when there is a chamber.
     pub(crate) unread: Option<RejectReason>,
-    /// Is this lateral face here at all — the existence question, answered by the trace
-    /// where an end is cut ([`face_spans`]) and by the row's ends where none is.
+    /// Is this lateral face here at all — the existence question, answered by the trace's marks on
+    /// the lines at the cell's ends ([`face_spans`]).
     pub(crate) present: bool,
-    /// The trace says the face is here while no row's ends hold the cell between them — the one
-    /// direction of disagreement that is a defect (the other is a hole in a face's band).
-    pub(crate) exist_disagree: bool,
     /// Would the cell be a result face: present, with a chamber, and `keep` differing across the
     /// wall. `None` when the chamber is unknown.
     pub(crate) emit: Option<bool>,
@@ -217,7 +214,6 @@ impl Chart {
         side: SolidSide,
         cell: &Cell,
         curved: &'a Curved,
-        rows: &[crate::bands::CylRow],
     ) -> Result<CellRead<'a>, BoolError> {
         let mut ends: Vec<End<'a>> = Vec::with_capacity(2);
         let mut above: [bool; 2] = [false; 2];
@@ -236,7 +232,7 @@ impl Chart {
                 // A whole-disk label and a cut of one circle is the split and the labels disagreeing
                 // about whether that circle was cut, not a chart shape.
                 (Some(_), Some(_)) => return Err(reject(RejectReason::CylinderStagesDisagree)),
-                (Some(l), None) => End::Disk(*l),
+                (Some(d), None) => End::Disk(d),
                 (None, Some(rim)) => match curved.arc_labels.get(&(k, c)) {
                     Some(arcs) => match self.arc_over(c, cell.slab, rim, arcs)? {
                         Some(arc) => End::Arc(arc),
@@ -265,8 +261,8 @@ impl Chart {
         // on present cells both axes speak on 21,006 / 27,300 / 1,026 and the horizontal alone on
         // 4,048 / 3,260 / 978; no side has contradicted another anywhere.
         //
-        // The symmetry is the chamber's: existence below is the rims' marks and the rows'
-        // span, and a ruling's own marks are an instrument's field, so a wall says nothing there.
+        // The symmetry is the chamber's: existence below is the rims' marks, and a ruling's own
+        // marks are an instrument's field, so a wall says nothing there.
         let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
             let seg = self.theta.get(i)?;
             // A tangent station has no chamber behind it to read: the face ends
@@ -331,47 +327,34 @@ impl Chart {
             (None, false) => Some(RejectReason::CylinderStagesDisagree),
         };
 
-        // ── Existence: the trace where an end is cut, the face's ends where none is. ──
-        // A row's ends are its lowest and highest boundary sections, by their planes: the cell lies
-        // within the face where its gap lies between those two lines in its slab.
-        let mut by_span = false;
-        for r in rows.iter().filter(|r| r.class == k) {
-            let line_of = |w: &[Rat; 4]| {
-                self.line_planes
-                    .iter()
-                    .position(|x| x == w)
-                    .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))
-            };
-            let (a, b) = (line_of(&r.ends[0])?, line_of(&r.ends[1])?);
-            let u = cell.slab;
-            if self.rank(u, a) <= cell.gap && cell.gap < self.rank(u, b) {
-                by_span = true;
-            }
-        }
+        // ── Existence: what the trace left on the lines at the cell's two ends. ──
+        // A line carries this solid's lateral marks over the cell's slab — an arc's when its circle
+        // is cut, the whole circle's when it is not — and `face_spans` reads them: through the
+        // plane, on the side a rim bounds, or not here at all. `face_spans` refuses by name (two
+        // of this solid's faces disagreeing on one line), and two ends disagreeing with each other
+        // is `CylinderFaceUndecided`: a slab exists over its whole height or not at all, and
+        // picking an end to believe is the guess this kernel does not make.
         let mut by_marks: Option<bool> = None;
         for e in 0..2 {
-            let End::Arc(arc) = &ends[e] else { continue };
-            // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
-            // two cut ends disagreeing with each other is `CylinderFaceUndecided`: the rims of a
-            // hole are band boundaries, so a slab exists over its whole height or not at all, and
-            // picking an end to believe is the guess this kernel does not make.
-            let v = face_spans(arc, side, above[e])?;
+            let marks: &[(SolidSide, SegKind)] = match &ends[e] {
+                End::Arc(arc) => &arc.marks,
+                End::Disk(disk) => &disk.marks,
+                End::Uncovered | End::NoCircle => continue,
+            };
+            let v = face_spans(marks, side, above[e])?;
             if by_marks.replace(v).is_some_and(|p| p != v) {
                 return Err(reject(RejectReason::CylinderFaceUndecided));
             }
         }
-        // The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
-        // what says the face is *not* there (the `exist_marks_false` population). So the
-        // disagreement that would be a defect is only the other direction: the trace claiming a
-        // face where no row spans.
-        // An uncovered rim piece decides existence outright: the face's own rim does
-        // not run along this slab at that line, so the face is not over this cell — whatever
-        // the row's axial span says.
+        // An uncovered rim piece decides existence outright: the face's own rim does not run along
+        // this slab at that line, so the face is not over this cell. A cell neither end speaks for
+        // — both lines a cut rim with no arc kept — has no trace to read, and a face is never read
+        // off nothing: the stages disagree.
         let uncovered = ends.iter().any(|e| matches!(e, End::Uncovered));
-        let (present, exist_disagree) = match by_marks {
-            _ if uncovered => (false, false),
-            Some(v) => (v, v && !by_span),
-            None => (by_span, false),
+        let present = match by_marks {
+            _ if uncovered => false,
+            Some(v) => v,
+            None => return Err(reject(RejectReason::CylinderStagesDisagree)),
         };
 
         // A cell the face is not in emits nothing, chamber or no chamber — a cell outside every
@@ -389,13 +372,12 @@ impl Chart {
             chamber,
             unread,
             present,
-            exist_disagree,
             emit,
         })
     }
 }
 
-/// **Does this row's lateral face reach into the interval, at this arc?** — the *existence*
+/// **Does this solid's lateral face reach into the interval, at this end line?** — the *existence*
 /// question, which no label answers.
 ///
 /// A label states where material is. It is written about a **cell**, and it stays the same whether
@@ -422,21 +404,19 @@ impl Chart {
 ///
 /// **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
 /// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
-/// gets `true` from this same test — one sentence about every rim. What is out of reach is only an
-/// **uncut** outer rim: it never becomes an [`ArcLabels`](crate::arrangement::ArcLabels) entry at
-/// all (a whole circle goes to `DiskLabels`, and existence at an uncut end is the row's ends), so
-/// today only cut rims ask here.
+/// gets `true` from this same test — one sentence about every rim. A circle no split cut asks with
+/// its whole marks ([`DiskLabel`]), an arc with its own.
 ///
-/// **How often each row actually fires** (the lib suite, marks read): `Transversal` **23,744** ·
-/// `Graze` **9,878**, of which **9,267** reach and **611** do not · nothing at all **3**. The chart
-/// reads it once per cut end.
+/// **How often each row fires on cut ends** (the lib suite, an arc's marks read): `Transversal`
+/// **23,744** · `Graze` **9,878**, of which **9,267** reach and **611** do not · nothing at all
+/// **3**. The chart reads it once per end that carries marks.
 pub(crate) fn face_spans(
-    r: &ArcLabel,
+    marks: &[(SolidSide, SegKind)],
     side: SolidSide,
     band_is_above: bool,
 ) -> Result<bool, BoolError> {
     let mut answer: Option<bool> = None;
-    for (_, kind) in r.marks.iter().filter(|(s, _)| *s == side) {
+    for (_, kind) in marks.iter().filter(|(s, _)| *s == side) {
         let reaches = match *kind {
             // A planar face's word — see `ArcLabel::marks`; a tangent ruling is a seated face's
             // too, and never a rim arc's mark.

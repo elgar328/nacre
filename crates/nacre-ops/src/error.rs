@@ -500,15 +500,15 @@ pub enum RejectReason {
     /// not this name's.
     TangentLineInAnotherPlane,
     // A cell label says where *material* is; whether the cylinder's own face bounds it there is a
-    // different proposition, answered by the contributions covering the rim arc
+    // different proposition, answered by the marks on the rim — an arc's, or a whole circle's
     // (`cyl_chart::read_cell`'s `face_spans`). This name is what that answer being *contradictory*
     // is called, and it has two spellings — both of them "the evidence points both ways", which is
     // why they share one name rather than reporting the shape that produced it:
     //
-    // - The interval's **two rims disagree.** Every cut rim is a band boundary, so a sector exists
+    // - The interval's **two rims disagree.** Every rim is a band boundary, so a sector exists
     //   over an interval's whole height or over none of it; ends that disagree mean that is false
     //   here, and choosing an end to believe is a guess.
-    // - **Two faces of one solid** cover the same arc and disagree about reaching in. That takes
+    // - **Two faces of one solid** mark the same rim and disagree about reaching in. That takes
     //   one cylinder class holding several faces which share a rim; the eventual answer is likely
     //   "any of them is enough", but it has never been measured.
     /// **The trace does not determine whether a lateral face is present over a sector.**

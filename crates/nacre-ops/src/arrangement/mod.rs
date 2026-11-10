@@ -199,7 +199,7 @@ struct Staged {
     #[cfg(test)]
     labels: Vec<Label>,
     faces: Vec<LocalFace>,
-    disk_labels: Vec<(usize, Label)>,
+    disk_labels: Vec<(usize, DiskLabel)>,
     arc_labels: Vec<(usize, ArcLabel)>,
     /// This class's ruling pieces, keyed by cylinder class — see [`RulingExtent`].
     ruling_extents: Vec<(usize, RulingExtent)>,

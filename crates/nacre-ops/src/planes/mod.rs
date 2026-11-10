@@ -119,8 +119,8 @@ pub(crate) struct CylFaceInfo {
     /// The planes (world coefficients) of this face's lowest and highest boundary sections — its
     /// ends along the axis (`cyl_geom::lateral_ends`), a circle's plane or an ellipse's alike. `None`
     /// where the boundary cannot be read or no section stands at or below (or at or above) every other
-    /// ([`section_ends`]). The chart reads a cell's
-    /// existence at an uncut end between the lines of these planes (`bands::CylRow`).
+    /// ([`section_ends`]). Held equal to the tracer's own reading of the face's ends
+    /// (`arrangement`'s `lateral_shape`).
     pub(crate) ends: Option<[[nacre_exact::Rat; 4]; 2]>,
     /// The face's [`Footprint`] on its own chart: how far it reaches along the axis — the hull of the
     /// bands its boundary sections sweep (`cyl_geom::lateral_axial_reach`), [`CylFaceInfo::stretch`]

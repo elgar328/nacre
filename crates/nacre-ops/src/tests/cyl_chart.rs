@@ -150,8 +150,8 @@ fn the_charts_vertical_answers_close() {
 /// exactly the emitted cells. What this holds, universally over every recorded row, is what only
 /// the ledger can say:
 ///
-/// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
-///   existence story wherever both speak.
+/// * `read_refused == 0` — no cell's two ends tell different existence stories, and no line
+///   carries two of one solid's lateral marks that disagree.
 ///
 /// And the counters are not vacuous, counted on **this test's own rows** (`ledger::owned`), so
 /// each number is a fact about the fixtures below and not about whatever else the binary ran:
@@ -229,10 +229,6 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
     let mine = CELL_ENDS.mine();
 
     for r in &rows {
-        assert_eq!(
-            r.exist_disagree, 0,
-            "trace and span disagree on existence: {r:?}"
-        );
         assert_eq!(
             r.read_refused, 0,
             "the reader refused a cell by name: {r:?}"
@@ -426,7 +422,7 @@ fn face_spans_reads_the_trace_not_the_label() {
         marks,
     };
     let (a, b) = (SolidSide::A, SolidSide::B);
-    let spans = |marks, above| face_spans(&row(marks), a, above);
+    let spans = |marks, above| face_spans(&row(marks).marks, a, above);
     // A face running through the plane is on both sides of it.
     for above in [true, false] {
         assert!(spans(vec![(a, SegKind::Transversal { mat: 1 })], above).unwrap());

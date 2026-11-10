@@ -1054,7 +1054,8 @@ fn boolean_keep_and_result_faces_on_the_cross() {
         &jd,
         wc,
         &nesting.holes,
-    );
+    )
+    .expect("the emitter");
     assert_eq!(fuse.len(), 5, "Fuse keeps the whole plus cap");
     // Cut a−b: exactly the two a-arms.
     let (cut, _, _) = emit_faces(
@@ -1065,7 +1066,8 @@ fn boolean_keep_and_result_faces_on_the_cross() {
         &jd,
         wc,
         &nesting.holes,
-    );
+    )
+    .expect("the emitter");
     assert_eq!(cut.len(), 2, "Cut keeps the a-arms");
     let cut_c: Vec<[f64; 2]> = cut.iter().map(centroid).collect();
     assert!(
@@ -1081,7 +1083,8 @@ fn boolean_keep_and_result_faces_on_the_cross() {
         &jd,
         wc,
         &nesting.holes,
-    );
+    )
+    .expect("the emitter");
     assert_eq!(common.len(), 1, "Common keeps the center");
     assert!(near(centroid(&common[0]), 1.5, 1.5), "center at (1.5,1.5)");
 

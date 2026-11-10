@@ -23,7 +23,7 @@ pub(super) fn emit_faces(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
-) -> EmitOut {
+) -> Result<EmitOut, BoolError> {
     let planes = jd.planes;
     // [`combinatorics::NodeId`] is the vertex-identity enum; the local `Node` (this module's
     // three-valued-scan struct, a *different* type that happens to share the word) shadows the
@@ -91,25 +91,29 @@ pub(super) fn emit_faces(
     // hole's outermost bands end on the cylinder's own cap classes, and `Cut` drops those cap
     // faces — following the faces would leave those bands with no label to read, while the cell
     // (and its label) is right here.
-    let disk_labels = edges
-        .circles
-        .iter()
-        .enumerate()
-        .filter_map(|(i, mc)| {
-            let he = edges.he_count() + 2 * i;
-            let c = cells.iter().position(|cell| cell.half_edges == [he])?;
-            #[cfg(test)]
-            assert!(
-                mc.whole_marks()
-                    .ok()
-                    .and_then(|w| disk_side_agrees(&w, &labels[c]).ok())
-                    .unwrap_or(true),
-                "a whole circle's disk does not carry its own solid: {:?}",
-                labels[c]
-            );
-            Some((mc.cyl, labels[c]))
-        })
-        .collect();
+    //
+    // The label and the trace that made it, **from one visit to one circle** — see [`DiskLabel`].
+    let mut disk_labels = Vec::new();
+    for (i, mc) in edges.circles.iter().enumerate() {
+        let he = edges.he_count() + 2 * i;
+        let Some(c) = cells.iter().position(|cell| cell.half_edges == [he]) else {
+            continue;
+        };
+        let marks = mc.whole_marks()?;
+        #[cfg(test)]
+        assert!(
+            disk_side_agrees(&marks, &labels[c]).unwrap_or(true),
+            "a whole circle's disk does not carry its own solid: {:?}",
+            labels[c]
+        );
+        disk_labels.push((
+            mc.cyl,
+            DiskLabel {
+                label: labels[c],
+                marks,
+            },
+        ));
+    }
     // **A cut circle's labels, per arc** ([`ArcLabel`]) — same discipline as the disk labels
     // above: collected from the cells, outside the keep filter.
     //
@@ -198,12 +202,16 @@ pub(super) fn emit_faces(
             ))
         })
         .collect();
-    (out, disk_labels, arc_labels)
+    Ok((out, disk_labels, arc_labels))
 }
 
 /// [`emit_faces`]' product: the kept faces, the disk labels, and the cut circles' per-arc
 /// disk-side labels.
-type EmitOut = (Vec<LocalFace>, Vec<(usize, Label)>, Vec<(usize, ArcLabel)>);
+type EmitOut = (
+    Vec<LocalFace>,
+    Vec<(usize, DiskLabel)>,
+    Vec<(usize, ArcLabel)>,
+);
 
 /// A face's box, from its vertices' cached coordinates.
 ///

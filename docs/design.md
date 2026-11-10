@@ -1787,9 +1787,9 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 
 ### 밴드와 라벨
 
-밴드의 소속은 배열의 라벨을 읽고(`cyl_chart::read_cell::read_bits`), 옆면의 존재는 추적의 자국을 읽는다
-(`read_cell::face_spans`, `arrangement::ArcLabel`). 밴드의 끝은 방출된 원 경계와 옆면 자신의 rim 이고
-(`bands::cyl_rows`), 조립이 rim 표로 캡과 밴드를 한 엣지에 잇는다(`assembly::reconstruct`).
+밴드의 소속은 배열의 라벨을 읽고(`cyl_chart::read_cell::read_bits`), 옆면의 존재는 칸 양 끝 선에 추적이 남긴 자국을
+읽는다(`read_cell::face_spans` — 잘린 원은 `arrangement::ArcLabel`, 온전한 원은 `arrangement::DiskLabel`). 밴드의 끝은
+방출된 원 경계와 옆면 자신의 rim 이고, 조립이 rim 표로 캡과 밴드를 한 엣지에 잇는다(`assembly::reconstruct`).
 
 - **소속은 재지 않고 배열에게 묻는다.** 밴드는 원판 셀의 네 비트를 한 철자로 읽고, 차트의 셀은 그 끝과 벽이 모두 일치할
   때만 챔버를 가진다 — `read_cell::read_bits`·`CellRead::chamber` 의 doc. 광선이 아닌 까닭: 평면 엔진은 「이 경계 조각이
@@ -1804,7 +1804,8 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 - **감김은 규칙으로 유도한다** — `reconstruct` 의 «Which way a rim circle is walked» 주석; 잠금은 부피의 부호(뚫린 상자가
   `8 − πr²h`, `src/tests/bands/slab_bands.rs` 의 winding lock).
 - **딱지는 «소속»을 말하지 «존재»를 말하지 않는다.** 구멍 난 옆면이 피연산자로 돌아오면 rim 의 두 섹터가 글자 그대로 같은
-  딱지를 들고, 존재는 자국의 **종류**(`Graze`·`Transversal`)가 답한다 — 둘은 한 호를 볼 때 함께 채운다(`ArcLabel` doc).
+  딱지를 들고, 존재는 자국의 **종류**(`Graze`·`Transversal`)가 답한다 — 둘은 한 호·한 원을 볼 때 함께 채운다(`ArcLabel`
+  doc).
   차트의 셀이 소속(`read_bits`)과 존재(`face_spans`)를 **나란히** 묻는다.
 - **`face_spans` 의 진리표**(`Seated` 건너뛰기 포함)는 그 doc 이다. `Seated` 건너뛰기는 방어가 아니라 작동 중인 경로다 —
   한 호가 옆면 자국과 평면 면의 `Seated` rim 을 함께 들고 오는 인구가 실재한다. 자국 수의 계약 «제 솔리드의 옆면 자국은

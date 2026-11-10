@@ -82,8 +82,6 @@ pub(crate) mod cell_ends {
         pub(crate) end_nocircle: usize,
         /// Ends between adjacent rim nodes no arc covers — the face is absent there.
         pub(crate) end_uncovered: usize,
-        /// Cells whose trace and span disagree about the face being there.
-        pub(crate) exist_disagree: usize,
         /// The reader refused a cell of this chart by name (`face_spans`' refusal, the
         /// two-cut-ends refusal, or an arrangement-table inconsistency) — the whole class is
         /// refused.

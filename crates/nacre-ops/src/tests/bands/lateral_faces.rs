@@ -187,8 +187,9 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
 //
 // With several lateral faces there are several rectangles: the strip is shared, the spans
 // are not. That is why the gap between two bands is passable at all, and it is not a special
-// case bolted on — a row's ends are the existence truth at an uncut end, so no band is ever
-// built in a gap and there is no premise there for a wall to break.
+// case bolted on — a cell's existence is the trace's marks at its ends, which a face leaves
+// nowhere in the gap, so no band is ever built there and there is no premise there for a wall to
+// break.
 
 /// **The case this opened.** The two-banded bore of `plate_with_a_split_bore` has bands at
 /// `z ∈ [0,4]` and `[6,10]` — `t ∈ [1,5]` and `[7,11]`. A tool whose `y = 6` wall stands only 1
