@@ -177,30 +177,13 @@ impl Theta {
         }
         Some(Self::At(nacre_exact::off_axis_rat(&w, m)?))
     }
-
-    /// **Whether some angle about the axis lies outside this extent** — `false` for the whole
-    /// circle, which [`Theta::Whole`] also stands for where the extent could not be stated, and for
-    /// an arc whose two ends point one way ([`RimArc`]); `true` for a single direction and any other
-    /// arc. A face's extent is never narrower than the face ([`lateral_theta_extent`]), so `true`
-    /// says the face leaves some angle bare. `None` is `Rat` overflow.
-    pub(crate) fn misses_an_angle(&self, m: &[nacre_exact::Rat; 3]) -> Option<bool> {
-        let zero = nacre_exact::Rat::from_int(0);
-        Some(match self {
-            Self::Whole => false,
-            Self::At(_) => true,
-            Self::Arc(arc) => {
-                turn(&arc.from, &arc.to, m)? != zero
-                    || nacre_exact::dot3_rat(&arc.from, &arc.to)? <= zero
-            }
-        })
-    }
 }
 
 /// An arc of a cylinder's cross-section, by two **radial vectors** of the cylinder's radius — a
 /// rim point's direction off the axis — `from → to` counter-clockwise about the axis
 /// direction. A whole circle is [`Theta::Whole`] and one direction [`Theta::At`]; a `from` and a
-/// `to` pointing one way (two names of one corner) read as the whole circle ([`arc_contains`],
-/// [`Theta::misses_an_angle`]), which is that arc. Rational, as every corner a prism's rim has is: a seam point when the reference
+/// `to` pointing one way (two names of one corner) read as the whole circle ([`arc_contains`]),
+/// which is that arc. Rational, as every corner a prism's rim has is: a seam point when the reference
 /// direction's norm is (`inv_sqrt_rat`), a pierce corner when its root is
 /// ([`nacre_exact::quad::QuadVal::as_rat`]).
 #[derive(Clone, Copy, Debug, PartialEq)]

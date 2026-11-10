@@ -10,12 +10,14 @@ use super::*;
 /// The reject a declined face reports to the caller.
 ///
 /// Most kinds *are* the answer — the tracer says what it could not do, and `face` says where.
-/// Three are exceptions, raised as their cause. [`DeclineKind::FourPlane`]: the naming failure is a
+/// Four are exceptions, raised as their cause. [`DeclineKind::FourPlane`]: the naming failure is a
 /// symptom, and reporting it as one would hide the substrate limit that caused it.
 /// [`DeclineKind::ObliqueSection`]: an oblique section the trace does not read is the oblique
 /// coverage's end, which [`RejectReason::ObliqueCylinderCut`] names wherever else it ends; so is
 /// [`DeclineKind::CylinderPair`], two cylinders meeting at a point a trace tied, which
-/// [`RejectReason::CylinderPairContact`] names wherever else it is met. The face
+/// [`RejectReason::CylinderPairContact`] names wherever else it is met; and
+/// [`DeclineKind::Width`], a point the trace needs that `Rat` cannot state, is
+/// [`RejectReason::WitnessNotRational`], the name width has everywhere. The face
 /// handle is dropped there because [`RejectReason::FourPlane`] carries no payload; per-face detail
 /// remains in the class audit, which is where `TraceDeclined`'s own docs put it.
 ///
@@ -26,6 +28,7 @@ pub(super) fn decline_to_reject(kind: DeclineKind, face: Option<Handle<Face>>) -
         DeclineKind::FourPlane => RejectReason::FourPlane,
         DeclineKind::ObliqueSection => RejectReason::ObliqueCylinderCut,
         DeclineKind::CylinderPair => RejectReason::CylinderPairContact,
+        DeclineKind::Width => RejectReason::WitnessNotRational,
         kind => RejectReason::TraceDeclined { kind, face },
     }
 }

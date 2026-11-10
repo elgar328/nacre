@@ -585,6 +585,24 @@ impl<'a> ChartPoint<'a> {
         }
     }
 
+    /// A point on the plane `section` that `realize` states when a question needs it.
+    pub(crate) fn lazy(
+        section: [nacre_exact::Rat; 4],
+        realize: &'a dyn Fn() -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>,
+    ) -> Self {
+        Self {
+            section,
+            at: core::cell::OnceCell::new(),
+            realize: Some(realize),
+        }
+    }
+
+    /// Whether a question needed the point and it could not be stated — the width of the
+    /// arithmetic, not the geometry.
+    pub(crate) fn unrealizable(&self) -> bool {
+        matches!(self.at.get(), Some(None))
+    }
+
     /// The point, realized once; `None` where it cannot be stated.
     pub(crate) fn generator(
         &self,

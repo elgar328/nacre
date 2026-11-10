@@ -121,19 +121,13 @@ fn circle_spans(
 /// gate refuses it first). Every other cycle — a fillet's quarter, a hole, a panel — is walked by
 /// [`cycle_on_class`], which names its crossings and lays the runs of its arcs on the trace.
 ///
-/// **The outer answer**, which the cuts carve: a graze of a rim is that graze. A trace crossing one
-/// of the face's ends ([`LateralShape`]'s `ends`) or standing strictly between them is `Crosses` —
-/// a connected face reaches every height between its ends at some angle, and the cuts carve out
-/// where it does not (a run whose flanks differ, a parity boundary in θ the cuts cannot carve, is
-/// declined by [`cycle_on_class`]). A trace beside both ends meets no part of the face: nothing,
-/// and no cycle to walk — every cycle lies between the ends. One on an end that is no rim (a
-/// panel's arc, a chain's top) has no outer answer: only the runs the cycles lay on the class
-/// speak.
+/// **Out of reach first**: a trace beside every boundary section of the face, on one side, meets no
+/// part of it — on each generator the face lies between its own boundary points — so nothing, and
+/// no cycle is walked.
 ///
-/// **With nothing carved** a `Crosses` trace lies wholly in the face — it crosses none of the
-/// boundary and stands between its ends — unless the face's angles leave one bare: the trace meets
-/// every angle about the axis, so such a face holds none of it
-/// ([`crate::planes::Theta::misses_an_angle`] of its extent, never narrower than the face).
+/// **The outer answer**, which the cuts carve: a graze of a rim is that graze; otherwise it is what
+/// one point of the uncarved trace answers ([`outer_by_witness`]) — the uncarved part is all in the
+/// face or all out of it.
 #[allow(clippy::too_many_arguments)]
 fn trace_on_face(
     jd: &Judge<'_, WorkingPlane>,
@@ -172,9 +166,13 @@ fn trace_on_face(
             Some(SectionMeet::Touch) | None => Err(DeclineKind::ObliqueSection),
         }
     };
-    let ends = [stand(shape.ends[0])?, stand(shape.ends[1])?];
-    // Beside both ends: below the low one or above the high one, the face is out of reach.
-    if ends == [Some(Less), Some(Less)] || ends == [Some(Greater), Some(Greater)] {
+    let beside = |side| {
+        shape
+            .sections
+            .iter()
+            .all(|&c| stand(c).ok() == Some(Some(side)))
+    };
+    if beside(Less) || beside(Greater) {
         return Ok(Vec::new());
     }
     let mut carved: Vec<Carved> = Vec::new();
@@ -202,11 +200,7 @@ fn trace_on_face(
             }
         }
     }
-    let outer = graze.or_else(|| match ends {
-        [Some(Equal), _] | [_, Some(Equal)] => None,
-        [Some(lo), Some(hi)] => (lo == Greater && hi == Less).then_some(CylOnClass::Crosses),
-        _ => Some(CylOnClass::Crosses),
-    });
+    let mut contacts: Vec<NodeId> = Vec::new();
     // **The hole is read by the walk every other face's boundary is read by** — the face's
     // own loop, against this class, through [`combinatorics::ring_against_plane`]. An interval
     // derived from the loop's carriers would be exact for a chart rectangle and a *premise* for
@@ -224,20 +218,260 @@ fn trace_on_face(
             nr,
             coeffs,
             &mut carved,
+            &mut contacts,
         )?;
     }
+    let outer = match graze {
+        Some(g) => Some(g),
+        None => {
+            let loops = lateral_loops(jd, cyls, shape, rings)?;
+            outer_by_witness(jd, def, cyl, coeffs, &loops, &carved, &contacts)?
+        }
+    };
     if carved.is_empty() {
-        return Ok(match outer {
-            Some(CylOnClass::Crosses)
-                if cf.footprint.theta.misses_an_angle(&def.dir()) == Some(true) =>
-            {
-                Vec::new()
-            }
-            Some(on) => vec![CircleSpan { arc: None, on }],
-            None => Vec::new(),
-        });
+        return Ok(outer
+            .map(|on| vec![CircleSpan { arc: None, on }])
+            .unwrap_or_default());
     }
     assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer, ties)
+}
+
+/// **The face's boundary as loops on its chart** — what [`combinatorics::loop_parity`] reads: each
+/// rim (closed or split into arcs) as its plane class, every other cycle — the polygon rings
+/// [`trace_on_face`] was handed, a lateral's cycles that are no rim — as its edges
+/// ([`combinatorics::ring_edges`], with no plane — a lateral's corners are pierce names).
+fn lateral_loops(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    shape: &LateralShape,
+    rings: &[(bool, &combinatorics::NamedRing)],
+) -> Result<Vec<combinatorics::LateralLoop>, DeclineKind> {
+    use combinatorics::LateralLoop;
+    let mut loops: Vec<LateralLoop> = shape
+        .rims
+        .iter()
+        .map(|&(c, _)| LateralLoop::Rim(c))
+        .collect();
+    for (_, nr) in rings {
+        loops.push(LateralLoop::Ring(
+            combinatorics::ring_edges(jd, cyls, &nr.triples, &nr.walls, None)
+                .map_err(|_| DeclineKind::CylSpan)?,
+        ));
+    }
+    Ok(loops)
+}
+
+/// **What the trace's uncarved part answers** — one point of it, asked of the face's loops.
+///
+/// Every simple closed curve on a cylinder cuts it in two, so a lateral face is the meet of its
+/// boundary loops' material sides. Carving took away, at every loop the trace crosses, the trace's
+/// part on that loop's other side, and laid the runs along a loop as grazes; a touch takes nothing
+/// and changes no side, and a run whose flanks differ is declined before this. So every point the
+/// carving left is on the material side of each loop the trace crossed, and on one side — the same
+/// along the whole trace — of each loop it did not: **the uncarved part is all in the face or all
+/// out of it**, and one point of it says which, by the rule every lateral point is read by
+/// ([`combinatorics::loop_parity`]).
+///
+/// The point is chosen where it cannot be on the boundary. The trace meets the face's boundary only
+/// at `contacts` and the carved extents' ends (every node a cycle has on the class, every crossing)
+/// — a touch inside a boundary arc is neither, and the gate refuses a plane that touches a boundary
+/// section (`boundary_stand`); a witness on one would read `OnBoundary` and decline.
+/// With none of them any point of the trace is off the boundary, and its generator is realized only
+/// if a question needs one ([`combinatorics::ChartPoint`] — a face of whole rims apart from the trace
+/// needs none). Otherwise the point stands strictly between two consecutive ones in θ, on an
+/// elementary arc no extent claims: a root of the trace's plane and a plane through the axis whose
+/// direction is the realized middle of that arc — a sample, not a truth — **verified** inside the
+/// arc exactly ([`combinatorics::arc_span`]). `Ok(None)` where every elementary arc is claimed: the
+/// answer is then read nowhere.
+///
+/// Declines `Width` where a point the question needs cannot be stated in `Rat` (a small model with
+/// long decimals); `CylHoleFeature` where two of the nodes are one point
+/// ([`combinatorics::CircleOrderFail::Coincident`]); `CylSpan` where their θ order is undecided, a
+/// carved end is not among them, the realized middle does not land inside its arc, or the point
+/// reads on the boundary or not at all.
+fn outer_by_witness(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    cyl: usize,
+    coeffs: &[Rat; 4],
+    loops: &[combinatorics::LateralLoop],
+    carved: &[Carved],
+    contacts: &[NodeId],
+) -> Result<Option<CylOnClass>, DeclineKind> {
+    use combinatorics::{ArcEnds, ArcSpan, ChartPoint};
+    use nacre_exact::quad::{CylinderMeet, MeetLine, QuadVal, plane_plane_cylinder};
+    use nacre_geom::intersect::RingSide;
+    let (o, m) = (def.origin(), def.dir());
+    // The trace's two roots on the plane through the axis along `d`.
+    let roots = |d: [Rat; 3]| -> Option<(MeetLine, [QuadVal; 2])> {
+        let n = nacre_exact::cross3_rat(&m, &d)?;
+        let d0 = Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&n, &o)?)?;
+        match plane_plane_cylinder(coeffs, &[n[0], n[1], n[2], d0], &o, &m, def.r2())? {
+            CylinderMeet::Pair { line, s } => Some((line, s)),
+            _ => None,
+        }
+    };
+    let answer = |x: &ChartPoint<'_>| match combinatorics::loop_parity(jd, def, loops, x) {
+        Some(RingSide::Inside) => Ok(Some(CylOnClass::Crosses)),
+        Some(RingSide::Outside) => Ok(None),
+        None if x.unrealizable() => Err(DeclineKind::Width),
+        Some(RingSide::OnBoundary) | None => Err(DeclineKind::CylSpan),
+    };
+    let mut names: Vec<NodeId> = carved
+        .iter()
+        .flat_map(|c| c.arc)
+        .chain(contacts.iter().copied())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    if names.is_empty() {
+        let realize = || {
+            let (line, [s, _]) = roots(seam_direction(def)?)?;
+            Some((line, s))
+        };
+        return answer(&ChartPoint::lazy(*coeffs, &realize));
+    }
+    let groups = combinatorics::theta_groups(jd, cyl, def, &names).map_err(|e| match e {
+        combinatorics::CircleOrderFail::Undecided => DeclineKind::CylSpan,
+        combinatorics::CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
+    })?;
+    let n = groups.len();
+    let group_of = |x: NodeId| groups.iter().position(|g| g.iter().any(|&i| names[i] == x));
+    let mut claimed = vec![false; n];
+    for c in carved {
+        let (Some(a), Some(b)) = (group_of(c.arc[0]), group_of(c.arc[1])) else {
+            return Err(DeclineKind::CylSpan);
+        };
+        let mut k = a;
+        while k != b {
+            claimed[k] = true;
+            k = (k + 1) % n;
+        }
+    }
+    let Some(k) = (0..n).find(|&k| !claimed[k]) else {
+        return Ok(None);
+    };
+    let exact = |x: NodeId| {
+        combinatorics::pierce_meet(jd, cyl, def, x)
+            .and_then(combinatorics::PiercePoint::into_exact)
+            .ok_or(DeclineKind::Width)
+    };
+    let (a, b, whole) = (
+        exact(names[groups[k][0]])?,
+        exact(names[groups[(k + 1) % n][0]])?,
+        n == 1,
+    );
+    let d = middle_direction(def, &a, &b, whole).ok_or(DeclineKind::Width)?;
+    let (line, s) = roots(d).ok_or(DeclineKind::Width)?;
+    let ends = if whole {
+        ArcEnds::Closed(&a)
+    } else {
+        ArcEnds::Open(&a, &b)
+    };
+    let mut inside = None;
+    for r in s {
+        match combinatorics::arc_span(def, ends, &(line.clone(), r)) {
+            Some(ArcSpan::Inside) => inside = Some(r),
+            Some(_) => {}
+            None => return Err(DeclineKind::Width),
+        }
+    }
+    let s = inside.ok_or(DeclineKind::CylSpan)?;
+    answer(&ChartPoint::realized(*coeffs, line, s))
+}
+
+/// The seam's direction off the axis, `(m·m)·ref − (ref·m)·m` — rational and perpendicular to `m`,
+/// as its smallest integer vector ([`primitive`]).
+fn seam_direction(def: &nacre_topo::CylinderDef) -> Option<[Rat; 3]> {
+    let (m, r) = (def.dir(), def.ref_dir());
+    let (mm, rm) = (
+        nacre_exact::dot3_rat(&m, &m)?,
+        nacre_exact::dot3_rat(&r, &m)?,
+    );
+    let mut e = [Rat::from_int(0); 3];
+    for k in 0..3 {
+        e[k] = mm.checked_mul(r[k])?.checked_sub(rm.checked_mul(m[k])?)?;
+    }
+    primitive(e)
+}
+
+/// **A direction as its smallest integer vector** — denominators cleared, the content divided out.
+/// A direction is unchanged by a positive rescale, and the planes built on it stay narrow.
+fn primitive(v: [Rat; 3]) -> Option<[Rat; 3]> {
+    fn gcd(a: i128, b: i128) -> i128 {
+        let (mut a, mut b) = (a.checked_abs().unwrap_or(0), b.checked_abs().unwrap_or(0));
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        a
+    }
+    let mut l = 1i128;
+    for c in &v {
+        let d = c.denom();
+        l = l.checked_mul(d / gcd(l, d).max(1))?;
+    }
+    let ints = [
+        v[0].numer().checked_mul(l / v[0].denom())?,
+        v[1].numer().checked_mul(l / v[1].denom())?,
+        v[2].numer().checked_mul(l / v[2].denom())?,
+    ];
+    let g = gcd(gcd(ints[0], ints[1]), ints[2]).max(1);
+    Some(ints.map(|x| Rat::from_int(x / g)))
+}
+
+/// **The direction off the axis halfway round from `a` to `b`, counter-clockwise** (the whole turn
+/// past `a` when `whole`) — realized from the two points' coordinates, a sample for a witness the
+/// caller verifies, never a truth.
+///
+/// Rounded to the grid the arc needs and no finer: a unit direction rounded at `2⁻ᵇ` per component
+/// turns by at most `√3·2⁻ᵇ`, inside the half span once `2ᵇ > 2√3 / span`; a finer grid only widens
+/// the planes built on it (taken exactly as the `f64` it is, the plane overflowed `i128` on 8,726
+/// of the lib suite's traces).
+fn middle_direction(
+    def: &nacre_topo::CylinderDef,
+    a: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    b: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    whole: bool,
+) -> Option<[Rat; 3]> {
+    let f = |v: [Rat; 3]| v.map(Rat::to_f64);
+    let (o, m, e1) = (f(def.origin()), f(def.dir()), f(seam_direction(def)?));
+    let unit = |v: [f64; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        v.map(|x| x / l)
+    };
+    let (m, e1) = (unit(m), unit(e1));
+    let e2 = [
+        m[1] * e1[2] - m[2] * e1[1],
+        m[2] * e1[0] - m[0] * e1[2],
+        m[0] * e1[1] - m[1] * e1[0],
+    ];
+    let angle = |p: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)| {
+        let (base, dir, s) = (f(p.0.base()), f(p.0.dir()), p.1.to_f64_approx());
+        let q: [f64; 3] = core::array::from_fn(|k| base[k] + s * dir[k] - o[k]);
+        let dot = |u: [f64; 3]| q[0] * u[0] + q[1] * u[1] + q[2] * u[2];
+        dot(e2).atan2(dot(e1))
+    };
+    let tau = std::f64::consts::TAU;
+    let (ta, tb) = (angle(a), angle(b));
+    let span = if whole {
+        tau
+    } else {
+        (tb - ta).rem_euclid(tau)
+    };
+    let mid = ta + span / 2.0;
+    let d: [f64; 3] = core::array::from_fn(|k| mid.cos() * e1[k] + mid.sin() * e2[k]);
+    let bits = ((-(span.log2())).ceil() + 2.0).clamp(2.0, 60.0);
+    let scale = 2f64.powf(bits);
+    let ints = d.map(|x| (x * scale).round());
+    if ints
+        .iter()
+        .any(|x| !x.is_finite() || x.abs() >= 2f64.powi(62))
+    {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let v = ints.map(|x| Rat::from_int(x as i128));
+    primitive(v)
 }
 
 /// **A lateral face's shape as its cycles state it** — what both lateral roads read of a
@@ -327,7 +561,7 @@ pub(super) fn lateral_shape(
     );
     Ok(LateralShape {
         rims: rims.into_iter().map(|c| (c, c == lo)).collect(),
-        ends: [lo, hi],
+        sections,
         cycles: rest,
     })
 }
@@ -613,6 +847,7 @@ fn cycle_on_class(
     nr: &combinatorics::NamedRing,
     trace: &[Rat; 4],
     out: &mut Vec<Carved>,
+    contacts: &mut Vec<NodeId>,
 ) -> Result<(), DeclineKind> {
     use crate::combinatorics::Wall;
     let _ = inner; // the ledger's, under test
@@ -681,6 +916,7 @@ fn cycle_on_class(
             combinatorics::Feature::Crossing { .. } => None,
         })
         .collect();
+    contacts.extend(on_class.iter().map(|&i| ring[i]));
     // Crossings, each with the direction the hole runs in from it. Paired below, after the θ sort.
     let mut cuts: Vec<(NodeId, bool)> = Vec::new();
     for f in features {

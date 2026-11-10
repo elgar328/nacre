@@ -767,6 +767,102 @@ pub(crate) struct RingEdge {
     pub to_h: EndPin,
 }
 
+/// **A ring's edges from its nodes and walls**, ready for the exact predicates - built from the
+/// walls the ring carries, in the engine's own vocabulary: a result face's ring
+/// (`draft::Ring::edges`) and an operand lateral's cycle (`NamedRing`) alike.
+///
+/// A wall becomes its carrier (`Wall::Arc` an [`ArcCarrier`] with the class
+/// table's def - the same clone convention every producer follows - and its `plane`, which
+/// gives the arc its height on a lateral's chart; a
+/// `Wall::Ruling`'s, the plane its `side` was measured against, is carried on), a pierce end
+/// on a plane edge by `pin_for` (its cylinder when both planes of its pair hold the edge's
+/// line) and elsewhere by its cylinder, and a three-plane end by `pin_on_line` - so a mixed
+/// ring yields edges its consumers fork on (`ring_is_mixed`). Flattening walls to plane indices
+/// for a plane-only derivation would refuse every mixed ring here, before any consumer could
+/// abstain.
+///
+/// `p` is the plane class the ring lies in, which pins a **three-plane** end on its edge's
+/// line; a lateral ring (on a cylinder) has none — its corners are pierce names — and passes
+/// `None`, so a three-plane end there is refused by name rather than pinned by a guess.
+pub(crate) fn ring_edges(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    nodes: &[NodeId],
+    walls: &[Wall],
+    p: Option<usize>,
+) -> Result<Vec<RingEdge>, BoolError> {
+    if nodes.len() != walls.len() {
+        return Err(reject(RejectReason::RingNaming));
+    }
+    let pin = |n: NodeId, wall: &Wall| -> Result<EndPin, BoolError> {
+        if pierce_name(n).is_some() {
+            // A pierce end is pinned by a plane of its pair that cuts the line, or by its
+            // cylinder where both hold it; a point on a line two classes share on the cylinder
+            // can arrive under the other pair's name, so on a plane edge its pin is derived —
+            // `pin_for`, the one rule («a pin is a function of the name and the line»).
+            return match (wall, p) {
+                (Wall::Plane(c), Some(p)) => {
+                    pin_for(jd, p, *c, n).ok_or_else(|| reject(RejectReason::RingNaming))
+                }
+                _ => Ok(EndPin::Cylinder),
+            };
+        }
+        let Some(t) = three_plane_name(n) else {
+            return Err(reject(RejectReason::RingNaming));
+        };
+        let (Wall::Plane(c), Some(p)) = (wall, p) else {
+            // A three-plane point on a curved carrier, or on a lateral ring, has no third
+            // plane to pin it with - no producer builds the shape today, and it is refused
+            // by name rather than guessed at.
+            return Err(reject(RejectReason::RingNaming));
+        };
+        pin_on_line(jd, p, *c, &t)
+            .map(EndPin::Class)
+            .ok_or_else(|| reject(RejectReason::RingNaming))
+    };
+    let def_of = |cyl: usize| -> Result<nacre_topo::CylinderDef, BoolError> {
+        Ok(cyls
+            .get(cyl)
+            .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?
+            .def
+            .clone())
+    };
+    (0..nodes.len())
+        .map(|i| {
+            let jn = (i + 1) % nodes.len();
+            let wall = &walls[i];
+            let carrier = match wall {
+                Wall::Plane(c) => Carrier::plane(*c),
+                Wall::Arc { cyl, ccw, plane } => Carrier::Arc(Box::new(ArcCarrier {
+                    cyl: *cyl,
+                    def: def_of(*cyl)?,
+                    plane: *plane,
+                    ccw: *ccw,
+                })),
+                Wall::Ruling {
+                    cyl,
+                    side,
+                    up,
+                    plane,
+                } => Carrier::Ruling(Box::new(RulingCarrier {
+                    cyl: *cyl,
+                    def: def_of(*cyl)?,
+                    side: *side,
+                    up: *up,
+                    plane: *plane,
+                })),
+            };
+            Ok(RingEdge {
+                node: nodes[i],
+                to: nodes[jn],
+                carrier,
+                from_h: pin(nodes[i], wall)?,
+                to_h: pin(nodes[jn], wall)?,
+            })
+        })
+        .collect()
+}
+
 /// Recover a ring's edges from its vertex names — the classic derivation, in **one** place.
 ///
 /// Sound exactly while each name lists all three of its planes and no more (see [`RingEdge`]). The

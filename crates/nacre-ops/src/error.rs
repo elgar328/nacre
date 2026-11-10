@@ -1006,6 +1006,12 @@ pub enum DeclineKind {
     /// rather than as a `TraceDeclined`: it is the oblique coverage's end, the sentence that name
     /// says.
     ObliqueSection,
+    /// A point the trace's question needs cannot be stated in `Rat`: realizing it — a plane class's
+    /// trace on a lateral face, met by a plane through the axis — overflows `i128` where the
+    /// geometry does not, a small model with long decimals. On a class across the axis it is raised
+    /// as [`RejectReason::WitnessNotRational`], the name width is refused by everywhere else; on an
+    /// oblique class every decline of the trace is [`Self::ObliqueSection`].
+    Width,
 }
 
 impl DeclineKind {
@@ -1032,6 +1038,7 @@ impl DeclineKind {
             Self::CylHoleFeature => "cyl-hole-feature",
             Self::Ruling => "ruling",
             Self::ObliqueSection => "oblique-section",
+            Self::Width => "width",
         }
     }
 }

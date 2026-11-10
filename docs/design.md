@@ -1894,7 +1894,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   그래프**라는 것이다(`cyl_chart` 모듈 doc): θ 순서(`circular_order_about_seam`)·호 포함(`theta_between`)은 단면에도 참이고,
   원에만 맞던 «점에서의 반경에 축 성분이 없다»는 `nacre_exact::quad::axial_side`·`ccw_tangent_side` 한 술어로 묻는다
   (극점 평면의 `g*` 는 `combinatorics::winding` 의 그 주석). 호의 상자는 `trace_band`. 추적은 ⊥ 클래스와 한
-  덜어내기(`trace_on_face`; 꼭짓점은 `corner_on_section`, 가로지름이 없으면 `Theta::misses_an_angle`)이고, 그리지 못하는
+  덜어내기(`trace_on_face`; 꼭짓점은 `corner_on_section`, 깎이지 않은 자취는 `outer_by_witness`)이고, 그리지 못하는
   단면은 기권 하나(`DeclineKind::ObliqueSection`)라 불리언은 게이트와 같은 이름 `ObliqueCylinderCut` 으로 거절한다 — 기권의
   목록은 `trace_on_face`·`cycle_on_class` doc. 게이트는 평면이 옆면 경계의 어느 단면에도 한 점으로 접하지 않을 때 단면을 들이고(면이 옆면에
   닿는지는 묻지 않는다 — `oblique_section_meet`), 단면의 딱지와 절단점(`CutRim`)은 차트로 가 다른 선처럼 칸을 가른다. 결과 면이 단면을
