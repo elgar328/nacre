@@ -273,9 +273,19 @@ fn bodies() -> Vec<Body> {
     ]
 }
 
-/// What a body against a tool answers in the three cells of one order: built with these bodies
-/// (`[Fuse, Cut, Common]`), or refused by one name.
-type Want = Result<[usize; 3], RejectReason>;
+/// What a body against a tool answers in the three cells of one order, `[Fuse, Cut, Common]`: built
+/// with this many bodies, or refused by name.
+type Want = [Result<usize, RejectReason>; 3];
+
+/// Every cell of the order built, with these bodies.
+fn built(bodies: [usize; 3]) -> Want {
+    bodies.map(Ok)
+}
+
+/// Every cell of the order refused by one name.
+fn refused(reason: RejectReason) -> Want {
+    [Err(reason); 3]
+}
 
 fn tools() -> [Tool; 9] {
     [
@@ -312,17 +322,17 @@ fn tools() -> [Tool; 9] {
 /// - the gate: the off-axis ridge's `z = 4.5`, `z = 5.5` and the prism's floor touch its
 ///   slanted sections, and the steep valley's pin.
 fn wants() -> [[[Want; 2]; 9]; 5] {
-    let decline = |kind| Err(RejectReason::TraceDeclined { kind, face: None });
+    let decline = |kind| refused(RejectReason::TraceDeclined { kind, face: None });
     let ring_wall: Want = decline(crate::DeclineKind::CurvedRingWall);
     let no_pin: Want = decline(crate::DeclineKind::NoPinOnLine);
     // The gate's refusal and an oblique trace's decline share this name.
-    let oblique: Want = Err(RejectReason::ObliqueCylinderCut);
+    let oblique: Want = refused(RejectReason::ObliqueCylinderCut);
     let both = |w: Want| [w, w];
     // Far apart: two bodies fused, the body itself cut, nothing in common.
-    let apart = both(Ok([2, 1, 0]));
-    let one = both(Ok([1, 1, 1]));
+    let apart = both(built([2, 1, 0]));
+    let one = both(built([1, 1, 1]));
     // The pin pokes out above the top and below the floor: the pin less the body is two.
-    let pin: [Want; 2] = [Ok([1, 1, 1]), Ok([1, 2, 1])];
+    let pin: [Want; 2] = [built([1, 1, 1]), built([1, 2, 1])];
     [
         // roof
         [
@@ -419,11 +429,10 @@ fn laterals_whose_boundary_sections_cross_where_they_end() {
                     let (b, t) = ((body.build)(&mut m), tool.build(&mut m));
                     let (x, y) = if swap { (t, b) } else { (b, t) };
                     let out = crate::boolean(&mut m, kind, x, y);
-                    match (want[usize::from(swap)], out) {
+                    match (want[usize::from(swap)][k], out) {
                         (Err(name), Err(BoolError::Rejected { reason, .. }))
                             if same_name(reason, name) => {}
-                        (Ok(counts), Ok(out)) => {
-                            let n = counts[k];
+                        (Ok(n), Ok(out)) => {
                             let got = built_volume(&m, &out, n, &at);
                             let derived = match (kind, swap) {
                                 (BoolKind::Fuse, _) => body.volume + tool.volume() - c,
