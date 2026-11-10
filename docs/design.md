@@ -1900,7 +1900,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   닿는지는 묻지 않는다 — `oblique_section_meet`), 단면의 딱지와 절단점(`CutRim`)은 차트로 가 다른 선처럼 칸을 가른다. 결과 면이 단면을
   따라 경계 지어지면 결과에 타원 간선이 남는다(`Model::derive_edge_curve` — 원을 그 평면에 기울인 곡선). 단면을 따라 끝나는 옆면에는
   그 단면을 경계로 든 평면 면이 짝으로 있다(차트 census 가 단언한다). 결과를 읽는 쪽은 단면 위 호를 원과 같은 길로 읽는다 — 덩어리를
-  가르는 옆면 패리티는 림 평면의 쪽(`in_faces::rim_up`), 면을 잇는 열쇠는 호의 평면까지(`face_components` 의 `JoinKey::Arc` — 캡의 원호와
+  가르는 옆면 패리티는 단면의 높이 순서(`ChartPoint::order`), 면을 잇는 열쇠는 호의 평면까지(`face_components` 의 `JoinKey::Arc` — 캡의 원호와
   단면의 호가 같은 두 점 사이에 선다). 타원 간선을 든 솔리드는 다시 피연산자가 된다 — **옆면 면은 룰링과 평면 단면으로 경계 지어지고,
   면이 어디 있는지를 읽는 자리는 경계 단면을 두 단면의 한 물음(`section_meet`·`section_height_order`)으로 읽지 정거장(축 위 높이
   하나)으로 읽지 않는다** — 원의 높이 비교는 그 ⊥·⊥ 경우다. 원 셀의 림 증인은 축에 수직인 클래스에만 낸다 — 비스듬한 클래스의 단면에 내면 `Witness::On` 이 거짓이 되어
@@ -2001,8 +2001,8 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   공유 룰링은 할선 벽들에 면이 없는 높이에서도 차트의 정거장이다 — 차트는 곡면 전체에 선을 깔고 칸을
   분류하며(Requicha 의 분류, Mäntylä 의 이웃), 그 선에서 옆면이 끝나는지는 기록이 아니라 이 분류가 정한다.
 - **옆면 위의 곡선은 룰링이거나 θ 의 그래프다** — 높이 순서 `quad::section_height_order`(래퍼
-  `combinatorics::line_order`), θ 순서 `circular_order_about_seam`(두 점을 같은 원 위에서 받지 않으므로 다른 벽의 룰링도,
-  위치가 무리수(`√(r²−d²)`)인 오프셋 벽(`0 < d < r`)의 룰링도 같은 산술로 비교한다 — 지름을 가정하지 않는다), 코너의 각
+  `combinatorics::line_order`·`ChartPoint::order`), θ 순서 `circular_order_about_seam`(두 점을 같은 원 위에서 받지 않으므로 다른 벽의 룰링도,
+  위치가 무리수(`√(r²−d²)`)인 오프셋 벽(`0 < d < r`)의 룰링도 같은 산술로 비교한다), 코너의 각
   순서 `departure_key`. 비스듬한 단면 선을 따라 끝나는 칸은 결과에 타원 간선을 남긴다(「원·호·조각」).
 - 룰링의 끝은 언제나 선 위이고(`ThetaSeg::on`), 셀은 slab × 틈이다. 룰링 구간은 `rulings_on_class` 가 정하고 차트는
   다시 계산하지 않는다. 이름은 `Chart::ruling_name` 한 번, 동일성은 `ruling_side`(`RulingCarrier::side`)다.

@@ -775,7 +775,8 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
             panic!("a lateral's loops, got {:?}", cf.outer)
         };
         for root in &roots {
-            let got = combinatorics::loop_parity(&jd, &def, loops, &line, root);
+            let x = combinatorics::ChartPoint::realized(pz, line.clone(), *root);
+            let got = combinatorics::loop_parity(&jd, &def, loops, &x);
             match plane_side(&px, &line, root) {
                 Orient::Positive => assert_eq!(
                     got,
@@ -1032,8 +1033,7 @@ fn an_arc_on_a_slanted_plane_is_read_on_its_own_plane() {
                 &jd,
                 &def,
                 &[LateralLoop::Ring(ring.clone())],
-                &line,
-                &QuadVal::from_rat(s)
+                &crate::combinatorics::ChartPoint::realized(at_z, line, QuadVal::from_rat(s)),
             ),
             Some(want),
             "the point at z = {z:?} against the section's arc"
@@ -1193,7 +1193,9 @@ fn lateral_lattice(staircase: bool) {
                     RingSide::Outside
                 }
             }));
-            let got = combinatorics::loop_parity(&jd, def, loops, &line, root);
+            let section = crate::planes::section_plane([pa, pb], def).expect("a plane across");
+            let x = combinatorics::ChartPoint::realized(section, line.clone(), *root);
+            let got = combinatorics::loop_parity(&jd, def, loops, &x);
             assert_eq!(
                 got, want,
                 "staircase {staircase} z0 {z0:?} side {x_side:?} station {station} seam {seam}"

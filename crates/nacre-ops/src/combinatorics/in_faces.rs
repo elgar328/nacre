@@ -416,13 +416,14 @@ fn named_point_on_lateral(
         RingSide::OnBoundary => {}
         RingSide::Inside | RingSide::Outside => return Some(RingSide::Outside),
     }
-    let (meet, s) = point_on_cylinder(jd, cyls, n, def)?;
-    loop_parity(jd, def, loops, &meet, &s)
+    let (section, meet, s) = point_on_cylinder(jd, cyls, n, def)?;
+    loop_parity(jd, def, loops, &ChartPoint::realized(section, meet, s))
 }
 
-/// **A point of the cylinder `def` as the chart reads it** — a line and a root on it
-/// ([`loop_parity`]'s `(meet, s)`). A pierce name of this cylinder is its own meet
-/// ([`pierce_meet`]); any other point with rational coordinates is where the plane touching the
+/// **A point of the cylinder `def` as the chart reads it** — a plane whose section it lies on, and a
+/// line and a root on it ([`ChartPoint`]'s three). A pierce name of this cylinder is its own meet
+/// ([`pierce_meet`]) on its name's section ([`section_of`]); any other point with rational
+/// coordinates is where the plane touching the
 /// cylinder along its ruling meets the plane across the axis at its height — a tangent meet,
 /// whose one root is rational because the point lies on the cylinder. `None` where the point has
 /// neither, or the arithmetic runs out.
@@ -431,13 +432,18 @@ fn point_on_cylinder(
     cyls: &[crate::planes::WorkingCyl],
     n: NodeId,
     def: &nacre_topo::CylinderDef,
-) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+) -> Option<(
+    [nacre_exact::Rat; 4],
+    nacre_exact::quad::MeetLine,
+    nacre_exact::quad::QuadVal,
+)> {
     use nacre_exact::Rat;
     use nacre_exact::quad::{CylinderMeet, QuadVal};
     if let Some((_, c, _)) = pierce_name(n)
         && cyls.get(c).is_some_and(|cy| cy.def == *def)
     {
-        return pierce_meet(jd, c, def, n)?.into_exact();
+        let (meet, s) = pierce_meet(jd, c, def, n)?.into_exact()?;
+        return Some((section_of(jd, def, n)?, meet, s));
     }
     let p = node_coords_rat(jd, n).or_else(|| pierce_coords_rat(jd, cyls, n))?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
@@ -448,8 +454,9 @@ fn point_on_cylinder(
     let touching = nacre_exact::plane_from_point_normal(nacre_exact::off_axis_rat(&w, &m)?, p)?;
     let mm = nacre_exact::dot3_rat(&m, &m)?;
     let t = nacre_exact::dot3_rat(&m, &w)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
-    match nacre_exact::quad::plane_plane_cylinder(&touching, &rim_plane(def, t)?, &o, &m, r2)? {
-        CylinderMeet::Tangent { line, s } => Some((line, QuadVal::from_rat(s))),
+    let rim = rim_plane(def, t)?;
+    match nacre_exact::quad::plane_plane_cylinder(&touching, &rim, &o, &m, r2)? {
+        CylinderMeet::Tangent { line, s } => Some((rim, line, QuadVal::from_rat(s))),
         _ => None,
     }
 }
@@ -466,7 +473,7 @@ pub(crate) fn axis_param_on_cylinder(
 ) -> Option<nacre_exact::quad::QuadVal> {
     use nacre_exact::quad::QuadVal;
     use nacre_exact::{Rat, dot3_rat};
-    let (meet, s) = point_on_cylinder(jd, cyls, n, def)?;
+    let (_, meet, s) = point_on_cylinder(jd, cyls, n, def)?;
     let (o, m) = (def.origin(), def.dir());
     let base = meet.base();
     let mut rel = [Rat::from_int(0); 3];
@@ -547,36 +554,78 @@ fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacr
     Some([m[0], m[1], m[2], d0])
 }
 
-/// **The plane of a rim or an arc on class `c`, its normal turned along the axis** — so a point of
-/// the cylinder lies below the curve exactly where it is on the plane's negative side, on the
-/// generator through it: a rim across the axis (a circle) and one oblique to it (a section) alike,
-/// the one question being which side of the curve's plane the point is. `None` for a plane along
-/// the axis (it crosses no generator once), a class with no world statement, or arithmetic out.
-fn rim_up(
-    jd: &Judge<'_, WorkingPlane>,
-    c: usize,
-    def: &nacre_topo::CylinderDef,
-) -> Option<[nacre_exact::Rat; 4]> {
-    turned_up(jd.world_rat(c)?, def)
+/// **A point of a lateral's chart, as [`loop_parity`] asks it** — the plane whose section the
+/// point lies on (one not along the axis), and the point itself as a line and a root on it
+/// ([`nacre_exact::quad::plane_plane_cylinder`]'s `(line, s)`), which is read only for its
+/// **generator** and realized the first time a question needs it.
+///
+/// **Why the generator is lazy.** Every height question about the point is the order of its section
+/// against a curve's ([`ChartPoint::order`]), and two sections that neither cross nor touch keep one
+/// order on every generator, so it needs no point at all — and realizing a point is checked `i128`
+/// arithmetic that a small model with long decimals overflows while the order, exact in `BigInt`,
+/// does not.
+pub(crate) struct ChartPoint<'a> {
+    section: [nacre_exact::Rat; 4],
+    at: core::cell::OnceCell<Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>>,
+    realize:
+        Option<&'a dyn Fn() -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>>,
 }
 
-/// [`rim_up`] of a plane given by its world coefficients.
-fn turned_up(
-    w: [nacre_exact::Rat; 4],
-    def: &nacre_topo::CylinderDef,
-) -> Option<[nacre_exact::Rat; 4]> {
-    let along = nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &def.dir())?;
-    match along.numer().signum() {
-        0 => None,
-        1 => Some(w),
-        _ => {
-            let zero = nacre_exact::Rat::from_int(0);
-            Some([
-                zero.checked_sub(w[0])?,
-                zero.checked_sub(w[1])?,
-                zero.checked_sub(w[2])?,
-                zero.checked_sub(w[3])?,
-            ])
+impl<'a> ChartPoint<'a> {
+    /// A point already realized, on the plane `section`.
+    pub(crate) fn realized(
+        section: [nacre_exact::Rat; 4],
+        line: nacre_exact::quad::MeetLine,
+        s: nacre_exact::quad::QuadVal,
+    ) -> Self {
+        Self {
+            section,
+            at: core::cell::OnceCell::from(Some((line, s))),
+            realize: None,
+        }
+    }
+
+    /// The point, realized once; `None` where it cannot be stated.
+    pub(crate) fn generator(
+        &self,
+    ) -> Option<&(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+        self.at
+            .get_or_init(|| self.realize.and_then(|f| f()))
+            .as_ref()
+    }
+
+    /// **Where the point stands to the section of `curve` on its own generator** — `Less` below it,
+    /// `Equal` on it, `Greater` above: the one height order of two sections
+    /// ([`nacre_exact::quad::section_height_order`]). Asked with the point's generator where it is
+    /// realized, and with none only where the two sections are apart or one plane — asked with none,
+    /// two sections that touch read as strictly ordered, and a point at the touch is on the curve.
+    /// `None` for a curve along the axis or a point that cannot be realized when it is needed.
+    pub(crate) fn order(
+        &self,
+        curve: &[nacre_exact::Rat; 4],
+        def: &nacre_topo::CylinderDef,
+    ) -> Option<core::cmp::Ordering> {
+        use nacre_exact::quad::{
+            SectionMeet, SectionOrder, Toward, section_height_order, section_meet,
+        };
+        // A point that failed to realize is asked as an unrealized one: the generator is needed
+        // exactly where the sections meet, and there the failure answers `None` again.
+        let at = match self.at.get() {
+            Some(Some(at)) => Some(at),
+            Some(None) | None => match section_meet(&self.section, curve, def)? {
+                SectionMeet::Apart | SectionMeet::Same => None,
+                SectionMeet::Touch | SectionMeet::Cross => Some(self.generator()?),
+            },
+        };
+        match section_height_order(
+            &self.section,
+            curve,
+            def,
+            at.map(|(l, s)| (l, s)),
+            Toward::At,
+        )? {
+            SectionOrder::Ordered(o) => Some(o),
+            SectionOrder::Crosses => None,
         }
     }
 }
@@ -585,50 +634,49 @@ fn turned_up(
 /// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)`.
 ///
 /// The rule is the planar rings' half-open rule read on this chart. A whole rim is crossed iff it
-/// is above `x` on `x`'s generator — `x` on the negative side of its plane turned along the axis
-/// ([`rim_up`]), a circle's or a section's. A ring's **arc** (a CCW span in θ on such a curve) is
-/// crossed iff it is above `x` and `θ_x` is in its span — with a span end exactly at `θ_x` counted by the
-/// end the arc *leaves upward* (`+θ`): `lo` counts, `hi` does not
+/// is above `x` on `x`'s generator. A ring's **arc** (a CCW span in θ on a section) is crossed iff
+/// it is above `x` and `θ_x` is in its span — with a span end exactly at `θ_x` counted by the end
+/// the arc *leaves upward* (`+θ`): `lo` counts, `hi` does not
 /// ([`nacre_geom::intersect::ray_step_crossing`]`(Zero, ±, ±)`), and the ruling at that corner
 /// runs along the ray and never counts. A **ruling** piece is crossed by nothing; `x` on it is
 /// the boundary — asked first whether `x` is on the ruling's line at all, so its ends' heights are
-/// read only for a point on it. Every comparison is one the arrangement already owns: above or
-/// below by [`nacre_exact::quad::plane_side`] against [`rim_up`], `θ` by [`arc_span`], a ruling by
-/// its own carrier (`plane_side(plane) == 0 ∧ ruling_side_signed(plane) == side`, against the
-/// plane its side was measured against — the predicate `crossing_on_ruling` names stations with).
+/// read only for a point on it. Every comparison is one the arrangement already owns: a height by
+/// the one order of two sections ([`ChartPoint::order`] — a rim's or an arc's plane, a ruling end's
+/// section [`section_of`]), `θ` by [`arc_span`], a ruling by its own carrier
+/// (`plane_side(plane) == 0 ∧ ruling_side_signed(plane) == side`, against the plane its side was
+/// measured against — the predicate `crossing_on_ruling` names stations with). An arc below `x`
+/// needs no `θ`, and a rim apart from `x`'s section needs no point at all.
 ///
 /// `OnBoundary` = `x` on a rim, an arc or a ruling of the face. `None` = a zero-span arc inside
-/// `arc_span`, a ruling `x` lies on whose end no section places, a plane
-/// carrier, or checked arithmetic running out. Above or below is asked before `θ`: an arc below
-/// `x` needs no order.
+/// `arc_span`, a ruling `x` lies on whose end no section places, a plane carrier, a curve with no
+/// world statement, checked arithmetic running out, or a point that could not be realized where a
+/// question needed it.
 pub(crate) fn loop_parity(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
-    meet: &nacre_exact::quad::MeetLine,
-    s: &nacre_exact::quad::QuadVal,
+    x: &ChartPoint<'_>,
 ) -> Option<RingSide> {
+    use core::cmp::Ordering::{Equal, Greater, Less};
     use nacre_exact::Orient;
     use nacre_exact::quad::plane_side;
-    let below_curve =
-        |c: usize| -> Option<Orient> { Some(plane_side(&rim_up(jd, c, def)?, meet, s)) };
+    // Where `x` stands to the curve on plane class `c`: `Less` below it — the ray up the axis
+    // crosses it — `Equal` on it.
+    let against = |c: usize| -> Option<core::cmp::Ordering> { x.order(&jd.world_rat(c)?, def) };
     let mut crossings = 0usize;
     for lp in loops {
         match lp {
-            LateralLoop::Rim(c) => {
-                match below_curve(*c)? {
-                    // `z_x < t`: the rim is above the point, and the ray up the axis crosses it.
-                    Orient::Negative => crossings += 1,
-                    Orient::Positive => {}
-                    Orient::Zero => return Some(RingSide::OnBoundary),
-                }
-            }
+            LateralLoop::Rim(c) => match against(*c)? {
+                Less => crossings += 1,
+                Greater => {}
+                Equal => return Some(RingSide::OnBoundary),
+            },
             LateralLoop::Ring(edges) => {
                 for e in edges {
                     match &e.carrier {
                         Carrier::Arc(arc) => {
-                            let side = below_curve(arc.plane)?;
-                            if side == Orient::Positive {
+                            let side = against(arc.plane)?;
+                            if side == Greater {
                                 continue; // the arc is below the point
                             }
                             let (lo_nd, hi_nd) = if arc.ccw {
@@ -643,12 +691,12 @@ pub(crate) fn loop_parity(
                             } else {
                                 ArcEnds::Open(&e_lo, &e_hi)
                             };
-                            let Some(span) = arc_span(&arc.def, ends, &(meet.clone(), *s)) else {
+                            let Some(span) = arc_span(&arc.def, ends, x.generator()?) else {
                                 // A zero-span arc (two ends at one place) or arithmetic out.
                                 return None;
                             };
-                            if side == Orient::Zero {
-                                // At the arc's own z: on the arc iff within its closed span.
+                            if side == Equal {
+                                // At the arc's own height: on the arc iff within its closed span.
                                 if span == ArcSpan::Outside {
                                     continue;
                                 }
@@ -667,6 +715,7 @@ pub(crate) fn loop_parity(
                             // one; arithmetic out abstains like everywhere here. Off its line,
                             // `x` is nowhere on the piece, whatever its heights.
                             let w = jd.world_rat(rl.plane)?;
+                            let (meet, s) = x.generator()?;
                             if plane_side(&w, meet, s) != Orient::Zero
                                 || ruling_side_signed(&w, def, (meet, s))? != rl.side
                             {
@@ -676,17 +725,9 @@ pub(crate) fn loop_parity(
                             // it. Each end stands on its section ([`section_of`]), so `x` is
                             // between them where it is on neither end's far side — at or above
                             // one and at or below the other.
-                            let side = |n: NodeId| -> Option<Orient> {
-                                Some(plane_side(
-                                    &turned_up(section_of(jd, def, n)?, def)?,
-                                    meet,
-                                    s,
-                                ))
-                            };
-                            let (s0, s1) = (side(e.node)?, side(e.to)?);
-                            if (s0 != Orient::Negative && s1 != Orient::Positive)
-                                || (s1 != Orient::Negative && s0 != Orient::Positive)
-                            {
+                            let end = |n: NodeId| x.order(&section_of(jd, def, n)?, def);
+                            let (s0, s1) = (end(e.node)?, end(e.to)?);
+                            if (s0 != Less && s1 != Greater) || (s1 != Less && s0 != Greater) {
                                 return Some(RingSide::OnBoundary);
                             }
                         }
@@ -750,9 +791,18 @@ pub(crate) fn lateral_face_crossings(
                 return Some(CurvedHit::Graze);
             }
         };
+    // A meet with roots is no line along the axis, so one of its two planes is not along it either.
+    let Some(section) = crate::planes::section_plane([*line[0], *line[1]], def) else {
+        return Some(CurvedHit::Graze);
+    };
     let mut count = 0usize;
     for s in &roots {
-        match loop_parity(jd, def, loops, &meet, s) {
+        match loop_parity(
+            jd,
+            def,
+            loops,
+            &ChartPoint::realized(section, meet.clone(), *s),
+        ) {
             // On the boundary, a zero-span arc, an unreadable loop, arithmetic out: this ray
             // cannot count this face — the banded arm's `Graze` on a rim, generalized.
             None | Some(RingSide::OnBoundary) => return Some(CurvedHit::Graze),
@@ -859,7 +909,12 @@ pub(crate) fn ruling_meets_lateral(
         else {
             return None;
         };
-        match loop_parity(jd, def, loops, &line, &QuadVal::from_rat(s)) {
+        match loop_parity(
+            jd,
+            def,
+            loops,
+            &ChartPoint::realized(rim, line, QuadVal::from_rat(s)),
+        ) {
             Some(RingSide::Inside) => return Some(true),
             Some(RingSide::Outside) => {}
             Some(RingSide::OnBoundary) | None => abstained = true,
@@ -944,11 +999,11 @@ pub(crate) fn segment_meets_lateral(
         if a == 0 || a != b {
             continue;
         }
-        let Some((meet, s)) = point_on_cylinder(jd, cyls, at, &cy.def) else {
+        let Some((section, meet, s)) = point_on_cylinder(jd, cyls, at, &cy.def) else {
             abstained = true;
             continue;
         };
-        match loop_parity(jd, &cy.def, loops, &meet, &s) {
+        match loop_parity(jd, &cy.def, loops, &ChartPoint::realized(section, meet, s)) {
             Some(side @ (RingSide::Inside | RingSide::OnBoundary)) => on_face.push((at, side)),
             Some(RingSide::Outside) => {}
             None => abstained = true,

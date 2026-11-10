@@ -698,8 +698,8 @@ pub(crate) struct ArcCarrier {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     /// The plane class the arc lies on — the `Wall::Arc`'s `plane`. Where on a generator the arc
-    /// stands is that plane's side — a circle's across the axis, a section's oblique to it
-    /// (`in_faces::rim_up`).
+    /// stands is that plane's section — a circle across the axis, an ellipse oblique to it — read
+    /// by the one height order of two sections ([`ChartPoint::order`]).
     pub plane: usize,
     /// `true` when travel is counter-clockwise about the cylinder's axis — the convention the
     /// `Wall` doc states for `ccw`.
