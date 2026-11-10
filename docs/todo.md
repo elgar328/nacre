@@ -314,11 +314,12 @@ doc). 그래서 스크립트의 모든 중간값이 끝까지 살아 있고, 살
   `MergedCircle`·`MergedRuling`)이고, `MergedSeg`·`MergedRuling` 은 `Piece` 로의 `From` 이 있으며 `MergedCircle` 은 끝이 없고
   기여마다 각 범위를 든다. 분할의 입력을 `Piece` 로 할지는 재지 않았다. 링을 읽는 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·
   `EdgeDir`)은 한 타입이 아니다 — `names.rs` 의 `Carrier` doc 이 «두 팔은 대칭이 아니고 그렇게 만들지 말라»는 논증을 든다.
-- **호의 두 끝이 한 점인가.** `split_circles` 는 θ 묶음마다 한 기여의 두 끝이 함께 드는지를 이름의 `==` 로 묻고 `CoincidentNodes`
-  로 거절한다. 표가 두 끝을 이미 한 점으로 알면 그 앞의 중복 제거가 둘을 합쳐 묻지 않고, 그 기여의 범위는 비어(`place(p) ==
-  place(q)`) 어떤 호도 덮지 않는다 — 표가 아느냐에 따라 거절과 빈 덮개로 갈린다. 닫힌 호(`p == q`)도 같은 식에서 덮는 호가 없게
-  읽힌다. 인구는 재지 않았다. 같은 함수의 θ 묶음 기록은 잠금이 없다(`an_arc_ends_unaliased_second_name_is_recorded_by_the_round`
-  의 doc) — 잠그려면 원 위에서만 생기는 동점, 두 이름이 어느 한 선분의 점 목록에도 함께 들지 않는 꼴이 필요하다.
+- **선분의 두 끝이 한 점인가.** `split_segments_at` 은 길이 0 선분(두 끝이 같은 이름이거나 한 점의 두 이름)을 표가
+  아느냐·교점이 어디 있느냐에 따라 조용히 통째 돌려보내거나 `WitnessNotRational`·`CoincidentNodes` 로 거절한다(손으로 지은
+  선분으로 쟀다). 두 끝이 표에서 한 점이면 `keyed` 의 한 칸으로 접혀, `forward` 갈래 주석의 «already refused» 가 그때는
+  성립하지 않는다. 교점이 없는 선분은 이 물음에 오지 않으므로 물을 자리가 split 이 아닐 수 있다. 인구 0(스위트·census·무시
+  스윕·kit). 호는 `split_circles` 가 자리로 한 번 묻고(`CircleTrace::arc` 의 doc), 룰링은 두 끝을 따로 넣어
+  `order_recording_ties` 가 묻는다.
 
 ## 보류 — 인구가 생기면
 

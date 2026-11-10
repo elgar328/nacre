@@ -119,10 +119,10 @@ pub(super) fn split_circles(
         // points of the circle's continuation are never ordered against each other: two names
         // there for one point would refuse a point no edge of this class has. An arc's own ends
         // are cut points by construction (fed in above), and a crossing that is another name of
-        // one is that end. Three circles drop nothing: one with a contribution that is the whole
-        // circle (every crossing is on it), one with no contribution (where «off every arc» would
-        // be an empty truth), and one with a closed arc (`p == q`), which `theta_between` reads as
-        // the whole turn less its end and so answers `false` for another name of the end itself.
+        // one is that end. Two circles drop nothing: one with a contribution that is the whole
+        // circle (every crossing is on it), and one with no contribution (where «off every arc»
+        // would be an empty truth). A contribution whose ends are one point is not asked about
+        // here: the split below refuses it whatever this drops.
         // What cannot be shown off stays a cut point: off an arc it is a vertex where nothing
         // crosses the segment, which costs a vertex, where dropping a crossing on an arc would
         // lose one. Cutting every crossing of the whole circle instead puts a vertex on the segment
@@ -150,7 +150,6 @@ pub(super) fn split_circles(
                 return on;
             };
             let off = !extents.is_empty()
-                && extents.iter().all(|&[p, q]| !al.one_point(p, q))
                 && !extents.iter().flatten().any(|&e| al.one_point(e, x))
                 && extents.iter().all(|&[p, q]| {
                     combinatorics::theta_between(jd, cyl, &cyls[cyl].def, p, q, x) == Some(false)
@@ -200,20 +199,11 @@ pub(super) fn split_circles(
         // **One θ is one point** — a tie of the exact order is a proof — so the names a group
         // holds are recorded as one for the next round ([`Aliases::record_same_point`]) and the
         // group stands under one of them: an arc's end where it holds one, because the arcs are
-        // looked up by their ends. One contribution's two ends in one group are an arc of no
-        // length, refused.
+        // looked up by their ends.
         let groups = combinatorics::theta_groups(jd, circ.cyl, &cyls[circ.cyl].def, &nodes)
             .map_err(|e| reject(e.reason()))?;
         let mut kept: Vec<NodeId> = Vec::with_capacity(groups.len());
         for g in &groups {
-            let holds = |x: NodeId| g.iter().any(|&i| nodes[i] == x);
-            if circ
-                .merged
-                .iter()
-                .any(|&(_, _, arc)| arc.is_some_and(|[p, q]| p != q && holds(p) && holds(q)))
-            {
-                return Err(reject(RejectReason::CoincidentNodes));
-            }
             let keep = g
                 .iter()
                 .copied()
@@ -242,6 +232,17 @@ pub(super) fn split_circles(
                 .map(|i| at[i])
                 .expect("an extent's ends were fed into this very split")
         };
+        // **A contribution's two ends are two points of its circle** ([`CircleTrace::arc`]),
+        // asked here, once, by place, after the ties are recorded: the ends may be one name, two
+        // names the table joined after the merge (the dedup above folds them), or two the θ order
+        // above has just tied, and the rank test below would read each as covering nothing.
+        if circ
+            .merged
+            .iter()
+            .any(|&(_, _, arc)| arc.is_some_and(|[p, q]| place(p) == place(q)))
+        {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
         for k in 0..order.len() {
             // **Each arc takes only the contributions that cover it.** A lateral face with a
             // hole marks its class over an *arc*, and the arc inside the hole is a piece of circle

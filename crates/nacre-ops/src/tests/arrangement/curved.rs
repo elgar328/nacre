@@ -201,6 +201,40 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
     }
 }
 
+/// The plate's top class `z = 20` of [`armed_boss_at`]`(5.0, ..)` and three names on the boss's
+/// circle there: the wall `y = 0`'s touch point, and the wall `x = 40`'s crossing at it (`near` —
+/// one point with the touch, under another name) and away from it (`far`).
+fn touch_and_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    setup: &crate::arrangement::PlaneSetup,
+    x40: usize,
+) -> (usize, [combinatorics::NodeId; 3]) {
+    let class = |axis: usize, at: f64, what: &str| {
+        setup
+            .geom
+            .iter()
+            .position(|p| {
+                p.witness_coords()
+                    .iter()
+                    .all(|q| (q.as_array()[axis] - at).abs() < 1e-12)
+            })
+            .expect(what)
+    };
+    let top = class(2, 20.0, "the plate's top class z = 20");
+    let y0 = class(1, 0.0, "the plate's wall class y = 0");
+    let touch = combinatorics::NodeId::pierce(top, y0, 0, crate::combinatorics::QuadRoot::Double);
+    let at = |root| combinatorics::NodeId::pierce(top, x40, 0, root);
+    let (lo, hi) = (
+        at(crate::combinatorics::QuadRoot::Lo),
+        at(crate::combinatorics::QuadRoot::Hi),
+    );
+    let (near, far) = match combinatorics::circular_order(jd, 0, &setup.cyls[0].def, &[touch, lo]) {
+        Err(_) => (lo, hi),
+        Ok(_) => (hi, lo),
+    };
+    (top, [touch, near, far])
+}
+
 /// **A crossing the three-point question cannot place stays for the order, and the round records
 /// its second name.** The boss's axis is at `(40, 5)`, so its circle in the plate's top class passes
 /// the plate's corner `(40, 0, 20)`: the wall `y = 0` touches it there (the tangency, skipped as a
@@ -223,37 +257,10 @@ fn an_arc_ends_unaliased_second_name_is_recorded_by_the_round() {
     let (m, plate, boss, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let def = setup.cyls[0].def.clone();
-    let top = setup
-        .geom
-        .iter()
-        .position(|p| {
-            p.witness_coords()
-                .iter()
-                .all(|q| (q.as_array()[2] - 20.0).abs() < 1e-12)
-        })
-        .expect("the plate's top class z = 20");
+    let (top, [touch, near, far]) = touch_and_crossings(&jd, &setup, x40);
     let tr = trace_on_class_of(&m, plate, boss, top, &jd, &setup.cyls, &setup);
     let (split, _, _) =
         class_skeleton(&jd, &setup.cyls, top, &tr, &mut Aliases::default()).unwrap();
-    let y0 = setup
-        .geom
-        .iter()
-        .position(|p| {
-            p.witness_coords()
-                .iter()
-                .all(|q| q.as_array()[1].abs() < 1e-12)
-        })
-        .expect("the plate's wall class y = 0");
-    let touch = combinatorics::NodeId::pierce(top, y0, 0, crate::combinatorics::QuadRoot::Double);
-    let at = |root| combinatorics::NodeId::pierce(top, x40, 0, root);
-    let (lo, hi) = (
-        at(crate::combinatorics::QuadRoot::Lo),
-        at(crate::combinatorics::QuadRoot::Hi),
-    );
-    let (near, far) = match combinatorics::circular_order(&jd, 0, &def, &[touch, lo]) {
-        Err(_) => (lo, hi),
-        Ok(_) => (hi, lo),
-    };
     assert!(
         combinatorics::circular_order(&jd, 0, &def, &[touch, near]).is_err()
             && combinatorics::circular_order(&jd, 0, &def, &[touch, far]).is_ok(),
@@ -308,6 +315,51 @@ fn an_arc_ends_unaliased_second_name_is_recorded_by_the_round() {
         seeded.learned(),
         learned,
         "seeded, the split has nothing to learn"
+    );
+}
+
+/// **An extent whose two ends are one point is refused, whatever the table knows**
+/// ([`CircleTrace::arc`]). The names are [`touch_and_crossings`]': the touch point and the near
+/// crossing are one point under two names. Blind, the table does not know them, and the circle's θ
+/// order ties them with no segment in the split — the refusal is reached only through the circle's
+/// own record of that tie, by which the place of the end the group does not keep is found. Known,
+/// the merge hands the extent on under the table's one name (`p == q`), which a rank test alone
+/// reads as covering nothing. Control: the touch point and the far crossing are one arc, covered by
+/// its contribution.
+#[test]
+fn an_extent_whose_ends_are_one_point_is_refused_whatever_the_table_knows() {
+    let (_, _, _, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let (top, [touch, near, far]) = touch_and_crossings(&jd, &setup, x40);
+    let split = |ends: [combinatorics::NodeId; 2], table: &mut Aliases| {
+        let circle = MergedCircle {
+            cyl: 0,
+            merged: vec![(
+                SolidSide::B,
+                SegKind::Seated { body_above: true },
+                Some(ends.map(|n| table.canon_point(n))),
+            )],
+        };
+        match split_circles(&jd, &setup.cyls, top, &[], &[circle], table) {
+            Ok(Some((_, _, arcs, _))) => Ok(arcs.iter().map(|a| a.end).collect::<Vec<_>>()),
+            Ok(None) => panic!("the extent's ends are fed into the split"),
+            Err(BoolError::Rejected { reason, .. }) => Err(reason),
+            Err(e) => panic!("{e:?}"),
+        }
+    };
+    let mut known = Aliases::default();
+    known
+        .record_same_point(&jd, &setup.cyls, touch, near)
+        .expect("one point");
+    let refused = Err(RejectReason::CoincidentNodes);
+    assert_eq!(
+        [
+            split([touch, near], &mut Aliases::default()),
+            split([touch, near], &mut known),
+            split([touch, far], &mut Aliases::default()),
+        ],
+        [refused.clone(), refused, Ok(vec![[touch, far]])],
+        "two names the table does not know, two it knows, and an arc"
     );
 }
 

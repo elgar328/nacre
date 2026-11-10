@@ -81,6 +81,10 @@ pub(crate) struct CircleTrace {
     /// straight sibling [`RulingTrace`] carries ends for the same reason.
     /// [`split_circles`](fn@split_circles) cuts at these ends and hands each arc only the
     /// contributions that cover it.
+    ///
+    /// The two ends are two points of the circle. Ends at one place could mean an extent of no
+    /// length or the whole turn, and the whole turn is `None`, so the split refuses them
+    /// (`CoincidentNodes`).
     pub arc: Option<[NodeId; 2]>,
 }
 
