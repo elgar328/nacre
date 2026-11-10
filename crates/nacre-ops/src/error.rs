@@ -183,7 +183,8 @@ pub enum RejectReason {
     /// **Two names of one point reach a road that keys points by name.** Three planes name a
     /// vertex, so two plane names for one point mean a **fourth** plane through it — the
     /// arrangement then holds an edge with no direction; the same substrate limit
-    /// [`Self::FourPlane`] names, surfacing on the paths that do not run that check.
+    /// [`Self::FourPlane`] names, surfacing on the paths that do not run that check. Also an edge
+    /// whose two ends are at one place: an edge of no length, which has no direction either.
     CoincidentNodes,
     /// A ring's node names do not chain: two consecutive nodes share other than exactly the
     /// class plane and one wall, or a node has no third plane to be named by.

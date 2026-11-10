@@ -312,6 +312,11 @@ pub(super) fn split_circles(
 ///
 /// `on_seg[si]` is drained: a segment nobody crossed is passed through untouched, and the common
 /// case copies nothing.
+///
+/// **A segment's two ends are two points of its line** — it is a piece of the overlay
+/// ([`split_at_crossings`]) or a piece this function cut from one between points
+/// [`order_recording_ties`] told apart — so this step does not ask it again; a debug build
+/// asserts it on entry.
 pub(super) fn split_segments_at(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -320,6 +325,10 @@ pub(super) fn split_segments_at(
     on_seg: &mut [Vec<NodeId>],
     aliases: &mut Aliases,
 ) -> Result<Vec<MergedSeg>, BoolError> {
+    debug_assert!(
+        segs.iter().all(|s| !aliases.one_point(s.end[0], s.end[1])),
+        "a segment of no length reached the split: the overlay refuses it"
+    );
     let undecided = || reject(RejectReason::WitnessNotRational);
     let mut out_segs = Vec::with_capacity(segs.len());
     for (si, sg) in segs.iter().cloned().enumerate() {
@@ -455,7 +464,7 @@ pub(super) fn split_segments_at(
         let forward = match cmp(ends.0, ends.1) {
             Some(core::cmp::Ordering::Less) => true,
             Some(core::cmp::Ordering::Greater) => false,
-            // Equal is the two ends at one place, which the order above already refused, and
+            // Equal is the two ends at one place, which the segment's contract excludes, and
             // `None` is a width decline.
             _ => return Err(undecided()),
         };

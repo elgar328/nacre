@@ -166,24 +166,6 @@ struct Carved {
     on: Option<CylOnClass>,
 }
 
-/// Split the segments on plane class `wc` into the arrangement's 1-skeleton by a **per-wall 1D
-/// interval overlay**: on each wall `W`, the line `wc ∩ W` is cut at the sorted union of every
-/// W-segment's endpoints and every different-wall crossing, and one `MergedSeg` is emitted per
-/// non-empty sub-interval carrying the **union** of the contributions of the W-segments whose
-/// closed extent covers it. A crossing of two segments riding `W`/`o.wall` is the plane triple
-/// `{wc, W, o.wall}` — no new point species.
-///
-/// This resolves same-wall partial overlap: where two segments overlap, the shared sub-interval
-/// carries both their contributions, which the label brick reads per solid. Because sub-intervals
-/// run between **distinct** points, no zero-length piece is ever emitted (a crossing coinciding with
-/// an endpoint is the same plane class, deduped away). A clean arrangement — no same-wall overlap —
-/// has exactly one segment covering each sub-interval, so the output is identical to the naive
-/// per-segment split. No re-merge is needed: each `(wall, sub-interval)` is emitted once with its
-/// full union, so no two outputs can coincide.
-///
-/// `Err` (honest reject) on: a degenerate endpoint name (`ThreePlanes`), or two distinct plane
-/// classes coincident on a wall's line — a four-plane concurrency `{wc, W, a, b}` the 3-plane DCEL
-/// cannot name (`FourPlane`).
 /// One wall of a class's arrangement: which plane class it is, the **direction family** its line on
 /// that class falls in, and the segments riding it.
 ///

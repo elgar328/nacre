@@ -201,14 +201,14 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
     }
 }
 
-/// The plate's top class `z = 20` of [`armed_boss_at`]`(5.0, ..)` and three names on the boss's
-/// circle there: the wall `y = 0`'s touch point, and the wall `x = 40`'s crossing at it (`near` —
+/// The plate's top class `z = 20` of [`armed_boss_at`]`(5.0, ..)`, its wall class `y = 0`, and three
+/// names on the boss's circle there: the wall `y = 0`'s touch point, and the wall `x = 40`'s crossing at it (`near` —
 /// one point with the touch, under another name) and away from it (`far`).
 fn touch_and_crossings(
     jd: &Judge<'_, WorkingPlane>,
     setup: &crate::arrangement::PlaneSetup,
     x40: usize,
-) -> (usize, [combinatorics::NodeId; 3]) {
+) -> (usize, usize, [combinatorics::NodeId; 3]) {
     let class = |axis: usize, at: f64, what: &str| {
         setup
             .geom
@@ -232,7 +232,7 @@ fn touch_and_crossings(
         Err(_) => (lo, hi),
         Ok(_) => (hi, lo),
     };
-    (top, [touch, near, far])
+    (top, y0, [touch, near, far])
 }
 
 /// **A crossing the three-point question cannot place stays for the order, and the round records
@@ -257,7 +257,7 @@ fn an_arc_ends_unaliased_second_name_is_recorded_by_the_round() {
     let (m, plate, boss, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let def = setup.cyls[0].def.clone();
-    let (top, [touch, near, far]) = touch_and_crossings(&jd, &setup, x40);
+    let (top, _, [touch, near, far]) = touch_and_crossings(&jd, &setup, x40);
     let tr = trace_on_class_of(&m, plate, boss, top, &jd, &setup.cyls, &setup);
     let (split, _, _) =
         class_skeleton(&jd, &setup.cyls, top, &tr, &mut Aliases::default()).unwrap();
@@ -330,7 +330,7 @@ fn an_arc_ends_unaliased_second_name_is_recorded_by_the_round() {
 fn an_extent_whose_ends_are_one_point_is_refused_whatever_the_table_knows() {
     let (_, _, _, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
-    let (top, [touch, near, far]) = touch_and_crossings(&jd, &setup, x40);
+    let (top, _, [touch, near, far]) = touch_and_crossings(&jd, &setup, x40);
     let split = |ends: [combinatorics::NodeId; 2], table: &mut Aliases| {
         let circle = MergedCircle {
             cyl: 0,
@@ -360,6 +360,54 @@ fn an_extent_whose_ends_are_one_point_is_refused_whatever_the_table_knows() {
         ],
         [refused.clone(), refused, Ok(vec![[touch, far]])],
         "two names the table does not know, two it knows, and an arc"
+    );
+}
+
+/// **A segment whose two ends are one point is refused by the overlay, whatever the table knows**
+/// ([`split_at_crossings`]). The plate's top class of [`armed_boss_at`]`(5.0, ..)` with one more
+/// segment on the wall `x = 40`: the plate's corner `{top, y = 0, x = 40}` is one point with the
+/// near crossing of the boss's circle ([`touch_and_crossings`]). Its ends are that corner twice,
+/// the corner and the near crossing under a table that knows them as one, and the same two names
+/// under one that does not — the overlay's order ties them. Each covers no piece of the line, and
+/// dropped it would vanish without a word. Control: the corner and the far crossing are a segment
+/// that cuts the plate's edge on `x = 40`.
+#[test]
+fn a_segment_whose_ends_are_one_point_is_refused_whatever_the_table_knows() {
+    let (m, plate, boss, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let (top, y0, [_, near, far]) = touch_and_crossings(&jd, &setup, x40);
+    let corner =
+        combinatorics::NodeId::three_planes(crate::combinatorics::Canon3::three([top, y0, x40]));
+    let skeleton = |ends: [combinatorics::NodeId; 2], table: &mut Aliases| {
+        let mut tr = trace_on_class_of(&m, plate, boss, top, &jd, &setup.cyls, &setup);
+        let pin = |n| combinatorics::pin_for(&jd, top, x40, n).expect("an end on the line");
+        tr.segs.push(Seg {
+            wall: x40,
+            end: ends,
+            end_h: ends.map(pin),
+            solid: SolidSide::B,
+            kind: SegKind::Seated { body_above: true },
+        });
+        match class_skeleton(&jd, &setup.cyls, top, &tr, table) {
+            Ok((segs, _, _)) => Ok(segs.len()),
+            Err(BoolError::Rejected { reason, .. }) => Err(reason),
+            Err(e) => panic!("{e:?}"),
+        }
+    };
+    let mut known = Aliases::default();
+    known
+        .record_same_point(&jd, &setup.cyls, corner, near)
+        .expect("one point");
+    let refused = Err(RejectReason::CoincidentNodes);
+    assert_eq!(
+        [
+            skeleton([corner, corner], &mut Aliases::default()),
+            skeleton([corner, near], &mut known),
+            skeleton([corner, near], &mut Aliases::default()),
+            skeleton([corner, far], &mut Aliases::default()),
+        ],
+        [refused, refused, refused, Ok(5)],
+        "one name, two the table knows, two it does not, and a segment"
     );
 }
 

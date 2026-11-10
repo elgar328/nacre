@@ -147,6 +147,30 @@ pub(super) fn direction_partition(
     walls
 }
 
+/// Split the segments on plane class `wc` into the arrangement's 1-skeleton by a **per-wall 1D
+/// interval overlay**: on each wall `W`, the line `wc ∩ W` is cut at the sorted union of every
+/// W-segment's endpoints and every different-wall crossing, and one `MergedSeg` is emitted per
+/// non-empty sub-interval carrying the **union** of the contributions of the W-segments whose
+/// closed extent covers it. A crossing of two segments riding `W`/`o.wall` is the plane triple
+/// `{wc, W, o.wall}` — no new point species.
+///
+/// This resolves same-wall partial overlap: where two segments overlap, the shared sub-interval
+/// carries both their contributions, which the label brick reads per solid. Sub-intervals run
+/// between **distinct** points — names the order ties are kept once and recorded as one point — so
+/// no piece of no length is emitted, and every emitted segment's two ends are two points of its
+/// line, the contract the splits after this one read. A segment that covers no sub-interval has its
+/// two ends at one place and is refused (`CoincidentNodes`). A clean arrangement — no same-wall
+/// overlap — has exactly one segment covering each sub-interval, so the output is identical to the
+/// naive per-segment split. No re-merge is needed: each `(wall, sub-interval)` is emitted once with
+/// its full union, so no two outputs can coincide.
+///
+/// `Err` (honest reject) when an end or a crossing cannot be located on its line or ordered there
+/// (named by [`combinatorics::undecided_reason`] — the gate's or the arithmetic's; locating a
+/// piece's ends or asking whether a segment covers them, `WitnessNotRational`), when the alias
+/// table refuses to join the names a tie or a line's plane family puts at one point (two distinct
+/// plane classes coincident on a wall's line is a four-plane concurrency `{wc, W, a, b}` the
+/// 3-plane DCEL cannot name, `FourPlane`), when a piece's end has no pin on the line
+/// (`RingNaming`), and on a segment of no length (`CoincidentNodes`).
 pub(super) fn split_at_crossings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -428,6 +452,7 @@ pub(super) fn split_at_crossings(
                 pts.len().saturating_sub(1) * wall.segs.len(),
             );
         }
+        let mut covers = vec![false; wall.segs.len()];
         for pair in pts.windows(2) {
             let (p, q) = (pair[0], pair[1]);
             let mut merged: Vec<(SolidSide, SegKind)> = Vec::new();
@@ -438,7 +463,7 @@ pub(super) fn split_at_crossings(
                     .ok_or_else(|| reject(RejectReason::WitnessNotRational))
             };
             let (at_p, at_q) = (loc(p)?, loc(q)?);
-            for &i in &wall.segs {
+            for (x, &i) in wall.segs.iter().enumerate() {
                 // **Short-circuiting, deliberately.** `A && B` never asks the second
                 // question when the first says no, and this loop runs 1.6M times per fold —
                 // evaluating both eagerly doubled it (48.6→89.9ms, same trip counts). It also
@@ -453,6 +478,7 @@ pub(super) fn split_at_crossings(
                 if closed_contains(i, &at_q, w, &|n| aliases.canon_point(n))
                     .ok_or_else(undecided)?
                 {
+                    covers[x] = true;
                     merged.extend(segs[i].merged.iter().copied());
                 }
             }
@@ -473,6 +499,17 @@ pub(super) fn split_at_crossings(
                     sense: None,
                 });
             }
+        }
+        // **A segment's two ends at one place are an edge of no length, refused here, once.**
+        // Both ends are split points and the pieces run between neighbouring points the order
+        // tells apart, so a segment covers no piece exactly when its ends are one place — one
+        // name, two the table joined (the merge folds them), or two the order above has just tied.
+        // Dropped instead, it vanishes without a word: measured, all three spellings left the
+        // class's pieces as they are without the segment. The splits after this one read the
+        // contract (`split_segments_at`); arcs and rulings ask the same question where their ends
+        // are first ordered.
+        if covers.contains(&false) {
+            return Err(reject(RejectReason::CoincidentNodes));
         }
     }
     Ok(out)
