@@ -220,13 +220,12 @@ pub(crate) fn name_result_vertices(
     // solids separate; a box whose edge runs along a ruling of the cylinder and on past its cap,
     // the edge's top corner on the cylinder's surface above the cap. So a pierce vertex keeps its
     // name when a lateral of its cylinder and both its planes meet it here; otherwise it takes the
-    // canonical triple of the planes that do (exactly three are taken as they are — the operand
-    // rings' premise, `canonical_triple`; all 959 the suite and the ignored sweep rename this way
-    // are independent, measured), else the pierce name of the first pair of them that
-    // restates it ([`combinatorics::restate_pierce`]). Where no pair does — fewer than two
-    // planes, the pair meets the cylinder elsewhere, or the arithmetic cannot say, which
-    // `restate_pierce`'s `None` does not tell apart — the name stands. A restatement stays on the
-    // same cylinder, so with no lateral of it here and fewer than three planes there is no name
+    // canonical triple of the planes that do — three of them only when they meet in a point, not
+    // when they hold one line ([`combinatorics::canonical_triple`]) — else the pierce name of the
+    // first pair of them that restates it ([`combinatorics::restate_pierce`]). Where no pair does —
+    // fewer than two planes, the pair meets the cylinder elsewhere, or the arithmetic cannot say,
+    // which `restate_pierce`'s `None` does not tell apart — the name stands. A restatement stays on
+    // the same cylinder, so with no lateral of it here and fewer than three planes there is no name
     // the vertex's own faces give: the fence refuses the vertex by that symptom, not the cause.
     let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
     let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();

@@ -340,11 +340,7 @@ pub(crate) fn names_on_cylinder(
     s: &[usize],
 ) -> Vec<NodeId> {
     let mut names = Vec::new();
-    let independent = match *s {
-        [a, b, c] => jd.plane_pair_dir_sign(a, b, c) != 0,
-        _ => true,
-    };
-    if independent && let Some(t) = canonical_triple(jd, s) {
+    if let Some(t) = canonical_triple(jd, s) {
         names.push(NodeId::three_planes(t));
     }
     let named = |c: usize| jd.world_rat(c).is_some();
@@ -966,12 +962,15 @@ impl Canon3 {
 ///
 /// `s` is every plane class known to pass through one point, sorted and deduplicated. The name is
 /// the lexicographically first triple of `s` that is **independent** — three planes sharing a line
-/// name no point — and `None` when fewer than three classes are given.
+/// name no point — and `None` when `s` holds fewer than three classes or no three of them are
+/// independent.
 ///
-/// Three classes need no judgement: they are the only candidate, and every producer that meets a
-/// three-plane point derives the same three (the ordinary vertex; this arm asks nothing of the
-/// judge). Four or more is a concurrency, and the choice among the candidates is what has to be
-/// **one rule**: the alias table's representative (`arrangement::Aliases`) is the minimum of its
+/// Three classes are asked too. A set is what a producer *knows* passes through a point, not a
+/// construction of one: a pierce corner on a further class gives `{p0, p1, wc}`, and when `wc`
+/// holds the line `p0 ∩ p1` those three are a pencil — no name of a point, and no plane of it pins
+/// the point on a line the pencil holds. A construction that produces exactly three — a line pinned
+/// by a plane — is [`Canon3::three`]'s. Four or more is a concurrency, and the choice among the
+/// candidates is what has to be **one rule**: the alias table's representative (`arrangement::Aliases`) is the minimum of its
 /// union-find, i.e. this very triple, so a vertex an operand names here and a point the
 /// arrangement discovers fold onto the same name.
 ///
@@ -993,7 +992,7 @@ pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Opt
     );
     match *s {
         [] | [_] | [_, _] => None,
-        [a, b, c] => Some(Canon3::three([a, b, c])),
+        [a, b, c] => (jd.plane_pair_dir_sign(a, b, c) != 0).then(|| Canon3::three([a, b, c])),
         _ => {
             for i in 0..s.len() {
                 for j in (i + 1)..s.len() {

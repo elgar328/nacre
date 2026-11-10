@@ -224,7 +224,7 @@ pub(crate) fn hole_rings(
 /// **A vertex names itself, not the loop.** A plane corner's name is [`canonical_triple`] of the
 /// plane classes of its incident faces — the set the incidence table carries ([`EdgeFaces`]) — so
 /// every loop that visits the vertex hands the tracer the same name. Three classes is the ordinary
-/// corner and its name is the face's own plane with the two neighbours' (no judgement asked).
+/// corner and its name is the face's own plane with the two neighbours', when they meet in a point.
 /// Four or more is a concurrency: one name, and the
 /// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table. A corner a
 /// cylinder made restates its own definition ([`pierce_name_from_def`]) against that same set, on
@@ -398,7 +398,8 @@ fn loop_triples(
         // **The vertex names itself, not the face loop.** The classes through this
         // corner are the classes of its incident faces, which the incidence table knows, and the
         // name is [`canonical_triple`] of that set. Three classes is the ordinary corner, and its
-        // name is the face's own plane and both neighbours' — no judgement is asked.
+        // name is the face's own plane and both neighbours', once the judge says they meet in a
+        // point.
         // Four or more is a concurrency: **one** name for every loop that visits the vertex, and
         // the set is handed on (`concurrencies`) so the arrangement's alias table starts from it.
         //
@@ -411,8 +412,9 @@ fn loop_triples(
             // Fewer than three classes: the vertex lies on fewer than three planes, so no triple
             // names it — a straight angle no cylinder made (a cylinder's corner took its pierce
             // name above), or a coplanar seam, which no producer makes. Three or more with no
-            // independent triple cannot happen: two distinct planes through a point meet in a
-            // line, and a third off that line completes the point.
+            // independent triple: every plane through the vertex holds one line — a loop running
+            // straight through a corner whose third plane holds that line too — so the planes name
+            // no point there.
             return Err(reject(if classes.len() >= 3 {
                 RejectReason::ThreePlanes
             } else {
@@ -420,13 +422,6 @@ fn loop_triples(
             }));
         };
         if classes.len() == 3 {
-            // Both neighbours on one plane: the loop runs straight through and the three classes
-            // may share a line — the one place this road has always asked (and still asks) the
-            // judge about a three-class corner.
-            let tp = t.planes();
-            if far == wall && jd.plane_pair_dir_sign(tp[0], tp[1], tp[2]) == 0 {
-                return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
-            }
             debug_assert!(
                 far == wall || {
                     let mut u = [near, far, wall];

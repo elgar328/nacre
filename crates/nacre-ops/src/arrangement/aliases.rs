@@ -216,16 +216,16 @@ impl Aliases {
         jd: &Judge<'_, WorkingPlane>,
         s: &[usize],
     ) -> Result<(), TwoCylinders> {
-        // Three independent planes meeting at a point is the ordinary case and names nothing new;
-        // three that share a line are a pencil, which is news for the line table.
-        if s.len() < 3 || (s.len() == 3 && jd.plane_pair_dir_sign(s[0], s[1], s[2]) != 0) {
-            return Ok(());
-        }
-        let mut out = Ok(());
         // The representative is [`combinatorics::canonical_triple`]'s answer — the one
         // rule every producer of a point's name calls — so a name an operand's ring already gave
         // the point is the representative it folds onto here.
         let rep = combinatorics::canonical_triple(jd, s).map(NodeId::three_planes);
+        // Three independent planes meeting at a point is the ordinary case and names nothing new;
+        // three that share a line are a pencil, which is news for the line table.
+        if s.len() < 3 || (s.len() == 3 && rep.is_some()) {
+            return Ok(());
+        }
+        let mut out = Ok(());
         for i in 0..s.len() {
             for j in (i + 1)..s.len() {
                 for k in (j + 1)..s.len() {

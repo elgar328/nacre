@@ -1055,6 +1055,71 @@ fn a_straight_ring_of_two_edges_is_refused_and_a_square_is_read() {
     ));
 }
 
+/// **Three planes are a point's name only when they meet in one point.** A box `[0, 10]³` and a
+/// prism over `[0, 6]` in `y` whose slanted face `x + z = 20` holds the box's top edge
+/// `x = 10, z = 10`: the classes `x = 10`, `z = 10` and `x + z = 20` are a pencil about that edge,
+/// and [`canonical_triple`] names no point by them — while `x = 0`, `y = 0`, `z = 10`,
+/// which meet at a corner, are that corner's name. A set is what passes through a point, not a
+/// construction of one, so three of them are asked as any number is.
+#[test]
+fn three_planes_sharing_a_line_name_no_point() {
+    use nacre_math::{Point2, Point3};
+    let mut m = Model::new();
+    let a = crate::fixtures::cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+    // `(z, x)` in the world `zx` frame, extruded along `+y`.
+    let ring = crate::Ring2d::polygon_decimal(
+        [(10.0, 10.0), (20.0, 0.0), (20.0, 10.0)]
+            .iter()
+            .map(|&(u, v)| Point2::from_array([u, v]))
+            .collect(),
+    )
+    .expect("a triangle");
+    let profile = crate::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let frame = crate::SketchFrame::world(&m, nacre_exact::Axis::Y);
+    let Ok(crate::OpOutput::Extrude { solid: b, .. }) = crate::apply(
+        &mut m,
+        &crate::Operation::Extrude {
+            frame,
+            profile,
+            dist: 6.0,
+        },
+    ) else {
+        panic!("the prism extrudes")
+    };
+    let setup = crate::arrangement::plane_index_setup(&m, a, b).expect("the gate passes");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let class = |p: [[f64; 3]; 3]| {
+        (0..setup.geom.len())
+            .find(|&c| {
+                p.iter().all(|q| {
+                    setup.geom[c]
+                        .plane
+                        .signed_distance(Point3::from_array(*q))
+                        .abs()
+                        < 1e-9
+                })
+            })
+            .expect("a class through the points")
+    };
+    let sorted = |mut t: [usize; 3]| {
+        t.sort_unstable();
+        t
+    };
+    let x10 = class([[10.0, 0.0, 0.0], [10.0, 1.0, 0.0], [10.0, 0.0, 1.0]]);
+    let z10 = class([[0.0, 0.0, 10.0], [1.0, 0.0, 10.0], [0.0, 1.0, 10.0]]);
+    let slant = class([[10.0, 0.0, 10.0], [10.0, 1.0, 10.0], [0.0, 0.0, 20.0]]);
+    assert_eq!(canonical_triple(&jd, &sorted([x10, z10, slant])), None);
+    let x0 = class([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    let y0 = class([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]);
+    let corner = sorted([x0, y0, z10]);
+    assert_eq!(
+        canonical_triple(&jd, &corner).map(Canon3::planes),
+        Some(corner)
+    );
+}
+
 /// **A cap disk is read like any face: its circle bounds it, and a line tangent to that circle
 /// touches it.** A disk of radius 1 about the `z` axis on the plane `z = 3`, and segments of the
 /// lines `x = d` on that plane from `y = −2` to `y = 2` (or to `y = −1.5`): the chord `x = 0.5`
