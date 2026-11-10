@@ -59,3 +59,6 @@ mod fin_array;
 
 #[path = "coverage/arc_crossings.rs"]
 mod arc_crossings;
+
+#[path = "coverage/wedge_on_a_rim.rs"]
+mod wedge_on_a_rim;

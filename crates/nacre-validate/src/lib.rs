@@ -99,7 +99,7 @@ pub enum Violation {
     /// A vertex whose surface link is not a single circle — a non-manifold "pinch" where two or
     /// more face-fans meet at one point (two solids touching only at a corner), even though every
     /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`], which reads a face's loops:
-    /// a face meeting one vertex with two separate loops is reported here too.
+    /// at a vertex a face meets with two separate loops its answer is not to be trusted either way.
     NonManifoldVertex { vertex: Handle<Vertex> },
 
     /// A vertex definition whose carrier kinds contradict its variant: a `ThreePlane`

@@ -106,9 +106,9 @@ fn uf_union(parent: &mut [usize], a: usize, b: usize) {
 /// coordinates.
 ///
 /// The faces must use every edge exactly twice, and a face must pass a vertex twice in **one**
-/// loop, a ring through the point twice. A face that meets one vertex with two separate loops — a
-/// hole's whole rim as one loop and a footprint through the rim's vertex as another — is reported
-/// at that vertex although its surface is a 2-manifold there.
+/// loop, a ring through the point twice. Where a face meets one vertex with two separate loops the
+/// answer there is not to be trusted either way: a pinch can be missed and a 2-manifold point
+/// reported.
 pub fn nonmanifold_vertices(
     model: &Model,
     faces: impl IntoIterator<Item = Handle<Face>>,

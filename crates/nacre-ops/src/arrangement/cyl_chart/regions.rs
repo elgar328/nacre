@@ -73,8 +73,10 @@ pub(crate) struct Walked {
 }
 
 /// **Which way out of a corner the cycle takes first** — the way out nearest clockwise from the way
-/// back along the edge it arrived by, which keeps the region on the left and each cycle simple
-/// where the region touches itself at a corner. The ways out of a corner, counter-clockwise from
+/// back along the edge it arrived by, which keeps the region on the left. Where the region touches
+/// itself at a corner, each visit pairs the two edges of its own sector, so a cycle passes that
+/// corner once per sector — one cycle, the spelling the pinch check reads loops under
+/// (`nacre_topo::nonmanifold_vertices`). The ways out of a corner, counter-clockwise from
 /// `−z`: down the ruling, the lines leaving `+θ` from the lowest to the highest in the slab they
 /// enter, up the ruling, the lines leaving `−θ` from the highest to the lowest in theirs — the
 /// slabs' height orders, which the chart already holds, are the angles. Going back along the edge
@@ -127,7 +129,8 @@ fn departure_key(chart: &Chart, arrived: Edge, out: Edge) -> usize {
 /// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
 /// with no outer cycle, a run along an uncut rim — or a rim cut at one node — that is not the whole
 /// circle, a cycle whose arc units are not a whole number of turns, the lateral kept on both sides
-/// of a station it ends at (`ChordSays::NoPiece`). What the walk cannot spell is
+/// of a station it ends at (`ChordSays::NoPiece`), a cycle whose way out is an edge another cycle
+/// already took. What the walk cannot spell is
 /// named where it fires: wrapping cycles other than one lower and one upper (`ArcBoundNotYet`).
 fn split_disagrees() -> BoolError {
     reject(RejectReason::CylinderStagesDisagree)
@@ -381,8 +384,10 @@ pub(crate) fn walk(
         });
         edges.dedup();
 
-        // ── cycles, by the left-turn rule at a corner with two ways out (a hole touching
-        //    the outer boundary at a corner: the sharper turn keeps each cycle simple) ──
+        // ── cycles: each the orbit of `departure_key` from its first edge, closed when the rule
+        //    leaves by that edge. Coming back to the first corner does not close it: where the
+        //    region touches itself there (a hole touching the outer boundary at a corner), that is
+        //    half the cycle, and closing on it would spell the corner's two sectors as two loops ──
         let mut used = vec![false; edges.len()];
         let mut cycles: Vec<Vec<Edge>> = Vec::new();
         for start in 0..edges.len() {
@@ -391,17 +396,21 @@ pub(crate) fn walk(
             }
             let mut cyc = vec![edges[start]];
             used[start] = true;
-            let (first, mut at) = ends(edges[start]);
+            let mut at = ends(edges[start]).1;
             let mut last = edges[start];
-            while at != first {
-                let mut cands: Vec<(usize, usize)> = (0..edges.len())
-                    .filter(|&j| !used[j] && ends(edges[j]).0 == at)
-                    .map(|j| (departure_key(chart, last, edges[j]), j))
-                    .collect();
-                cands.sort_unstable();
-                let Some(&(_, j)) = cands.first() else {
+            loop {
+                let Some(j) = (0..edges.len())
+                    .filter(|&j| ends(edges[j]).0 == at)
+                    .min_by_key(|&j| departure_key(chart, last, edges[j]))
+                else {
                     return Err(split_disagrees());
                 };
+                if j == start {
+                    break;
+                }
+                if used[j] {
+                    return Err(split_disagrees());
+                }
                 used[j] = true;
                 cyc.push(edges[j]);
                 last = edges[j];
@@ -483,7 +492,11 @@ pub(crate) fn walk(
                         if m == 0 || (m == 1 && !full) {
                             return Err(split_disagrees());
                         }
-                        let (pa, pb) = if full {
+                        // A run starts at its first corner's node, a whole turn too (both ends
+                        // that node): between other runs it must, for the pieces to chain. A
+                        // cycle that is the rim alone may start at an event the rim is not cut
+                        // at, and any node gives the same circle.
+                        let (pa, pb) = if full && runs.len() == 1 {
                             (0, 0)
                         } else {
                             (
