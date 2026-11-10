@@ -1925,10 +1925,11 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   부른다 — 정확한 좌표와 같음·병합이 거기서 나온다. 꼭짓점은 제 면이 없는 곡면 위에도 우연히 놓이므로 «있음»은
   따로 묻는다 — 배열 전에는 옆면의 발자국(`Footprint`, 「인구 게이트」)이, 배열 뒤에는 결과 면의 링이 답하고, 결과
   정점의 정의는 그 면들의 곡면만 부른다(조립의 끝 검사와 validate 가 같은 이름 `VertexNamesAbsentSurface` 로 묻는다).
-- **평면 집합이 지나는 점의 이름은 함수 하나가 짓는다**(`combinatorics::canonical_triple`). 원장은 타입이다 —
-  `Canon3` 만 `NodeId::three_planes`·`Def::Three` 가 받으므로 다른 철자는 컴파일 오류다.
+- **평면 집합이 지나는 점의 이름은 함수 하나가 짓는다**(`combinatorics::canonical_triple` — 셋도 묻는다, 연필은
+  점이 아니다). `NodeId::three_planes`·`Def::Three` 는 `Canon3` 만 받고, 둘째 문 `Canon3::three` 는 셋을 짓는 생성의 것이다.
 - **원통 위의 점도 이름 하나다** — `combinatorics::names_on_cylinder` 가 짓고, 씨앗(피연산자의 코너, 게이트의
-  `SharedRuling`·`GrazeLine`)은 모두 `Aliases::record_cylinder_point` 로 간다. 대표는 관통 이름, 그 가운데 정확한
+  `SharedRuling`·`GrazeLine`)은 모두 `Aliases::record_cylinder_point` 로 가고 평면 집합도 거기서 기록된다(연필은
+  직선 — `Aliases::record`). 대표는 관통 이름, 그 가운데 정확한
   이름이 먼저다(`Aliases::rep_rank`). 소비자는 `canon_point` 로 비교한다.
 - **이름의 같음은 수렴한 표에서만 묻는다.** 배열이 정점 열쇠로 쓰는 이름은 모두 라운드 안에서 태어난다(원·룰링
   분할 `split_class_edges` 도 라운드의 걸음). 정확히 증명된 동점은 기록하고(`Aliases::record_same_point`), 거절하는

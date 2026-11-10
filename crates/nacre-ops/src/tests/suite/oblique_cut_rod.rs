@@ -601,8 +601,9 @@ fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
 ///   notch faces meeting on an edge `x = 1, z = 5` that crosses the lateral — of volume
 ///   `104π/3 − 6√3` (the wedge's height `2 − 2x` over the disk short of `x = 1`). Past the far box
 ///   every cell is refused: `z = 2` touches the wedge floor's section at its lowest point (the gate,
-///   `ObliqueCylinderCut`), the box `x ≥ 1` stops at the trace of the wedge's upper face
-///   (`DeclineKind::NoPinOnLine`), and the pin as for the two notches;
+///   `ObliqueCylinderCut`), the box `x ≥ 1` — whose ruling runs through the lateral's corner where
+///   the notch's two sections meet — stops at the ruling sweep (`DeclineKind::Ruling`, as the
+///   crossing-ends ridges in `crossing_ends.rs` do), and the pin as for the two notches;
 /// - the rod with a window through `x ≤ −3/2` between `z = 4 + x` and `z = 6 − x` — a floor and a
 ///   ceiling crossing on the cylinder at `x = 1`, the window's sides rulings — of volume
 ///   `40π − 2S − 7√7/6`; its rulings run between the two sections, which order only on a generator,
@@ -741,7 +742,7 @@ fn other_bodies_with_slanted_rims_fed_back() {
                 (Err(ObliqueCylinderCut), ones, None),
                 (
                     Err(RejectReason::TraceDeclined {
-                        kind: crate::DeclineKind::NoPinOnLine,
+                        kind: crate::DeclineKind::Ruling,
                         face: None,
                     }),
                     ones,

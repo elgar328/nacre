@@ -217,33 +217,38 @@ fn trace_transversal_face(
             // named by the pair its definition chose, which need not be this line's.
             let (n, t) = match three_plane_name(n) {
                 Some(t) => (n, t),
-                None => match combinatorics::pierce_name(n) {
-                    Some((planes, _, _)) if planes.contains(&wc) => {
-                        return combinatorics::pin_for(jd, wc, fc, n)
-                            .map(|pin| (n, pin))
-                            .ok_or(DeclineKind::NoPinOnLine);
+                None => {
+                    let Some((planes, _, _)) = combinatorics::pierce_name(n) else {
+                        return Err(DeclineKind::RunName);
+                    };
+                    // **The corner's planes and `wc` all pass through it**, and the set names the
+                    // point as any set does ([`combinatorics::canonical_triple`]). A wall through a
+                    // fillet's axis runs through the fillet's tangent corner: `{p0, p1, wc}` meet in
+                    // that point, a **three-plane point** named by them like any other, the cylinder
+                    // a fourth carrier that names nothing here. (Restating it as a pierce of a new
+                    // pair kept a root that pair does not have — measured, the fold's gusset beside
+                    // the plate's fillet.) With `wc` one of the corner's own planes, or holding the
+                    // line `p0 ∩ p1` — a tool plane through a ridge that ends on the cylinder — the
+                    // set names no point, and the corner keeps its own name, pinned on `L` by
+                    // whatever that name and the line say ([`combinatorics::pin_for`]).
+                    //
+                    // Every name the set yields is one point, and the **table** holds that identity:
+                    // it learns it from the operands before any class is traced
+                    // (`seed_from_operands` → `Aliases::record_on_cylinder`), not here — a round
+                    // that declines returns, so a discovery made mid-round could arrive after the
+                    // class that needed it had already refused.
+                    let mut s = vec![planes[0], planes[1], wc];
+                    s.sort_unstable();
+                    s.dedup();
+                    match combinatorics::canonical_triple(jd, &s) {
+                        Some(t) => (NodeId::three_planes(t), t.planes()),
+                        None => {
+                            return combinatorics::pin_for(jd, wc, fc, n)
+                                .map(|pin| (n, pin))
+                                .ok_or(DeclineKind::NoPinOnLine);
+                        }
                     }
-                    // **On `wc` by coincidence**: a wall through a fillet's axis runs
-                    // through the fillet's tangent corner, so the corner is on `L` while neither of
-                    // its own planes is `wc`. Three planes pass through the point — its own two and
-                    // `wc` — so it is a **three-plane point**, named by them like any other; the
-                    // cylinder is a fourth carrier that names nothing here. (Restating it as a
-                    // pierce of a new pair kept a root that pair does not have — measured, the
-                    // fold's gusset beside the plate's fillet.)
-                    Some((planes, _, _)) => {
-                        // This corner has a third plane through it, so every name
-                        // that set yields is one point — its own, this three-plane one, and the
-                        // class's crossing of the ruling it sits on. The **table** holds that
-                        // identity, and it learns it from the operands before any class is
-                        // traced (`seed_from_operands` → `Aliases::record_on_cylinder`), not
-                        // here: a round that declines returns, so a discovery made mid-round
-                        // could arrive after the class that needed it had already refused.
-                        let mut t = [planes[0], planes[1], wc];
-                        t.sort_unstable();
-                        (NodeId::three_planes(Canon3::three(t)), t)
-                    }
-                    None => return Err(DeclineKind::RunName),
-                },
+                }
             };
             // The face's own plane need not appear in the name — a ring vertex is on
             // its face by topology, and a concurrency's canonical triple may name it by three

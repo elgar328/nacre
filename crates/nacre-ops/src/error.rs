@@ -941,9 +941,11 @@ pub enum DeclineKind {
     // substrate limit is the cause and the missing pin only its symptom. Where no such fact is in
     // hand, saying the symptom is the honest answer.
     //
-    // Measured unexercised: `third_on_l`'s ordinary arm, 0 of 1,622,692 calls where the lone
-    // off-line class fails the cut test; and the seated road's, by `unreachable!()` with the whole
-    // suite and the ignored sweep green.
+    // Raised by `trace_plane`: `third_on_l` for a three-plane name with `wc` among its planes none
+    // of whose others cuts `L`, or a pierce corner whose name `pin_for` cannot pin (a pierce name
+    // always has a pin, so that arm answers the `Option`, not a population), and the seated road.
+    // A pencil `{p0, p1, wc}` names no point (`combinatorics::canonical_triple`), so it never
+    // reaches the first. Measured 0 over the suite, the census and the ignored sweep.
     /// **A point's name carries no plane that cuts the line it sits on**, so nothing in that name
     /// pins it there.
     NoPinOnLine,

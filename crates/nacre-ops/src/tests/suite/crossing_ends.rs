@@ -21,7 +21,7 @@
 //!   sections, so this body is built in one.
 //!
 //! The tools: a far box; half-space boxes above `z = 2`, `4.5` (cutting the roof's arcs), `5`
-//! (touching the roof at its two corners) and `5.5` (crossing both roof sections, missing the roof);
+//! (touching the roof along its ridge) and `5.5` (crossing both roof sections, missing the roof);
 //! half-space boxes beyond `x = 0` (the ruling through the roof's corners) and `x = 1`; the coaxial
 //! pin of radius ½ over `z ∈ [−1, 11]`; and the prism above `z = 4 + x/4`.
 //!
@@ -306,11 +306,19 @@ fn tools() -> [Tool; 9] {
 /// refusal (`arrangement::result`'s `settle_rounds`) and the operands' order numbers the classes, so
 /// the two orders can name two.
 ///
+/// A tool whose plane holds the ridge, the straight edge two of the body's top faces meet on (`z ≥ 5`
+/// on the roof's `x = 0, z = 5` and the off-axis ridge's `x = 1, z = 5`), builds: the ridge's ends
+/// on the cylinder are named by their own pierce names, the three planes through each being a
+/// pencil about the ridge (`combinatorics::canonical_triple`), and the table learns the ridge as a
+/// line. The roof fused with it is two bodies meeting on that edge.
+///
 /// What still refuses, and why (each name's face measured):
-/// - the tool's plane holds the straight edge two of the body's top faces meet on — the ridge
-///   `x = 0, z = 5` (`z ≥ 5`, `x ≥ 0`; `x = 1` for the off-axis ridge) and the chamfer's
-///   `x = 1, z = 10` — and the trace of one of those **planar** faces declines `NoPinOnLine`, the
+/// - `x ≥ 0` (`x ≥ 1` for the off-axis ridge, and the chamfer's ridge `x = 1, z = 10`): the
+///   tool's ruling runs through the lateral's corner where two boundary sections meet, and the
+///   ruling sweep finds no run or line end at the arc's end there (`rulings.rs`, `Ruling`) — the
 ///   wedge groove's refusal in `oblique_cut_rod.rs`;
+/// - `z ≥ 5` against the valley: the common part — two wings meeting on the ridge — and the tool
+///   less the valley are refused as `CylinderStagesDisagree` (cause not measured);
 /// - `z = 4.5` against the roof's slanted faces, and `z = 5.5` against the valley's, cross their
 ///   elliptical edges: the planar face's scan cannot name a point on an edge riding the cylinder
 ///   (`CurvedRingWall`);
@@ -318,13 +326,14 @@ fn tools() -> [Tool; 9] {
 ///   where it goes on inside the face, to the cap's corner, where it goes on outside — a run whose
 ///   flanks differ, which `cycle_on_class` declines (measured at that arm; `ObliqueCylinderCut`);
 ///   with the tool first,
-///   `z ≥ 5`, `z ≥ 5.5` and `x ≥ 0` name their own refusals before it;
+///   `z ≥ 5.5` and `x ≥ 0` name their own refusals before it;
 /// - the gate: the off-axis ridge's `z = 4.5`, `z = 5.5` and the prism's floor touch its
 ///   slanted sections, and the steep valley's pin.
 fn wants() -> [[[Want; 2]; 9]; 5] {
     let decline = |kind| refused(RejectReason::TraceDeclined { kind, face: None });
     let ring_wall: Want = decline(crate::DeclineKind::CurvedRingWall);
-    let no_pin: Want = decline(crate::DeclineKind::NoPinOnLine);
+    let ruling: Want = decline(crate::DeclineKind::Ruling);
+    let stages = Err(RejectReason::CylinderStagesDisagree);
     // The gate's refusal and an oblique trace's decline share this name.
     let oblique: Want = refused(RejectReason::ObliqueCylinderCut);
     let both = |w: Want| [w, w];
@@ -339,9 +348,9 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             apart,
             one,
             both(ring_wall),
-            both(no_pin),
+            both(built([2, 1, 0])),
             apart,
-            both(no_pin),
+            both(ruling),
             one,
             pin,
             one,
@@ -351,9 +360,9 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             apart,
             one,
             one,
-            both(no_pin),
+            [[Ok(1), Ok(1), stages], [Ok(1), stages, stages]],
             both(ring_wall),
-            both(no_pin),
+            both(ruling),
             one,
             pin,
             one,
@@ -363,9 +372,9 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             both(oblique),
             both(oblique),
             both(oblique),
-            [oblique, no_pin],
+            both(oblique),
             [oblique, ring_wall],
-            [oblique, no_pin],
+            [oblique, ruling],
             both(oblique),
             both(oblique),
             both(oblique),
@@ -375,15 +384,15 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             apart,
             one,
             both(oblique),
-            both(no_pin),
+            both(built([2, 1, 0])),
             both(oblique),
             one,
-            both(no_pin),
+            both(ruling),
             pin,
             both(oblique),
         ],
         // chamfered
-        [apart, one, one, one, one, one, both(no_pin), pin, one],
+        [apart, one, one, one, one, one, both(ruling), pin, one],
     ]
 }
 

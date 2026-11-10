@@ -81,13 +81,15 @@ pub(super) fn seed_from_operands(
     // (`Pierce{[p0, p1], cyl, root}` — a fillet's tangent corner, a boss's foot) is a point some
     // *other* class may pass through: the gusset's side plane through the fillet axis contains
     // the tangent ruling, and so the corner. Then the point has every name that set gives it —
-    // its own, the three-plane `[p0, p1, wc]`, and each of its planes' crossings with the class —
-    // and [`Aliases::record_on_cylinder`] joins them. Asked here, once, of the operands' own
-    // topology and the class table, so every round and every class trace starts knowing it:
-    // asked during a trace instead (where `third_on_l` meets the corner on `wc`), a class traced
-    // in the same round could decline for want of it before the round that learnt it — a round
-    // that declines returns, and there is no next. `side_of` is exact (the quad tower), and the
-    // question is corners × classes, both small.
+    // its own, the three-plane `[p0, p1, wc]` where those three meet in that point, and each of
+    // its planes' crossings with the class — and [`Aliases::record_on_cylinder`] joins them; where
+    // the class holds the line `p0 ∩ p1` (a tool plane through a ridge that ends on the cylinder),
+    // the three are a pencil, and the table learns that line instead. Asked here, once, of the
+    // operands' own topology and the class table, so every round and every class trace starts
+    // knowing it: asked during a trace instead (where `third_on_l` meets the corner on `wc`), a
+    // class traced in the same round could decline for want of it before the round that learnt it
+    // — a round that declines returns, and there is no next. `side_of` is exact (the quad tower),
+    // and the question is corners × classes, both small.
     // **And the dual: a line of two classes lying on a cylinder** — the gate's record, one
     // entry per such line, folded before any class is traced for the same reason as the corners
     // below.
@@ -258,8 +260,9 @@ impl Aliases {
     /// **A pierce corner found on a further plane class** — the cylinder twin of
     /// [`Aliases::record`]. The corner's planes `p0, p1` and the class `wc` all pass through the
     /// point, and so does the cylinder; every name that set produces denotes it — the corner's own,
-    /// the three-plane name of `{p0, p1, wc}` (when independent), and each of the corner's planes'
-    /// crossing with `wc` at the root on the corner's other plane ([`Aliases::record_cylinder_point`]).
+    /// the three-plane name of `{p0, p1, wc}` (when independent — a pencil is learnt as a line), and
+    /// each of the corner's planes' crossing with `wc` at the root on the corner's other plane
+    /// ([`Aliases::record_cylinder_point`]).
     /// All of them are folded here, before any trace, so the ruling sweep and the plane roads —
     /// which mint the names on their own — find them already one point.
     pub(crate) fn record_on_cylinder(
@@ -339,8 +342,9 @@ impl Aliases {
 
     /// **Every name of one point on cylinder `cyl`, folded** — `at` is one, `s` the plane classes
     /// through it ([`combinatorics::names_on_cylinder`], the one rule). Every seed of a point on a
-    /// cylinder ends here. Every union is made; `Err` when one of them is refused — a name already
-    /// standing on another cylinder ([`Aliases::join_points`]).
+    /// cylinder ends here, and so does its set: `s` is recorded as every set through a point is
+    /// ([`Aliases::record`] — a pencil among it is a line). Every union is made; `Err` when one of
+    /// them is refused — a name already standing on another cylinder ([`Aliases::join_points`]).
     fn record_cylinder_point(
         &mut self,
         jd: &Judge<'_, WorkingPlane>,
@@ -349,7 +353,8 @@ impl Aliases {
         at: NodeId,
         s: &[usize],
     ) -> Result<(), TwoCylinders> {
-        let mut out = Ok(());
+        // The set itself first: a pencil among it is a line the table learns ([`Aliases::record`]).
+        let mut out = self.record(jd, s);
         for n in combinatorics::names_on_cylinder(jd, cyls, cyl, at, s) {
             if let Err(e) = self.union_point(at, n) {
                 out = Err(e);
