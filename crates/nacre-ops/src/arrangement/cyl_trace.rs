@@ -86,7 +86,7 @@ fn circle_spans(
     // two rims and its holes are its loops (`combinatorics::lateral_cycles`); a panel or a chain
     // rim is a cycle like a hole, carved out of an outer answer that may be **absent** rather than
     // out of a whole trace.
-    let shape = lateral_shape(jd, cf, fl, def)?;
+    let shape = lateral_shape(jd, fl, def, cyl)?;
     let mut rings: Vec<(bool, &combinatorics::NamedRing)> = Vec::with_capacity(shape.cycles.len());
     for (inner, ring) in &shape.cycles {
         // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair, not
@@ -117,9 +117,9 @@ fn circle_spans(
 /// trace at the two points the line `wc ∩ rim` meets the cylinder in
 /// ([`combinatorics::rim_crossings`], the names a cap's chord ends at too), the face present where
 /// the trace, going counter-clockwise from a point, climbs into it ([`climb_over`] — the rim's
-/// face side, read off which end of the face it is; two circles never cross); a touch declines (the
-/// gate refuses it first). Every other cycle — a fillet's quarter, a hole, a panel — is walked by
-/// [`cycle_on_class`], which names its crossings and lays the runs of its arcs on the trace.
+/// face side is [`rim_side`]'s; two circles never cross); a touch declines (the gate refuses it
+/// first). Every other cycle — a fillet's quarter, a hole, a panel — is walked by [`cycle_on_class`],
+/// which names its crossings and lays the runs of its arcs on the trace.
 ///
 /// **Out of reach first**: a trace beside every boundary section of the face, on one side, meets no
 /// part of it — on each generator the face lies between its own boundary points — so nothing, and
@@ -476,21 +476,19 @@ fn middle_direction(
 
 /// **A lateral face's shape as its cycles state it** — what both lateral roads read of a
 /// lateral's loops: its rims — each a closed rim edge or a rim split into arcs
-/// ([`arcs_on_one_class`]) — by plane class with the side of it the face lies on, its two ends — the
-/// classes of its lowest and highest boundary sections, ordered as sections are
-/// ([`nacre_exact::quad::section_height_order`], with no generator: a face's boundary sections do
-/// not cross its ends) — and every other cycle — a panel, a chain rim, a hole — with whether it is
-/// an inner loop. The ends are a second derivation of `CylFaceInfo::ends` (the model side's, off the
-/// face's own boundary planes), and the two are held equal where they meet.
+/// ([`arcs_on_one_class`]) — by plane class with the side of it the face lies on ([`rim_side`]),
+/// the classes of every boundary section, and every other cycle — a panel, a chain rim, a hole —
+/// with whether it is an inner loop. No section is asked to be the face's end: two slanted rims
+/// that cross where the face ends (a rod cut twice into a roof) have none, and the face is still
+/// the region its loops close.
 ///
 /// Declines by the one name: `None` cycles (a loop could not be named), a class with no world
-/// statement, a boundary section crossing an end, a single boundary section, more than two rims,
-/// or a rim that is not an end — a whole rim bounds the face, so it is an extreme of it.
+/// statement, or a rim whose side its face's other boundary does not decide.
 pub(super) fn lateral_shape(
     jd: &Judge<'_, WorkingPlane>,
-    cf: &crate::planes::CylFaceInfo,
     fl: &combinatorics::FaceLoops,
     def: &nacre_topo::CylinderDef,
+    cyl: usize,
 ) -> Result<LateralShape, DeclineKind> {
     use combinatorics::LoopRing;
     let Some(cycles) = &fl.cycles else {
@@ -539,31 +537,76 @@ pub(super) fn lateral_shape(
             }
         }
     }
-    let planes = sections
+    // Every boundary section is read in the world, by the trace and the rims' sides alike.
+    if sections.iter().any(|&c| jd.world_rat(c).is_none()) {
+        return Err(DeclineKind::CylSpan);
+    }
+    let rims = rims
         .iter()
-        .map(|&c| jd.world_rat(c).ok_or(DeclineKind::CylSpan))
-        .collect::<Result<Vec<_>, _>>()?;
-    let [lo, hi] = crate::planes::section_ends(&planes, def)
-        .map(|[l, h]| [sections[l], sections[h]])
-        .ok_or(DeclineKind::CylSpan)?;
-    if lo == hi || rims.len() > 2 || rims.iter().any(|&c| c != lo && c != hi) {
-        return Err(DeclineKind::CylSpan);
-    }
-    if let [a, b] = rims[..]
-        && a == b
-    {
-        return Err(DeclineKind::CylSpan);
-    }
-    debug_assert_eq!(
-        jd.world_rat(lo).zip(jd.world_rat(hi)).map(|(l, h)| [l, h]),
-        cf.ends,
-        "the cycles' ends by name and the face's ends by model disagree"
-    );
+        .map(|&c| Ok((c, rim_side(jd, cyl, def, c, &rims, &rest)?)))
+        .collect::<Result<Vec<_>, DeclineKind>>()?;
     Ok(LateralShape {
-        rims: rims.into_iter().map(|c| (c, c == lo)).collect(),
+        rims,
         sections,
         cycles: rest,
     })
+}
+
+/// **Which side of the whole rim on class `c` the face lies on** — `true` above it along the axis.
+///
+/// A whole rim is a closed curve round the cylinder, so it cuts it in two and the face lies on one
+/// side: every other part of its boundary — every other rim, every corner of its other cycles —
+/// stands on that side or on the rim. Not the other cycles' **sections**: an arc's plane runs on
+/// round the cylinder past the arc and may cross the rim's plane there (a steep valley's slants
+/// cross its bottom rim's plane outside their arcs). Each corner is asked as a point on its own
+/// section ([`combinatorics::ChartPoint::order`] — its generator realized only where the two
+/// sections cross or touch), another rim by the order of two sections, which two whole rims of one
+/// face never cross. A boundary point on the rim says nothing.
+///
+/// `CylSpan` where nothing decides — no other boundary, or only another rim on the same class —
+/// or two parts disagree: the rim is not a whole rim the face lies beside, and the count «at most
+/// two rims» is this rule's consequence (a third would have boundary on both sides). `CylSpan` too
+/// where a part cannot be read: a class with no world statement, a corner with no section, or one
+/// whose point the order needs and `Rat` cannot state.
+fn rim_side(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    c: usize,
+    rims: &[usize],
+    rest: &[(bool, combinatorics::LoopRing)],
+) -> Result<bool, DeclineKind> {
+    use core::cmp::Ordering::{Equal, Greater, Less};
+    use nacre_exact::quad::{SectionOrder, Toward, section_height_order};
+    let w = jd.world_rat(c).ok_or(DeclineKind::CylSpan)?;
+    let mut side: Option<bool> = None;
+    let mut note = |o: core::cmp::Ordering| -> Result<(), DeclineKind> {
+        let above = match o {
+            Greater => true,
+            Less => false,
+            Equal => return Ok(()),
+        };
+        if side.replace(above).is_some_and(|was| was != above) {
+            return Err(DeclineKind::CylSpan);
+        }
+        Ok(())
+    };
+    for &r in rims.iter().filter(|&&r| r != c) {
+        let wr = jd.world_rat(r).ok_or(DeclineKind::CylSpan)?;
+        match section_height_order(&wr, &w, def, None, Toward::At) {
+            Some(SectionOrder::Ordered(o)) => note(o)?,
+            Some(SectionOrder::Crosses) | None => return Err(DeclineKind::CylSpan),
+        }
+    }
+    for nr in rest.iter().filter_map(|(_, ring)| ring.poly()) {
+        for &n in &nr.triples {
+            let realize = || combinatorics::exact_point(jd, cyl, def, n).ok();
+            let section = combinatorics::section_of(jd, def, n).ok_or(DeclineKind::CylSpan)?;
+            let x = combinatorics::ChartPoint::lazy(section, &realize);
+            note(x.order(&w, def).ok_or(DeclineKind::CylSpan)?)?;
+        }
+    }
+    side.ok_or(DeclineKind::CylSpan)
 }
 
 /// The one plane class every wall of a ring is an arc on, `None` when a wall is not an arc or two

@@ -46,7 +46,7 @@ pub(super) fn rulings_on_class(
         let Some(def) = cf.def.as_ref() else {
             return Err(DeclineKind::Ruling);
         };
-        let LateralShape { cycles, .. } = lateral_shape(jd, cf, fl, def)?;
+        let LateralShape { cycles, .. } = lateral_shape(jd, fl, def, k)?;
         let above = axis_above(jd, wc, def).ok_or(DeclineKind::Ruling)?;
         let (mut grazes, mut quiet) = (Vec::new(), Vec::new());
         for (_, ring) in &cycles {
@@ -93,7 +93,7 @@ pub(super) fn rulings_on_class(
         "a recorded pair's plane runs within the radius"
     );
     // The face's shape from its cycles — the same reading the ⊥ road makes.
-    let LateralShape { rims, cycles, .. } = lateral_shape(jd, cf, fl, def)?;
+    let LateralShape { rims, cycles, .. } = lateral_shape(jd, fl, def, k)?;
     let mat = SegKind::Transversal {
         mat: cf.orient_sign,
     };

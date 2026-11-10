@@ -849,11 +849,10 @@ pub(crate) fn section_of(
 }
 
 /// **Which of two points on one generator of cylinder `k` stands higher along its axis** — the
-/// order of their sections ([`section_of`]) on that generator, the one spelling
-/// ([`nacre_exact::quad::section_height_order`]): asked with no generator where the two sections
-/// cross nowhere — always so for two circles, which compare as their heights do — and on the
-/// generator through `a` ([`exact_point`]) where they cross. `None` where a point has no section, or
-/// the sections cross and `a` has no exact point.
+/// order of their sections ([`section_of`]) on that generator, asked of `a` as a [`ChartPoint`]
+/// ([`ChartPoint::order`] — with no generator where the two sections are apart or one plane, and on
+/// the generator through `a`, [`exact_point`], where they cross or touch). `None` where a point has
+/// no section, or the order needs `a`'s generator and `a` has no exact point.
 pub(crate) fn height_order_on_generator(
     jd: &Judge<'_, WorkingPlane>,
     k: usize,
@@ -861,18 +860,8 @@ pub(crate) fn height_order_on_generator(
     a: NodeId,
     b: NodeId,
 ) -> Option<core::cmp::Ordering> {
-    use nacre_exact::quad::{SectionOrder, Toward, section_height_order};
-    let (wa, wb) = (section_of(jd, def, a)?, section_of(jd, def, b)?);
-    match section_height_order(&wa, &wb, def, None, Toward::At)? {
-        SectionOrder::Ordered(o) => Some(o),
-        SectionOrder::Crosses => {
-            let (line, s) = exact_point(jd, k, def, a).ok()?;
-            match section_height_order(&wa, &wb, def, Some((&line, &s)), Toward::At)? {
-                SectionOrder::Ordered(o) => Some(o),
-                SectionOrder::Crosses => None,
-            }
-        }
-    }
+    let realize = || exact_point(jd, k, def, a).ok();
+    ChartPoint::lazy(section_of(jd, def, a)?, &realize).order(&section_of(jd, def, b)?, def)
 }
 
 /// Whether a node is a pierce point one of whose planes has no world statement — the population

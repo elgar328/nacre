@@ -1403,3 +1403,67 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
         "the 2-D witness road reads it outside"
     );
 }
+
+/// **A point's height against a curve realizes its generator only where the two sections meet** —
+/// [`ChartPoint::order`] on the unit cylinder about `z`, the point on `z = 2`. Against `z = 5` the
+/// sections are apart: `Less`, and the point is never realized. Against the slant `z − x = 1`, whose
+/// section touches `z = 2` along the generator `x = 1`, the point is realized: on that generator
+/// it is on the curve (`Equal`) — asked with no generator, a touch reads as strictly ordered and
+/// the point would lose being on the curve — and on `x = −1` it is above it. A point that cannot be
+/// realized stays unanswered where the sections meet, however often it is asked.
+#[test]
+fn a_chart_point_realizes_its_generator_only_where_the_sections_meet() {
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, QuadVal, plane_plane_cylinder};
+    use std::cell::Cell;
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let z = Rat::from_int;
+    let def = nacre_topo::CylinderDef::new(
+        [z(0); 3],
+        [z(0), z(0), z(1)],
+        [z(1), z(0), z(0)],
+        nacre_exact::BigRat::from(z(1)),
+    )
+    .unwrap();
+    let at_two = [z(0), z(0), z(1), z(-2)];
+    let slant = [z(-1), z(0), z(1), z(-1)];
+    let high = [z(0), z(0), z(1), z(-5)];
+    let generator = |x: i128| {
+        let wall = [z(1), z(0), z(0), z(-x)];
+        let Some(CylinderMeet::Tangent { line, s }) =
+            plane_plane_cylinder(&wall, &at_two, &def.origin(), &def.dir(), def.r2())
+        else {
+            panic!("the line x = {x}, z = 2 touches the cylinder")
+        };
+        (line, QuadVal::from_rat(s))
+    };
+    for (x, curve, want, calls) in [
+        (1, high, Less, 0),
+        (1, slant, Equal, 1),
+        (-1, slant, Greater, 1),
+    ] {
+        let n = Cell::new(0);
+        let realize = || {
+            n.set(n.get() + 1);
+            Some(generator(x))
+        };
+        let p = ChartPoint::lazy(at_two, &realize);
+        assert_eq!(p.order(&curve, &def), Some(want), "x = {x}, {curve:?}");
+        assert_eq!(
+            n.get(),
+            calls,
+            "realized {} times: x = {x}, {curve:?}",
+            n.get()
+        );
+    }
+    let n = Cell::new(0);
+    let fail = || {
+        n.set(n.get() + 1);
+        None
+    };
+    let p = ChartPoint::lazy(at_two, &fail);
+    assert_eq!(p.order(&slant, &def), None, "the touch needs the point");
+    assert_eq!(p.order(&slant, &def), None, "asked again after the failure");
+    assert_eq!(p.order(&high, &def), Some(Less), "apart needs no point");
+    assert_eq!(n.get(), 1, "the failure is remembered");
+}

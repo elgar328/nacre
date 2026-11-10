@@ -291,49 +291,89 @@ fn tools() -> [Tool; 9] {
     ]
 }
 
-/// Today's answer per body, per tool in [`tools`]' order, per order (the body first, then the
-/// tool). A cell reports the lowest-numbered class's refusal (`arrangement::result`'s
-/// `settle_rounds`) and the operands' order numbers the classes, so the two orders can name two.
+/// The answer per body, per tool in [`tools`]' order, per order (the body first, then the tool):
+/// built with these bodies, or refused by one name. A cell reports the lowest-numbered class's
+/// refusal (`arrangement::result`'s `settle_rounds`) and the operands' order numbers the classes, so
+/// the two orders can name two.
+///
+/// What still refuses, and why (each name's face measured):
+/// - the tool's plane holds the straight edge two of the body's top faces meet on — the ridge
+///   `x = 0, z = 5` (`z ≥ 5`, `x ≥ 0`; `x = 1` for the off-axis ridge) and the chamfer's
+///   `x = 1, z = 10` — and the trace of one of those **planar** faces declines `NoPinOnLine`, the
+///   wedge groove's refusal in `oblique_cut_rod.rs`;
+/// - `z = 4.5` against the roof's slanted faces, and `z = 5.5` against the valley's, cross their
+///   elliptical edges: the planar face's scan cannot name a point on an edge riding the cylinder
+///   (`CurvedRingWall`);
+/// - the steep valley: a slant's trace runs along its own arc from the valley's bottom corner,
+///   where it goes on inside the face, to the cap's corner, where it goes on outside — a run whose
+///   flanks differ, which `cycle_on_class` declines (measured at that arm; `ObliqueCylinderCut`);
+///   with the tool first,
+///   `z ≥ 5`, `z ≥ 5.5` and `x ≥ 0` name their own refusals before it;
+/// - the gate: the off-axis ridge's `z = 4.5`, `z = 5.5` and the prism's floor touch its
+///   slanted sections, and the steep valley's pin.
 fn wants() -> [[[Want; 2]; 9]; 5] {
     let decline = |kind| Err(RejectReason::TraceDeclined { kind, face: None });
-    let span: Want = decline(crate::DeclineKind::CylSpan);
     let ring_wall: Want = decline(crate::DeclineKind::CurvedRingWall);
     let no_pin: Want = decline(crate::DeclineKind::NoPinOnLine);
-    let gate: Want = Err(RejectReason::ObliqueCylinderCut);
+    // The gate's refusal and an oblique trace's decline share this name.
+    let oblique: Want = Err(RejectReason::ObliqueCylinderCut);
     let both = |w: Want| [w, w];
-    let s = both(span);
+    // Far apart: two bodies fused, the body itself cut, nothing in common.
+    let apart = both(Ok([2, 1, 0]));
+    let one = both(Ok([1, 1, 1]));
+    // The pin pokes out above the top and below the floor: the pin less the body is two.
+    let pin: [Want; 2] = [Ok([1, 1, 1]), Ok([1, 2, 1])];
     [
         // roof
-        [s, s, [span, ring_wall], [span, no_pin], s, s, s, s, s],
-        // valley
-        [s, s, s, [span, no_pin], [span, ring_wall], s, s, s, s],
-        // steep valley — the pin is refused at the gate
         [
-            s,
-            s,
-            s,
-            [span, no_pin],
-            [span, ring_wall],
-            s,
-            s,
-            both(gate),
-            s,
+            apart,
+            one,
+            both(ring_wall),
+            both(no_pin),
+            apart,
+            both(no_pin),
+            one,
+            pin,
+            one,
         ],
-        // ridge off the axis — the gate: `z = 4.5` and `z = 5.5` touch the slanted sections at their
-        // lowest and highest points, and the prism's floor touches `z = 9/2 + x/2`'s along `x = −2`
+        // valley
         [
-            s,
-            s,
-            both(gate),
-            [span, no_pin],
-            both(gate),
-            s,
-            s,
-            s,
-            both(gate),
+            apart,
+            one,
+            one,
+            both(no_pin),
+            both(ring_wall),
+            both(no_pin),
+            one,
+            pin,
+            one,
+        ],
+        // steep valley
+        [
+            both(oblique),
+            both(oblique),
+            both(oblique),
+            [oblique, no_pin],
+            [oblique, ring_wall],
+            [oblique, no_pin],
+            both(oblique),
+            both(oblique),
+            both(oblique),
+        ],
+        // ridge off the axis
+        [
+            apart,
+            one,
+            both(oblique),
+            both(no_pin),
+            both(oblique),
+            one,
+            both(no_pin),
+            pin,
+            both(oblique),
         ],
         // chamfered
-        [s; 9],
+        [apart, one, one, one, one, one, both(no_pin), pin, one],
     ]
 }
 

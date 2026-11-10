@@ -590,8 +590,8 @@ fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
 ///   two rulings, the cap a half-ellipse — of volume `10π`;
 /// - the rod notched on both sides (`zx_prism`): `x ≤ −3/2` over `1 ≤ z ≤ 5 + x`, and `x ≥ 3/2` over
 ///   `11/2 − x ≤ z ≤ 9` — two slanted notch floors that cross on the cylinder at `x = 1/4`, between
-///   the lateral's ends `z = 0` and `z = 10`, which still stand below and above every boundary
-///   section (`planes::section_ends`). With `S = 4·acos(3/4) − (3/4)√7` the area of the disk past
+///   the lateral's whole rims `z = 0` and `z = 10`, each still read as below or above the face by the
+///   rest of its boundary (`arrangement`'s `rim_side`). With `S = 4·acos(3/4) − (3/4)√7` the area of the disk past
 ///   `|x| = 3/2` and `7√7/12` its first moment, the notches take `(4S − 7√7/12) + (7S/2 + 7√7/12)`,
 ///   so the body is `40π − 15S/2`. The pin is refused in every cell by the nesting of a class's rings,
 ///   which finds no witness (`RingHasNoWitness`, `nesting`'s `inside`): the notch floors' planes

@@ -172,10 +172,9 @@ pub(crate) fn section_plane(
 /// ellipse's the band about its axis meet, rounded outward. `None` where a band cannot be read or the
 /// hull is a single height, and the consumer declines the face.
 ///
-/// **A reach, not the face's ends.** It is never narrower than the face — a section bounds the face
+/// **A reach, not the face's extent.** It is never narrower than the face — a section bounds the face
 /// only within its band — so a clearance proved against it holds; where every boundary section is a
-/// circle it is exactly the face's range ([`lateral_t_range`]). The face's ends are
-/// [`lateral_ends`].
+/// circle it is exactly the face's range ([`lateral_t_range`]).
 ///
 /// **Every loop, not the outer one.** A band's upper rim is an inner loop: read off the outer
 /// loop alone, the span of a lateral over `[0, 4]`
@@ -196,19 +195,6 @@ pub(super) fn lateral_axial_reach(
     }
     let [lo, hi] = hull?;
     (lo < hi).then_some([lo, hi])
-}
-
-/// **The planes of a lateral face's lowest and highest boundary sections** — its ends along the
-/// axis, [`section_ends`] of [`lateral_boundary_sections`]. `None` where the boundary cannot be read
-/// or no section stands at or below (or at or above) every other.
-pub(crate) fn lateral_ends(
-    model: &Model,
-    face: &nacre_topo::Face,
-    def: &nacre_topo::CylinderDef,
-) -> Option<[[nacre_exact::Rat; 4]; 2]> {
-    let sections = lateral_boundary_sections(model, face, def)?;
-    let [lo, hi] = section_ends(&sections, def)?;
-    Some([sections[lo], sections[hi]])
 }
 
 /// **The planes whose sections bound a lateral face** — the world coefficients of every boundary
@@ -302,52 +288,6 @@ pub(super) fn lateral_circle_heights(
         }
     }
     Some(ts)
-}
-
-/// **Which of a lateral face's boundary sections are its ends** — by index into `planes`, low
-/// first. The low end is the section at or below every other on every generator, the high end the
-/// one at or above every other, each asked of every other section by the one order of two sections
-/// ([`nacre_exact::quad::section_height_order`], with no generator); the first such section is
-/// taken.
-///
-/// **Every other, not a running extreme.** Two boundary sections that cross somewhere between the
-/// ends (two slanted notch floors on opposite sides of a rod) say nothing about where the face
-/// ends; a scan that keeps the lowest and highest so far and gives up at the first section crossing
-/// them refuses such a face, and in an order that depends on how its loops were walked.
-///
-/// `None` where no section is at or below (or above) every other — two sections cross where the
-/// end would be — where the two ends are one index (a single section, or two spellings of one
-/// plane: `Equal` between planes not along the axis is the same plane), or where an order it asks
-/// has no answer (a plane along the axis).
-pub(crate) fn section_ends(
-    planes: &[[nacre_exact::Rat; 4]],
-    def: &nacre_topo::CylinderDef,
-) -> Option<[usize; 2]> {
-    use core::cmp::Ordering::{Equal, Greater, Less};
-    use nacre_exact::quad::{SectionOrder, Toward, section_height_order};
-    let end = |side: core::cmp::Ordering| -> Option<Option<usize>> {
-        for (i, a) in planes.iter().enumerate() {
-            let mut holds = true;
-            for (j, b) in planes.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
-                match section_height_order(a, b, def, None, Toward::At)? {
-                    SectionOrder::Ordered(o) if o == side || o == Equal => {}
-                    _ => {
-                        holds = false;
-                        break;
-                    }
-                }
-            }
-            if holds {
-                return Some(Some(i));
-            }
-        }
-        Some(None)
-    };
-    let (lo, hi) = (end(Less)??, end(Greater)??);
-    (lo != hi).then_some([lo, hi])
 }
 
 /// **The angular extent of a lateral face** — the union of the arcs its outer loop's rim
