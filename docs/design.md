@@ -1873,7 +1873,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 
 스케치의 원·호가 프리즘 빌더에서 원통 옆면과 관통점이 되고(`ops::prism`, kit `build.rs`), 클래스 위의 자취는 축에 수직이면
 원, 비스듬하면 단면이다(`planes::cyl_geom` 의 `class_carries_circle`·`trace_band`·`arc_extent`,
-`arrangement::cyl_trace::trace_on_face`). 한 클래스가 원과 룰링을 함께 드는 규칙은 `per_class` 의 `ClassEdges::of` 가 진다.
+`arrangement::cyl_trace::trace_on_face`).
 
 - **`cylinder()` 는 원 스케치 + 돌출의 설탕이다**(kit) — 원시체 연산은 없다. 프리즘 빌더가 원·호를 원통 조각 벽과 관통점
   꼭짓점으로 세우고(호–호 접합은 원통 둘 위의 점), 사분각 밖의 호는 `refuse_non_quarter_arcs` 가 거절한다.
@@ -1907,7 +1907,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   어떤 면의 경계이므로 서로 다른 원통의 두 간선이 만나면 두 옆면이 한 점을 공유하고, 쌍 규칙(`lateral_faces_clear`)이 그것을
   부정한다. 배열의 그물(`circle_crosses_ruling` → `CircleCrossesRuling`)은 두 간선을 조각으로(원이 아니라 호, 직선이 아니라
   선분) `pieces_clear` 에 먼저 묻는 **backstop** 이고, 출하한다 — 만들어지지 않은 노드는 패닉이 아니라 조용히 틀린
-  솔리드다(`ClassEdges::of` 본문, `crossing_measured` doc). release 는 `debug_assert` 를 컴파일하지 않으므로 «되던 것이
+  솔리드다(`split_class_edges` 본문, `crossing_measured` doc). release 는 `debug_assert` 를 컴파일하지 않으므로 «되던 것이
   깨졌다»는 조용히 지나가던 것이 거절로 드러난 것일 수 있다. **접선은 «가로지름»이 아니다**: 그물은 경계를 인자로 든 문
   (`cylinder_ruling_reached_extent` 의 `touch_counts`)에 열린 물음을 하고, 이름이 그 명제를 말한다(`CircleCrossesRuling` doc).
 
@@ -1927,10 +1927,10 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 - **원통 위의 점도 이름 하나다** — `combinatorics::names_on_cylinder` 가 짓고, 씨앗(피연산자의 코너, 게이트의
   `SharedRuling`·`GrazeLine`)은 모두 `Aliases::record_cylinder_point` 로 간다. 대표는 관통 이름, 그 가운데 정확한
   이름이 먼저다(`Aliases::rep_rank`). 소비자는 `canon_point` 로 비교한다.
-- **이름의 같음은 수렴한 표에서만 묻는다.** 라운드 안에서 정확히 증명된 동점은 거절하지 않고 기록하고
-  (`Aliases::record_same_point`), 라운드가 거절하는 것은 같음이 아닌 것뿐이다 — 한 쌍의 두 근, 두 원통의 곡면 위의
-  점(`Aliases::join_points`), 한 경계가 한 점을 두 번 자름(꼭짓점 닿음 — `cyl_trace` 의 `CylHoleFeature`). 수렴한
-  표를 읽는 단계(pass B)는 어느 라운드도 기록하지 않은 동점을 거절한다.
+- **이름의 같음은 수렴한 표에서만 묻는다.** 배열이 정점 열쇠로 쓰는 이름은 모두 라운드 안에서 태어난다(원·룰링
+  분할 `split_class_edges` 도 라운드의 걸음). 정확히 증명된 동점은 기록하고(`Aliases::record_same_point`), 거절하는
+  것은 같음이 아닌 것뿐이다 — 한 쌍의 두 근, 두 원통의 곡면 위의 점(`Aliases::join_points`), 한 간선의 두 끝, 한
+  경계가 한 점을 두 번 자름(`cyl_trace` 의 `CylHoleFeature`). 그 거절도 표가 멈춘 라운드에서만 읽힌다(`fixed_point`).
 - **핀은 (이름, 선)의 함수다**(`combinatorics::pin_for`; 관통 이름은 제 짝의 두 평면이 다 품는 선에서만
   위치자다 — `names_the_line`). 피연산자의 관통 코너는 방문이 아니라 제 정의로 이름 짓는다
   (`pierce_name_from_def`). 대표 이름이 다른 쌍의 관통 이름인 점(공유 룰링 위)은 세 평면의 교점이라 유리수이고,
@@ -1939,7 +1939,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   교점은 절단점으로 남는다 — 호 밖이면 정점 하나가 늘 뿐이지만, 호 위의 교점을 빼면 정점을 잃는다.
 - **룰링이면서 평면 쌍 선인 선은 «옆면이 거기서 끝나는가»가 어휘를 정한다** — 끝나면 평면 어휘
   (`rulings::lateral_half_of_plane_pair_lines`; 접하는 클래스는 `CylRecord::Touches`), 가로지르면 룰링 어휘
-  (`split_rulings` 의 접기). **선은 그 위의 모든 꼭짓점에서 잘린다**(`cut_rulings` — pass A 는
+  (`split_rulings` 의 접기). **선은 그 위의 모든 꼭짓점에서 잘린다**(`cut_rulings` — 선을 따르는 선분의 끝은
   `cut_rulings_along_segments`).
 - 그 밖의 이름 자리: «어느 룰링인가»는 점과 벽의 함수(`ruling_side_signed`), 직선 간선의 열쇠는 두 끝이고 담체는
   쓰는 두 면의 곡면(`EdgeKey::Line`·`JoinKey::Line` — `assembly::reconstruct` 의 그 자리 주석; 한 직선의 두 철자는
@@ -1967,7 +1967,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
 ### 분할과 자국
 
 한 클래스의 배열은 세그먼트를 원·룰링과 만나는 점에서 자른다(`arrangement::per_class` → `arrangement::crossings`의
-`collect`·`Landing`·`split_segments_at`·`order_distinct`, 어휘 `Split`·`Piece`, 순서 `combinatorics::order_on`). 링을 선에
+`collect`·`Landing`·`split_segments_at`·`order_recording_ties`, 어휘 `Split`·`Piece`, 순서 `combinatorics::order_on`). 링을 선에
 대어 읽는 걸음은 `combinatorics::ring_walk`(`ring_against_plane`) 하나다.
 
 - 선분 대 곡선은 한 단계를 곡선 종류마다 한 번씩 돈다(원 먼저 — `per_class`); 축을 따르는 선분은

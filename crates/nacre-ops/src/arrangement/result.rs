@@ -346,8 +346,27 @@ pub(crate) fn whole_result_faces(
     Ok((faces, rims))
 }
 
-/// One class's segments, circles and ruling pieces, as pass B reads them.
+/// One class's segments, circles and ruling pieces, before the circles and rulings are split.
 pub(super) type Skeleton = (Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedRuling>);
+
+/// **One class's traced edges, split** — pass A's step for one class: the skeleton
+/// ([`class_skeleton`]), then its circles and rulings split against its segments
+/// ([`split_class_edges`]). Every step learns into `local`, so every name the class's edges carry
+/// is born inside the round.
+pub(super) fn class_split(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[FaceRow],
+    wc: usize,
+    tr: &Trace,
+    local: &mut Aliases,
+) -> Result<ClassSplit, BoolError> {
+    let (segs, circles, rulings) = class_skeleton(jd, cyls, wc, tr, local)?;
+    timed!(
+        C_SPLIT,
+        split_class_edges(jd, cyls, faces, wc, &segs, &circles, &rulings, local)
+    )
+}
 
 /// **One class's traced edges, merged and split** — pass A's skeleton step: the segments merged
 /// where coincident ([`merge_coincident`]) and cut at their crossings ([`split_at_crossings`],
@@ -406,7 +425,7 @@ pub(super) fn work_classes(
 }
 
 /// **The alias rounds: pass A, run until the table stops growing** — the settled table, and each
-/// class of `work` traced and split on it ([`class_skeleton`]), or the refusal it met there.
+/// class of `work` traced and split on it ([`class_split`]), or the refusal it met there.
 ///
 /// Two passes, because an identity must not depend on the order classes happen to be visited.
 /// Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
@@ -426,7 +445,7 @@ pub(super) fn settle_rounds(
     plane_ix: &[ClassIx],
     trace_in: &combinatorics::TraceInput,
     work: &[usize],
-) -> Result<(Aliases, Vec<Result<Skeleton, BoolError>>), BoolError> {
+) -> Result<(Aliases, Vec<Result<ClassSplit, BoolError>>), BoolError> {
     let mut aliases = Aliases::default();
     seed_from_operands(&mut aliases, jd, cyls, trace_in);
     let absorb = |table: &mut Aliases, local: &Aliases| table.absorb(jd, local).map_err(reject);
@@ -460,7 +479,7 @@ pub(super) fn settle_rounds(
             local
                 .absorb(jd, &std::mem::take(&mut tr.aliases))
                 .map_err(reject)?;
-            let skeleton = class_skeleton(jd, cyls, wc, &tr, &mut local)?;
+            let skeleton = class_split(jd, cyls, faces, wc, &tr, &mut local)?;
             Ok((skeleton, local))
         })
     })
@@ -560,9 +579,9 @@ pub(super) fn trace_result_faces(
     let work = work_classes(trace_in, plane_ix);
     let (aliases, classes) = settle_rounds(jd, cyls, faces, plane_ix, trace_in, &work)?;
     // The lowest class's refusal, read on the settled table.
-    let splits: Vec<Skeleton> = classes.into_iter().collect::<Result<_, _>>()?;
+    let splits: Vec<ClassSplit> = classes.into_iter().collect::<Result<_, _>>()?;
 
-    // Pass B is independent per class — it reads `splits[wc]` and the judging context, and
+    // Pass B is independent per class — it reads `splits[k]` and the judging context, and
     // returns owned faces — so it is evaluated across cores. `try_map_range` is what keeps
     // that from being observable: the faces are consumed in class order, so the handles
     // `assemble_fuse_cut` mints are the ones a single thread would have minted, and the refusal is
@@ -577,7 +596,6 @@ pub(super) fn trace_result_faces(
 
     let one_class = |k: usize| {
         let wc = work[k];
-        let (split, circles, rulings) = &splits[k];
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
         // off), the cut rims and the rulings' extents.
@@ -592,18 +610,15 @@ pub(super) fn trace_result_faces(
             watch!(CELLS);
             // **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
             // everything below must read the *same* edges the walk did — building it here is what
-            // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
-            // pipeline and must build it the same way; the arc fence locks that they agree.)
-            let edges = timed!(
-                C_SPLIT,
-                ClassEdges::of(jd, cyls, faces, wc, split, circles, rulings, &aliases)
-            )?;
+            // makes that structural instead of a promise. (`frame_audit` reads the same split; the
+            // arc fence locks that they agree.)
+            let edges = ClassEdges::of(cyls, wc, &splits[k]);
             let s = per_class(jd, cyls, kind, wc, &edges)?;
             Ok((
                 s.faces,
                 s.disk_labels,
                 s.arc_labels,
-                edges.cut_rims.clone(),
+                edges.cut_rims.to_vec(),
                 s.ruling_extents,
             ))
         };

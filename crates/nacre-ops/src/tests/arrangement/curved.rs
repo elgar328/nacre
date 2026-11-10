@@ -201,20 +201,25 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
     }
 }
 
-/// **A crossing the three-point question cannot place stays for the order, which refuses it by
-/// name.** The boss's axis is at `(40, 5)`, so its circle in the plate's top class passes the
-/// plate's corner `(40, 0, 20)`: the wall `y = 0` touches it there (the tangency, skipped as a
+/// **A crossing the three-point question cannot place stays for the order, and the round records
+/// its second name.** The boss's axis is at `(40, 5)`, so its circle in the plate's top class passes
+/// the plate's corner `(40, 0, 20)`: the wall `y = 0` touches it there (the tangency, skipped as a
 /// crossing) and the wall `x = 40` crosses it there and at `(40, 10, 20)`. An arc from the touch
 /// point, named on `y = 0` as a fillet's arc end is named on its tangent wall, to the far crossing
 /// has the near crossing as another name of its end, which no alias states — so the three-point
 /// order of the arc's ends and that crossing is `Coincident` (both lie on the seam, `(40, 0)`), and
 /// `theta_between` is `None`. Dropped as if it were off the arc, the point would stay under two
-/// names nothing refuses — the arc ending at the touch point, the segment `x = 40` at the
-/// plate's corner. Kept, the circle's order refuses the two names. Control: the same names folded
-/// as the table's corner seeding folds them ([`Aliases::record_on_cylinder`]) are one point, and
-/// the class's edges are built.
+/// names — the arc ending at the touch point, the segment `x = 40` at the plate's corner. Kept, the
+/// circle's θ order ties the two names, and the split (a step of the alias rounds) records them as
+/// one point and stands; the next round, on the grown table, reads one name and learns nothing —
+/// red when the tie is refused. The record is made twice here: the segment `x = 40` ends at the
+/// plate's corner, so its split ties the near crossing with that end and records the point with
+/// every name its planes give it on the cylinder, the touch point's included — the circle's own
+/// record is not what this test can see (measured: skipping it leaves the test green). Control: the
+/// same names folded as the table's corner seeding folds them ([`Aliases::record_on_cylinder`])
+/// leave the split nothing to learn.
 #[test]
-fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
+fn an_arc_ends_unaliased_second_name_is_recorded_by_the_round() {
     let (m, plate, boss, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let def = setup.cyls[0].def.clone();
@@ -254,16 +259,16 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
             && combinatorics::circular_order(&jd, 0, &def, &[touch, far]).is_ok(),
         "one crossing of x = 40 is the touch point and the other is not"
     );
-    let edges = |aliases: &Aliases| {
+    let round = |table: &mut Aliases| {
         let circle = MergedCircle {
             cyl: 0,
             merged: vec![(
                 SolidSide::B,
                 SegKind::Seated { body_above: true },
-                Some([touch, far].map(|n| aliases.canon_point(n))),
+                Some([touch, far].map(|n| table.canon_point(n))),
             )],
         };
-        ClassEdges::of(
+        split_class_edges(
             &jd,
             &setup.cyls,
             &setup.planes,
@@ -271,32 +276,39 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
             &split,
             std::slice::from_ref(&circle),
             &[],
-            aliases,
+            table,
         )
         .map(|_| ())
     };
-    let coincident = |r: &Result<(), BoolError>| {
-        matches!(
-            r,
-            Err(BoolError::Rejected {
-                reason: RejectReason::CoincidentNodes,
-                ..
-            })
-        )
-    };
-    let named = edges(&Aliases::default());
-    assert!(coincident(&named), "the end's two names: {named:?}");
-    let mut aliases = Aliases::default();
-    aliases
+    let mut table = Aliases::default();
+    let first = round(&mut table);
+    assert!(first.is_ok(), "the round records the tie: {first:?}");
+    assert_eq!(
+        table.canon_point(near),
+        table.canon_point(touch),
+        "the end's second name is the end"
+    );
+    let learned = table.learned();
+    let next = round(&mut table);
+    assert!(next.is_ok(), "one point under one name: {next:?}");
+    assert_eq!(table.learned(), learned, "the next round learns nothing");
+    let mut seeded = Aliases::default();
+    seeded
         .record_on_cylinder(&jd, &setup.cyls, touch, x40)
         .expect("one cylinder");
     assert_eq!(
-        aliases.canon_point(near),
-        aliases.canon_point(touch),
+        seeded.canon_point(near),
+        seeded.canon_point(touch),
         "the corner seeding folds the two"
     );
-    let folded = edges(&aliases);
+    let learned = seeded.learned();
+    let folded = round(&mut seeded);
     assert!(folded.is_ok(), "one point under one name: {folded:?}");
+    assert_eq!(
+        seeded.learned(),
+        learned,
+        "seeded, the split has nothing to learn"
+    );
 }
 
 /// **A ray through a closed arc's node crosses it there once** (`point_in_mixed_ring`,
@@ -497,7 +509,7 @@ fn the_armed_wall_class_walks_to_closed_cells() {
     // belongs to a *different*, perpendicular cylinder.
     assert!(circles.is_empty(), "this class meets no ⊥ cylinder");
     assert_eq!(rulings.len(), 2);
-    let edges = ClassEdges::of(
+    let edges = split_edges(
         &jd,
         &setup.cyls,
         &setup.planes,
@@ -508,6 +520,7 @@ fn the_armed_wall_class_walks_to_closed_cells() {
         &Aliases::default(),
     )
     .unwrap();
+    let edges = ClassEdges::of(&setup.cyls, wc, &edges);
     assert_eq!(
         edges
             .pieces
@@ -538,40 +551,28 @@ fn the_armed_wall_class_walks_to_closed_cells() {
     );
 }
 
-/// One armed class's arrangement, through the production bricks (the chain
+/// One armed class's split edges, through the production bricks (the chain
 /// `the_armed_wall_class_walks_to_closed_cells` spells out) — for the locks that need
 /// several classes' products at once.
-fn armed_class_edges<'a>(
+fn armed_class_edges(
     m: &Model,
     plate: Handle<Solid>,
     boss: Handle<Solid>,
-    setup: &'a crate::arrangement::PlaneSetup,
-    jd: &Judge<'a, WorkingPlane>,
+    setup: &crate::arrangement::PlaneSetup,
+    jd: &Judge<'_, WorkingPlane>,
     wc: usize,
-) -> ClassEdges<'a> {
+) -> ClassSplit {
     let tr = trace_on_class_of(m, plate, boss, wc, jd, &setup.cyls, setup);
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-    let (split, circles, rulings) =
-        class_skeleton(jd, &setup.cyls, wc, &tr, &mut Aliases::default()).unwrap();
-    let e = ClassEdges::of(
+    class_split(
         jd,
         &setup.cyls,
         &setup.planes,
         wc,
-        &split,
-        &circles,
-        &rulings,
-        &Aliases::default(),
+        &tr,
+        &mut Aliases::default(),
     )
-    .unwrap();
-    // Owned copies so the borrows above may end — a test convenience, not a production shape.
-    ClassEdges {
-        pieces: e.pieces,
-        cyls: &setup.cyls,
-        circles: std::borrow::Cow::Owned(e.circles.into_owned()),
-        cut_rims: e.cut_rims,
-        wc: e.wc,
-    }
+    .unwrap()
 }
 
 /// **A ruling is asked against the plane its side was measured on, and a tangent one too.**
@@ -1178,6 +1179,7 @@ fn armed_curved(
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in [z0, z20, cap_lo, cap_hi, wc] {
         let edges = armed_class_edges(m, plate, boss, setup, jd, c);
+        let edges = ClassEdges::of(&setup.cyls, c, &edges);
         let staged = per_class(jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), *label);
@@ -1185,7 +1187,7 @@ fn armed_curved(
         for (cyl, al) in &staged.arc_labels {
             arc_labels.entry((*cyl, c)).or_default().push(al.clone());
         }
-        for (cyl, rim) in &edges.cut_rims {
+        for (cyl, rim) in edges.cut_rims {
             cut_rims.insert((*cyl, c), rim.clone());
         }
         for (cyl, r) in staged.ruling_extents {
@@ -1398,6 +1400,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in 0..setup.geom.len() {
         let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c);
+        let edges = ClassEdges::of(&setup.cyls, c, &edges);
         let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), *label);
@@ -1408,7 +1411,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         for (cyl, al) in &staged.arc_labels {
             arc_labels.entry((*cyl, c)).or_default().push(al.clone());
         }
-        for (cyl, rim) in &edges.cut_rims {
+        for (cyl, rim) in edges.cut_rims {
             cut_rims.insert((*cyl, c), rim.clone());
         }
         for (cyl, r) in staged.ruling_extents {
@@ -1791,7 +1794,7 @@ fn with_cut_rings(
         else {
             continue;
         };
-        let Ok(edges) = ClassEdges::of(
+        let Ok(edges) = split_edges(
             &jd,
             &setup.cyls,
             &[],
@@ -1803,6 +1806,7 @@ fn with_cut_rings(
         ) else {
             continue;
         };
+        let edges = ClassEdges::of(&setup.cyls, wc, &edges);
         // The arcs' piece indices, in order.
         let arcs: Vec<usize> = (0..edges.pieces.len())
             .filter(|&i| matches!(edges.pieces[i].on, OnCurve::Arc { .. }))
@@ -2126,7 +2130,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
         else {
             continue;
         };
-        let Ok(edges) = ClassEdges::of(
+        let Ok(edges) = split_edges(
             &jd,
             &setup.cyls,
             &[],
@@ -2138,6 +2142,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
         ) else {
             continue;
         };
+        let edges = ClassEdges::of(&setup.cyls, wc, &edges);
         let Ok((cells, _)) = walk_cells(&jd, &setup.cyls, wc, &edges) else {
             continue;
         };
@@ -2310,8 +2315,8 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
     );
 
     let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
-    let edges =
-        ClassEdges::of(&jd, &cyls, &[], wc, &[], &circles, &[], &Aliases::default()).unwrap();
+    let edges = split_edges(&jd, &cyls, &[], wc, &[], &circles, &[], &Aliases::default()).unwrap();
+    let edges = ClassEdges::of(&cyls, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
     // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
     assert_eq!(cells.len(), 2, "{cells:?}");
@@ -2395,7 +2400,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         "the cap ring alone — the circle owes the splitter nothing"
     );
 
-    let edges = ClassEdges::of(
+    let edges = split_edges(
         &jd,
         &setup.cyls,
         &[],
@@ -2406,6 +2411,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         &Aliases::default(),
     )
     .unwrap();
+    let edges = ClassEdges::of(&setup.cyls, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, &setup.cyls, wc, &edges).unwrap();
     assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
     let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();

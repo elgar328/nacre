@@ -333,136 +333,150 @@ pub(crate) static MIXED_CLASS_AUDIT: MixedClassAudit = MixedClassAudit {
     unmeasured: std::sync::atomic::AtomicUsize::new(0),
 };
 
-impl<'a> ClassEdges<'a> {
-    /// Run the arc split and, when the class carries rulings, the ruling split, and hold the result
-    /// as one list of pieces: **the one place a class's edges are assembled.**
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn of(
-        jd: &Judge<'_, WorkingPlane>,
-        cyls: &'a [crate::planes::WorkingCyl],
-        faces: &[FaceRow],
-        wc: usize,
-        segs: &'a [MergedSeg],
-        circles: &'a [MergedCircle],
-        rulings: &'a [MergedRuling],
-        aliases: &Aliases,
-    ) -> Result<Self, BoolError> {
-        use std::borrow::Cow;
-        // **A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's)
-        // at once, and that is not a refusal**. What would be unarrangeable is the two
-        // **meeting**: neither split cuts the other's kind — [`split_circles`] cuts circles
-        // against segments, [`split_rulings`] cuts rulings against segments — so a crossing they
-        // both walked past would be a node no road ever mints, and the point itself is
-        // `plane ∩ cylinder ∩ cylinder`, a nested radical with no name.
-        //
-        // **That population cannot reach here, by two layers.** A circle only becomes an edge
-        // *whole* (a partial trace forces its own cut, and `PartialCircleUncut` names the
-        // alternative) and a ruling is a segment of a **face**, so two such edges meeting means
-        // two lateral **faces** share a point — exactly what [`crate::planes::lateral_faces_clear`]
-        // is written to deny ("the two classes share no face — the proposition the arrangement
-        // needs"). A pair not shown to clear is `CylinderPairContact`, raised before any
-        // arrangement runs. That covers pairs from **different** solids; the pair loop skips
-        // same-solid pairs on purpose. But a same-solid pair cannot be built either: two cylinder
-        // faces whose axes are *not* parallel need two extrude directions, hence a boolean, and
-        // at that boolean they are on opposite sides and meet the very gate above. (Two arcs of one
-        // sketch do make one body whose cylinders meet — with **parallel** axes, which never put a
-        // circle and a ruling on one class, and such an operand is refused at the boolean's entry
-        // anyway, `CylinderPairEdge`.) A circle and rulings that do not meet make an ordinary
-        // class: the cap of a pin nested crosswise in a larger cylinder holds the pin's circle
-        // between the larger one's rulings, and the cap a crosswise stud stands proud of holds the
-        // stud's rulings inside its circle.
-        //
-        // **So the check below is a net over an argument, not a filter over a population**,
-        // and it ships rather than sitting under `debug_assertions`: the day the cylinder-pair
-        // refusal opens, this population becomes real, and the obligation to carry a shipped check
-        // then is written at that refusal, where it would be read.
-        //
-        // **The question is asked of the two edges as pieces** — the arc a contribution states,
-        // not the whole circle (which is not an edge of any face when the face uses a quarter of
-        // it, and reading it that way refuses a plate whose corner fillets never come near a
-        // crosswise drill), and the ruling's segment, not its line (whose line runs past the end
-        // of a short crosswise cylinder and through a cap circle its segment never reaches). Asked
-        // so, it is the pair rule's own question ([`crate::planes::pieces_clear`]), and the
-        // argument holds edge for edge: a pair the gate proved apart has its edges apart.
-        //
-        // **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
-        // ruling×ruling are cut by nothing, and all three are safe for the same reason: **a
-        // class's edge is some face's boundary** (or, for an oblique section, a curve on a
-        // lateral face), so two of them from different cylinders meeting puts two lateral
-        // faces on one point. Only this pair carries a check, because only this
-        // pair has a cheap exact predicate; building detectors for populations that cannot arrive
-        // measures nothing.
-        //
-        // A pair that could not be measured refuses too — by the net's name, or on an oblique
-        // section by the coverage's (`circle_crosses_ruling`): honest-reject over silent-wrong, and
-        // measured to fire on nothing today (`unmeasured` is 0 across the corpus, the census and
-        // the kit).
-        if !rulings.is_empty() && !circles.is_empty() {
-            for c in circles {
-                for ru in rulings {
-                    let crosses = circle_crosses_ruling(jd, cyls, wc, c, ru);
-                    #[cfg(debug_assertions)]
-                    {
-                        use std::sync::atomic::Ordering;
-                        MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
-                        if crosses.is_err() {
-                            MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
-                        }
+/// Run the arc split and, when the class carries rulings, the ruling split, and hold the result
+/// as one list of pieces: **the one place a class's edges are split** — a step of the alias rounds
+/// ([`class_split`]), so a tie between a crossing it names and a name already there is recorded
+/// in `aliases` ([`Aliases::record_same_point`]) for the next round rather than refused.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn split_class_edges(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[FaceRow],
+    wc: usize,
+    segs: &[MergedSeg],
+    circles: &[MergedCircle],
+    rulings: &[MergedRuling],
+    aliases: &mut Aliases,
+) -> Result<ClassSplit, BoolError> {
+    use std::borrow::Cow;
+    // **A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's)
+    // at once, and that is not a refusal**. What would be unarrangeable is the two
+    // **meeting**: neither split cuts the other's kind — [`split_circles`] cuts circles
+    // against segments, [`split_rulings`] cuts rulings against segments — so a crossing they
+    // both walked past would be a node no road ever mints, and the point itself is
+    // `plane ∩ cylinder ∩ cylinder`, a nested radical with no name.
+    //
+    // **That population cannot reach here, by two layers.** A circle only becomes an edge
+    // *whole* (a partial trace forces its own cut, and `PartialCircleUncut` names the
+    // alternative) and a ruling is a segment of a **face**, so two such edges meeting means
+    // two lateral **faces** share a point — exactly what [`crate::planes::lateral_faces_clear`]
+    // is written to deny ("the two classes share no face — the proposition the arrangement
+    // needs"). A pair not shown to clear is `CylinderPairContact`, raised before any
+    // arrangement runs. That covers pairs from **different** solids; the pair loop skips
+    // same-solid pairs on purpose. But a same-solid pair cannot be built either: two cylinder
+    // faces whose axes are *not* parallel need two extrude directions, hence a boolean, and
+    // at that boolean they are on opposite sides and meet the very gate above. (Two arcs of one
+    // sketch do make one body whose cylinders meet — with **parallel** axes, which never put a
+    // circle and a ruling on one class, and such an operand is refused at the boolean's entry
+    // anyway, `CylinderPairEdge`.) A circle and rulings that do not meet make an ordinary
+    // class: the cap of a pin nested crosswise in a larger cylinder holds the pin's circle
+    // between the larger one's rulings, and the cap a crosswise stud stands proud of holds the
+    // stud's rulings inside its circle.
+    //
+    // **So the check below is a net over an argument, not a filter over a population**,
+    // and it ships rather than sitting under `debug_assertions`: the day the cylinder-pair
+    // refusal opens, this population becomes real, and the obligation to carry a shipped check
+    // then is written at that refusal, where it would be read.
+    //
+    // **The question is asked of the two edges as pieces** — the arc a contribution states,
+    // not the whole circle (which is not an edge of any face when the face uses a quarter of
+    // it, and reading it that way refuses a plate whose corner fillets never come near a
+    // crosswise drill), and the ruling's segment, not its line (whose line runs past the end
+    // of a short crosswise cylinder and through a cap circle its segment never reaches). Asked
+    // so, it is the pair rule's own question ([`crate::planes::pieces_clear`]), and the
+    // argument holds edge for edge: a pair the gate proved apart has its edges apart.
+    //
+    // **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
+    // ruling×ruling are cut by nothing, and all three are safe for the same reason: **a
+    // class's edge is some face's boundary** (or, for an oblique section, a curve on a
+    // lateral face), so two of them from different cylinders meeting puts two lateral
+    // faces on one point. Only this pair carries a check, because only this
+    // pair has a cheap exact predicate; building detectors for populations that cannot arrive
+    // measures nothing.
+    //
+    // A pair that could not be measured refuses too — by the net's name, or on an oblique
+    // section by the coverage's (`circle_crosses_ruling`): honest-reject over silent-wrong, and
+    // measured to fire on nothing today (`unmeasured` is 0 across the corpus, the census and
+    // the kit).
+    if !rulings.is_empty() && !circles.is_empty() {
+        for c in circles {
+            for ru in rulings {
+                let crosses = circle_crosses_ruling(jd, cyls, wc, c, ru);
+                #[cfg(debug_assertions)]
+                {
+                    use std::sync::atomic::Ordering;
+                    MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
+                    if crosses.is_err() {
+                        MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
                     }
-                    match crosses {
-                        Ok(false) => {}
-                        Ok(true) => return Err(reject(RejectReason::CircleCrossesRuling)),
-                        Err(reason) => return Err(reject(reason)),
-                    }
+                }
+                match crosses {
+                    Ok(false) => {}
+                    Ok(true) => return Err(reject(RejectReason::CircleCrossesRuling)),
+                    Err(reason) => return Err(reject(reason)),
                 }
             }
         }
-        type AfterCircles<'a> = (
-            Cow<'a, [MergedSeg]>,
-            Vec<Piece>,
-            Cow<'a, [MergedCircle]>,
-            Vec<(usize, CutRim)>,
-        );
-        // **Circles first, then rulings — one step per curve kind, in this order.** The step that
-        // refuses first names the boolean, so which name a refused input carries rests on it.
-        let (segs2, arcs, circles2, cut_rims): AfterCircles<'a> =
-            match split_circles(jd, cyls, wc, segs, circles, aliases)? {
-                Some((s, c, a, r)) => {
-                    // The names below rest on this: `split_circles` answers `Some` only when some
-                    // circle collected a node — an arc's end or a crossing — and either yields at
-                    // least one arc (a tangency is skipped before it is collected). So "was split"
-                    // and "has arcs" are one fact.
-                    debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
-                    (Cow::Owned(s), a, Cow::Owned(c), r)
-                }
-                None => (
-                    Cow::Borrowed(segs),
-                    Vec::new(),
-                    Cow::Borrowed(circles),
-                    Vec::new(),
-                ),
-            };
-
-        let (segs3, rulings2) = match split_rulings(jd, cyls, faces, wc, &segs2, rulings, aliases)?
-        {
-            Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
-            None => (segs2, Cow::Borrowed(rulings)),
+    }
+    type AfterCircles<'a> = (
+        Cow<'a, [MergedSeg]>,
+        Vec<Piece>,
+        Cow<'a, [MergedCircle]>,
+        Vec<(usize, CutRim)>,
+    );
+    // **Circles first, then rulings — one step per curve kind, in this order.** The step that
+    // refuses first names the boolean, so which name a refused input carries rests on it.
+    let (segs2, arcs, circles2, cut_rims): AfterCircles<'_> =
+        match split_circles(jd, cyls, wc, segs, circles, aliases)? {
+            Some((s, c, a, r)) => {
+                // The names below rest on this: `split_circles` answers `Some` only when some
+                // circle collected a node — an arc's end or a crossing — and either yields at
+                // least one arc (a tangency is skipped before it is collected). So "was split"
+                // and "has arcs" are one fact.
+                debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
+                (Cow::Owned(s), a, Cow::Owned(c), r)
+            }
+            None => (
+                Cow::Borrowed(segs),
+                Vec::new(),
+                Cow::Borrowed(circles),
+                Vec::new(),
+            ),
         };
-        // Segments, then arcs, then ruling pieces — the order [`ClassEdges`] numbers them in.
-        let pieces = segs3
-            .into_owned()
-            .into_iter()
-            .map(Piece::from)
-            .chain(arcs)
-            .chain(rulings2.into_owned().into_iter().map(Piece::from))
-            .collect();
-        Ok(ClassEdges {
-            pieces,
+
+    let (segs3, rulings2) = match split_rulings(jd, cyls, faces, wc, &segs2, rulings, aliases)? {
+        Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
+        None => (segs2, Cow::Borrowed(rulings)),
+    };
+    // Segments, then arcs, then ruling pieces — the order [`ClassEdges`] numbers them in.
+    let pieces = segs3
+        .into_owned()
+        .into_iter()
+        .map(Piece::from)
+        .chain(arcs)
+        .chain(rulings2.into_owned().into_iter().map(Piece::from))
+        .collect();
+    Ok(ClassSplit {
+        pieces,
+        circles: circles2.into_owned(),
+        cut_rims,
+    })
+}
+
+impl<'a> ClassEdges<'a> {
+    /// The class's split edges as the cells read them — one numbering over pass A's product.
+    pub(super) fn of(
+        cyls: &'a [crate::planes::WorkingCyl],
+        wc: usize,
+        split: &'a ClassSplit,
+    ) -> Self {
+        ClassEdges {
+            pieces: &split.pieces,
             cyls,
-            circles: circles2,
-            cut_rims,
+            circles: &split.circles,
+            cut_rims: &split.cut_rims,
             wc,
-        })
+        }
     }
 
     /// Where the walk's half-edges end and the circles' pseudo-half-edges begin.

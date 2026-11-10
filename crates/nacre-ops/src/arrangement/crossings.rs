@@ -23,7 +23,7 @@ pub(super) fn split_circles(
     wc: usize,
     segs: &[MergedSeg],
     circles: &[MergedCircle],
-    aliases: &Aliases,
+    aliases: &mut Aliases,
 ) -> Result<SplitCircles, BoolError> {
     // Nothing to cross. The ends below are built for the whole slice at once, so the empty case has
     // to be answered before them or an empty class would start declining. `split_rulings` opens
@@ -35,7 +35,6 @@ pub(super) fn split_circles(
     // Which nodes land on each circle, and which on each segment. Collected together because one
     // crossing is a point of both — splitting only one of them would leave the other's edge running
     // through a vertex it does not have.
-    let canon = |x: NodeId| aliases.canon_point(x);
     let mut on_circle: Vec<Vec<NodeId>> = vec![Vec::new(); circles.len()];
     // **A contribution's own ends are cut points, and that is a rule rather than a hope.**
     // Where a lateral face's hole starts is where the material a class sees changes, and the
@@ -134,12 +133,13 @@ pub(super) fn split_circles(
         //
         // The crossing travels under the table's name: a class through a corner names the corner
         // again here, and the tables key by name.
-        |cyl, n, _meet| {
+        |al, cyl, n, _meet| {
             let ci = index(cyl);
-            let x = canon(n);
+            let x = al.canon_point(n);
             let on = Landing::On {
                 cut: Some(ci),
                 node: x,
+                ties: Vec::new(),
             };
             let Some(extents) = circles[ci]
                 .merged
@@ -150,8 +150,8 @@ pub(super) fn split_circles(
                 return on;
             };
             let off = !extents.is_empty()
-                && extents.iter().all(|&[p, q]| !aliases.one_point(p, q))
-                && !extents.iter().flatten().any(|&e| aliases.one_point(e, x))
+                && extents.iter().all(|&[p, q]| !al.one_point(p, q))
+                && !extents.iter().flatten().any(|&e| al.one_point(e, x))
                 && extents.iter().all(|&[p, q]| {
                     combinatorics::theta_between(jd, cyl, &cyls[cyl].def, p, q, x) == Some(false)
                 });
@@ -197,8 +197,39 @@ pub(super) fn split_circles(
         }
         nodes.sort_unstable();
         // ---- the circle → arcs, in θ order about the seam ----
-        let order = combinatorics::circular_order(jd, circ.cyl, &cyls[circ.cyl].def, &nodes)
+        // **One θ is one point** — a tie of the exact order is a proof — so the names a group
+        // holds are recorded as one for the next round ([`Aliases::record_same_point`]) and the
+        // group stands under one of them: an arc's end where it holds one, because the arcs are
+        // looked up by their ends. One contribution's two ends in one group are an arc of no
+        // length, refused.
+        let groups = combinatorics::theta_groups(jd, circ.cyl, &cyls[circ.cyl].def, &nodes)
             .map_err(|e| reject(e.reason()))?;
+        let mut kept: Vec<NodeId> = Vec::with_capacity(groups.len());
+        for g in &groups {
+            let holds = |x: NodeId| g.iter().any(|&i| nodes[i] == x);
+            if circ
+                .merged
+                .iter()
+                .any(|&(_, _, arc)| arc.is_some_and(|[p, q]| p != q && holds(p) && holds(q)))
+            {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+            let keep = g
+                .iter()
+                .copied()
+                .find(|&i| is_end(nodes[i]))
+                .unwrap_or(g[0]);
+            for &i in g {
+                if i != keep && !aliases.one_point(nodes[keep], nodes[i]) {
+                    aliases
+                        .record_same_point(jd, cyls, nodes[keep], nodes[i])
+                        .map_err(reject)?;
+                }
+            }
+            kept.push(nodes[keep]);
+        }
+        let nodes = kept;
+        let order: Vec<usize> = (0..nodes.len()).collect();
         // θ position of each node, so an extent can be tested against an arc by rank alone.
         let mut at = vec![0usize; order.len()];
         for (k, &i) in order.iter().enumerate() {
@@ -286,7 +317,7 @@ pub(super) fn split_segments_at(
     wc: usize,
     segs: &[MergedSeg],
     on_seg: &mut [Vec<NodeId>],
-    aliases: &Aliases,
+    aliases: &mut Aliases,
 ) -> Result<Vec<MergedSeg>, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
     let mut out_segs = Vec::with_capacity(segs.len());
@@ -337,9 +368,9 @@ pub(super) fn split_segments_at(
             keyed.push((Split::of(n, pin).on(wc, sg.wall), n, pin));
         }
         // **A crossing that *is* an endpoint is one point with one name, so it is deduped rather
-        // than refused.** "One point wearing two names, a three-plane one and a pierce one" is true
-        // and refused, but only for the case it describes: a crossing at a *three-plane* end really
-        // does carry a second name, and the equality check below catches it. Where the end was
+        // than recorded.** "One point wearing two names, a three-plane one and a pierce one" is true,
+        // but only for the case it describes: a crossing at a *three-plane* end really does carry a
+        // second name, and the order below ties and records it. Where the end was
         // pinned by a cylinder, its name **is** the crossing's `Pierce{planes, cyl, root}` — the
         // same vertex, arrived at twice — and shipping it twice would put a zero-length piece
         // between a point and itself.
@@ -349,13 +380,13 @@ pub(super) fn split_segments_at(
         // `ThreePlane([cap, t, wc])`; `Aliases::record_on_cylinder` has joined them, so the
         // crossing folds onto the end here as it would had the names been equal. The end's own
         // name and pin stay on the slot — they are the canonical ones (`merge_coincident`) and
-        // the pieces emitted below are keyed by them. What the table does *not* know still
-        // meets the equality check below, and that refusal is the honest floor.
+        // the pieces emitted below are keyed by them. What the table does *not* know yet meets the
+        // order below, which records it for the next round.
         //
         // This is why the ends' indices are remembered instead of read off the tail of the
         // vector: after a dedup the last two entries are no longer the two ends.
-        // Measured over the suite: the dedup fires **400** times and the equality check below
-        // still refuses **1** — the two cases are separated by `NodeId`, and both happen.
+        // Measured over the suite: the dedup fires **400** times; a tie reaching the order below,
+        // 0 times outside a hand-built test (`an_arc_ends_unaliased_second_name_is_recorded_by_the_round`).
         let mut ends = (0usize, 0usize);
         for k in 0..2 {
             let same = |e: &(combinatorics::PointOn, NodeId, combinatorics::EndPin)| {
@@ -408,8 +439,11 @@ pub(super) fn split_segments_at(
         };
         // A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
         // one and a pierce one. Names the alias table knows as one point were folded above; what
-        // reaches the order is a coincidence no discovery event recorded ([`order_distinct`]).
-        let order = order_distinct(keyed.len(), cmp, undecided)?;
+        // reaches the order is a tie this round proves, recorded for the next one
+        // ([`order_recording_ties`]).
+        let names: Vec<NodeId> = keyed.iter().map(|k| k.1).collect();
+        let order =
+            order_recording_ties(jd, cyls, &names, [ends.0, ends.1], cmp, aliases, undecided)?;
         // **The sub-segments' travel sense, taken from the whole segment's own two named
         // ends — exactly, with no frame arithmetic at all.** Every sub-segment runs the way the
         // segment ran, and the pieces below are emitted in **ascending** order; so the only
@@ -420,7 +454,7 @@ pub(super) fn split_segments_at(
         let forward = match cmp(ends.0, ends.1) {
             Some(core::cmp::Ordering::Less) => true,
             Some(core::cmp::Ordering::Greater) => false,
-            // Equal is the coincident-endpoint case the windows check above already refused, and
+            // Equal is the two ends at one place, which the order above already refused, and
             // `None` is a width decline.
             _ => return Err(undecided()),
         };
@@ -754,7 +788,7 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// some face's boundary**: two edges of different cylinders meeting would put two lateral faces on
 /// one point, which `crate::planes::lateral_faces_clear` denies. That one sentence covers
 /// every pair no split cuts — circle×circle and ruling×ruling as well as this one — and
-/// `ClassEdges::of` carries a shipped backstop over the pair that has an exact predicate
+/// [`split_class_edges`] carries a shipped backstop over the pair that has an exact predicate
 /// ([`crate::RejectReason::CircleCrossesRuling`]).
 ///
 /// The ordering vocabulary is the established one: along a segment,
@@ -768,7 +802,7 @@ pub(super) fn split_rulings(
     wc: usize,
     segs: &[MergedSeg],
     rulings: &[MergedRuling],
-    aliases: &Aliases,
+    aliases: &mut Aliases,
 ) -> Result<SplitRulings, BoolError> {
     // A class with no world statement (it sections the cylinder) refuses by the gate's name.
     let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
@@ -776,10 +810,10 @@ pub(super) fn split_rulings(
         return Ok(None);
     }
     // **Every node of a ruling piece is a pierce name of the piece's own cylinder**, as the chart
-    // reads it (`cyl_chart::ruling_side_of`, the same refusal) — asked here, on the table the alias
-    // rounds settled, of the pieces pass A cut and below of the nodes this split cuts at; pass A
-    // itself runs while the table is still growing, and an early round's name for a point can be
-    // one the settled table reads otherwise.
+    // reads it (`cyl_chart::ruling_side_of`, the same refusal) — asked of the pieces the cut along
+    // segments made and below of the nodes this split cuts at. An early round's name for a point can
+    // be one the settled table reads otherwise; the refusal stands because a round's refusal is
+    // read only where the table stopped growing (`fixed_point`).
     let pierce_of = |n: NodeId, cyl: usize| {
         if combinatorics::pierce_name(n).is_some_and(|(_, c, _)| c == cyl) {
             Ok(())
@@ -834,7 +868,7 @@ pub(super) fn split_rulings(
         // then the root's `0` matches no ruling of `wc` at all. Then which piece of that ruling
         // (several faces of one solid can put several pieces on one side), by the closed extent of
         // the axis coordinate; beyond every piece, or no piece on that side, is off.
-        |cyl, n, meet| {
+        |al, cyl, n, meet| {
             let def = &cyls[cyl].def;
             let undecided = || Landing::Fails(reject(combinatorics::undecided_reason(cyls, &[wc])));
             let meet = meet.expect("a ruling crossing carries the meet it was solved as");
@@ -848,7 +882,7 @@ pub(super) fn split_rulings(
             else {
                 return undecided();
             };
-            let (mut cut, mut landed) = (None, false);
+            let (mut cut, mut landed, mut ties) = (None, false, Vec::new());
             for (ri, place) in places {
                 match place {
                     // Strictly inside: the ruling splits here, and the segment with it. Pieces on
@@ -858,13 +892,12 @@ pub(super) fn split_rulings(
                         cut = Some(ri);
                         landed = true;
                     }
-                    // On an end: the T-junction. One point, and it must wear **one** name — the
-                    // crossing's `{wc, wall}` pair must be the very pair that named the ruling's
-                    // end, or the table must know the two names as one point — else two names
-                    // share the point. Asked here, on the table the alias rounds settled.
+                    // On an end: the T-junction. One point — the axis coordinates are exact where
+                    // they meet — so a crossing named otherwise than the ruling's end is that end
+                    // under a second name, recorded for the next round.
                     OnRuling::End(e) => {
-                        if !aliases.one_point(rulings[ri].end[e], n) {
-                            return Landing::Fails(reject(RejectReason::CoincidentNodes));
+                        if !al.one_point(rulings[ri].end[e], n) {
+                            ties.push((rulings[ri].end[e], n));
                         }
                         landed = true;
                     }
@@ -873,7 +906,8 @@ pub(super) fn split_rulings(
             if landed {
                 Landing::On {
                     cut,
-                    node: aliases.canon_point(n),
+                    node: al.canon_point(n),
+                    ties,
                 }
             } else {
                 Landing::Off
@@ -900,8 +934,15 @@ pub(super) fn split_rulings(
             pierce_of(n, rulings[ri].cyl)?;
         }
     }
-    let mut out_rulings =
-        cut_rulings(jd, cyls, rulings, &ruling_ends, on_ruling, &undecided, None)?;
+    let mut out_rulings = cut_rulings(
+        jd,
+        cyls,
+        rulings,
+        &ruling_ends,
+        on_ruling,
+        &undecided,
+        aliases,
+    )?;
     let out_segs = if folds {
         fold_onto_rulings(jd, cyls, out_segs, &mut out_rulings, &shared_here, aliases)?
     } else {
@@ -950,7 +991,7 @@ pub(super) fn cut_rulings_along_segments(
                 .ok_or_else(undecided)?;
             // Strictly inside cuts. On an end there is nothing to cut: the two names there are one
             // point — the axis coordinates are exact where they meet — recorded for the next round
-            // ([`Aliases::record_same_point`]) rather than left for the settled table to refuse.
+            // ([`Aliases::record_same_point`]).
             for (ri, place) in places {
                 match place {
                     OnRuling::Inside => cuts[ri].push(aliases.canon_point(n)),
@@ -966,7 +1007,7 @@ pub(super) fn cut_rulings_along_segments(
             }
         }
     }
-    cut_rulings(jd, cyls, &rulings, &ends, cuts, &undecided, Some(aliases))
+    cut_rulings(jd, cyls, &rulings, &ends, cuts, &undecided, aliases)
 }
 
 /// Where a point lies on one ruling piece it touches.
@@ -979,11 +1020,10 @@ enum OnRuling {
 
 /// **Where a point at axis coordinate `c` lands on class's ruling pieces of cylinder `cyl`, side
 /// `side`** — every piece it touches, by the closed extent of the axis coordinate; beyond every
-/// piece is the empty list. The one placement both ruling cuts read (pass A's at the ends of the
-/// segments along a line, pass B's at the crossings): the coordinates alone, never the names — a
-/// point on an end is that end by this same comparison, a tie pass A records for the round's table
-/// and pass B asks of the settled one. `None`
-/// is a comparison that could not answer. The upper end is asked only of a point past the lower.
+/// piece is the empty list. The one placement both ruling cuts read (at the ends of the segments
+/// along a line, and at the crossings): the coordinates alone, never the names — a point on an end
+/// is that end by this same comparison, a tie recorded for the round's table. `None` is a
+/// comparison that could not answer. The upper end is asked only of a point past the lower.
 fn place_on_rulings(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -1033,11 +1073,11 @@ fn ruling_ends(
 }
 
 /// **A line is cut at every vertex on it** — each ruling piece at the nodes in `cuts[i]` (strictly
-/// inside it), into pieces in axis order. The one cut both passes make, at the vertices each knows:
-/// pass A at the ends of the segments lying along the line (`class_skeleton` — before the knife
-/// edges among them are dropped, their ends are vertices of the line all the same), pass B where
-/// a segment crosses it (`split_rulings`). OCCT's extra paves: an edge is split at every vertex
-/// any interference puts on it.
+/// inside it), into pieces in axis order. The one cut both ruling steps make, at the vertices each
+/// knows: at the ends of the segments lying along the line (`class_skeleton` — before the knife
+/// edges among them are dropped, their ends are vertices of the line all the same), and where a
+/// segment crosses it (`split_rulings`). Both run inside the alias rounds, so a tie is recorded.
+/// OCCT's extra paves: an edge is split at every vertex any interference puts on it.
 fn cut_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -1045,7 +1085,7 @@ fn cut_rulings(
     ends: &[[AxisCoord; 2]],
     mut cuts: Vec<Vec<NodeId>>,
     undecided: &impl Fn() -> BoolError,
-    mut round: Option<&mut Aliases>,
+    aliases: &mut Aliases,
 ) -> Result<Vec<MergedRuling>, BoolError> {
     let mut out = Vec::with_capacity(rulings.len());
     for (ri, r) in rulings.iter().cloned().enumerate() {
@@ -1064,33 +1104,13 @@ fn cut_rulings(
         keyed.push((lo, r.end[0]));
         keyed.push((hi, r.end[1]));
         let cmp = |i: usize, j: usize| keyed[i].0.cmp(&keyed[j].0, jd, &cyls[r.cyl].def);
-        // In a round of the fixed-point loop (pass A, `round`), two names at one axis coordinate
-        // are one point — the coordinates are exact where they tie — recorded for the next round
-        // and cut once ([`Aliases::record_same_point`]). On the settled table (the ruling split) a
-        // tie no round recorded is refused ([`order_distinct`]).
-        let order = match round.as_deref_mut() {
-            None => order_distinct(keyed.len(), cmp, undecided)?,
-            Some(al) => {
-                let mut order: Vec<usize> = (0..keyed.len()).collect();
-                combinatorics::try_sort_by(&mut order, |&i, &j| cmp(i, j).ok_or(()))
-                    .map_err(|()| undecided())?;
-                let mut kept: Vec<usize> = Vec::with_capacity(order.len());
-                for i in order {
-                    match kept.last() {
-                        Some(&k)
-                            if cmp(k, i).ok_or_else(undecided)? == core::cmp::Ordering::Equal =>
-                        {
-                            if keyed[k].1 != keyed[i].1 {
-                                al.record_same_point(jd, cyls, keyed[k].1, keyed[i].1)
-                                    .map_err(reject)?;
-                            }
-                        }
-                        _ => kept.push(i),
-                    }
-                }
-                kept
-            }
-        };
+        // Two names at one axis coordinate are one point — the coordinates are exact where they
+        // tie — recorded for the next round and cut once; the piece's two ends at one coordinate
+        // are a piece of no length ([`order_recording_ties`]).
+        let names: Vec<NodeId> = keyed.iter().map(|k| k.1).collect();
+        let n = names.len();
+        let order =
+            order_recording_ties(jd, cyls, &names, [n - 2, n - 1], cmp, aliases, undecided)?;
         // Ascending axis coordinate **is** the stored convention (`end[0] → end[1]` ascends
         // `+m`), so each window is already a well-formed piece.
         for pair in order.windows(2) {
@@ -1201,7 +1221,7 @@ type Collected = (Vec<Vec<NodeId>>, Vec<(usize, NodeId)>);
 /// A crossing, by name, with the meet it was solved as where its kind reads it again.
 type Crossing = (NodeId, Option<combinatorics::PiercePoint>);
 
-/// **Every crossing a segment holds, for one kind of curve** — the one walk pass B makes over a
+/// **Every crossing a segment holds, for one kind of curve** — the one walk the curve splits make over a
 /// class's segments, whatever it cuts them against. The kind supplies only its own answers: the
 /// cylinders it has curves of here (`here`), where a segment's line crosses one of them
 /// (`crossings`, each crossing's name and the meet it was solved as where the kind reads it again),
@@ -1232,10 +1252,10 @@ fn collect(
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     segs: &[MergedSeg],
-    aliases: &Aliases,
+    aliases: &mut Aliases,
     here: &[usize],
     crossings: impl Fn(usize, &MergedSeg, usize) -> Result<Vec<Crossing>, BoolError>,
-    land: impl Fn(usize, NodeId, Option<&combinatorics::PiercePoint>) -> Landing,
+    land: impl Fn(&Aliases, usize, NodeId, Option<&combinatorics::PiercePoint>) -> Landing,
 ) -> Result<Collected, BoolError> {
     // A class with no world statement (it sections the cylinder) refuses by the gate's name.
     let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
@@ -1254,7 +1274,7 @@ fn collect(
                 // **A proof of absence outranks an undecided question.** A crossing shown off every
                 // piece of its kind cuts nothing, whatever the segment says; asked after, the
                 // segment's undecided answer would refuse a point no edge of this class has.
-                let landing = land(cyl, n, meet.as_ref());
+                let landing = land(aliases, cyl, n, meet.as_ref());
                 if matches!(landing, Landing::Off) {
                     continue;
                 }
@@ -1262,9 +1282,9 @@ fn collect(
                 // interval cannot order against itself (a sectioned class names its own ruling's
                 // crossing, a point a shared line also names). Asked of the names before either is
                 // located: a segment whose crossing is an end never needs its ends' places.
-                let canon = |x| aliases.canon_point(x);
                 let on_an_end = sg.end.iter().any(|&e| aliases.one_point(e, n));
                 if !on_an_end {
+                    let canon = |x| aliases.canon_point(x);
                     let at = combinatorics::locate(
                         jd,
                         cyls,
@@ -1296,7 +1316,12 @@ fn collect(
                 match landing {
                     Landing::Off => {}
                     Landing::Fails(e) => return Err(e),
-                    Landing::On { cut, node } => {
+                    Landing::On { cut, node, ties } => {
+                        for (x, y) in ties {
+                            if !aliases.one_point(x, y) {
+                                aliases.record_same_point(jd, cyls, x, y).map_err(reject)?;
+                            }
+                        }
                         on_seg[si].push(node);
                         cuts.extend(cut.map(|c| (c, node)));
                     }
@@ -1313,36 +1338,66 @@ enum Landing {
     /// Shown off every piece of the kind on this class: it cuts nothing.
     Off,
     /// On a piece: `node` (the crossing under the table's name) cuts the segment, and the piece
-    /// `cut` — an index into the kind's own list — where it lands strictly inside one.
-    On { cut: Option<usize>, node: NodeId },
+    /// `cut` — an index into the kind's own list — where it lands strictly inside one. `ties` are
+    /// the piece ends it lands on under another name: one point each, recorded once the segment is
+    /// shown to hold the crossing.
+    On {
+        cut: Option<usize>,
+        node: NodeId,
+        ties: Vec<(NodeId, NodeId)>,
+    },
     /// The pieces cannot place it — refused, but only once the segment is shown to hold it: a
     /// crossing off the segment is no point of this class, and refusing it would refuse nothing
     /// the class has.
     Fails(BoolError),
 }
 
-/// **The order of distinct points along one curve**, by `cmp` over their indices `0..n`.
+/// **The order of the points along one curve, each point once**, by `cmp` over their indices
+/// `0..n`; `names[i]` is point `i`'s name and `ends` the curve's own two ends among them.
 ///
 /// The arrangement keys vertices by name, so two names at one place would make two vertices where
-/// there is one: an `Equal` between neighbours is refused (`CoincidentNodes`) — names the alias
-/// table knows as one point were folded before the order is asked, so what reaches here is a
-/// coincidence no discovery event recorded, and there is no ground to invent the identity on. A
-/// pair that cannot be told apart is `undecided`'s, and so is a failure the sort met: it may have
-/// asked the pair the other way round, and a failure is no answer.
-fn order_distinct(
-    n: usize,
+/// there is one. An `Equal` between neighbours is an exact proof — an interval never orders two
+/// names equal — so the two names are one point: recorded for the round's table
+/// ([`Aliases::record_same_point`]) and kept once, under the end's name where one of them is an end
+/// (the pieces are keyed by the ends' names). This runs inside the alias rounds, and the round whose
+/// product is kept is the one whose table did not grow, so there every tie is one the table already
+/// knew. The curve's **two ends** at one place are no tie of names but an edge of no length, refused
+/// (`CoincidentNodes`). A pair that cannot be told apart is `undecided`'s, and so is a failure the
+/// sort met: it may have asked the pair the other way round, and a failure is no answer.
+#[allow(clippy::too_many_arguments)]
+fn order_recording_ties(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    names: &[NodeId],
+    ends: [usize; 2],
     cmp: impl Fn(usize, usize) -> Option<core::cmp::Ordering>,
+    aliases: &mut Aliases,
     undecided: impl Fn() -> BoolError,
 ) -> Result<Vec<usize>, BoolError> {
-    let mut order: Vec<usize> = (0..n).collect();
+    let mut order: Vec<usize> = (0..names.len()).collect();
     combinatorics::try_sort_by(&mut order, |&i, &j| cmp(i, j).ok_or(()))
         .map_err(|()| undecided())?;
-    for w in order.windows(2) {
-        match cmp(w[0], w[1]) {
-            Some(core::cmp::Ordering::Equal) => return Err(reject(RejectReason::CoincidentNodes)),
-            Some(_) => {}
-            None => return Err(undecided()),
+    let mut kept: Vec<usize> = Vec::with_capacity(order.len());
+    for i in order {
+        let Some(&k) = kept.last() else {
+            kept.push(i);
+            continue;
+        };
+        if cmp(k, i).ok_or_else(&undecided)? != core::cmp::Ordering::Equal {
+            kept.push(i);
+            continue;
+        }
+        if ends.contains(&k) && ends.contains(&i) {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
+        if !aliases.one_point(names[k], names[i]) {
+            aliases
+                .record_same_point(jd, cyls, names[k], names[i])
+                .map_err(reject)?;
+        }
+        if ends.contains(&i) {
+            *kept.last_mut().expect("a point was kept") = i;
         }
     }
-    Ok(order)
+    Ok(kept)
 }

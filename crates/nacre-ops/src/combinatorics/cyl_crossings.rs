@@ -120,8 +120,9 @@ pub(crate) fn theta_groups(
 /// **Two names for one point.** Two walls crossing the circle at one point are two *different*
 /// pierce names — a `dedup` cannot see it, and the θ sort puts them together — so an arc of zero
 /// length would follow. A group of two or more is that point, refused as `Coincident`, and so are
-/// two nodes on the seam. The segment side asks this question already; asking it here too is what
-/// keeps the two sides from disagreeing about what "one point" means.
+/// two nodes on the seam. This is the trace's order, where two cuts at one θ are one boundary
+/// cutting one point twice (`cyl_trace`'s `CylHoleFeature`); the curve splits read the same groups
+/// ([`theta_groups`]) inside the alias rounds and record a tie as one point.
 ///
 /// Returns the permutation of `nodes` in θ order. `nodes` must already be deduped by name.
 pub(crate) fn circular_order(

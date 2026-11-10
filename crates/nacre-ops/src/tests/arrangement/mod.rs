@@ -15,6 +15,32 @@ fn boolean(
     super::boolean(model, kind, a, b).map(|(solids, ..)| solids)
 }
 
+/// A class's curves split against its segments by hand, on a copy of `aliases` —
+/// [`split_class_edges`] as a test that hands its own edges in calls it; the round's records stay
+/// in the copy.
+#[allow(clippy::too_many_arguments)]
+fn split_edges(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[FaceRow],
+    wc: usize,
+    segs: &[MergedSeg],
+    circles: &[MergedCircle],
+    rulings: &[MergedRuling],
+    aliases: &Aliases,
+) -> Result<ClassSplit, BoolError> {
+    split_class_edges(
+        jd,
+        cyls,
+        faces,
+        wc,
+        segs,
+        circles,
+        rulings,
+        &mut aliases.clone(),
+    )
+}
+
 // --- Rotation-generality: the trace engine's decisions are coordinate-free. Rigidly rotating
 // both operands by the same isometry must leave the result invariant. A non-90° angle flags the
 // solid, whose faces record the motion, routing every predicate to the exact frame3 backend. `rot30` (lib.rs)

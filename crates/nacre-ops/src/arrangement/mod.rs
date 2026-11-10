@@ -100,7 +100,7 @@ use line_sweep::sweep_line;
 use crossings::*;
 #[cfg(all(test, debug_assertions))]
 pub(crate) use per_class::MIXED_CLASS_AUDIT;
-use per_class::per_class;
+use per_class::{per_class, split_class_edges};
 pub(crate) use result::*;
 pub(crate) use rulings::*;
 pub(crate) use setup::*;
@@ -368,6 +368,17 @@ impl From<MergedRuling> for Piece {
     }
 }
 
+/// **One plane class's edges, split** — pass A's product ([`split_class_edges`], the last step of
+/// [`class_split`]): every two-ended edge ([`Piece`] — the segments, then the arcs, then the
+/// ruling pieces), the circles nothing cut, and each cut circle's rim. Made inside the alias
+/// rounds, so every name in it was born where a round could record its other names; the kept one is
+/// the round whose table did not grow.
+struct ClassSplit {
+    pieces: Vec<Piece>,
+    circles: Vec<MergedCircle>,
+    cut_rims: Vec<(usize, CutRim)>,
+}
+
 /// **One plane class's edges, after the splits — and the only thing that knows the half-edge
 /// numbering.**
 ///
@@ -383,20 +394,17 @@ impl From<MergedRuling> for Piece {
 /// **The kind is a `match`, not an arithmetic comparison each reader restates** — one type owns the
 /// numbering ([`ClassEdges::kind`]).
 ///
-/// **It borrows the circles or owns them** (`Cow`). The split makes new `Vec`s; if this only
-/// borrowed, the caller would have to keep them alive and the whole preamble — split, build, walk —
-/// would be written once per caller, which is the shape `decline_to_reject`'s doc calls *"two copies
-/// … would let them drift"*. Owning lets [`ClassEdges::of`] be the single constructor both callers
-/// use.
+/// **It borrows the split** ([`ClassSplit`]) — pass A made it, in the alias rounds, and every
+/// reader of the class's edges (the cells, the emitter, `frame_audit`) reads that one product.
 struct ClassEdges<'a> {
-    pieces: Vec<Piece>,
+    pieces: &'a [Piece],
     /// The cylinder class table the pieces' `cyl` index — where an arc's or a ruling's statement
     /// is read.
     cyls: &'a [crate::planes::WorkingCyl],
-    circles: std::borrow::Cow<'a, [MergedCircle]>,
+    circles: &'a [MergedCircle],
     /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
     /// (keyed by plane class where the per-class products are aggregated).
-    cut_rims: Vec<(usize, CutRim)>,
+    cut_rims: &'a [(usize, CutRim)],
     /// The class arranged — the plane every ruling here lies in, and so the one its side was
     /// measured against.
     wc: usize,

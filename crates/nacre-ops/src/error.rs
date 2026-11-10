@@ -178,8 +178,8 @@ pub enum RejectReason {
     EdgeCarrierMismatch,
     // ---- the arrangement's own consistency checks ----
     //
-    // On the settled alias table it is a tie no round recorded; in a round, a tie between two roots
-    // of one pair, which are two points.
+    // In the alias rounds, a tie between two roots of one pair, which are two points, or an edge's
+    // two ends at one place; after them, two names of one point the lateral chart meets.
     /// **Two names of one point reach a road that keys points by name.** Three planes name a
     /// vertex, so two plane names for one point mean a **fourth** plane through it — the
     /// arrangement then holds an edge with no direction; the same substrate limit

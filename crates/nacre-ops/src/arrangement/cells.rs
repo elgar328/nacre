@@ -46,7 +46,7 @@ pub(super) fn walk_cells(
     }
 
     watch!(E_WALK);
-    let components = component_count(&edges.pieces);
+    let components = component_count(edges.pieces);
 
     // Try both step directions (predecessor / successor); keep the one whose bounded/outer split
     // is right. Handedness is fixed by `jd.planes[wc].frame_sign` and unknown up front.

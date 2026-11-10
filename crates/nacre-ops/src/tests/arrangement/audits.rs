@@ -809,15 +809,13 @@ pub(crate) fn frame_audit(
                 // A copy, so one class's split discoveries cannot leak into the next class's
                 // audit — the fixpoint above already holds everything the boolean would know.
                 let mut local = aliases.clone();
-                let (split, circles, rulings) = class_skeleton(&jd, &cyls, wc, &tr, &mut local)?;
                 // **The same edges the boolean uses.** This copy of the pipeline is what
                 // makes the audit an instrument; feeding it un-split edges would let it run to
                 // the end and report `failed_at: None` for an input the boolean refuses —
                 // *"the worst possible time to be lying"* (`decline_to_reject`). The arc fence
                 // in `bands.rs` locks the two together as «both succeed».
-                let edges = ClassEdges::of(
-                    &jd, &cyls, &faces_tab, wc, &split, &circles, &rulings, &local,
-                )?;
+                let split = class_split(&jd, &cyls, &faces_tab, wc, &tr, &mut local)?;
+                let edges = ClassEdges::of(&cyls, wc, &split);
                 let staged = per_class(&jd, &cyls, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s

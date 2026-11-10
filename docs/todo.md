@@ -283,18 +283,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다(design
   「상대가 닿을 수 없는 평면은 소식을 나르지 않는다」).
 
-## 알려진 결함과 절벽
-
-답은 초록이지만 전제나 뒤처리가 흔들리는 자리 — 결과를 어떻게 바꾸는지를 먼저 잰다.
-
-### 수렴한 표 뒤에 태어나는 이름의 같음
-
-이름의 같음은 수렴한 별칭 표에서 묻는다(`Aliases::record_same_point`). pass B 에서만 태어나는 이름 — 원과 선분의 교점
-(`circle_crossings`)과 옆면 룰링 분할의 교점(`lateral_crossings`) — 이 이미 있는 점의 다른 이름이면 수렴한 표도 모르므로
-`split_circles`·`split_segments_at`·`split_rulings`·차트의 사건이 `CoincidentNodes` 로 거절한다. 잰 인구: 스위트·무시 스윕·
-census·kit 에서 손으로 지은 단위 시험(`an_arc_ends_unaliased_second_name_is_refused_not_dropped`) 하나, 게이트를 연 시험판에서도
-같다. 여는 길은 그 교점들을 라운드 안에서 짓는 것이다.
-
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
 잠금 공백·API·성능·구조. 순서는 없다.

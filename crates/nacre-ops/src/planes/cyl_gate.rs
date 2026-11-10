@@ -372,7 +372,7 @@ pub(crate) fn cylinder_gate(
     // other's kind, so a crossing they both walked past would be a node no road mints, and the
     // point is `plane ∩ cylinder ∩ cylinder`, a nested radical with no name. Two such edges meeting
     // means two lateral faces share a point, which is exactly what this refusal denies.
-    // `ClassEdges::of` carries the derivation and a shipped check for the circle × ruling pair, the
+    // `split_class_edges` carries the derivation and a shipped check for the circle × ruling pair, the
     // one of the three that has a cheap exact predicate; when this population is admitted, the
     // other two pairs need theirs.
     if !cyl_pairs.is_empty() {
