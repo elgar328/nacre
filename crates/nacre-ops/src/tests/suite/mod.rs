@@ -1140,6 +1140,7 @@ mod carrier_readings;
 mod common_kind;
 mod commuting_oracle;
 mod coplanar;
+mod crossing_ends;
 mod curved_nesting;
 mod cylinder_classes;
 mod cylinder_gate;

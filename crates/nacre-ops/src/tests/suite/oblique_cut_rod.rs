@@ -47,7 +47,7 @@ pub(crate) fn prism(m: &mut Model, k: f64) -> Handle<Solid> {
 }
 
 /// A polygon `(z, x)` in the world `zx` frame (`u = z`, `v = x`) extruded along `+y` over `[0, 6]`.
-fn zx_prism(m: &mut Model, pts: &[(f64, f64)]) -> Handle<Solid> {
+pub(super) fn zx_prism(m: &mut Model, pts: &[(f64, f64)]) -> Handle<Solid> {
     let pts = pts
         .iter()
         .map(|&(u, v)| nacre_math::Point2::from_array([u, v]))
@@ -463,7 +463,7 @@ fn scoreboard(windowed: bool, want: impl Fn(&Tool) -> [[Cell; 3]; 2] + Sync) {
 }
 
 /// The volume the mesh's triangles enclose over `solids`' faces.
-fn mesh_volume(m: &Model, solids: &[Handle<Solid>]) -> f64 {
+pub(super) fn mesh_volume(m: &Model, solids: &[Handle<Solid>]) -> f64 {
     let t = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("the mesh");
     let o = Point3::origin();
     m.reachable_from(solids)
@@ -581,7 +581,7 @@ fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
     }
 }
 
-/// **Other bodies with slanted rims fed back** — six more shapes against four tools, every kind,
+/// **Other bodies with slanted rims fed back** — five more shapes against four tools, every kind,
 /// both orders, each cell at its derived volume (relative `1e-9`), validated and meshed:
 /// - a plate `[−5, 5]² × [0, 4]` drilled along `(0, 3, 4)` with radius 1 — both rims slanted, the
 ///   material outside the bore — of volume `400 − 5π` (the bore crosses the slab `5/4` times its
@@ -597,9 +597,6 @@ fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
 ///   which finds no witness (`RingHasNoWitness`, `nesting`'s `inside`): the notch floors' planes
 ///   section the pin's cylinder clear of the floors — the first notch's prism against the pin builds
 ///   in every cell;
-/// - the rod cut by the slant and then by `z = 5 − x/2` — two slanted rims crossing on one lateral at
-///   `x = 0` — of volume `20π − 16/3`, which no road fed back can order and every cell refuses by the
-///   lateral's span (`DeclineKind::CylSpan`);
 /// - the rod notched by the wedge between `z = 4 + x` and `z = 6 − x` over `x ≤ 1` — two slanted
 ///   notch faces meeting on an edge `x = 1, z = 5` that crosses the lateral — of volume
 ///   `104π/3 − 6√3` (the wedge's height `2 − 2x` over the disk short of `x = 1`). Past the far box
@@ -661,12 +658,6 @@ fn other_bodies_with_slanted_rims_fed_back() {
         let r = rod(m);
         let w = zx_prism(m, &[(1.0, -3.0), (2.5, -1.5), (7.5, -1.5), (9.0, -3.0)]);
         crate::boolean(m, BoolKind::Cut, r, w).expect("the window")[0]
-    };
-    let twice = |m: &mut Model| {
-        let (r, p) = (rod(m), prism(m, 0.5));
-        let a = crate::boolean(m, BoolKind::Cut, r, p).expect("the slant")[0];
-        let q = prism(m, -0.5);
-        crate::boolean(m, BoolKind::Cut, a, q).expect("the second slant")[0]
     };
     type Build = fn(&mut Model) -> Handle<Solid>;
     let tools: [(Build, f64); 4] = [
@@ -821,30 +812,6 @@ fn other_bodies_with_slanted_rims_fed_back() {
                         }
                         (want, got) => panic!("{at}: want {want:?}, got {got:?}"),
                     }
-                }
-            }
-        }
-    }
-    let mut m = Model::new();
-    let b = twice(&mut m);
-    let got = nacre_props::mass_props(&m, b).expect("props").volume;
-    assert!(close(got, 20.0 * pi - 16.0 / 3.0, 1e-12), "twice: {got}");
-    for (tool, _) in &tools {
-        for swap in [false, true] {
-            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-                let mut m = Model::new();
-                let (b, t) = (twice(&mut m), tool(&mut m));
-                let (x, y) = if swap { (t, b) } else { (b, t) };
-                match crate::boolean(&mut m, kind, x, y) {
-                    Err(BoolError::Rejected {
-                        reason:
-                            RejectReason::TraceDeclined {
-                                kind: crate::DeclineKind::CylSpan,
-                                ..
-                            },
-                        ..
-                    }) => {}
-                    other => panic!("twice, {kind:?} swap={swap}: {other:?}"),
                 }
             }
         }
