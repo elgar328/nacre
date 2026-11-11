@@ -346,7 +346,6 @@ fn the_tangent_wall_states_itself_exactly() {
         surf,
         SolidSide::B, // the cylinder is the second operand; the wall face is the cube's
         &jd,
-        &holders,
     );
     assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
     let t = &rows[0];
@@ -361,9 +360,17 @@ fn the_tangent_wall_states_itself_exactly() {
     // A solid cylinder operand keeps its material inside.
     assert_eq!(t.cyl_orient, 1, "{t:?}");
     // The face `x = 0` runs from `y = 0` to `y = 2` across the tangent line `y = 1`, and its
-    // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`.
-    assert!(t.runs_through, "{t:?}");
-    assert!(!t.line_on_another_face, "{t:?}");
+    // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`, which runs on either
+    // side of the line: both solids run through it over `[1, 3]`.
+    let through: Option<Vec<[Option<Rat>; 2]>> = t
+        .through
+        .as_ref()
+        .map(|v| v.iter().map(|p| p.map(|q| q.as_rat())).collect());
+    assert_eq!(
+        through,
+        Some(vec![[Some(Rat::from_int(1)), Some(Rat::from_int(3))]]),
+        "{t:?}"
+    );
     assert!(t.undecided.is_none(), "{t:?}");
     // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.
     let w = t.witness.as_array();
@@ -493,9 +500,9 @@ fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Result<Vec<Tangency>, Bo
 /// - `y = −1` touches the surface at `(0, −1)`, on the half the lateral does not have — no row;
 /// - `y = 1` touches it at `(0, 1)`, on the lateral — one row, decided;
 /// - `x = 1` touches it on the lateral's **end** ruling `(1, 0)` — a row (ends are the face's
-///   edge), held by a third plane too: the half cylinder's own flat `y = 0`. The box's wall runs
-///   across that line rather than ending on it, so the line is no edge of both faces, the verdict
-///   could not read the six regions there, and the gate refuses the pair by that name.
+///   edge), with nothing running through on both sides: the box's wall runs across the line, but
+///   the half cylinder ends on it, its flat `y = 0` beside — an edge of the arrangement, the
+///   structure's to judge.
 #[test]
 fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
     let missing = half_cylinder_and_box([-0.5, -1.0], [0.5, 2.0]).expect("setup");
@@ -503,15 +510,16 @@ fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
     let present = half_cylinder_and_box([-0.5, 1.0], [0.5, 2.0]).expect("setup");
     assert_eq!(present.len(), 1, "{present:?}");
     assert!(
-        present[0].undecided.is_none() && !present[0].line_on_another_face,
+        present[0].undecided.is_none()
+            && present[0].through.as_ref().is_some_and(|v| !v.is_empty()),
         "{present:?}"
     );
-    match half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]) {
-        Err(BoolError::Rejected { reason, .. }) => {
-            assert_eq!(reason, RejectReason::TangentLineInAnotherPlane);
-        }
-        other => panic!("the end ruling's row is refused at the gate: {other:?}"),
-    }
+    let end = half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]).expect("setup");
+    assert_eq!(end.len(), 1, "{end:?}");
+    assert!(
+        end[0].undecided.is_none() && end[0].through.as_ref().is_some_and(Vec::is_empty),
+        "{end:?}"
+    );
 }
 
 /// **The same U face, read over two spans.** The block `[0, 6] × [−3, 3] × [0, 2]` with the slot
@@ -547,7 +555,10 @@ fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
     assert!(in_the_gap.is_empty(), "{in_the_gap:?}");
     let across = rows(0.5, 1.3);
     assert_eq!(across.len(), 1, "{across:?}");
-    assert!(across[0].runs_through, "{across:?}");
+    assert!(
+        across[0].through.as_ref().is_some_and(|v| !v.is_empty()),
+        "{across:?}"
+    );
     let w = across[0].witness.as_array();
     assert!(
         w[0].abs() < 1e-12 && w[1].abs() < 1e-12 && (w[2] - 0.75).abs() < 1e-12,
@@ -583,7 +594,10 @@ fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
             assert!(inside.is_empty(), "w {w} seam {seam}: {inside:?}");
             let longer = rows(w, seam, [1.0, 3.0]);
             assert_eq!(longer.len(), 1, "w {w} seam {seam}: {longer:?}");
-            assert!(longer[0].runs_through, "w {w} seam {seam}: {longer:?}");
+            assert!(
+                longer[0].through.as_ref().is_some_and(|v| !v.is_empty()),
+                "w {w} seam {seam}: {longer:?}"
+            );
         }
     }
 }

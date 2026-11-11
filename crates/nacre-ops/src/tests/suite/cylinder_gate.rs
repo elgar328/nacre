@@ -464,9 +464,9 @@ fn a_rim_touching_the_other_lateral_from_inside_is_refused() {
 /// yet.**
 ///
 /// A boss tangent to the box's wall `x = 0`, and a bar ending exactly on that wall whose cap is a
-/// disk **containing** the tangent line. The gate writes the tangency row (measured:
-/// `runs_through` comes back **true** — that wall face is one disk, and the line runs through it
-/// along the disk's open chord, which only [`nacre_exact::StripSide::Crosses`] opens), and then the
+/// disk **containing** the tangent line. The gate writes the tangency row (measured: the line runs
+/// through that wall face — one disk — along the disk's open chord, which only
+/// [`nacre_exact::StripSide::Crosses`] opens), and then the
 /// cylinder-pair rule speaks first and the operation stops.
 ///
 /// **The two cannot be separated today.** For the row to be written at all the disk must overlap

@@ -21,8 +21,9 @@
 //! [`an_inward_wedge_with_a_third_plane_through_its_apex_line`].
 //!
 //! And the shapes whose line is `A`'s own edge, where its lateral ends on a flat: a wall tangent
-//! to the cylinder there — ending on the edge it builds, on a half cylinder and on a half bore,
-//! from inside or outside; running across it it is refused by name — see
+//! to the cylinder there — ending on the edge or running across it, on a half cylinder and on a
+//! half bore, from inside or outside, it builds or is refused by name where the result touches
+//! itself — see
 //! [`a_tangent_wall_on_a_flats_edge_builds_or_is_refused`],
 //! [`a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused`] and
 //! [`a_tangent_wall_on_a_half_bores_edge_builds`]; ending there beside a secant of
@@ -330,33 +331,50 @@ fn a_keyhole_builds() {
 ///   nothing (`arrangement::lateral_half_of_plane_pair_lines` on the tangent ruling). Every
 ///   boolean builds, valid, drawn, the volumes in closed form — `A ∩ B` is the half disk's strip
 ///   `y ∈ [0, 1/2]` over the height the two share.
-/// - **Across**: `TangentLineInAnotherPlane`, from the population gate, in either operand order,
-///   at every height and in both frames. `B`'s wall runs across the line, and `A`'s flat and
-///   lateral end on it: around it six regions meet, which the tangency's verdict does not read, and
-///   the gate refuses the pair before anything is arranged.
+/// - **Across**, either order and frame: `B`'s wall runs across the line and `A`'s flat and lateral
+///   end on it, so `A` has an edge there and the structure judges what meets on it. Every boolean
+///   builds, valid, drawn, the volumes in closed form as when ending, except `B − A`: the sliver
+///   between `A`'s lateral and `B`'s wall meets the rest of `B − A` on the line alone — two bodies
+///   where `B` stands within `A`'s span, one body touching itself where `B` reaches past `A`'s top
+///   and the two join above it (`SelfTouchingResult`).
 #[test]
 fn a_tangent_wall_on_a_flats_edge_builds_or_is_refused() {
     let across: &[[f64; 2]] = &[[-3.0, -2.0], [1.0, -2.0], [1.0, 0.5], [-3.0, 0.5]];
     let ending: &[[f64; 2]] = &[[-3.0, 0.0], [1.0, 0.0], [1.0, 0.5], [-3.0, 0.5]];
-    let ran = every_placement(
-        upper_half_disk,
-        &[("across the edge", across)],
-        |c, _, got| match got {
-            Err(BoolError::Rejected { reason, .. }) => assert_eq!(
-                reason,
-                RejectReason::TangentLineInAnotherPlane,
-                "{c}: the refusal moved"
-            ),
-            other => panic!("{c}: the refusal moved — {other:?}"),
-        },
-    );
-    assert_eq!(ran, 2 * 2 * 4 * 6, "the family across");
-    let all = every_six(upper_half_disk, &[("ending on the edge", ending)]);
-    assert_eq!(all.len(), 2 * 2 * 4, "the family ending");
     let (a, strip) = (
         std::f64::consts::PI,
         0.5 * 0.75f64.sqrt() + std::f64::consts::FRAC_PI_6,
     );
+    let all = every_six(upper_half_disk, &[("across the edge", across)]);
+    assert_eq!(all.len(), 2 * 2 * 4, "the family across");
+    for (p, six) in &all {
+        identities_with(p, six, a);
+        let (b, common) = (p.b_volume(), strip * p.height.shared());
+        let b_less_a = match p.height {
+            Height::OnBase | Height::Inside => Ok((2, b - common)),
+            Height::PastTop | Height::PastBoth => Err(RejectReason::SelfTouchingResult),
+        };
+        let want = [
+            Ok((1, a + b - common)),
+            Ok((1, a + b - common)),
+            Ok((1, a - common)),
+            b_less_a,
+            Ok((1, common)),
+            Ok((1, common)),
+        ];
+        for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            match (got, want) {
+                (Ok((n, v)), Ok((wn, wv))) => {
+                    assert_eq!(*n, wn, "{p}: [{i}] bodies");
+                    assert!((v - wv).abs() < 1e-9, "{p}: [{i}] {v}, want {wv}");
+                }
+                (Err(r), Err(w)) => assert_eq!(*r, w, "{p}: [{i}]"),
+                (got, want) => panic!("{p}: [{i}] {got:?}, want {want:?}"),
+            }
+        }
+    }
+    let all = every_six(upper_half_disk, &[("ending on the edge", ending)]);
+    assert_eq!(all.len(), 2 * 2 * 4, "the family ending");
     for (p, six) in &all {
         identities_with(p, six, a);
         let (b, common) = (p.b_volume(), strip * p.height.shared());
@@ -492,7 +510,10 @@ fn half_bored_box() -> Profile2d {
 /// **A tangent wall on the edge of a half bore** — the flat-edge family turned inside out: `A` is
 /// the box [`half_bored_box`], whose bore's lateral ends on the box's face `y = 0` along the ruling
 /// `(1, 0)`, and `B`'s wall `x = 1` is tangent to the bore there. `B` stands below the face beside
-/// the bore, on it away from the bore, or on it over the bore. A bore's material is outside its
+/// the bore, on it away from the bore, or on it over the bore, or its wall runs across the line —
+/// away from the bore or over it, the bore's lateral and `A`'s face ending on the line, which the
+/// structure judges (`planes::Tangency::through` is empty) — save where the wall runs across away
+/// from the bore with `B` first, refused (`StraightAngle`, the comment in the loop). A bore's material is outside its
 /// cylinder, but its lateral still bends to the axis on both sides of the tangent line, so on
 /// `B`'s wall class the lateral's side of the line is the axis side, as on a boss — the one bit
 /// that holds for both (`arrangement::rulings::axis_above`). Every boolean builds, valid, the
@@ -504,23 +525,31 @@ fn a_tangent_wall_on_a_half_bores_edge_builds() {
     let below: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 0.0], [1.0, 0.0]];
     let away: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 0.5], [1.0, 0.5]];
     let over: &[[f64; 2]] = &[[-3.0, 0.0], [1.0, 0.0], [1.0, 0.5], [-3.0, 0.5]];
+    let across_away: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 1.0], [1.0, 1.0]];
+    let across_over: &[[f64; 2]] = &[[-0.5, -1.0], [1.0, -1.0], [1.0, 0.5], [-0.5, 0.5]];
     let strip = 0.5 * 0.75f64.sqrt() + std::f64::consts::FRAC_PI_6;
+    // The sliver between the bore's lateral and `x = 1` over `y ∈ [0, 1/2]`.
+    let sliver = 0.5 - 0.75f64.sqrt() / 4.0 - std::f64::consts::PI / 12.0;
     let all = every_six(
         half_bored_box,
         &[
             ("below, beside", below),
             ("above, away from the bore", away),
             ("above, over the bore", over),
+            ("across, away from the bore", across_away),
+            ("across, over the bore", across_over),
         ],
     );
-    assert_eq!(all.len(), 3 * 2 * 2 * 4, "the family");
+    assert_eq!(all.len(), 5 * 2 * 2 * 4, "the family");
     let a = 16.0 - std::f64::consts::PI;
     for (p, six) in &all {
         identities_with(p, six, a);
         let area = match p.family {
             "below, beside" => 0.0,
             "above, away from the bore" => 0.5,
-            _ => 1.5 - strip,
+            "above, over the bore" => 1.5 - strip,
+            "across, away from the bore" => 1.0,
+            _ => sliver,
         };
         let (b, common) = (p.b_volume(), area * p.height.shared());
         let want = [
@@ -532,6 +561,15 @@ fn a_tangent_wall_on_a_half_bores_edge_builds() {
             common,
         ];
         for (i, (got, want)) in six.iter().zip(want).enumerate() {
+            // `B` first, its wall across the line away from the bore: on `B`'s cross-section the
+            // wall's line runs on through the corner where the bore's arc and `A`'s flat end, the
+            // arc leaving tangent to it, and the node's departures come out in no cyclic order —
+            // the line's two ways and the arc fall in `angular_order`'s π bucket, which is not
+            // sorted (todo).
+            if p.family == "across, away from the bore" && i % 2 == 1 {
+                assert_eq!(got, &Err(RejectReason::StraightAngle), "{p}: [{i}]");
+                continue;
+            }
             match got {
                 Ok((_, v)) => assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}"),
                 Err(r) => panic!("{p}: [{i}] {r:?}"),
@@ -916,77 +954,116 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     assert_eq!(tally, want);
 }
 
-/// **A tangent face that ends on the line at one height and crosses it at another.** `B` is
-/// an L-shaped profile in the plane `x = −1` extruded to `x = 1`: its caps `x = ±1` are tangent
-/// to `A`'s unit cylinder, each an L whose concave corner puts one stretch of its boundary on the
-/// line `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that
-/// stretch the line runs through the cap's interior. That is the face the tangency verdict's
-/// `line_is_an_edge` keeps out (`!runs_through`: an edge on the line does not make the contact an
-/// edge where the face runs across it) — and that guard is what speaks here: the row is no edge,
-/// so the population gate refuses it (`TangentLineInAnotherPlane`), both vertex orders, all six
-/// booleans, before the rulings split meets the cap's segment across the line.
+/// **A tangent face that ends on the line at one height and crosses it at another.** `B` is an
+/// L-shaped profile in the plane `x = −1` extruded to `x = 1`: its caps `x = ±1` are tangent to
+/// `A`'s unit cylinder, each an L whose concave corner puts one stretch of its boundary on the line
+/// `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that stretch the
+/// line runs through the cap's interior. One row, two grounds: where the cap ends on the line `B`
+/// has an edge there and the structure judges; where both the cap and `A`'s lateral run through
+/// it, the tangency's three regions are the whole picture and its verdict judges
+/// (`planes::Tangency::through`). `(1, 0)` is the unit disk's seam and `(−1, 0)` is not, so the
+/// caps read the line once on the seam and once off it.
+///
+/// - **The L** (`y` from `−1`): `B`'s face `y = −1` is tangent to `A` as well. `A − B` is two bodies —
+///   the slab `z ∈ [1/2, 1]` takes the whole disk — and `B − A` is refused: below the corner each
+///   cap keeps the two wedges either side of the lateral, tied by the cap (`SelfTouchingResult`).
+/// - **The L whose caps alone are tangent** (`y` from `−1/2`): `A − B` is one body, `B − A` is
+///   refused the same way. Handed whole to the structure, the row built this `B − A` as one body,
+///   `validate` clean, its volume exact — the cap's wedges touching along the line where nothing
+///   draws it.
+///
+/// Both vertex orders, all six booleans, the volumes in closed form.
 #[test]
-fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
+fn a_tangent_face_across_its_edge_on_the_line_is_judged_where_it_crosses() {
     use nacre_math::Vector3;
     use nacre_ops::{OpOutput, Operation, SketchPlane, apply};
-    let l: &[[f64; 2]] = &[
-        [-1.0, 0.5],
-        [3.0, 0.5],
-        [3.0, 1.5],
-        [0.0, 1.5],
-        [0.0, 1.0],
-        [-1.0, 1.0],
+    let pi = std::f64::consts::PI;
+    // The disk's segment beyond `y = −d`.
+    let segment = |d: f64| d.acos() - d * (1.0 - d * d).sqrt();
+    type Family = (&'static str, f64, f64, f64, usize);
+    // (name, the profile's `y` start, |B|, |A ∩ B|, the bodies of A − B).
+    let families: [Family; 2] = [
+        ("the L", -1.0, 7.0, 0.75 * pi, 2),
+        (
+            "the L whose caps alone are tangent",
+            -0.5,
+            6.5,
+            0.5 * (pi - segment(0.5)) + 0.25 * pi,
+            1,
+        ),
     ];
+    let a = 2.0 * pi;
     let mut ran = 0;
-    for rotated in [false, true] {
-        let mut l = l.to_vec();
-        if rotated {
-            l.rotate_left(1);
-        }
-        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-            for swapped in [false, true] {
-                let mut m = Model::new();
-                let extrude = |m: &mut Model, frame, profile, dist| {
-                    let Ok(OpOutput::Extrude { solid, .. }) = apply(
-                        m,
-                        &Operation::Extrude {
-                            frame,
-                            profile,
-                            dist,
-                        },
-                    ) else {
-                        panic!("extrude")
+    for (family, y0, b, common, a_less_b) in families {
+        let l: &[[f64; 2]] = &[
+            [y0, 0.5],
+            [3.0, 0.5],
+            [3.0, 1.5],
+            [0.0, 1.5],
+            [0.0, 1.0],
+            [y0, 1.0],
+        ];
+        for rotated in [false, true] {
+            let mut l = l.to_vec();
+            if rotated {
+                l.rotate_left(1);
+            }
+            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                for swapped in [false, true] {
+                    let mut m = Model::new();
+                    let extrude = |m: &mut Model, frame, profile, dist| {
+                        let Ok(OpOutput::Extrude { solid, .. }) = apply(
+                            m,
+                            &Operation::Extrude {
+                                frame,
+                                profile,
+                                dist,
+                            },
+                        ) else {
+                            panic!("extrude")
+                        };
+                        solid
                     };
-                    solid
-                };
-                let world = nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z);
-                let a = extrude(&mut m, world, unit_disk(), 2.0);
-                let side = datum_frame(
-                    &mut m,
-                    SketchPlane::from_axes(
-                        Point3::from_array([-1.0, 0.0, 0.0]),
-                        Vector3::from_array([0.0, 1.0, 0.0]),
-                        Vector3::from_array([0.0, 0.0, 1.0]),
-                    ),
-                );
-                let profile =
-                    Profile2d::polygon(l.iter().map(|q| p2(q[0], q[1])).collect()).expect("an L");
-                let b = extrude(&mut m, side, profile, 2.0);
-                let (x, y) = if swapped { (b, a) } else { (a, b) };
-                let at = format!("rotated = {rotated}, {kind:?} swapped = {swapped}");
-                match boolean(&mut m, kind, x, y) {
-                    Err(BoolError::Rejected { reason, .. }) => assert_eq!(
-                        reason,
-                        RejectReason::TangentLineInAnotherPlane,
-                        "{at}: the wall moved"
-                    ),
-                    other => panic!("{at}: the wall moved — {other:?}"),
+                    let world = nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z);
+                    let sa = extrude(&mut m, world, unit_disk(), 2.0);
+                    let side = datum_frame(
+                        &mut m,
+                        SketchPlane::from_axes(
+                            Point3::from_array([-1.0, 0.0, 0.0]),
+                            Vector3::from_array([0.0, 1.0, 0.0]),
+                            Vector3::from_array([0.0, 0.0, 1.0]),
+                        ),
+                    );
+                    let profile = Profile2d::polygon(l.iter().map(|q| p2(q[0], q[1])).collect())
+                        .expect("an L");
+                    let sb = extrude(&mut m, side, profile, 2.0);
+                    let (x, y) = if swapped { (sb, sa) } else { (sa, sb) };
+                    let at = format!("{family}, rotated = {rotated}, {kind:?} swapped = {swapped}");
+                    let want = match (kind, swapped) {
+                        (BoolKind::Fuse, _) => Ok((1, a + b - common)),
+                        (BoolKind::Cut, false) => Ok((a_less_b, a - common)),
+                        (BoolKind::Cut, true) => Err(RejectReason::SelfTouchingResult),
+                        (BoolKind::Common, _) => Ok((1, common)),
+                    };
+                    match (boolean(&mut m, kind, x, y), want) {
+                        (Ok(solids), Ok((n, v))) => {
+                            let vs = nacre_validate::validate(&m);
+                            assert!(vs.is_empty(), "{at}: {vs:?}");
+                            assert_eq!(solids.len(), n, "{at}: bodies");
+                            let got: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
+                            assert!((got - v).abs() < 1e-9, "{at}: volume {got}, want {v}");
+                        }
+                        (Err(BoolError::Rejected { reason, .. }), Err(w)) => {
+                            assert_eq!(reason, w, "{at}");
+                        }
+                        (got, want) => panic!("{at}: {got:?}, want {want:?}"),
+                    }
+                    ran += 1;
                 }
-                ran += 1;
             }
         }
     }
-    assert_eq!(ran, 2 * 6, "the family");
+    assert_eq!(ran, 2 * 2 * 6, "the families");
 }
 
 /// **A pinched cap as an operand** — the union a wedge with its apex on the rim leaves past the

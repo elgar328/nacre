@@ -1721,9 +1721,9 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 - **옆면 팔** — 같은 명제를 옆면에 묻는다: 그 옆면의 노드가 아닌 꼭짓점이 원통 곡면 위이고 옆면의 닫힌 영역에 있는가
   (`combinatorics::named_point_in_face` 의 옆면 갈래), 직선 간선이 끝이 아닌 점에서 그 영역에 닿는가
   (`combinatorics::segment_meets_lateral` — 게이트가 기록한 룰링을 따르는 간선은 `ruling_meets_lateral`, 선은 `SharedRuling::at`;
-  그 밖의 선은 원통과의 근). 닿는 점이 접선 판정의 행이 «벽 면이 옆면 위에서 접선과 만난다»고 적은 닫힌 구간
-  (`planes::Tangency::contact`) 위이고 그 벽 클래스의 결과 면이 덮으면 선 접촉의 한 점이라 그 판정의 몫이다(`tangent_hand`) —
-  넘김의 영역이 판정의 영역이라, 접선에 모서리 한 점으로 닿는 면·옆면 너머에서 접선에 닿는 면은 점 접촉이다. 옆면 경계(림·호) 위의
+  그 밖의 선은 원통과의 근). 닿는 점이 접선 판정의 행이 «두 솔리드가 다 관통한다»고 적은 닫힌 구간
+  (`planes::Tangency::through`) 위이고 그 벽 클래스의 결과 면이 덮으면 선 접촉의 한 점이라 그 판정의 몫이다(`tangent_hand`) —
+  넘김의 영역이 판정의 영역이라, 접선에 모서리 한 점으로 닿는 면·옆면 너머에서 닿는 면·그 선에서 끝나는 솔리드는 점 접촉이다. 옆면 경계(림·호) 위의
   점에 그 곡선을 옆면과 함께 쓰는 면의 간선이 닿으면 그 면의 두 경계가 만나는 집힘이다(`shares_a_curve` — 평면 팔이 제 면의
   경계를 묻지 않는 것과 같은 규칙). 체는 옆면 경계의 원들의 상자이고 경계는 체를 지난 첫 후보에서 읽는다; 못 읽은 경계는 그것이
   답을 정하는 후보만 들고, 넘김의 주인을 못 읽으면 든다; 못 읽음은 버린다(수는 `self_touch_reject` 본문).
@@ -1814,7 +1814,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 ### 인구 게이트 (`planes::cylinder_gate`)
 
 게이트는 (평면 클래스, 원통) 쌍마다 생성기 하나(`cyl_gate::class_meet` → `ClassMeet`)로 답하고, 모든 쌍에 답한 뒤 그 답을
-읽어 짓지 못하는 것을 이름으로 거절하며(`ObliqueCylinderCut`·`TangentLineInAnotherPlane`·`CylinderPairContact`, 기하는
+읽어 짓지 못하는 것을 이름으로 거절하며(`ObliqueCylinderCut`·`CylinderPairContact`, 기하는
 `CylinderGateUndecided`, 폭은 `WitnessNotRational`), 남은 것을 기록으로 넘긴다(`CylRecord`·`Silence`, `SharedRuling`,
 `GrazeLine`, `Tangency`). 갈래와 거절 이름은 `cylinder_gate`·`class_meet` 의 doc(비스듬한 평면은 `laterals_clear_plane`·
 `oblique_section_meet`, 경계 단면 대 평면의 판정은 `boundary_stand` 하나). 조각끼리의 물음은 `pieces_clear` 하나
@@ -1851,9 +1851,8 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   변형은 짓는다(`RejectReason::RulingBoundNotYet` 위의 주석).
 - **«두 클래스의 교선이 옆면 면 위에 있다»도 게이트가 한 번 기록한다**(`SharedRuling`, `WorkingCyl::shared`). 짝은 생성기가
   이미 답한 것에서만 나오고, 선은 무한 곡면이 아니라 옆면 **면** 위여야 한다(`line_apart`). 씨앗·룰링 분할의 접기·차트의
-  station·접선 판정·결과의 간선 분할이 이 기록을 읽고 스스로 판정하지 않는다 — 짝과 독자, 기록이 드는 점(`at`·`holds`·
-  `stated_by`)은 `SharedRuling` doc. `Tangency::line_on_another_face` 는 같은 계산(«그 접선을 품는 클래스들»)에서 출발해 그
-  클래스들의 **면**을 읽는다.
+  station·결과의 간선 분할이 이 기록을 읽고 스스로 판정하지 않는다 — 짝과 독자, 기록이 드는 점(`at`·`holds`·
+  `stated_by`)은 `SharedRuling` doc.
 - **게이트가 물어야 하는 명제는 «두 클래스가 «면»을 공유하는가»다** — 무한 곡면의 거리가 아니다(「점의 이름」의 첫 원리).
   곡면 거리로 못 비킨 쌍은 옆면이 자신을 대변하고(도달 범위 `lateral_reach` — 수직은 그 일반식의 한 경우이지 분기가
   아니다), 같은 솔리드 안의 쌍은 묻지 않는다. 원통 쌍의 차례(`r₁+r₂`, `same_surface`, 중첩, 면 물음, 남으면
@@ -2067,8 +2066,9 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   셀도 나누지 않고 차트의 어떤 섹터에도 정거장을 세우지 않는다. **셋을 가르는 것은 연산이고, 연산은 `keep` 으로만
   들어온다**(`self_touch::pinch`).
 - **«갈라진다»가 곧 결함은 아니다** — 판정은 «두 덩이 ∧ 한 출력 솔리드»(`tangency_reject`, `SelfTouchingResult`).
-  셋째 클래스의 면이 그 선에 닿으면 게이트가 거절하고(`TangentLineInAnotherPlane`), 그 선이 피연산자 간선이면
-  구조에 맡긴다(`Tangency::line_is_an_edge`).
+- **판정의 땅은 두 솔리드가 다 그 선을 관통하는 구간이다**(`Tangency::through`). 유효한 솔리드는 한 선을 면 하나로
+  관통하거나 두 면으로 그 선에서 끝나므로, 거기엔 셋째 면이 없고 배열도 선을 긋지 않는다 — 세 영역이 전부다. 어느 솔리드가
+  그 선에서 끝나는 구간은 피연산자 간선이 그 선 위에 있어 배열이 긋고, 구조(자기접촉 체)가 판정한다.
 - 집힌 것은 «표면»이 아니라 «면»이고, χ 는 그 증거가 아니다(접선은 정점을 만들지 않는다 — 시험
   `the_touch_is_a_slit` 의 doc). 처방은 b-rep 이 아니라 메시의 기호적 순서다(「가지 말 것」의 집힌 면 분할
   행). tess 의 거절 이름은 메시에 대한 말이고 솔리드 판결은 `validate` 의 것이다.

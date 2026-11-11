@@ -470,37 +470,19 @@ pub enum RejectReason {
     // (`cyl_chart::read_cell`), and a class table and face rows that disagree are
     // `Self::CylinderStagesDisagree`.
     //
-    // The two placements are a class with no world name (a rotated one) the gate could not prove
-    // clear of the cylinder, and a cylinder on a chain that does not fold (its def is pre-motion).
+    // The placements are a class with no world name (a rotated one) the gate could not prove clear
+    // of the cylinder, a cylinder on a chain that does not fold (its def is pre-motion), and a
+    // tangent line where the gate could not read whether both solids run through it
+    // (`planes::Tangency::through` — none in the suite, the ignored sweep, the census or kit).
     /// The kernel could not decide where a plane and a cylinder stand relative to each other
     /// **exactly** because one of them is placed by motions it cannot resolve into one frame (a
-    /// plane or cylinder turned by an angle other than a quarter turn, or placed by a frame), or
-    /// because a plane's coefficients miss its own face.
+    /// plane or cylinder turned by an angle other than a quarter turn, or placed by a frame),
+    /// because a plane's coefficients miss its own face, or because along a line where a plane
+    /// touches a cylinder it could not read which faces run on across the line.
     ///
     /// **Geometry, not width**: a description the world holds and `Rat` does not is
     /// [`Self::WitnessNotRational`], whose doc says why the two stay apart.
     CylinderGateUndecided,
-    // The edge test is `planes::Tangency::line_is_an_edge`. Such a plane is a secant, so around the
-    // line six regions meet rather than the three the tangency's verdict
-    // (`assembly::tangency_reject`) reads, and no road judges them — the gate refuses the pair
-    // before the arrangement runs.
-    //
-    // **Not `Self::CylinderGateUndecided`**: nothing here failed to be computed — the gate decided
-    // exactly that a third class's face reaches the line — and that name's sentence is false of it.
-    // **Not `Self::RulingBoundNotYet`** either: the rulings split is not what cannot read the shape
-    // — the verdict is.
-    //
-    // Fired by the half cylinder's flat edge with a wall tangent across it and by an L-shaped
-    // tangent face (`tests/coverage/edge_on_a_ruling.rs`); none in the census.
-    /// **A tangent line another class's face reaches, and not as an edge** — the population gate
-    /// wrote a tangency row (a wall plane exactly `r` from a cylinder's axis, a wall face touching
-    /// the line where a lateral face lies on it), a face on another plane class holding that line
-    /// touches it there too, and the line is not an edge the wall face and a face on that class
-    /// both end on.
-    ///
-    /// A line that passes through a wall face's hole or gap touches no face, writes no row, and is
-    /// not this name's.
-    TangentLineInAnotherPlane,
     // A cell label says where *material* is; whether the cylinder's own face bounds it there is a
     // different proposition, answered by the marks on the rim — an arc's, or a whole circle's
     // (`cyl_chart::read_cell`'s `face_spans`). This name is what that answer being *contradictory*
@@ -1096,7 +1078,6 @@ impl RejectReason {
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderPairEdge => "cylinder_pair_edge",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
-            Self::TangentLineInAnotherPlane => "tangent_line_in_another_plane",
             Self::CylinderFaceUndecided => "cylinder_face_undecided",
             Self::DegenerateFace => "degenerate_face",
             Self::FrameOutOfRange => "frame_out_of_range",
@@ -1144,7 +1125,6 @@ impl RejectReason {
             | Self::CylinderPairContact
             | Self::CylinderPairEdge
             | Self::CylinderGateUndecided
-            | Self::TangentLineInAnotherPlane
             // A coordinate outside `Rat`'s range or a frame past `i128`: the *kernel* cannot
             // represent it exactly, not that no answer exists — a wider rational would lift it.
             | Self::FrameOutOfRange

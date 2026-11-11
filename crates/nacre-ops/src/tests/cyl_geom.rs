@@ -69,7 +69,7 @@ fn the_half_open_arc_is_the_closed_arc_less_its_end() {
                 )
                 .unwrap()
                     && !same_way(x, to);
-                let got = arc_holds_half_open(&rational(*from), &rational(*to), x, &m).unwrap();
+                let got = arc_holds_beside(&rational(*from), &rational(*to), x, &m, true).unwrap();
                 assert_eq!(got, want, "from {from:?} to {to:?} x {x:?}");
             }
         }
@@ -134,13 +134,13 @@ fn an_arc_with_two_radicals_reads_like_its_angles() {
                 .atan2(x as f64 / d)
                 .to_degrees()
                 .rem_euclid(360.0);
-            let got = arc_holds_half_open(from, to, &x_dir, &m).unwrap();
+            let got = arc_holds_beside(from, to, &x_dir, &m, true).unwrap();
             assert_eq!(
                 got,
                 within(angle, *a_from, *a_to),
                 "{a_from}°→{a_to}° at {angle}°"
             );
-            let back = arc_holds_half_open(to, from, &x_dir, &m).unwrap();
+            let back = arc_holds_beside(to, from, &x_dir, &m, true).unwrap();
             assert_eq!(
                 back,
                 within(angle, *a_to, *a_from),

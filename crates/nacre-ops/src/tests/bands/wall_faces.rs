@@ -1150,10 +1150,10 @@ fn a_wide_boss_in_a_wall_gap_common_builds() {
 /// **A hole whose edge lies on the tangent line hands the line to the structure.** The slot
 /// `y ∈ [0, 2]` leaves the face `x = 0` a hole whose edge `y = 0` is the tangent line over the
 /// boss's height, and the slot's own wall `y = 0` holds the line too. The face ends on the line
-/// there rather than crossing it, so the row says so (`runs_through` false), the line is an edge
-/// the wall face and the slot's wall both end on, and the shell guard judges the contact. The face
-/// has corners on both sides of the line, so a row read off the outer loop alone is no edge, and
-/// the gate refuses every operation `TangentLineInAnotherPlane` (measured).
+/// there rather than crossing it, so no piece of the row runs through (`through` empty): the line
+/// is an edge the wall face and the slot's wall both end on, and the structure judges the contact.
+/// The face has corners on both sides of the line, so a row read off the outer loop alone would
+/// have it crossing.
 ///
 /// The oracle is the inputs': the boss meets the block in its half disk `y < 0` and the segment
 /// past `y = 2`, `h(πr²/2 + r²·acos(d/r) − d·√(r² − d²))` with `d = 2`.
@@ -1164,7 +1164,10 @@ fn a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure() {
         .expect("the gate passes")
         .tangencies;
     assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(!rows[0].runs_through && rows[0].line_is_an_edge, "{rows:?}");
+    assert!(
+        rows[0].through.as_ref().is_some_and(Vec::is_empty),
+        "{rows:?}"
+    );
     let (r, d, h): (f64, f64, f64) = (2.5, 2.0, 1.0);
     let overlap = h
         * (std::f64::consts::PI * r * r / 2.0 + r * r * (d / r).acos()

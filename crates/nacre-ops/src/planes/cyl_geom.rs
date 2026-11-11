@@ -510,15 +510,18 @@ pub(super) fn rim_radial(
     }
 }
 
-/// Whether the rim arc `from → to` (counter-clockwise about `m`) holds the rational radial
-/// direction `x`, **half-open**: `from` in, `to` out. Half-open so that where two arcs of one rim
-/// meet on the line — at the node between them — the rim is counted once. [`arc_contains`]'s
-/// three-way reading, over [`QuadVec`] ends.
-fn arc_holds_half_open(
+/// Whether the rim arc `from → to` (counter-clockwise about `m`) holds the directions just beside
+/// the rational radial direction `x` — counter-clockwise of it (`ccw`), the arc **half-open** with
+/// `from` in and `to` out, or clockwise of it, `from` out and `to` in. Half-open so that where two
+/// arcs of one rim meet on the line — at the node between them — the rim is counted once, and an
+/// arc that ends on the line is counted on the side it lies. [`arc_contains`]'s three-way reading,
+/// over [`QuadVec`] ends.
+fn arc_holds_beside(
     from: &QuadVec,
     to: &QuadVec,
     x: &[nacre_exact::Rat; 3],
     m: &[nacre_exact::Rat; 3],
+    ccw: bool,
 ) -> Option<bool> {
     use nacre_exact::Orient;
     let turn = |u: &[nacre_exact::Rat; 3], v: &[nacre_exact::Rat; 3]| {
@@ -540,8 +543,15 @@ fn arc_holds_half_open(
                 || fx != Orient::Negative
         }
     };
-    let at_to = xt == Orient::Zero && to.dot(x)?.sign() == Orient::Positive;
-    Some(held && !at_to)
+    let at_end = |end: &QuadVec, turn: Orient| -> Option<bool> {
+        Some(turn == Orient::Zero && end.dot(x)?.sign() == Orient::Positive)
+    };
+    let out = if ccw {
+        at_end(to, xt)?
+    } else {
+        at_end(from, fx)?
+    };
+    Some(held && !out)
 }
 
 /// **Where a lateral face lies on one ruling** — the axis-parameter intervals the ruling through
@@ -565,6 +575,38 @@ pub(super) fn lateral_cover_on_ruling(
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
 ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
+    lateral_stations_on_ruling(model, face, def, foot, None)
+}
+
+/// **Where a lateral face lies on each side of one ruling** — `[ccw, cw]`: the axis-parameter
+/// intervals over which the face holds the generators just counter-clockwise of the ruling through
+/// `foot` (about the axis), and just clockwise of it. Both sides together are where the face runs
+/// through the line; one side alone is where the line is the face's edge. The stations are
+/// [`lateral_cover_on_ruling`]'s, each arc counted on the side it lies ([`arc_holds_beside`]); a
+/// ruling edge on the line is the face's boundary there and a seam on it is no boundary at all, so
+/// neither is a station. `None` is a face this cannot read: a corner off the rational seam, or
+/// stations that do not pair.
+pub(super) fn lateral_sides_on_ruling(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+    foot: &[nacre_exact::Rat; 3],
+) -> Option<[Vec<[nacre_exact::Rat; 2]>; 2]> {
+    Some([
+        lateral_stations_on_ruling(model, face, def, foot, Some(true))?,
+        lateral_stations_on_ruling(model, face, def, foot, Some(false))?,
+    ])
+}
+
+/// The stations both readings above pair: `beside` `None` is the cover (counter-clockwise
+/// half-open, and a ruling edge on the line unread), `Some(ccw)` one side of the line.
+fn lateral_stations_on_ruling(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+    foot: &[nacre_exact::Rat; 3],
+    beside: Option<bool>,
+) -> Option<Vec<[nacre_exact::Rat; 2]>> {
     use nacre_exact::Rat;
     let (o, m) = (def.origin(), def.dir());
     let zero = Rat::from_int(0);
@@ -586,22 +628,26 @@ pub(super) fn lateral_cover_on_ruling(
             let e = model.edge(he.edge);
             let [a, b] = e.surfaces;
             let other = if a == face.surface { b } else { a };
+            if other == face.surface && beside.is_some() {
+                continue; // a seam: the face runs on across it
+            }
             let coeffs = world_plane_coeffs(model, other)?;
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             if nacre_exact::axis_relation(&n, &m) == nacre_exact::AxisRelation::Along {
                 // A ruling edge: off the line it never meets it; on it, the face ends there.
                 let side = nacre_exact::dot3_rat(&n, foot)?.checked_add(coeffs[3])?;
-                if side == zero {
+                if side == zero && beside.is_none() {
                     return None;
                 }
             } else {
                 let [va, vb] = e.vertices;
                 let held = va == vb
-                    || arc_holds_half_open(
+                    || arc_holds_beside(
                         &rim_radial(model, face, def, va, &coeffs)?,
                         &rim_radial(model, face, def, vb, &coeffs)?,
                         &x,
                         &m,
+                        beside.unwrap_or(true),
                     )?;
                 if held {
                     stations.push(nacre_exact::axis_param_of_plane(&coeffs, &g, &m)?);
