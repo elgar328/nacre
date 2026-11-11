@@ -995,12 +995,13 @@ pub enum DeclineKind {
     // (`rrect-box`). One line on two planes and the cylinder: the corner's names are joined in the
     // alias table before any trace (`seed_from_operands` → `Aliases::record_on_cylinder`), the
     // lateral states its own side of the shared line as a graze segment in the plane vocabulary,
-    // and a crossing with a class circle is a cut point only on an arc. Both populations build;
-    // what remains here is the exact-arithmetic decline the variant is for.
-    /// A class runs **through a lateral's axis** and the ruling trace could not be stated exactly —
-    /// a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`. Declined whole
-    /// rather than contributed partially: a half-contributed rectangle leaves the class's
-    /// 1-skeleton dangling.
+    // and a crossing with a class circle is a cut point only on an arc. Both populations build.
+    /// A class runs **along a lateral's axis** — through it, beside it within the radius, or
+    /// touching it along one ruling — and the ruling trace could not be stated exactly: a point its
+    /// reading cannot name or place (such as a rim without a ⊥ class to name its ends, an order the
+    /// intervals of a nameless class cannot form, or a ring node the walk cannot name), a cycle
+    /// lying wholly in the class, or checked arithmetic past `Rat`. Declined whole rather than
+    /// contributed partially: a half-contributed rectangle leaves the class's 1-skeleton dangling.
     Ruling,
     // The section the class draws is `crate::planes::CylRecord::Sections`.
     /// A lateral face's mark on a class **oblique** to its axis — the cylinder's section the class

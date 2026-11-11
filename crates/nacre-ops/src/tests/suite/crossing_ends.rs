@@ -315,25 +315,25 @@ fn tools() -> [Tool; 9] {
 /// part is the two wings meeting on the crease, two bodies, the floor two faces under them
 /// (`arrangement::knife_parts`); the tool less the valley is one body.
 ///
+/// A tool whose ruling runs through the lateral's corner where two boundary sections meet (`x ≥ 0`
+/// on the roof and the valley, `x ≥ 1` on the off-axis ridge and at the chamfer's corner
+/// `x = 1, z = 10`) builds: the corner is a one-node run of the lateral's cycle on the tool's wall,
+/// which the boundary crosses there, its two arcs leaving to opposite sides
+/// (`arrangement::rulings`' `cycle_on_wall`).
+///
 /// What still refuses, and why (each name's face measured):
-/// - `x ≥ 0` (`x ≥ 1` for the off-axis ridge, and the chamfer's ridge `x = 1, z = 10`): the
-///   tool's ruling runs through the lateral's corner where two boundary sections meet, and the
-///   ruling sweep finds no run or line end at the arc's end there (`rulings.rs`, `Ruling`) — the
-///   wedge groove's refusal in `oblique_cut_rod.rs`;
 /// - `z = 4.5` against the roof's slanted faces, and `z = 5.5` against the valley's, cross their
 ///   elliptical edges: the planar face's scan cannot name a point on an edge riding the cylinder
 ///   (`CurvedRingWall`);
 /// - the steep valley: a slant's trace runs along its own arc from the valley's bottom corner,
 ///   where it goes on inside the face, to the cap's corner, where it goes on outside — a run whose
 ///   flanks differ, which `cycle_on_class` declines (measured at that arm; `ObliqueCylinderCut`);
-///   with the tool first,
-///   `z ≥ 5.5` and `x ≥ 0` name their own refusals before it;
+///   with the tool first, `z ≥ 5.5` names its own refusal before it;
 /// - the gate: the off-axis ridge's `z = 4.5`, `z = 5.5` and the prism's floor touch its
 ///   slanted sections, and the steep valley's pin.
 fn wants() -> [[[Want; 2]; 9]; 5] {
     let decline = |kind| refused(RejectReason::TraceDeclined { kind, face: None });
     let ring_wall: Want = decline(crate::DeclineKind::CurvedRingWall);
-    let ruling: Want = decline(crate::DeclineKind::Ruling);
     // The gate's refusal and an oblique trace's decline share this name.
     let oblique: Want = refused(RejectReason::ObliqueCylinderCut);
     let both = |w: Want| [w, w];
@@ -350,7 +350,7 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             both(ring_wall),
             both(built([2, 1, 0])),
             apart,
-            both(ruling),
+            one,
             one,
             pin,
             one,
@@ -362,7 +362,7 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             one,
             [built([1, 1, 2]), built([1, 1, 2])],
             both(ring_wall),
-            both(ruling),
+            one,
             one,
             pin,
             one,
@@ -374,7 +374,7 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             both(oblique),
             both(oblique),
             [oblique, ring_wall],
-            [oblique, ruling],
+            both(oblique),
             both(oblique),
             both(oblique),
             both(oblique),
@@ -387,12 +387,12 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             both(built([2, 1, 0])),
             both(oblique),
             one,
-            both(ruling),
+            one,
             pin,
             both(oblique),
         ],
         // chamfered
-        [apart, one, one, one, one, one, both(ruling), pin, one],
+        [apart, one, one, one, one, one, one, pin, one],
     ]
 }
 

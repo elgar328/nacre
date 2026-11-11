@@ -599,11 +599,12 @@ fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
 ///   in every cell;
 /// - the rod notched by the wedge between `z = 4 + x` and `z = 6 − x` over `x ≤ 1` — two slanted
 ///   notch faces meeting on an edge `x = 1, z = 5` that crosses the lateral — of volume
-///   `104π/3 − 6√3` (the wedge's height `2 − 2x` over the disk short of `x = 1`). Past the far box
-///   every cell is refused: `z = 2` touches the wedge floor's section at its lowest point (the gate,
-///   `ObliqueCylinderCut`), the box `x ≥ 1` — whose ruling runs through the lateral's corner where
-///   the notch's two sections meet — stops at the ruling sweep (`DeclineKind::Ruling`, as the
-///   crossing-ends ridges in `crossing_ends.rs` do), and the pin as for the two notches;
+///   `104π/3 − 6√3` (the wedge's height `2 − 2x` over the disk short of `x = 1`). `z = 2` touches
+///   the wedge floor's section at its lowest point (the gate, `ObliqueCylinderCut`), and the pin is
+///   refused as for the two notches. The box `x ≥ 1`, whose ruling runs through the lateral's
+///   corner where the notch's two sections meet, builds: both sections arrive at the corner from
+///   `x < 1`, so the boundary touches the ruling there (`arrangement::rulings`' `cycle_on_wall`), and
+///   the rod less the box is two bodies, the parts below and above the notch meeting on its edge;
 /// - the rod with a window through `x ≤ −3/2` between `z = 4 + x` and `z = 6 − x` — a floor and a
 ///   ceiling crossing on the cylinder at `x = 1`, the window's sides rulings — of volume
 ///   `40π − 2S − 7√7/6`; its rulings run between the two sections, which order only on a generator,
@@ -741,11 +742,8 @@ fn other_bodies_with_slanted_rims_fed_back() {
                 far,
                 (Err(ObliqueCylinderCut), ones, None),
                 (
-                    Err(RejectReason::TraceDeclined {
-                        kind: crate::DeclineKind::Ruling,
-                        face: None,
-                    }),
-                    ones,
+                    Ok(10.0 * (4.0 * pi / 3.0 - s3)),
+                    [[1, 2, 1], [1, 1, 1]],
                     None,
                 ),
                 (Err(RingHasNoWitness), ones, None),

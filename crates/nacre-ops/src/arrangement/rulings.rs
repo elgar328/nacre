@@ -380,12 +380,21 @@ fn cycle_on_wall(
                 };
                 read.stations.push((side, LineEvent::Toggle, node));
             }
-            Feature::Run { first, len: 1, .. } => {
-                if tangent {
+            Feature::Run {
+                first,
+                len: 1,
+                flanks_differ,
+                ..
+            } => {
+                // A corner on a ruling: the boundary crosses the class there or touches it, by the
+                // walk's flanks. Its two edges are arcs (a ruling edge from a node on the class lies
+                // in it, and would lengthen the run), and the arriving one's reading names it.
+                if tangent || !flanks_differ {
                     continue;
                 }
-                let _ = first;
-                return Err(DeclineKind::Ruling);
+                let at = meets[(first + n - 1) % n].at[1].or(meets[first].at[0]);
+                let (side, node) = at.ok_or(DeclineKind::Ruling)?;
+                read.stations.push((side, LineEvent::Toggle, node));
             }
             Feature::Run {
                 first,
