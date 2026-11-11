@@ -151,6 +151,7 @@ impl Chart {
         }
         let keeps = |b: (bool, bool)| keep_for(kind, side, b.0, b.1);
         let inside = keeps(read_bits(&walls[0].0, side, walls[0].2));
+        let mut between: Vec<bool> = Vec::with_capacity(walls.len());
         for pair in walls.windows(2) {
             let ((l0, o0, n0), (l1, o1, n1)) = (pair[0], pair[1]);
             let (a, b) = if inside {
@@ -164,11 +165,25 @@ impl Chart {
             if a != b {
                 return Err(RejectReason::LabelConflict);
             }
-            if !keeps(a) {
-                return Ok(true);
-            }
+            between.push(keeps(a));
         }
-        Ok(false)
+        // The lateral's two halves and the chords between them on its material side, in chord
+        // order. The chambers next to the lateral are kept and the far side is not — the premise
+        // above: the answer is read only between two cells the walk emits, each keeping one side
+        // of the lateral.
+        let lateral = 0;
+        let n = walls.len();
+        let star = crate::draft::LineStar::new(
+            std::iter::once(lateral)
+                .chain(1..=n)
+                .chain(std::iter::once(lateral))
+                .collect(),
+            std::iter::once(true)
+                .chain(between)
+                .chain([true, false])
+                .collect(),
+        );
+        Ok(star.continues(lateral) == Some(false))
     }
 
     /// **The arc of class `c`'s cut rim over slab `u`** — the arc from the rim's last node at or

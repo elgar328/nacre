@@ -188,13 +188,18 @@ pub(super) fn per_class(
 /// bounds passes under the knife.
 ///
 /// `label` is the cells' beside the knife — one label on both its sides; `merged` the knife's
-/// contributions, which are grazes only ([`is_knife`]). A knife two solids graze at once has two
-/// wedges whose order about the line nothing here reads, and is left whole ([`knife_grazer`]).
+/// contributions, which are grazes only ([`is_knife`]). A knife two solids graze at once parts
+/// nothing ([`knife_grazer`]): the premise below holds for each of them, so all four bits are one
+/// on both sides of it, `keep` is too, and the class has no face there to part.
 ///
 /// **`X`'s two bits in `label` are equal**: `X` has no face on the plane where its knife lies — a
 /// face there would hold `X`'s own edge inside it, which no valid solid has.
 fn knife_parts(kind: BoolKind, merged: &[(SolidSide, SegKind)], label: Label) -> bool {
     let Some((x, side)) = knife_grazer(merged) else {
+        debug_assert!(
+            label[0] == label[1] && label[2] == label[3],
+            "a knife both solids graze, where one has a face on the plane: {label:?}"
+        );
         return false;
     };
     debug_assert_eq!(
@@ -211,7 +216,20 @@ fn knife_parts(kind: BoolKind, merged: &[(SolidSide, SegKind)], label: Label) ->
     };
     let mut wedge = label;
     wedge[label_bit(x, side)] ^= true;
-    kept(label, side) && !kept(label, !side) && !kept(wedge, side)
+    // Counter-clockwise from the plane's half on one side of the knife, turning to `side`: the
+    // chamber on `side`, the knife's two faces round the wedge between them, the chamber again,
+    // the plane's other half, and the far side.
+    let (plane, (first, second)) = (0, (1, 2));
+    let star = crate::draft::LineStar::new(
+        vec![plane, first, second, plane],
+        vec![
+            kept(label, side),
+            kept(wedge, side),
+            kept(label, side),
+            kept(label, !side),
+        ],
+    );
+    star.continues(plane) == Some(false)
 }
 
 /// The solid whose knife this is and the side its faces leave to — `None` unless every

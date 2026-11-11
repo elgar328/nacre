@@ -358,6 +358,132 @@ pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
     }
 }
 
+/// **The material about one line, as the sectors between the half-faces that leave it** — the
+/// one answer to «does a result face run on across this line, or end there» and «does the kept
+/// material meet itself only along it».
+///
+/// Round a line where faces meet, each face leaves along one half-plane per side of the line it
+/// lies on — a *spoke* — and the material between two neighbouring spokes is one *sector*, in
+/// each operand or not. This is the radial order of the faces about an edge (CGAL `Nef_3`'s sphere
+/// map, Mäntylä's sectors on a shared line); OCCT's `GetFaceOff` picks the next face by the same
+/// angle. Only [`keep`] decides a sector, so the operation enters here and nowhere else.
+///
+/// - **A face runs on across the line exactly when every sector between its two spokes, on the
+///   side it keeps, is kept** ([`Self::continues`]) — the material it bounds passes round the line
+///   from one half to the other. A face with one spoke — the line is its edge — ends there.
+/// - **The kept material meets itself only along the line when its sectors fall into two runs or
+///   more** ([`Self::kept_runs`]).
+///
+/// Spokes are counted counter-clockwise from any one of them; `kept[i]` is the sector
+/// counter-clockwise after spoke `i`.
+#[derive(Clone, Debug)]
+pub(crate) struct LineStar {
+    /// The face each spoke is a half of — two spokes of one face carry one key.
+    faces: Vec<usize>,
+    kept: Vec<bool>,
+}
+
+/// One half-face leaving a line, for [`LineStar::from_spokes`]: its face, its solid, and whether
+/// that solid's material lies counter-clockwise after it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Spoke {
+    pub(crate) face: usize,
+    pub(crate) solid: crate::planes::SolidSide,
+    pub(crate) material_ccw: bool,
+}
+
+impl LineStar {
+    /// A star whose sectors' keep the caller has already read (a class's labels).
+    pub(crate) fn new(faces: Vec<usize>, kept: Vec<bool>) -> Self {
+        debug_assert_eq!(faces.len(), kept.len(), "one sector after each spoke");
+        Self { faces, kept }
+    }
+
+    /// **The sectors' `(in_a, in_b)`, walked from the spokes** — a sector lies in solid `X`
+    /// exactly as the nearest spoke of `X` clockwise before it says. `None` unless each solid
+    /// brings exactly two spokes whose material sides face each other: about a line, a valid
+    /// solid is one face running through it or two faces ending on it, and its material is the
+    /// sectors on one side of that pair.
+    pub(crate) fn sectors_of(spokes: &[Spoke]) -> Option<Vec<(bool, bool)>> {
+        use crate::planes::SolidSide;
+        let n = spokes.len();
+        let mut read = [None; 2];
+        for (slot, solid) in read.iter_mut().zip([SolidSide::A, SolidSide::B]) {
+            let own: Vec<usize> = (0..n).filter(|&i| spokes[i].solid == solid).collect();
+            let [p, q] = own[..] else { return None };
+            if spokes[p].material_ccw == spokes[q].material_ccw {
+                return None;
+            }
+            // Sector `i` lies after `p` and before `q` (counter-clockwise) or after `q`.
+            *slot = Some(move |i: usize| {
+                if (p..q).contains(&i) {
+                    spokes[p].material_ccw
+                } else {
+                    spokes[q].material_ccw
+                }
+            });
+        }
+        let [Some(a), Some(b)] = read else {
+            return None;
+        };
+        Some((0..n).map(|i| (a(i), b(i))).collect())
+    }
+
+    /// The star of `spokes` under `kind` — `None` where [`Self::sectors_of`] is.
+    pub(crate) fn from_spokes(kind: BoolKind, spokes: &[Spoke]) -> Option<Self> {
+        let sectors = Self::sectors_of(spokes)?;
+        Some(Self::new(
+            spokes.iter().map(|s| s.face).collect(),
+            sectors.iter().map(|&(a, b)| keep(kind, a, b)).collect(),
+        ))
+    }
+
+    /// **Does `face` run on across the line in the result?** `None` where no spoke of it is in the
+    /// result (the sectors on its two sides are kept alike) or it has no spoke here; `Some(false)`
+    /// where it ends — the line is its edge (one spoke), only one of its two spokes is in the
+    /// result, or a sector between them on the side it keeps is not kept; `Some(true)` where the
+    /// material it bounds passes round the line from one spoke to the other.
+    pub(crate) fn continues(&self, face: usize) -> Option<bool> {
+        let n = self.kept.len();
+        let own: Vec<usize> = (0..n).filter(|&i| self.faces[i] == face).collect();
+        let in_result = |i: usize| self.kept[(i + n - 1) % n] != self.kept[i];
+        match own[..] {
+            [p] => in_result(p).then_some(false),
+            [p, q] => match (in_result(p), in_result(q)) {
+                (false, false) => None,
+                (true, true) => {
+                    // The side `p` keeps runs counter-clockwise to `q`, or the other way round.
+                    let arc: Vec<usize> = if self.kept[p] {
+                        (p..q).collect()
+                    } else {
+                        (q..p + n).map(|i| i % n).collect()
+                    };
+                    Some(arc.iter().all(|&i| self.kept[i]))
+                }
+                _ => Some(false),
+            },
+            _ => {
+                debug_assert!(
+                    own.is_empty(),
+                    "a face leaves a line along two half-planes at most"
+                );
+                None
+            }
+        }
+    }
+
+    /// How many runs the kept sectors fall into round the line — `0` with none kept, `1` with all.
+    pub(crate) fn kept_runs(&self) -> usize {
+        let n = self.kept.len();
+        if self.kept.iter().all(|&k| k) {
+            return usize::from(n > 0);
+        }
+        (0..n)
+            .filter(|&i| self.kept[i] && !self.kept[(i + n - 1) % n])
+            .count()
+    }
+}
+
 /// **A cut circle's nodes in their order round it — carried from the split, never re-derived.**
 /// `split_circles` orders a cut circle's pierce nodes by θ (`circular_order_about_seam`), so the
 /// arcs between consecutive nodes — the circle's pieces — travel from the place that computed
@@ -469,3 +595,7 @@ pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
     }
     HeldRims(out)
 }
+
+#[cfg(test)]
+#[path = "tests/draft.rs"]
+mod tests;

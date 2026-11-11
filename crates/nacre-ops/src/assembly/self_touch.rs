@@ -34,7 +34,7 @@ pub(crate) enum Pinch {
 }
 
 /// **Does the material near a tangent line fall into more than one piece, and which?** — the three
-/// regions and their two adjacencies, asked through [`crate::draft::keep`] and nothing else.
+/// regions and their two adjacencies, read as the sectors round the line ([`crate::draft::LineStar`]).
 ///
 /// **The operation enters here and only here.** Near the tangent line the material is three
 /// regions — the lens `L` inside the cylinder, the **two** wedges `W2` between the parabola and the
@@ -57,33 +57,60 @@ pub(crate) fn pinch(
     lens_in_wall_solid: bool,
     cyl_orient: i8,
 ) -> Option<Pinch> {
+    use crate::draft::{LineStar, Spoke};
     use crate::planes::SolidSide;
-    // `(in the wall face's solid, in the lateral face's solid)`.
-    let member = |in_lens_side: bool, inside_cyl: bool| {
-        (
-            in_lens_side == lens_in_wall_solid,
-            inside_cyl == (cyl_orient > 0),
-        )
+    let cyl_solid = match wall_solid {
+        SolidSide::A => SolidSide::B,
+        SolidSide::B => SolidSide::A,
     };
-    let kept = |(w, c): (bool, bool)| match wall_solid {
-        SolidSide::A => crate::draft::keep(kind, w, c),
-        SolidSide::B => crate::draft::keep(kind, c, w),
-    };
-    let (ml, mf) = (member(true, true), member(false, false));
-    let (l, w2, f) = (kept(ml), kept(member(true, false)), kept(mf));
-    if w2 && !l && !f {
-        Some(Pinch::Wedges)
-    } else if l && f && !w2 {
-        // What the verdict's reading of this shape stands on: the lens is the cylinder's
-        // operand's material alone and the far side the wall's alone.
-        debug_assert!(
-            ml == (false, true) && mf == (true, false),
-            "the lens and the far side are the two operands' own"
-        );
-        Some(Pinch::LensAndFar)
-    } else {
-        None
+    // Counter-clockwise from the wall's half on one side, the lens side up: the lateral leaves
+    // along the wall's own half-planes and bends to its axis, so each of its halves lies just
+    // inside the wall's on that side — `W2` between them, `L` between the lateral's two halves,
+    // `W2` again, and `F` below the wall.
+    let (wall, lateral) = (0, 1);
+    let spokes = [
+        Spoke {
+            face: wall,
+            solid: wall_solid,
+            material_ccw: lens_in_wall_solid,
+        },
+        Spoke {
+            face: lateral,
+            solid: cyl_solid,
+            material_ccw: cyl_orient > 0,
+        },
+        Spoke {
+            face: lateral,
+            solid: cyl_solid,
+            material_ccw: cyl_orient < 0,
+        },
+        Spoke {
+            face: wall,
+            solid: wall_solid,
+            material_ccw: !lens_in_wall_solid,
+        },
+    ];
+    let star = LineStar::from_spokes(kind, &spokes)
+        .expect("a wall and a lateral each bring two halves with opposite material sides");
+    if star.kept_runs() < 2 {
+        return None;
     }
+    if star.continues(wall) == Some(false) || star.continues(lateral) == Some(false) {
+        return Some(Pinch::Wedges);
+    }
+    // What the verdict's reading of this shape stands on: the lens is the cylinder's operand's
+    // material alone and the far side the wall's alone.
+    debug_assert!(
+        LineStar::sectors_of(&spokes).is_some_and(|s| {
+            let own = |(a, b): (bool, bool)| match wall_solid {
+                SolidSide::A => (a, b),
+                SolidSide::B => (b, a),
+            };
+            own(s[1]) == (false, true) && own(s[3]) == (true, false)
+        }),
+        "the lens and the far side are the two operands' own"
+    );
+    Some(Pinch::LensAndFar)
 }
 
 /// **A tangency pinches the result when the material it leaves is two lumps that meet only along
