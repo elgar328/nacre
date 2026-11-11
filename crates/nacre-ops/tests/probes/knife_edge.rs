@@ -189,3 +189,99 @@ fn centred_rotated_copy_fuses() {
         "a union strictly between one and two boxes: {v}"
     );
 }
+
+/// A block `x ∈ [−2, 2]`, `z ∈ [0, depth]`, whose top is `y = 5 + |x|/2` — a V notch whose crease
+/// is the line `x = 0, y = 5`.
+fn notched(m: &mut Model, depth: f64) -> Handle<Solid> {
+    use nacre_math::Point2;
+    use nacre_ops::{Profile2d, SketchFrame};
+    let profile = Profile2d::polygon(vec![
+        Point2::from_array([-2.0, 0.0]),
+        Point2::from_array([2.0, 0.0]),
+        Point2::from_array([2.0, 6.0]),
+        Point2::from_array([0.0, 5.0]),
+        Point2::from_array([-2.0, 6.0]),
+    ])
+    .unwrap();
+    let op = Operation::Extrude {
+        frame: SketchFrame::world(m, Axis::Z),
+        profile,
+        dist: depth,
+    };
+    let nacre_ops::OpOutput::Extrude { solid, .. } = apply(m, &op).expect("notched block") else {
+        panic!()
+    };
+    solid
+}
+
+/// The tool `y ≥ 5`, holding the notch's crease in its floor.
+fn above_the_crease(m: &mut Model) -> Handle<Solid> {
+    nacre_ops::fixtures::cuboid(m, [-6.0, 5.0, -2.0], [6.0, 12.0, 6.0])
+}
+
+/// ⑥ **A knife that parts the kept material is where the face ends.** The notch's crease lies in the
+/// tool's floor `y = 5` with both notch faces leaving it upward, so no label changes across it —
+/// yet the part of the block above `y = 5` is two wings that meet along the crease alone. Their
+/// common part is two bodies (each `∫₀² x/2 dx · 4 = 4`), the floor under them two faces; the other
+/// kinds build whole: block 88, tool 672, common 8.
+///
+/// red: knives never walked (or the coplanar merge joining across the crease) → the floor is one
+/// face under both wings and the common part is refused `SelfTouchingResult`.
+#[test]
+fn a_knife_parting_the_kept_material_splits_the_face_under_it() {
+    for swap in [false, true] {
+        for (kind, want) in [
+            (BoolKind::Fuse, vec![752.0]),
+            (BoolKind::Cut, if swap { vec![664.0] } else { vec![80.0] }),
+            (BoolKind::Common, vec![4.0, 4.0]),
+        ] {
+            let mut m = Model::new();
+            let b = notched(&mut m, 4.0);
+            let t = above_the_crease(&mut m);
+            let (x, y) = if swap { (t, b) } else { (b, t) };
+            let out = boolean(&mut m, kind, x, y)
+                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: {e:?}"));
+            let got: Vec<f64> = out
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                .collect();
+            assert_eq!(got.len(), want.len(), "{kind:?} swap={swap}: {got:?}");
+            for (g, w) in got.iter().zip(&want) {
+                assert!((g - w).abs() < 1e-9, "{kind:?} swap={swap}: {got:?}");
+            }
+            assert_eq!(
+                nacre_validate::validate(&m),
+                Vec::new(),
+                "{kind:?} swap={swap}"
+            );
+        }
+    }
+}
+
+/// ⑦ **A knife that ends inside the face is the body touching itself.** Notched over `z ∈ [0, 2]`
+/// only, the block is whole above `y = 5` over `z ∈ [2, 4]`, so the two wings join there and the
+/// crease, ending at `z = 2` inside the floor, cannot cut it in two. The common part is one body
+/// whose two wings meet along the crease — refused `SelfTouchingResult` at the crease, in both
+/// orders.
+#[test]
+fn a_knife_ending_inside_the_face_is_a_self_touch() {
+    for swap in [false, true] {
+        let mut m = Model::new();
+        let n = notched(&mut m, 2.0);
+        let top = nacre_ops::fixtures::cuboid(&mut m, [-2.0, 0.0, 2.0], [2.0, 6.0, 4.0]);
+        let b = boolean(&mut m, BoolKind::Fuse, n, top).expect("the half-notched block")[0];
+        let t = above_the_crease(&mut m);
+        let (x, y) = if swap { (t, b) } else { (b, t) };
+        match boolean(&mut m, BoolKind::Common, x, y) {
+            Err(nacre_ops::BoolError::Rejected {
+                reason: nacre_ops::RejectReason::SelfTouchingResult,
+                at: Some(nacre_ops::RejectWhere::Segment([p, q])),
+            }) => {
+                let mut ends = [p.as_array(), q.as_array()];
+                ends.sort_by(|a, b| a[2].total_cmp(&b[2]));
+                assert_eq!(ends, [[0.0, 5.0, 0.0], [0.0, 5.0, 2.0]], "swap={swap}");
+            }
+            other => panic!("swap={swap}: {other:?}"),
+        }
+    }
+}

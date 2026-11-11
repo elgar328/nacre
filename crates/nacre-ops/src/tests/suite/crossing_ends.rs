@@ -310,15 +310,16 @@ fn tools() -> [Tool; 9] {
 /// on the roof's `x = 0, z = 5` and the off-axis ridge's `x = 1, z = 5`), builds: the ridge's ends
 /// on the cylinder are named by their own pierce names, the three planes through each being a
 /// pencil about the ridge (`combinatorics::canonical_triple`), and the table learns the ridge as a
-/// line. The roof fused with it is two bodies meeting on that edge.
+/// line. The roof fused with it is two bodies meeting on that edge. Against the valley the same
+/// line is its crease, a knife on the tool's floor whose ends cut the floor's circle: the common
+/// part is the two wings meeting on the crease, two bodies, the floor two faces under them
+/// (`arrangement::knife_parts`); the tool less the valley is one body.
 ///
 /// What still refuses, and why (each name's face measured):
 /// - `x ≥ 0` (`x ≥ 1` for the off-axis ridge, and the chamfer's ridge `x = 1, z = 10`): the
 ///   tool's ruling runs through the lateral's corner where two boundary sections meet, and the
 ///   ruling sweep finds no run or line end at the arc's end there (`rulings.rs`, `Ruling`) — the
 ///   wedge groove's refusal in `oblique_cut_rod.rs`;
-/// - `z ≥ 5` against the valley: the common part — two wings meeting on the ridge — and the tool
-///   less the valley are refused as `CylinderStagesDisagree` (cause not measured);
 /// - `z = 4.5` against the roof's slanted faces, and `z = 5.5` against the valley's, cross their
 ///   elliptical edges: the planar face's scan cannot name a point on an edge riding the cylinder
 ///   (`CurvedRingWall`);
@@ -333,7 +334,6 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
     let decline = |kind| refused(RejectReason::TraceDeclined { kind, face: None });
     let ring_wall: Want = decline(crate::DeclineKind::CurvedRingWall);
     let ruling: Want = decline(crate::DeclineKind::Ruling);
-    let stages = Err(RejectReason::CylinderStagesDisagree);
     // The gate's refusal and an oblique trace's decline share this name.
     let oblique: Want = refused(RejectReason::ObliqueCylinderCut);
     let both = |w: Want| [w, w];
@@ -360,7 +360,7 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
             apart,
             one,
             one,
-            [[Ok(1), Ok(1), stages], [Ok(1), stages, stages]],
+            [built([1, 1, 2]), built([1, 1, 2])],
             both(ring_wall),
             both(ruling),
             one,

@@ -382,12 +382,14 @@ pub(super) fn class_split(
 
 /// **One class's traced edges, merged and split** — pass A's skeleton step: the segments merged
 /// where coincident ([`merge_coincident`]) and cut at their crossings ([`split_at_crossings`],
-/// which learns aliases into `local`), which of them carry news asked ([`carries_news`] — its
-/// conflicts first, nearest their cause), the circles and rulings merged, the ruling pieces cut at
-/// the ends of **every** segment along them ([`cut_rulings_along_segments`] — a newsless knife
-/// edge's ends are vertices of the line it lies on), and then the newsless segments dropped. One
-/// function because the audit and tests that run a class by hand take the same step; a copy of
-/// the order could drift from it.
+/// which learns aliases into `local`), their masks asked ([`edge_mask`] — ahead of the walk, so a
+/// conflict (`EdgeOccupancyConflict`) surfaces before any walk-stage reject, nearer its cause), the
+/// circles and rulings merged, and the ruling pieces cut at the ends of **every** segment along
+/// them ([`cut_rulings_along_segments`] — a knife's ends are vertices of the line it lies on). The
+/// knives stay among the segments: the curve splits after this one cut at every vertex a segment
+/// puts on a curve, a knife's included, and only the last of them sets the knives apart
+/// ([`split_class_edges`], [`is_knife`]). One function because the audit and tests that run a
+/// class by hand take the same step; a copy of the order could drift from it.
 pub(super) fn class_skeleton(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -399,15 +401,12 @@ pub(super) fn class_skeleton(
     // from the same parity sweep as every polygon's section).
     let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, local))?;
     let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, local))?;
-    let news = carries_news(&split)?;
+    for s in &split {
+        edge_mask(&s.merged)?;
+    }
     let circles = merge_circles(&tr.circles, local)?;
     let rulings = merge_rulings(&tr.rulings, local);
     let rulings = cut_rulings_along_segments(jd, cyls, wc, &split, rulings, local)?;
-    let split = split
-        .into_iter()
-        .zip(news)
-        .filter_map(|(s, keep)| keep.then_some(s))
-        .collect();
     Ok((split, circles, rulings))
 }
 
@@ -620,17 +619,15 @@ pub(super) fn trace_result_faces(
         );
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
-            // **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
-            // everything below must read the *same* edges the walk did — building it here is what
-            // makes that structural instead of a promise. (`frame_audit` reads the same split; the
-            // arc fence locks that they agree.)
-            let edges = ClassEdges::of(cyls, wc, &splits[k]);
-            let s = per_class(jd, cyls, kind, wc, &edges)?;
+            // The split renumbers half-edges, so everything below reads the edges the walk did:
+            // `arrange_class` builds the one `ClassEdges` each of its walks reads. (`frame_audit`
+            // reads the same split; the arc fence locks that they agree.)
+            let s = arrange_class(jd, cyls, kind, wc, &splits[k])?;
             Ok((
                 s.faces,
                 s.disk_labels,
                 s.arc_labels,
-                edges.cut_rims.to_vec(),
+                splits[k].cut_rims.clone(),
                 s.ruling_extents,
             ))
         };

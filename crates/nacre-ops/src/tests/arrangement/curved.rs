@@ -1280,16 +1280,15 @@ fn armed_curved(
     // both-cut middle is one whole-circle cell the emitter cannot read per sector.
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in [z0, z20, cap_lo, cap_hi, wc] {
-        let edges = armed_class_edges(m, plate, boss, setup, jd, c);
-        let edges = ClassEdges::of(&setup.cyls, c, &edges);
-        let staged = per_class(jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
+        let split = armed_class_edges(m, plate, boss, setup, jd, c);
+        let staged = arrange_class(jd, &setup.cyls, BoolKind::Fuse, c, &split).unwrap();
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), label.clone());
         }
         for (cyl, al) in &staged.arc_labels {
             arc_labels.entry((*cyl, c)).or_default().push(al.clone());
         }
-        for (cyl, rim) in edges.cut_rims {
+        for (cyl, rim) in &split.cut_rims {
             cut_rims.insert((*cyl, c), rim.clone());
         }
         for (cyl, r) in staged.ruling_extents {
@@ -1480,9 +1479,8 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
     let mut cut_rims: CutRims = HashMap::new();
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in 0..setup.geom.len() {
-        let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c);
-        let edges = ClassEdges::of(&setup.cyls, c, &edges);
-        let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
+        let split = armed_class_edges(&m, plate, boss, &setup, &jd, c);
+        let staged = arrange_class(&jd, &setup.cyls, BoolKind::Fuse, c, &split).unwrap();
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), label.clone());
         }
@@ -1492,7 +1490,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         for (cyl, al) in &staged.arc_labels {
             arc_labels.entry((*cyl, c)).or_default().push(al.clone());
         }
-        for (cyl, rim) in edges.cut_rims {
+        for (cyl, rim) in &split.cut_rims {
             cut_rims.insert((*cyl, c), rim.clone());
         }
         for (cyl, r) in staged.ruling_extents {

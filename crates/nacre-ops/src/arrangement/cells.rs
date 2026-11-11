@@ -412,6 +412,40 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
     Ok(mask)
 }
 
+/// **A knife** — an edge whose [`edge_mask`] is all-false: it changes no label when crossed, so the
+/// cells on its two sides carry one label. It is one solid's edge in the class's plane with both
+/// its faces leaving to one side. Equal labels are not one region of the result, though — the
+/// wedge between the knife's two faces reaches the plane along it, and where the kept material
+/// beside it is cut by that wedge the knife is where the result's face on this plane ends
+/// (`per_class::knife_parts`). So a knife is set apart, not dropped ([`split_class_edges`]), and
+/// [`arrange_class`] adds the ones that part the kept material. Left in the skeleton regardless it
+/// damages structure: a knife-edge tangency far from everything else is a dangling edge the face
+/// walk cannot close (a two-half-edge orbit), which surfaced as `RingOrientation` two layers from
+/// its cause.
+///
+/// A single-point tangency on a class line becomes no segment at all, and a tangency along a
+/// line is likewise an edge that never enters the DCEL.
+/// Where a knife edge coincides with the *other* solid's real boundary, that solid's
+/// contributions make the mask non-false and the edge is no knife — a true boundary cannot be set
+/// apart this way. Where that boundary is a lateral's ruling, it is a ruling piece rather than a
+/// segment, and the knife edge goes ([`split_rulings`]); its ends do not — they are vertices of
+/// the line, and the class skeleton cuts the ruling pieces at them first.
+pub(super) fn is_knife(merged: &[(SolidSide, SegKind)]) -> Result<bool, BoolError> {
+    if edge_mask(merged)? != [false; 4] {
+        return Ok(false);
+    }
+    // The only way to all-false is an even count of same-side grazes per solid (seated flips one
+    // bit, a transversal flips two, and an edge has at least one contribution) — anything else set
+    // apart here would be a hole in that argument, so it is checked, not assumed.
+    debug_assert!(
+        merged
+            .iter()
+            .all(|(_, k)| matches!(k, SegKind::Graze { .. })),
+        "a knife that is not a graze pair: {merged:?}"
+    );
+    Ok(true)
+}
+
 /// **The disk side of a cylinder's trace carries that cylinder's own solid** — `false` when it
 /// does not, which is a labelling that cannot be right whatever the frame conventions are.
 ///

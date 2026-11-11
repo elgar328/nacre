@@ -100,7 +100,7 @@ use line_sweep::sweep_line;
 use crossings::*;
 #[cfg(all(test, debug_assertions))]
 pub(crate) use per_class::MIXED_CLASS_AUDIT;
-use per_class::{per_class, split_class_edges};
+use per_class::{arrange_class, split_class_edges};
 pub(crate) use result::*;
 pub(crate) use rulings::*;
 pub(crate) use setup::*;
@@ -203,6 +203,9 @@ struct Staged {
     arc_labels: Vec<(usize, ArcLabel)>,
     /// This class's ruling pieces, keyed by cylinder class — see [`RulingExtent`].
     ruling_extents: Vec<(usize, RulingExtent)>,
+    /// Per knife the walk carried (`ClassEdges::knives_from` onward), whether it parts the kept
+    /// material beside it (`per_class::knife_parts`) — what [`arrange_class`] keeps of them.
+    knife_cuts: Vec<bool>,
 }
 
 /// **One edge of a plane class's arrangement** — a piece of one curve the class carries, between two
@@ -352,13 +355,20 @@ impl From<MergedRuling> for Piece {
 
 /// **One plane class's edges, split** — pass A's product ([`split_class_edges`], the last step of
 /// [`class_split`]): every two-ended edge ([`Piece`] — the segments, then the arcs, then the
-/// ruling pieces), the circles nothing cut, and each cut circle's rim. Made inside the alias
-/// rounds, so every name in it was born where a round could record its other names; the kept one is
-/// the round whose table did not grow.
+/// ruling pieces), the circles nothing cut, each cut circle's rim, and the knives. Made inside the
+/// alias rounds, so every name in it was born where a round could record its other names; the kept
+/// one is the round whose table did not grow.
+///
+/// **A knife** is a straight piece no label flips across ([`is_knife`]): an edge of one solid
+/// lying in the class's plane with both its faces leaving to one side. It cut every curve it meets
+/// in the splits, as any segment does — the curves are cut at every vertex on them — and is kept
+/// apart because whether it is an edge of the class's faces is not a question of labels:
+/// [`arrange_class`] asks it of the material beside it.
 struct ClassSplit {
     pieces: Vec<Piece>,
     circles: Vec<MergedCircle>,
     cut_rims: Vec<(usize, CutRim)>,
+    knives: Vec<Piece>,
 }
 
 /// **One plane class's edges, after the splits — and the only thing that knows the half-edge
@@ -384,12 +394,12 @@ struct ClassEdges<'a> {
     /// is read.
     cyls: &'a [crate::planes::WorkingCyl],
     circles: &'a [MergedCircle],
-    /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
-    /// (keyed by plane class where the per-class products are aggregated).
-    cut_rims: &'a [(usize, CutRim)],
     /// The class arranged — the plane every ruling here lies in, and so the one its side was
     /// measured against.
     wc: usize,
+    /// Where the knives the walk carries begin among `pieces` — all of `pieces` past it are knives
+    /// ([`ClassSplit::knives`]); `pieces.len()` when it carries none.
+    knives_from: usize,
 }
 
 /// Which of the two ranges a half-edge is in, and its index within that range.

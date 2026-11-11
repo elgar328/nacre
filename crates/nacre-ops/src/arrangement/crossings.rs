@@ -8,7 +8,10 @@ type SplitCircles = Option<(
     Vec<(usize, CutRim)>,
 )>;
 
-/// **Cut every circle a segment crosses into arcs, and the segments with it.**
+/// **Cut every circle a segment crosses into arcs, and the segments with it.** Every segment — the
+/// class's knives too ([`is_knife`]): a curve is cut at every vertex on it, and where a knife
+/// meets a circle (the end of an edge lying in this plane, or its crossing) is where the other
+/// solid's faces meet the lateral.
 ///
 /// This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`] names
 /// them. The work here is ordering: around the circle (θ,
@@ -270,7 +273,7 @@ pub(super) fn split_circles(
             // fillet's quarter, a slot's half — states its arc alone, and the rest of the circle
             // bounds no face on this class; emitted, it stood as a phantom edge that tied with
             // the tangent wall's line at the fillet's corner (`UnorderedEdges`, measured). The
-            // straight road drops its newsless pieces (`carries_news`); this is the arc's twin.
+            // straight road sets its knives apart (`split_class_edges`); this is the arc's twin.
             // The rim's cut nodes stay in `cut_rims` either way.
             if merged.is_empty() {
                 continue;
@@ -787,9 +790,10 @@ impl AxisCoord {
 type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 
 /// **Cut every ruling a segment crosses into pieces, and the segments with it** — the straight
-/// twin of [`split_circles`](fn@split_circles), run after it. The ends of the segments lying
-/// *along* a ruling, which meet it at no crossing, have cut it already
-/// ([`cut_rulings_along_segments`], pass A).
+/// twin of [`split_circles`](fn@split_circles), run after it, over every segment, knives included.
+/// The ends of the segments lying *along* a ruling, which meet it at no crossing, have cut it
+/// already ([`cut_rulings_along_segments`], pass A); a knife among those is then dropped, not
+/// folded onto the ruling.
 ///
 /// **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
 /// circles against segments and not against rulings. One class *can* carry both populations
@@ -861,9 +865,14 @@ pub(super) fn split_rulings(
         aliases,
         &cyl_list,
         |_si, sg, cyl| {
-            let shared = combinatorics::line_along(&shared_here, sg.wall)
-                .map_err(reject)?
-                .is_some_and(|l| l.cyl == cyl);
+            // A knife whose line lies on the cylinder runs along a ruling and crosses none, as a
+            // recorded shared line does: what a knife says to a curve is where it crosses it, and
+            // the knife along a lateral is no edge here (dropped below, its ends cut in pass A).
+            let knife = is_knife(&sg.merged)?;
+            let shared = knife
+                || combinatorics::line_along(&shared_here, sg.wall)
+                    .map_err(reject)?
+                    .is_some_and(|l| l.cyl == cyl);
             let pieces = || crate::planes::lateral_pieces(faces, cyls[cyl].surf);
             let Some(xs) = lateral_crossings(jd, wc, cyl, &cyls[cyl].def, sg, shared, pieces)?
             else {
@@ -954,7 +963,20 @@ pub(super) fn split_rulings(
         aliases,
     )?;
     let out_segs = if folds {
-        fold_onto_rulings(jd, cyls, out_segs, &mut out_rulings, &shared_here, aliases)?
+        // **A knife along a lateral's ruling is no edge of this class, and it is not folded.** Its
+        // ends already cut the ruling pieces (`cut_rulings_along_segments`) — that is all it says
+        // about the line. Folding its grazes onto the ruling piece instead takes two exceptions
+        // downstream (design's «가지 말 것», the knife-on-a-ruling row).
+        let mut kept = Vec::with_capacity(out_segs.len());
+        for sg in out_segs {
+            let along = combinatorics::line_along(&shared_here, sg.wall)
+                .map_err(reject)?
+                .is_some();
+            if !(along && is_knife(&sg.merged)?) {
+                kept.push(sg);
+            }
+        }
+        fold_onto_rulings(jd, cyls, kept, &mut out_rulings, &shared_here, aliases)?
     } else {
         out_segs
     };
@@ -963,10 +985,11 @@ pub(super) fn split_rulings(
 
 /// **Pass A's cut: each ruling piece of class `wc` at the ends of the segments lying along it** —
 /// [`cut_rulings`] with the vertices only the segments along a line know. `segs` are the class's
-/// segments before the newsless ones go (`carries_news`): a knife edge of the other solid along a
-/// lateral's ruling carries no news, yet its ends are where that solid's faces meet the line, and
-/// the other classes through the line put them in their rings. A class whose records cannot be read
-/// is left uncut — the ruling split refuses it by name ([`split_rulings`]).
+/// segments, knives included ([`is_knife`]): a knife edge of the other solid along a lateral's
+/// ruling flips no label and is no edge here ([`split_rulings`] drops it), yet its ends are where
+/// that solid's faces meet the line, and the other classes through the line put them in their
+/// rings. A class whose records cannot be read is left uncut — the ruling split refuses it by name
+/// ([`split_rulings`]).
 pub(super) fn cut_rulings_along_segments(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -1084,9 +1107,9 @@ fn ruling_ends(
 
 /// **A line is cut at every vertex on it** — each ruling piece at the nodes in `cuts[i]` (strictly
 /// inside it), into pieces in axis order. The one cut both ruling steps make, at the vertices each
-/// knows: at the ends of the segments lying along the line (`class_skeleton` — before the knife
-/// edges among them are dropped, their ends are vertices of the line all the same), and where a
-/// segment crosses it (`split_rulings`). Both run inside the alias rounds, so a tie is recorded.
+/// knows: at the ends of the segments lying along the line (`class_skeleton` — a knife edge's ends
+/// are vertices of the line all the same), and where a segment crosses it (`split_rulings`, knives
+/// included). Both run inside the alias rounds, so a tie is recorded.
 /// OCCT's extra paves: an edge is split at every vertex any interference puts on it.
 fn cut_rulings(
     jd: &Judge<'_, WorkingPlane>,

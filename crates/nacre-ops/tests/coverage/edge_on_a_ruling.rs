@@ -381,10 +381,11 @@ fn a_tangent_wall_on_a_flats_edge_builds_or_is_refused() {
 /// along the edge line alone: below the flat (`[1, 3] × [−1, 0]`, `B`'s top on `A`'s flat plane) or
 /// beside it (`[1, 3] × [0, 1/2]`, the two bottoms on one plane). On `B`'s wall class `A`'s flat and
 /// lateral state the line from one side and cancel, as when the wall ends on the edge from inside.
-/// Below, every boolean builds — `A ∪ B` the two bodies meeting on the line, `A ∩ B` empty. Beside,
-/// `A ∪ B` merges the coplanar bottoms into one face, so the one body touches itself along the
-/// line (`SelfTouchingResult` — a polyhedral `A` against the same `B` answers the same); the rest
-/// builds.
+/// Every boolean builds — `A ∪ B` the two bodies meeting on the line, `A ∩ B` empty. Beside, `A`'s
+/// flat and `B`'s side `y = 0` lie on one plane and share the line, which four faces use: a contact,
+/// across which the coplanar merge joins nothing (`unify_coplanar_faces`), so the two faces stay
+/// two and so do the bodies. red: the merge joining across the line → `A ∪ B` one body touching
+/// itself, `SelfTouchingResult`.
 #[test]
 fn a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused() {
     let below: &[[f64; 2]] = &[[1.0, -1.0], [3.0, -1.0], [3.0, 0.0], [1.0, 0.0]];
@@ -395,11 +396,7 @@ fn a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused() {
     for (p, six) in &all {
         identities_with(p, six, a);
         let b = p.b_volume();
-        let fuse = if p.family == "below" {
-            Ok((2, a + b))
-        } else {
-            Err(RejectReason::SelfTouchingResult)
-        };
+        let fuse = Ok((2, a + b));
         let want = [
             fuse,
             fuse,

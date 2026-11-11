@@ -31,6 +31,14 @@ pub(super) fn per_class(
         C_LABEL,
         label_cells(&cells, &face_of, edges, &nesting, [false; 4])
     )?;
+    // The cells beside a knife carry one label: its mask is zero.
+    let knife_cuts = (edges.knives_from..edges.pieces.len())
+        .map(|i| {
+            face_of
+                .get(&(2 * i))
+                .is_some_and(|&c| knife_parts(kind, &edges.pieces[i].merged, labels[c]))
+        })
+        .collect();
     let (faces, disk_labels, arc_labels) = timed!(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
@@ -163,7 +171,256 @@ pub(super) fn per_class(
         disk_labels,
         arc_labels,
         ruling_extents,
+        knife_cuts,
     })
+}
+
+/// **A knife parts the kept material beside it** — the rule that makes a knife an edge of the
+/// class's faces. The result's faces on a plane end where the material they bound parts, and a
+/// label change says so for every edge but a knife: the knife's solid `X` has both faces leaving
+/// the plane to one side `S`, so the label is one on both sides of it, and what differs is the
+/// wedge between the two faces — the chamber on `S` with `X`'s bit there turned over (two faces of
+/// one solid, crossed in turn). The cells beside the knife are a face where `keep` differs between
+/// their two chambers; where the kept one is `S`'s and the wedge is not kept, the kept material on
+/// `S` reaches the plane on both sides of the knife and meets itself only along it, so the face
+/// ends there — two wings resting on one floor, the floor two faces. A knife whose wedge is the
+/// kept one, or whose kept chamber is the other side's, leaves the face whole: the material it
+/// bounds passes under the knife.
+///
+/// `label` is the cells' beside the knife — one label on both its sides; `merged` the knife's
+/// contributions, which are grazes only ([`is_knife`]). A knife two solids graze at once has two
+/// wedges whose order about the line nothing here reads, and is left whole ([`knife_grazer`]).
+///
+/// **`X`'s two bits in `label` are equal**: `X` has no face on the plane where its knife lies — a
+/// face there would hold `X`'s own edge inside it, which no valid solid has.
+fn knife_parts(kind: BoolKind, merged: &[(SolidSide, SegKind)], label: Label) -> bool {
+    let Some((x, side)) = knife_grazer(merged) else {
+        return false;
+    };
+    debug_assert_eq!(
+        label[label_bit(x, true)],
+        label[label_bit(x, false)],
+        "a knife of {x:?} where {x:?} has a face on the plane: {label:?}"
+    );
+    let kept = |l: Label, above: bool| {
+        crate::draft::keep(
+            kind,
+            l[label_bit(SolidSide::A, above)],
+            l[label_bit(SolidSide::B, above)],
+        )
+    };
+    let mut wedge = label;
+    wedge[label_bit(x, side)] ^= true;
+    kept(label, side) && !kept(label, !side) && !kept(wedge, side)
+}
+
+/// The solid whose knife this is and the side its faces leave to — `None` unless every
+/// contribution is a graze of one solid.
+fn knife_grazer(merged: &[(SolidSide, SegKind)]) -> Option<(SolidSide, bool)> {
+    let mut grazer: Option<(SolidSide, bool)> = None;
+    for &(solid, k) in merged {
+        let SegKind::Graze { body_above } = k else {
+            return None;
+        };
+        match grazer {
+            None => grazer = Some((solid, body_above)),
+            Some((x, _)) if x != solid => return None,
+            Some(_) => {}
+        }
+    }
+    grazer
+}
+
+/// The label's bit for one solid's chamber on one side — [`edge_mask`]'s layout.
+fn label_bit(solid: SolidSide, above: bool) -> usize {
+    let base = match solid {
+        SolidSide::A => 0,
+        SolidSide::B => 2,
+    };
+    base + usize::from(!above)
+}
+
+/// **Can a knife part the material under this `kind` at all** — [`knife_parts`] over every label
+/// a knife can lie under: its solid's two bits equal (the premise [`knife_parts`] states), the
+/// other solid's free. Under `Fuse` none can — the one kept chamber beside a face keeps the wedge
+/// too — and neither can a knife two solids graze at once.
+fn knife_can_part(kind: BoolKind, merged: &[(SolidSide, SegKind)]) -> bool {
+    let Some((x, _)) = knife_grazer(merged) else {
+        return false;
+    };
+    (0u8..16)
+        .map(|bits| -> Label { std::array::from_fn(|k| bits >> k & 1 == 1) })
+        .filter(|l| l[label_bit(x, true)] == l[label_bit(x, false)])
+        .any(|l| knife_parts(kind, merged, l))
+}
+
+/// **One class's faces, with the knives that part its material** — [`per_class`](fn@per_class)
+/// over the split's pieces and the knives that are edges of its faces ([`knife_parts`]).
+///
+/// Which knives part the material is read off the labels of the cells beside them, so the walk
+/// that carries a knife is the one that answers it: the knives that can be edges at all are walked
+/// with the pieces, and the class is walked again with only those that part the material when some
+/// do not ([`rewalk`]). A knife that cannot be an edge — one that ends inside a face, or one
+/// joining two pieces of the skeleton no path of edges joins ([`knives_as_edges`]) — is not walked:
+/// a knife that parts the material there is the result touching itself, the material passing round
+/// its end or between the two boundaries, which the self-touch verdict names. A class with no knife
+/// to carry is walked once.
+///
+/// **The second walk's knives all part.** A cell's label is the seed turned over by the masks on a
+/// path to it, and a knife's mask is zero — so the label beside a knife is the same whichever
+/// other knives are walked, and what parted in the first walk parts in the second.
+pub(super) fn arrange_class(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    kind: BoolKind,
+    wc: usize,
+    split: &ClassSplit,
+) -> Result<Staged, BoolError> {
+    let carried = knives_as_edges(
+        split,
+        (0..split.knives.len())
+            .filter(|&i| knife_can_part(kind, &split.knives[i].merged))
+            .collect(),
+    );
+    let plain = || per_class(jd, cyls, kind, wc, &ClassEdges::of(cyls, wc, split));
+    if carried.is_empty() {
+        return plain();
+    }
+    let walk = |knives: &[usize]| {
+        let pieces: Vec<Piece> = split
+            .pieces
+            .iter()
+            .cloned()
+            .chain(knives.iter().map(|&i| split.knives[i].clone()))
+            .collect();
+        per_class(
+            jd,
+            cyls,
+            kind,
+            wc,
+            &ClassEdges::with_knives(cyls, wc, split, &pieces),
+        )
+    };
+    let all = walk(&carried)?;
+    match rewalk(split, &carried, &all.knife_cuts) {
+        Rewalk::Kept => Ok(all),
+        Rewalk::Plain => plain(),
+        Rewalk::Again(kept) => {
+            let again = walk(&kept)?;
+            debug_assert!(
+                again.knife_cuts.iter().all(|&c| c),
+                "a knife that parted in the first walk does not in the second"
+            );
+            Ok(again)
+        }
+    }
+}
+
+/// What [`arrange_class`] does after the walk that carried every knife that can be an edge.
+#[derive(Debug, PartialEq, Eq)]
+enum Rewalk {
+    /// Every knife walked parts the material — that walk is the answer.
+    Kept,
+    /// No knife both parts the material and can be an edge — the class is walked without knives.
+    Plain,
+    /// Walk again with these knives: those that part the material and can still be edges.
+    Again(Vec<usize>),
+}
+
+/// **The knives the class is walked with: those that part the material and can be edges** —
+/// `carried` the knives the first walk carried, `knife_cuts` its answer per knife. The knives that
+/// part go through [`knives_as_edges`] again: one of them can be left with a free end when a knife
+/// beside it does not part.
+fn rewalk(split: &ClassSplit, carried: &[usize], knife_cuts: &[bool]) -> Rewalk {
+    let parting: Vec<usize> = carried
+        .iter()
+        .zip(knife_cuts)
+        .filter_map(|(&i, &cuts)| cuts.then_some(i))
+        .collect();
+    let kept = knives_as_edges(split, parting);
+    if kept == carried {
+        Rewalk::Kept
+    } else if kept.is_empty() {
+        Rewalk::Plain
+    } else {
+        Rewalk::Again(kept)
+    }
+}
+
+/// **The knives among `candidates` that can be edges of the class's faces** — indices into
+/// `split.knives`: those whose every end is a vertex of the skeleton or of another such knife, and
+/// whose knives join no two pieces of the skeleton that are not already one. A knife with a free
+/// end ends inside a face and cannot cut it; a chain of knives between two separate pieces of the
+/// skeleton (a face's outer boundary and a hole's) joins them rather than cutting a face in two.
+/// The answer is its own fixed point: a chain dropped as a bridge shares no vertex with the chains
+/// kept.
+fn knives_as_edges(split: &ClassSplit, candidates: Vec<usize>) -> Vec<usize> {
+    let mut carried = candidates;
+    if carried.is_empty() {
+        return carried;
+    }
+    // Vertex ids over the skeleton's ends and the knives'.
+    let mut id: HashMap<NodeId, usize> = HashMap::new();
+    let mut of = |n: NodeId| {
+        let next = id.len();
+        *id.entry(n).or_insert(next)
+    };
+    let skel: Vec<[usize; 2]> = split.pieces.iter().map(|p| p.end.map(&mut of)).collect();
+    let knife: Vec<[usize; 2]> = split.knives.iter().map(|p| p.end.map(&mut of)).collect();
+    let n = id.len();
+    let mut deg_skel = vec![0usize; n];
+    for e in &skel {
+        for &v in e {
+            deg_skel[v] += 1;
+        }
+    }
+    // A free end, again and again: removing a knife can free its neighbour's end.
+    loop {
+        let mut deg = deg_skel.clone();
+        for &k in &carried {
+            for &v in &knife[k] {
+                deg[v] += 1;
+            }
+        }
+        let before = carried.len();
+        carried.retain(|&k| knife[k].iter().all(|&v| deg[v] >= 2));
+        if carried.len() == before {
+            break;
+        }
+    }
+    // Which piece of the skeleton each vertex is on, and the knives' own chains.
+    let mut skel_part: Vec<usize> = (0..n).collect();
+    for e in &skel {
+        let (a, b) = (
+            crate::planes::uf_find(&mut skel_part, e[0]),
+            crate::planes::uf_find(&mut skel_part, e[1]),
+        );
+        skel_part[a] = b;
+    }
+    let mut chain: Vec<usize> = (0..n).collect();
+    for &k in &carried {
+        let (a, b) = (
+            crate::planes::uf_find(&mut chain, knife[k][0]),
+            crate::planes::uf_find(&mut chain, knife[k][1]),
+        );
+        chain[a] = b;
+    }
+    // Per chain, the skeleton pieces its ends rest on; a chain resting on two joins them.
+    let mut rests: HashMap<usize, Vec<usize>> = HashMap::new();
+    for &k in &carried {
+        for &v in &knife[k] {
+            let c = crate::planes::uf_find(&mut chain, v);
+            let on = rests.entry(c).or_default();
+            if deg_skel[v] > 0 {
+                on.push(crate::planes::uf_find(&mut skel_part, v));
+            }
+        }
+    }
+    carried.retain(|&k| {
+        let c = crate::planes::uf_find(&mut chain, knife[k][0]);
+        rests[&c].windows(2).all(|w| w[0] == w[1])
+    });
+    carried
 }
 
 /// **Does this circle actually meet that ruling?** — asked of the class's own tables: `Ok` is the
@@ -335,7 +592,8 @@ pub(crate) static MIXED_CLASS_AUDIT: MixedClassAudit = MixedClassAudit {
 };
 
 /// Run the arc split and, when the class carries rulings, the ruling split, and hold the result
-/// as one list of pieces: **the one place a class's edges are split** — a step of the alias rounds
+/// as one list of pieces and the knives apart ([`ClassSplit`]): **the one place a class's edges are
+/// split** — a step of the alias rounds
 /// ([`class_split`]), so a tie between a crossing it names and a name already there is recorded
 /// in `aliases` ([`Aliases::record_same_point`]) for the next round rather than refused.
 #[allow(clippy::too_many_arguments)]
@@ -449,9 +707,19 @@ pub(super) fn split_class_edges(
         Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
         None => (segs2, Cow::Borrowed(rulings)),
     };
+    // The knives cut every curve above and are set apart here, last: whether one is an edge of the
+    // class's faces is asked of the material beside it (`arrange_class`).
+    let mut knives = Vec::new();
+    let mut segs4 = Vec::with_capacity(segs3.len());
+    for sg in segs3.into_owned() {
+        if is_knife(&sg.merged)? {
+            knives.push(Piece::from(sg));
+        } else {
+            segs4.push(sg);
+        }
+    }
     // Segments, then arcs, then ruling pieces — the order [`ClassEdges`] numbers them in.
-    let pieces = segs3
-        .into_owned()
+    let pieces = segs4
         .into_iter()
         .map(Piece::from)
         .chain(arcs)
@@ -461,6 +729,7 @@ pub(super) fn split_class_edges(
         pieces,
         circles: circles2.into_owned(),
         cut_rims,
+        knives,
     })
 }
 
@@ -471,12 +740,24 @@ impl<'a> ClassEdges<'a> {
         wc: usize,
         split: &'a ClassSplit,
     ) -> Self {
+        Self::with_knives(cyls, wc, split, &split.pieces)
+    }
+
+    /// The split's edges with knives after them: `pieces` is `split.pieces` followed by the knives
+    /// the walk is to carry ([`arrange_class`]).
+    pub(super) fn with_knives(
+        cyls: &'a [crate::planes::WorkingCyl],
+        wc: usize,
+        split: &'a ClassSplit,
+        pieces: &'a [Piece],
+    ) -> Self {
+        debug_assert!(pieces.len() >= split.pieces.len());
         ClassEdges {
-            pieces: &split.pieces,
+            pieces,
             cyls,
             circles: &split.circles,
-            cut_rims: &split.cut_rims,
             wc,
+            knives_from: split.pieces.len(),
         }
     }
 

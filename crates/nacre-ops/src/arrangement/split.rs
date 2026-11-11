@@ -515,45 +515,6 @@ pub(super) fn split_at_crossings(
     Ok(out)
 }
 
-/// **Which edges carry news** — an edge whose [`edge_mask`] is all-false changes no label when
-/// crossed, so the cells on its two sides are the same region — of the arrangement *and* of the
-/// result, since equal labels mean an equal keep decision. Left in the skeleton it only damages
-/// structure: a knife-edge tangency far from everything else is a dangling edge the face walk
-/// cannot close (a two-half-edge orbit), which surfaced as `RingOrientation` two layers from its
-/// cause. The class skeleton keeps the `true` ones (`class_skeleton`).
-///
-/// A single-point tangency on a class line becomes no segment at all, and a tangency along a
-/// line is likewise an edge that never enters the DCEL.
-/// Where a knife edge coincides with the *other* solid's real boundary, that solid's
-/// contributions make the mask non-false and the edge stays — a true boundary cannot be dropped
-/// by this filter. Where that boundary is a lateral's ruling, it is a ruling piece rather than a
-/// segment, and the knife edge goes; its ends do not — they are vertices of the line, and the
-/// class skeleton cuts the ruling pieces at them before the newsless edges go.
-///
-/// Mask evaluation runs ahead of the walk here, so a conflict (`EdgeOccupancyConflict`) surfaces
-/// before any walk-stage reject — nearer its cause.
-pub(super) fn carries_news(segs: &[MergedSeg]) -> Result<Vec<bool>, BoolError> {
-    let mut news = Vec::with_capacity(segs.len());
-    for s in segs {
-        if edge_mask(&s.merged)? != [false; 4] {
-            news.push(true);
-            continue;
-        }
-        // The only way to all-false is an even count of same-side grazes per solid (seated flips
-        // one bit, a transversal flips two, and an edge has at least one contribution) — anything
-        // else dropped here would be a hole in that argument, so it is checked, not assumed.
-        debug_assert!(
-            s.merged
-                .iter()
-                .all(|(_, k)| matches!(k, SegKind::Graze { .. })),
-            "a newsless edge that is not a graze pair: {:?}",
-            s.merged
-        );
-        news.push(false);
-    }
-    Ok(news)
-}
-
 /// One face of the arrangement: the cyclic list of half-edges bounding it, and its winding
 /// (`+1` a bounded island, `-1` the unbounded outer contour).
 #[derive(Clone, Debug)]

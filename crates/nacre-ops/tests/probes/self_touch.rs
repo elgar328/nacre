@@ -168,14 +168,13 @@ fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
 ///
 /// Extrude the same wedge through the whole cube instead of stopping inside it. The contact line
 /// now spans the wall's full height, so **both of its ends land on the wall's ring** rather than
-/// inside it, and a test that asks about endpoints reads "on the boundary, not inside" twice and
-/// lets the body through. It would: `Ok(n=1)`, volume `0.64` exactly, `validate` silent (measured)
-/// — the wall is not split at the line, so every edge is used twice and no count sees anything.
-///
-/// The wall's ring is a hexagon visiting both contact points **non-adjacently**; the contact line
-/// is its **chord**. Nothing about that is exotic — a through slot is a more ordinary modelling
-/// move than a blind pocket, which is why the chord is checked rather than left as a documented
-/// blind spot.
+/// inside it: the wedge's tip is a knife on the wall's plane that parts the material beside it, and
+/// the wall is cut along it (`arrangement::knife_parts`). The line is then an edge four faces of the
+/// one body use — the material runs round through `x < 0.1` — and the body is refused as the
+/// pinch along a line, `NonManifoldResultEdge`, at the line. Left uncut, the wall would hold the line
+/// as a chord and every edge would be used twice: `Ok(n=1)`, volume `0.64`, `validate` silent
+/// (measured), unless the self-touch verdict asked the chord. Nothing about the shape is exotic — a
+/// through slot is a more ordinary modelling move than a blind pocket.
 #[test]
 fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     let mut m = Model::new();
@@ -187,11 +186,11 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
         matches!(
             boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
             BoolError::Rejected {
-                reason: RejectReason::SelfTouchingResult,
-                ..
-            }
+                reason: RejectReason::NonManifoldResultEdge,
+                at: Some(nacre_ops::RejectWhere::Segment([p, q])),
+            } if [p.as_array(), q.as_array()] == [[1.0, 0.5, 0.0], [1.0, 0.5, 1.0]]
         ),
-        "the through cut leaves the wall touching the pocket along a chord"
+        "the through cut pinches the body along the wall's line"
     );
     assert_eq!(m.live_solids(), live, "a reject retired the operands");
 }
@@ -751,9 +750,19 @@ fn an_ordinary_fuse_is_untouched() {
 ///
 /// A plate with a square hole, and a wedge cut whose tip lands exactly on the hole's wall: the
 /// contact line lies on a plane the plate carries, and the point is on the **hole's** ring, not the
-/// outer one.
+/// outer one. The wedge stops at `z = 0.6`, inside the wall, so the contact line ends inside the
+/// wall's face and cannot cut it — it is the self-touch verdict's to see. The same wedge through
+/// the plate cuts the wall along the line, as in
+/// [`a_wedge_cut_through_the_whole_block_is_not_a_solid`]: the pinch along the line,
+/// `NonManifoldResultEdge`.
 #[test]
 fn a_contact_on_a_holes_wall_is_seen() {
+    for depth in [0.6, 1.0] {
+        a_wedge_on_a_holes_wall(depth);
+    }
+}
+
+fn a_wedge_on_a_holes_wall(depth: f64) {
     let mut m = Model::new();
     // Plate 3×3×1 with a 1×1 hole in the middle.
     let pts =
@@ -776,17 +785,31 @@ fn a_contact_on_a_holes_wall_is_seen() {
         panic!()
     };
     // A wedge in the plate's material whose tip lands on the hole's wall x = 1.
-    let b = prism(&mut m, &[[1.0, 1.5], [0.2, 1.1], [0.2, 1.9]], 1.0);
-    assert!(
-        matches!(
-            boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
-            BoolError::Rejected {
-                reason: RejectReason::SelfTouchingResult,
-                ..
-            }
-        ),
-        "the cut's tip touches the hole's wall"
-    );
+    let b = prism(&mut m, &[[1.0, 1.5], [0.2, 1.1], [0.2, 1.9]], depth);
+    let err = boolean(&mut m, BoolKind::Cut, a, b).unwrap_err();
+    if depth < 1.0 {
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::SelfTouchingResult,
+                    ..
+                }
+            ),
+            "the cut's tip touches the hole's wall: {err:?}"
+        );
+    } else {
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::NonManifoldResultEdge,
+                    at: Some(nacre_ops::RejectWhere::Segment([p, q])),
+                } if [p.as_array(), q.as_array()] == [[1.0, 1.5, 0.0], [1.0, 1.5, 1.0]]
+            ),
+            "the through cut pinches the body along the hole's wall: {err:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1672,12 +1695,13 @@ fn a_body_touching_its_own_lateral_at_a_point_is_refused() {
 /// - **a face along the line** over `2 ≤ z ≤ 3.5`: a line contact inside the lateral's span, which
 ///   the tangency verdict judges, and the joined body pinches along it;
 /// - **a corner on the top rim** at `(5, 0, 4)`, the face above it: the lateral ends there, so the
-///   face meets no stretch of it;
+///   face meets no stretch of it — and the part's edge in the cap's plane ends on the rim, which is
+///   cut there, so the joined body's two fans share that vertex: the pinch, `NonManifoldVertex`;
 /// - **an edge along the top rim's tangent**, the face above it: its edge meets the rim at
 ///   `(5, 0, 4)` only.
 ///
-/// Joined, each touches itself; moved off the side by 0.5, or standing apart, it builds — one body
-/// or two. In either operand order.
+/// Joined, each touches itself (`SelfTouchingResult`, the top rim's corner `NonManifoldVertex`); moved
+/// off the side by 0.5, or standing apart, it builds — one body or two. In either operand order.
 #[test]
 fn a_part_on_a_tangent_plane_is_asked_where_it_meets_the_side() {
     let stated = |m: &mut Model, o: [f64; 3], u: [f64; 3], v: [f64; 3]| {
@@ -1755,6 +1779,9 @@ fn a_part_on_a_tangent_plane_is_asked_where_it_meets_the_side() {
                     };
                     let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
                     let want = match (joined, lift == 0.0) {
+                        (true, true) if row == "a corner on the top rim" => {
+                            Want::Refused(RejectReason::NonManifoldVertex)
+                        }
                         (true, true) => Want::Touches,
                         (true, false) => Want::Built(1, vol(&m, a) + vol(&m, b)),
                         (false, _) => Want::Built(2, vol(&m, a) + vol(&m, b)),

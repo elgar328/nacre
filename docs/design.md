@@ -1687,17 +1687,17 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Common/same=`inP∧inQ`(`inP`·`inQ` 는 각 피연산자의 면이 그 셀을
 덮는가). 볼록성 항이 없어 비볼록·다중루프를 half-space 가정 없이 `point_in_ring` parity 로 정확히 처리한다.
 
-- **동일평면 병합은 필수 청소다** — 내부를 지우고 바깥을 꿰매지 않으며, 꼬집힌 점에서는 배열의 셀 걷기와 같은 순환 순서
-  (`dir_at`·`angular_order`)로 나가고, 못 하면 그룹을 그대로 내보내 기권한다. 기권이 안전한 까닭(«정돈일 뿐»이 아니라 «패스가
+- **동일평면 병합은 필수 청소다** — 두 면만 쓰는 간선에서 잇고(`face_components` 와 한 규칙), 내부를 지우고 바깥을 꿰매지
+  않으며, 꼬집힌 점에서는 배열의 셀 걷기와 같은 순환 순서(`dir_at`·`angular_order`)로 나가고, 못 하면 그룹을 그대로 내보내 기권한다. 기권이 안전한 까닭(«정돈일 뿐»이 아니라 «패스가
   없던 자리»)과 그 뒤 전역 판정이 모양을 이름 대는 것은 `unify_coplanar_faces`·`merge_component` 의 doc. 평각 정점은 옆면이 붙은
   뒤 결과 전체에서 한 번 녹인다 — `dissolve_straight_angles`·`whole_result_faces` 의 doc.
 - **45° 폴드의 거절은 갭이 아니라 «정답»이다** — 한 팔이 제 몸에 공면으로 닿는 두께 0 솔리드라 `SelfTouchingResult`(`Impossible`)
   다. 잠금은 `tests/probes/rotation_sweep.rs` 의 `another_rejection_keeps_its_own_reason` 과 `tests/reject_census.rs` 의 `fold_45`.
-- **칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남) — 스침 결합은 홀짝이고(`edge_mask` 본문), 소식 없는 모서리는
-  골격에서 빠지되 룰링 위 칼날의 두 끝에서 룰링 조각을 먼저 자른다(`carries_news`·`class_skeleton` 의 doc; 「점의 이름」의 «선은
-  그 위의 모든 꼭짓점에서 잘린다»). 선·점으로만 닿는 두 몸통은 둘로 나오고, 핸들은 성분이 아니라 **출력 솔리드**(재료 성분 + 그
-  공동들) 단위로 배정된다 — `assembly::Grouping`·`NonManifoldResultEdge` 의 doc. 잠금: `tests/probes/contact_separates.rs`,
-  `tests/probes/knife_edge.rs`.
+- **칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남) — 스침 결합은 홀짝이고(`edge_mask` 본문), 칼날도 곡선을
+  만나는 점에서 자른다(«선은 그 위의 모든 꼭짓점에서 잘린다»). 남는 쪽 재료가 칼날의 쐐기에서 끊기면 면도 거기서 갈리고, 면
+  안에서 끝나면 자기접촉이다(`knife_parts`·`arrange_class` 의 doc). 선·점으로만 닿는 두 몸통은 둘로 나오고, 핸들은 성분이 아니라
+  **출력 솔리드** 단위로 배정된다 — `assembly::Grouping`·`NonManifoldResultEdge` 의 doc. 잠금:
+  `tests/probes/contact_separates.rs`, `tests/probes/knife_edge.rs`.
 - **4평면 동시성의 세 갈래** — 피연산자 꼭짓점의 동시성(`NamedRing::concurrencies` 로 추적 전에 표에 넣고, 런 꼭짓점을 지나는 넷째
   평면은 `third_on_l` 이 본다), 선을 **가로지르는** 두 평면(`split_at_crossings` 의 동점), 선을 **담는** 평면(`Aliases::canon_wall` 의 기록을 그
   선의 분할점마다 되읽는다 — `split_at_crossings` 본문). 놓치면 한 점이 두 이름으로 seam 표에 와 `SeamAlias`(`SuspectedDefect`) —

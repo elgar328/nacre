@@ -146,9 +146,11 @@ pub enum RejectReason {
     /// **Two witnesses, one proposition.** The first is combinatorial: an *edge* of the solid lies
     /// in the interior of one of that same solid's faces — a plane face, or a lateral along whose
     /// ruling two of the solid's plane faces meet (a wedge's apex edge along the solid's own bore
-    /// wall). The second is curved and has no edge at all: a **lateral tangent to one of the
-    /// solid's own plane faces along a line**. Two bodies touching along a line are two valid
-    /// solids, and the kernel returns them.
+    /// wall). Where such an edge runs across a plane face from one side of its boundary to the
+    /// other, the face is cut along it instead, and the touch is the edge four of the solid's
+    /// faces use: [`Self::NonManifoldResultEdge`]. The second is curved and has no edge at all: a
+    /// **lateral tangent to one of the solid's own plane faces along a line**. Two bodies touching
+    /// along a line are two valid solids, and the kernel returns them.
     ///
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
     /// twice") is **false** here. Both are `Impossible`.
