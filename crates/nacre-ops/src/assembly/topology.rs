@@ -146,51 +146,14 @@ pub(crate) fn check_result_topology(
 ///
 /// An enclosed void is its own component — its boundary shares no edge with the outer.
 pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
-    /// The joining key — the third appearance of "a line is unordered, a circle is ordered"
-    /// (`Wall` is the type half, `EdgeKey` the handle-space half; this is the node-space half).
-    /// A 2-node circle folds its chord and both complementary arcs into one `norm_edge` pair, so
-    /// an unordered key counts six users where each piece really has two — the CCW order is the
-    /// bit that keeps them apart, exactly as it is in the edge welding. **An arc is its two
-    /// carriers and its ends**, so the key holds the arc's plane too: a cylinder's cap cut by a
-    /// plane oblique to it leaves, between the two points they share, the cap's circular arc and
-    /// the section's arc, both counter-clockwise from one to the other — the lens of lateral below
-    /// a tilted cylinder's cap that a box's floor cuts. Without the plane the two are one key with
-    /// four users, and the lens comes out a component of its own.
-    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-    enum JoinKey {
-        Line((NodeId, NodeId)),
-        Arc {
-            cyl: usize,
-            plane: usize,
-            from: NodeId,
-            to: NodeId,
-        },
-    }
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     // Which faces use each ring edge. A count other than two is not a contact between neighbours:
     // one is a dangling edge and more is a pinch, and both are the edge-use guard's to name.
-    let mut users: HashMap<JoinKey, Vec<usize>> = HashMap::new();
+    let mut users: HashMap<NodeEdge, Vec<usize>> = HashMap::new();
     for (i, lf) in faces.iter().enumerate() {
         for ring in rings_of(lf) {
-            let k = ring.len();
-            for t in 0..k {
-                let (a, b) = (ring[t], ring[(t + 1) % k]);
-                // A ruling step is a `Line` here: straight, so its unordered pair names it —
-                // what the order bit keeps apart is a circle's complementary pieces, and two
-                // points bound one straight segment whichever vocabulary a face states it in.
-                let key = match ring.walls[t] {
-                    Wall::Plane(_) | Wall::Ruling { .. } => JoinKey::Line(norm_edge(a, b)),
-                    Wall::Arc { cyl, ccw, plane } => {
-                        let (from, to) = if ccw { (a, b) } else { (b, a) };
-                        JoinKey::Arc {
-                            cyl,
-                            plane,
-                            from,
-                            to,
-                        }
-                    }
-                };
-                users.entry(key).or_default().push(i);
+            for t in 0..ring.len() {
+                users.entry(NodeEdge::of(ring, t)).or_default().push(i);
             }
         }
     }

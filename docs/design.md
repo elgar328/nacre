@@ -1900,7 +1900,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   닿는지는 묻지 않는다 — `oblique_section_meet`), 단면의 딱지와 절단점(`CutRim`)은 차트로 가 다른 선처럼 칸을 가른다. 결과 면이 단면을
   따라 경계 지어지면 결과에 타원 간선이 남는다(`Model::derive_edge_curve` — 원을 그 평면에 기울인 곡선). 단면을 따라 끝나는 옆면에는
   그 단면을 경계로 든 평면 면이 짝으로 있다(차트 census 가 단언한다). 결과를 읽는 쪽은 단면 위 호를 원과 같은 길로 읽는다 — 덩어리를
-  가르는 옆면 패리티는 단면의 높이 순서(`ChartPoint::order`), 면을 잇는 열쇠는 호의 평면까지(`face_components` 의 `JoinKey::Arc` — 캡의 원호와
+  가르는 옆면 패리티는 단면의 높이 순서(`ChartPoint::order`), 면을 잇는 열쇠는 호의 평면까지(`assembly::NodeEdge::Arc` — 캡의 원호와
   단면의 호가 같은 두 점 사이에 선다). 타원 간선을 든 솔리드는 다시 피연산자가 된다 — **옆면 면은 룰링과 평면 단면으로 경계 지어지고,
   면이 어디 있는지를 읽는 자리는 경계 단면을 두 단면의 한 물음(`section_meet`·`section_height_order`)으로 읽지 정거장(축 위 높이
   하나)으로 읽지 않는다** — 원의 높이 비교는 그 ⊥·⊥ 경우다. 원 셀의 림 증인은 축에 수직인 클래스에만 낸다 — 비스듬한 클래스의 단면에 내면 `Witness::On` 이 거짓이 되어
@@ -1946,7 +1946,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   (`split_rulings` 의 접기). **선은 그 위의 모든 꼭짓점에서 잘린다**(`cut_rulings` — 선을 따르는 선분의 끝은
   `cut_rulings_along_segments`).
 - 그 밖의 이름 자리: «어느 룰링인가»는 점과 벽의 함수(`ruling_side_signed`), 직선 간선의 열쇠는 두 끝이고 담체는
-  쓰는 두 면의 곡면(`EdgeKey::Line`·`JoinKey::Line` — `assembly::reconstruct` 의 그 자리 주석; 한 직선의 두 철자는
+  쓰는 두 면의 곡면(`EdgeKey::Line`·`NodeEdge::Line` — `assembly::reconstruct` 의 그 자리 주석; 한 직선의 두 철자는
   `dissolve_straight_angles`), 결과 정점은 닿는 면들의 곡면으로 짓는다 — 관통 정점도(`assembly::naming` 의 결과 정점
   주석).
 - **굽은 링의 코너는 이름을 «유도»하지 않고 «재진술»한다** — 정점의 원통 둘레 순위(`rank`)와 class 이름의 교선 위

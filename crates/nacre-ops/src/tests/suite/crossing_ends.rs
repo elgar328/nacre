@@ -465,3 +465,58 @@ fn laterals_whose_boundary_sections_cross_where_they_end() {
     }
     assert!(bad.is_empty(), "{} cells:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// **The roof touching its own tool along the ridge is refused at the ridge itself.** The tool is
+/// an L: a slab above `z = 5` whose floor holds the roof's ridge, and a leg over `x ∈ [1.5, 3]` that
+/// overlaps the rod, so the fused body is one solid whose two parts meet along the ridge — a
+/// self-touch, `Impossible` in both orders. The other two kinds build.
+///
+/// The witness is the ridge, `(0, 1, 5)`–`(0, 5, 5)`: the self-touch verdict asks the ridge as an
+/// edge lying in the slab's floor. Each slanted roof face is a two-node ring — the ridge and its
+/// elliptical arc between the same two corners — so an edge keyed by its two ends alone folds the
+/// ridge onto the arc and skips it as one; only the corners, resting on the floor, are then asked,
+/// and the witness is a point. red: owners keyed by the endpoint pair → the witness is
+/// `Point((0, 5, 5))` / `Point((0, 1, 5))`.
+#[test]
+fn a_roof_fused_with_a_tool_resting_on_its_ridge_is_refused_at_the_ridge() {
+    let roof = &bodies()[0];
+    let l_tool = |m: &mut Model| {
+        zx_prism(
+            m,
+            &[
+                (5.0, -3.0),
+                (5.0, 1.5),
+                (-2.0, 1.5),
+                (-2.0, 3.0),
+                (12.0, 3.0),
+                (12.0, -3.0),
+            ],
+        )
+    };
+    for swap in [false, true] {
+        let mut m = Model::new();
+        let b = (roof.build)(&mut m);
+        let tool = l_tool(&mut m);
+        let (x, y) = if swap { (tool, b) } else { (b, tool) };
+        match crate::boolean(&mut m, BoolKind::Fuse, x, y) {
+            Err(BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                at: Some(crate::RejectWhere::Segment([p, q])),
+            }) => {
+                let mut ends = [p.as_array(), q.as_array()];
+                ends.sort_by(|a, b| a[1].total_cmp(&b[1]));
+                assert_eq!(ends, [[0.0, 1.0, 5.0], [0.0, 5.0, 5.0]], "swap={swap}");
+            }
+            other => panic!("swap={swap}: {other:?}"),
+        }
+        for kind in [BoolKind::Cut, BoolKind::Common] {
+            let mut m = Model::new();
+            let b = (roof.build)(&mut m);
+            let tool = l_tool(&mut m);
+            let (x, y) = if swap { (tool, b) } else { (b, tool) };
+            let out = crate::boolean(&mut m, kind, x, y)
+                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: {e:?}"));
+            built_volume(&m, &out, 1, &format!("{kind:?} swap={swap}"));
+        }
+    }
+}

@@ -42,14 +42,14 @@ pub(crate) fn unify_coplanar_faces(
 
     // Edge-connected components within a group.
     let mut comp: Vec<usize> = (0..n).collect();
-    let mut carriers: HashMap<(NodeId, NodeId), Vec<usize>> = HashMap::new();
+    let mut carriers: HashMap<NodeEdge, Vec<usize>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         // Holes count here too: a tool cap sitting flush inside another face touches it only
         // along that hole, so leaving `inner` out would put the two in different components and
         // nothing would merge at all.
         for ring in lf.poly_rings() {
-            for (a, b) in ring_edges(ring) {
-                carriers.entry(norm_edge(a, b)).or_default().push(fi);
+            for t in 0..ring.len() {
+                carriers.entry(NodeEdge::of(ring, t)).or_default().push(fi);
             }
         }
     }
@@ -153,11 +153,6 @@ pub(crate) fn unify_coplanar_faces(
     let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
     out.extend(merged);
     Ok(out)
-}
-
-/// A ring's directed edges, `i → i+1` around.
-fn ring_edges(ring: &[NodeId]) -> impl Iterator<Item = (NodeId, NodeId)> + '_ {
-    (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
 }
 
 /// A ring's directed edges **with the carrier each rides**.

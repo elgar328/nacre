@@ -325,11 +325,10 @@ pub(super) fn self_touch_reject(
                 ClassIx::Plane(_) => None,
             })
             .collect();
-        // One pass: which two faces own each edge, which edges an arc carries, and a box per face
-        // holding its vertices' reach and its arcs' circles.
-        let mut owners: HashMap<[NodeId; 2], Vec<usize>> = HashMap::new();
+        // One pass: which faces own each edge, and a box per face holding its vertices' reach and
+        // its arcs' circles.
+        let mut owners: HashMap<NodeEdge, Vec<usize>> = HashMap::new();
         let mut visits: Vec<(NodeId, usize)> = Vec::new();
-        let mut arc_edges: std::collections::HashSet<[NodeId; 2]> = Default::default();
         let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(faces.len());
         for (j, lf) in faces.iter().enumerate() {
             let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
@@ -360,16 +359,14 @@ pub(super) fn self_touch_reject(
             for r in rings_of(lf) {
                 let k = r.nodes.len();
                 for i in 0..k {
-                    let (u, v) = (r.nodes[i], r.nodes[(i + 1) % k]);
-                    let key = if u < v { [u, v] } else { [v, u] };
-                    owners.entry(key).or_default().push(j);
+                    let u = r.nodes[i];
+                    owners.entry(NodeEdge::of(r, i)).or_default().push(j);
                     visits.push((u, j));
                     if let Some(&(_, (rl, rh))) = pt.get(&u) {
                         grow(rl, rh);
                     }
                     // An arc bulges past its two ends: the box takes its whole circle's.
                     if let Wall::Arc { cyl, .. } = r.walls[i] {
-                        arc_edges.insert(key);
                         let (cl, ch) = circle_box(cyl);
                         grow(cl, ch);
                     }
@@ -390,12 +387,12 @@ pub(super) fn self_touch_reject(
                 .map_or(([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]), |&(_, r)| r)
         };
         let mut read: HashMap<usize, combinatorics::CompFace> = HashMap::new();
-        'edges: for (&[u, v], own) in &owners {
+        'edges: for (key, own) in &owners {
             // An arc lies in a plane face only on its own circle's plane, where the face would
             // overlap the arc's own face in area — the coplanar merge's case, not a line contact.
-            if arc_edges.contains(&[u, v]) {
+            let NodeEdge::Line((u, v)) = *key else {
                 continue;
-            }
+            };
             let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));
             let el: [f64; 3] = core::array::from_fn(|k| ul[k].min(vl[k]));
             let eh: [f64; 3] = core::array::from_fn(|k| uh[k].max(vh[k]));
@@ -592,12 +589,15 @@ pub(super) fn self_touch_reject(
                     Hand::Held(err) => hold(Touch::Point(n), err),
                 }
             }
-            for (&[u, v], owned) in &owners {
-                // An edge of two faces on one plane (or one face passing it twice) has no line of
-                // two planes; an arc is no straight edge.
+            for (key, owned) in &owners {
+                // An arc is no straight edge; an edge of two faces on one plane (or one face
+                // passing it twice) has no line of two planes.
+                let NodeEdge::Line((u, v)) = *key else {
+                    continue;
+                };
                 let [f, h] = owned[..] else { continue };
                 let w = [faces[f].surf.plane(), faces[h].surf.plane()];
-                if w[0] == w[1] || arc_edges.contains(&[u, v]) {
+                if w[0] == w[1] {
                     continue;
                 }
                 let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));

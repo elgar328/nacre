@@ -1223,7 +1223,7 @@ fn the_bands_loop_is_one_continuous_cycle() {
 ///
 /// A cut circle bounds no whole disk, so the rim-key rule cannot see it, and the unordered node
 /// rule cannot either: on a 2-node circle the chord and both complementary arcs fold into one
-/// `norm_edge` pair (six users where each piece has two). The `JoinKey`'s ordered arc pairs — "a
+/// `norm_edge` pair (six users where each piece has two). `NodeEdge`'s ordered arc pairs — "a
 /// line is unordered, a circle is ordered" — give every piece exactly its cap and the band, so the
 /// result comes back as **one** component.
 ///
