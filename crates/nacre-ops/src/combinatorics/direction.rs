@@ -723,8 +723,11 @@ fn arc_side(
 /// the angle order exactly — the textbook Graham-scan fact. So: bucket every edge by its turn
 /// against a reference `r = edges[0]` into the two open half-planes, plus the `0`/`π` pole where
 /// the turn is 0 (collinear with `r`). The pole splits by same-`fp` opposite direction: same fp,
-/// opposite `s` is angle π; otherwise angle 0. Each open bucket is then a real sort. Returned
-/// indices are the CCW order starting at `r`.
+/// opposite `s` is angle π; otherwise angle 0. **Every bucket is then a real sort by the one
+/// comparator** — the π bucket too: a line leaving opposite `r` and an arc leaving tangent to it
+/// the same way are both at π, and only their bending orders them (the corner where a half bore's
+/// arc and its flat end on a wall line running through). Returned indices are the CCW order
+/// starting at `r`.
 ///
 /// **What it relies on, and who supplies it.** Two edges leaving one vertex with a `0` turn are on
 /// one line — parallel plus a shared point — and then they have no cyclic order to read. Upstream
@@ -787,7 +790,7 @@ pub(crate) fn angular_order(
     // precisely the tie that reorders the result. At the degrees this sees (2-3 measured) a
     // bucket holds at most two entries, so the check costs the one comparison the sort would
     // have made anyway.
-    for b in [&pos, &neg] {
+    for b in [&pos, &pole, &neg] {
         for x in 0..b.len() {
             for y in (x + 1)..b.len() {
                 if cross(b[x], b[y])? == 0 {
@@ -808,6 +811,7 @@ pub(crate) fn angular_order(
         try_sort_by(v, |&a, &b| cross(a, b).map(|c| 0.cmp(&c)))
     };
     by_turn(&mut pos)?;
+    by_turn(&mut pole)?;
     by_turn(&mut neg)?;
     let mut out = zero;
     out.extend(pos);

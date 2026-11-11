@@ -512,8 +512,11 @@ fn half_bored_box() -> Profile2d {
 /// `(1, 0)`, and `B`'s wall `x = 1` is tangent to the bore there. `B` stands below the face beside
 /// the bore, on it away from the bore, or on it over the bore, or its wall runs across the line —
 /// away from the bore or over it, the bore's lateral and `A`'s face ending on the line, which the
-/// structure judges (`planes::Tangency::through` is empty) — save where the wall runs across away
-/// from the bore with `B` first, refused (`StraightAngle`, the comment in the loop). A bore's material is outside its
+/// structure judges (`planes::Tangency::through` is empty). Away from the bore, on `B`'s
+/// cross-section the wall's line runs on through the corner where the bore's arc and `A`'s flat
+/// end, the arc leaving tangent to the line: with the line's one way as the reference, its other
+/// way and the arc are both a half turn off it, and only the arc's bending orders the two
+/// (`combinatorics::angular_order`). A bore's material is outside its
 /// cylinder, but its lateral still bends to the axis on both sides of the tangent line, so on
 /// `B`'s wall class the lateral's side of the line is the axis side, as on a boss — the one bit
 /// that holds for both (`arrangement::rulings::axis_above`). Every boolean builds, valid, the
@@ -561,15 +564,6 @@ fn a_tangent_wall_on_a_half_bores_edge_builds() {
             common,
         ];
         for (i, (got, want)) in six.iter().zip(want).enumerate() {
-            // `B` first, its wall across the line away from the bore: on `B`'s cross-section the
-            // wall's line runs on through the corner where the bore's arc and `A`'s flat end, the
-            // arc leaving tangent to it, and the node's departures come out in no cyclic order —
-            // the line's two ways and the arc fall in `angular_order`'s π bucket, which is not
-            // sorted (todo).
-            if p.family == "across, away from the bore" && i % 2 == 1 {
-                assert_eq!(got, &Err(RejectReason::StraightAngle), "{p}: [{i}]");
-                continue;
-            }
             match got {
                 Ok((_, v)) => assert!((v - want).abs() < 1e-9, "{p}: [{i}] {v}, want {want}"),
                 Err(r) => panic!("{p}: [{i}] {r:?}"),
