@@ -268,7 +268,7 @@ pub(crate) fn theta_between(
 ///   fillet's straight edge lies on `L` and its arc leaves the end tangentially, a touch with no
 ///   crossing beyond it;
 /// - a secant line meets the circle in two roots, and each crosses the arc iff the arc strictly
-///   contains it ([`theta_between`], the ruling sweep's containment);
+///   contains it ([`theta_between`], the containment the rulings road reads too);
 /// - overflow, a `Wide` name, a meet this shape cannot produce, or — with a plane of no world
 ///   statement — a shape the intervals cannot say ([`Judge::line_meet`] answers both roads), is
 ///   `None`.
@@ -326,19 +326,32 @@ pub(crate) fn arc_crossings(
             inside.push(node);
         }
     }
-    if let [r, q] = inside[..] {
-        // Travelled from `a`: counter-clockwise meets first the root counter-clockwise between
-        // `a` and the other, clockwise the one counter-clockwise between the other and `a`.
-        let r_first = if ccw {
-            theta_between(jd, cyl, def, a, q, r)
-        } else {
-            theta_between(jd, cyl, def, q, a, r)
-        }?;
-        if !r_first {
-            inside.swap(0, 1);
-        }
+    if let [r, q] = inside[..]
+        && !met_first(jd, cyl, def, ccw, a, r, q)?
+    {
+        inside.swap(0, 1);
     }
     Some(inside)
+}
+
+/// **Whether an arc travelled from its end `a` meets `r` before `q`**, two points strictly inside
+/// it — counter-clockwise when `ccw`. Counter-clockwise travel meets first the point
+/// counter-clockwise between `a` and the other, clockwise travel the one counter-clockwise between
+/// the other and `a` ([`theta_between`]). `None` where that order cannot be formed.
+pub(crate) fn met_first(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    ccw: bool,
+    a: NodeId,
+    r: NodeId,
+    q: NodeId,
+) -> Option<bool> {
+    if ccw {
+        theta_between(jd, cyl, def, a, q, r)
+    } else {
+        theta_between(jd, cyl, def, q, a, r)
+    }
 }
 
 /// **Where a class oblique to a cylinder's axis crosses one of its rim circles** — the circle on

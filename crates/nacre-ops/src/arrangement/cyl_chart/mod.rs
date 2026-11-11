@@ -170,7 +170,7 @@ pub(crate) enum ChordSays {
     /// **No piece over this interval.** The wall's class traces a lateral's ruling only where the
     /// lateral's boundary does not run along a plane pair it holds with another class; where it
     /// does, the line is the lateral's own edge at that height and the class states it in the
-    /// plane vocabulary alone (`ruling_sweep`'s `quiet_nodes`). A record is written only for a line
+    /// plane vocabulary alone (`rulings::cycle_on_wall`'s `quiet` runs). A record is written only for a line
     /// on a lateral *face* (`ruling_on_a_face`), and a tangent class is no secant chord, so this is
     /// the one way a secant wall of a recorded line draws nothing there (measured: every one in the
     /// suite, the census and the ignored sweep). The chord still closes its chamber — the two

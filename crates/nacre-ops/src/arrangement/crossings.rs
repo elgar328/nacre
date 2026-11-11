@@ -1171,7 +1171,7 @@ fn cut_rulings(
 /// at the ends of the segments along it, so a piece either matches a ruling piece end for end or
 /// shares no stretch with one. No stretch shared is a segment off the
 /// lateral — past its cap, or where the ruling is silent because the line is the lateral face's
-/// own edge (`ruling_sweep`'s `quiet_nodes`: there the plane vocabulary states it, the other half
+/// own edge (`cycle_on_wall`'s `quiet` runs: there the plane vocabulary states it, the other half
 /// of the one rule) — and it stays a segment. A stretch shared without a match is a shape the
 /// splits did not cut, and is refused by name rather than stated twice.
 ///

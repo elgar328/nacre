@@ -771,9 +771,9 @@ pub(super) fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
 
 /// The θ side a cycle's arc lies on, seen from the node where it meets a ruling: an arc arriving
 /// counter-clockwise came from smaller θ (`−1`), one departing counter-clockwise goes to larger θ
-/// (`+1`) — the flank of an on-line run, read from the arc's own sense (`Wall::Arc`'s `ccw`)
-/// rather than from a coordinate, because a global "side" does not exist on a cylinder.
-pub(super) fn arc_flank(ccw: bool, arriving: bool) -> i8 {
+/// (`+1`) — read from the arc's own sense (`Wall::Arc`'s `ccw`) rather than from a coordinate,
+/// because a global "side" does not exist on a cylinder.
+fn arc_flank(ccw: bool, arriving: bool) -> i8 {
     if ccw == arriving { -1 } else { 1 }
 }
 
@@ -814,7 +814,7 @@ pub(super) fn corner_on_section(
 /// the world name's sense (`κ`, [`crate::planes::WorldName`] — the truth's, since the name alone
 /// carries no direction and the plane cache is a rounded image) carries that to the plane's own
 /// facing. The three consumers are the
-/// ruling sweep's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
+/// rulings road's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
 /// whole point of naming it is that none of them spells the product a second time. Two of them
 /// read a **label** and stay in the stored frame; the one that picks a **cell** —
 /// [`ruling_interior_is_even`] — crosses into the chart's frame with `frame_sign`, and it is the

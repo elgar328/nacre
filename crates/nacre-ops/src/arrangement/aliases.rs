@@ -263,7 +263,7 @@ impl Aliases {
     /// the three-plane name of `{p0, p1, wc}` (when independent — a pencil is learnt as a line), and
     /// each of the corner's planes' crossing with `wc` at the root on the corner's other plane
     /// ([`Aliases::record_cylinder_point`]).
-    /// All of them are folded here, before any trace, so the ruling sweep and the plane roads —
+    /// All of them are folded here, before any trace, so the rulings road and the plane roads —
     /// which mint the names on their own — find them already one point.
     pub(crate) fn record_on_cylinder(
         &mut self,

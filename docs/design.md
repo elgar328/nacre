@@ -1989,7 +1989,7 @@ Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Co
   `an_arc_leaving_a_line_along_it_lies_on_its_centres_side` 다.
   **오라클 없는 부호는 만들지 않는다** — 부정 대조가 전부 초록인 채로 실제로 틀린 부호가 가능하다.
 - **호의 교차 수는 호 자신에게 묻는다**(`ring_against_plane` 의 `crossings`; 평면 면의 도로들은 `ClassLine` 을 거쳐
-  `arc_crossings`). «간선이 그 위인가»는 도로마다 다르다 — 평면 면에선 직선, 옆면의 구멍에선 원(`on_meet`).
+  `arc_crossings`). «간선이 그 위인가»는 도로마다 다르다 — 평면 면에선 직선, 옆면에선 클래스에 따라 원이나 룰링(`on_meet`).
 - `UnorderedEdges` 가 뜨면 케이스를 열지 않고 상류(`merge_coincident`/`Aliases`)를 본다.
 
 ### 룰링

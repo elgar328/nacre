@@ -55,7 +55,7 @@ pub(crate) fn side_of(
 ///
 /// `AllOn` is not the walk's `None`, which a node it cannot read would then have to share.
 /// One says *the ring lies in the plane* (a shape), the other *this walk has no vocabulary for a
-/// node* (a road) — and the four callers do different things with each.
+/// node* (a road) — and the callers do different things with each.
 ///
 /// A ring leaving the meet along a curved edge between two on-meet nodes is not an outcome of
 /// its own: the caller names its side ([`EdgeMeet::Departs`]), and the walk reads the departure as
@@ -148,13 +148,14 @@ pub(crate) enum EdgeMeet {
 
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
-/// **One walk, four consumers.** `arrangement::trace_transversal_face` clips a face's ring
+/// **One walk for every line road.** `arrangement::trace_transversal_face` clips a face's ring
 /// against a cut plane, `arrangement::cycle_on_class` reads a lateral's cycle against a circle,
-/// [`every_ray`] casts a parity ray along `P ∩ Q_a` and [`segment_meets_face`] alternates a
-/// segment against a face; all must answer the same question first — *does the boundary cross
+/// `arrangement::cycle_on_wall` reads one against a class along the axis, [`every_ray`] casts a
+/// parity ray along `P ∩ Q_a` and [`segment_meets_face`] alternates a segment against a face; all
+/// must answer the same question first — *does the boundary cross
 /// this line here?* — and its two hard parts are a node sitting **on** the line and a **curved**
 /// edge, whose ends do not say how often it crosses. The rule — look at the node's two off-line
-/// neighbours: opposite sides is a crossing, equal sides a touch — lives here once, for all four;
+/// neighbours: opposite sides is a crossing, equal sides a touch — lives here once, for all of them;
 /// resilience that lives in one consumer is resilience the others do not have.
 ///
 /// The three that read a plane face's ring along a line call it through [`ClassLine`], which also
@@ -180,8 +181,8 @@ pub(crate) enum EdgeMeet {
 /// What counts as "the meet" is the caller's, because it differs by road — a plane class cuts a
 /// planar face in a **line** (so a straight edge is `On` and an arc `Departs` to the side its
 /// tangent points, or where that tangent runs along the line to its centre's side — [`arc_departure`])
-/// and a lateral face in a **circle** (so an arc carried
-/// by that very class is `On`). `None` is "no exact description" and answers [`RingWalk::Unnameable`].
+/// and a lateral face in a **circle** across the axis (so an arc carried by that very class is
+/// `On`) or in its **rulings** along it (so a ruling edge with a point on the class is `On`). `None` is "no exact description" and answers [`RingWalk::Unnameable`].
 ///
 /// **A departing edge is read as one more off-line entry, of the departure's side.**
 /// The ring's sign sequence is then nodes and departures alike, and the two rules the walk has

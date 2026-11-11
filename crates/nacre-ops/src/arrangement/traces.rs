@@ -179,7 +179,7 @@ pub(super) fn merge_circles(
 /// **Not "spanning the face's own rims" — a hole makes that false.** Where the face is buried in
 /// the other body it does not *cross* the wall its hole's vertical edges lie on — it ends at it —
 /// so one ruling comes in pieces of different [`SegKind`]s and each is its own trace. See
-/// `rulings::ruling_sweep`. A face with no hole still yields exactly one piece per ruling, rim to
+/// `rulings::cycle_on_wall`. A face with no hole still yields exactly one piece per ruling, rim to
 /// rim.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingTrace {

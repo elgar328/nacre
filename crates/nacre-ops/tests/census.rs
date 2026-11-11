@@ -2196,8 +2196,8 @@ fn measure_census() {
     // ── **A plane through a fillet's axis**: a class plane that holds a fillet's axis
     // has two rulings on the fillet, and one of them can be the fillet's own tangent ruling with
     // the plate's wall. That line then carries names from two vocabularies — the operand's tangent
-    // corner (`Pierce … Double`) and the class's ruling crossing (`Pierce … Lo/Hi`) — with nothing
-    // that knows they are one point, and the lateral's ruling sweep declines by name. The rows:
+    // corner (`Pierce … Double`) and the class's ruling crossing (`Pierce … Lo/Hi`), which the alias
+    // table joins before any trace (`Aliases::record_on_cylinder`). The rows:
     // the minimal plate-and-slab in both contact shapes, an off-axis control, and the user's
     // four-part fold at the script's own gusset positions (`1.5`/`−2.5`).
     {
