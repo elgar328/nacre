@@ -168,9 +168,9 @@ pub(crate) fn walk(
     // Does the gap between `lines` pinch to a point at event `e` — its two lines meeting there?
     let pinched = |e: usize, [lo, hi]: [usize; 2]| ns > 0 && height(e, lo) == height(e, hi);
 
-    // **Where the lateral ends although both sides keep it** — a station secant walls run
-    // through ([`Chart::slit_at`]): on the lateral's material side, the result has nothing
-    // between two of the walls, so what is kept on the two sides meets on the line alone. The
+    // **Where the lateral ends although both sides keep it** — a ruling's station
+    // ([`Chart::slit_at`]): on the lateral's material side, the result has nothing between two of
+    // the half-faces round the line, so what is kept on the two sides meets on the line alone. The
     // lateral is cut there — no adjacency across, and a boundary on both sides even within one
     // component — so the line becomes an edge the other solid's two faces use too, and the
     // assembly sees the touch: four uses of one edge in one solid, or two solids apart. Run

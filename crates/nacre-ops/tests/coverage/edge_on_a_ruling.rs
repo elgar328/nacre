@@ -29,7 +29,9 @@
 //! [`a_tangent_wall_on_a_half_bores_edge_builds`]; ending there beside a secant of
 //! `B`'s own, three planes on one line, it builds ([`three_planes_on_a_laterals_own_edge_build`]);
 //! and a wall through that edge from the side `A` does not fill — see
-//! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`].
+//! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`]. And the line running through
+//! `A`'s lateral where `B` ends on it with one side tangent and one across, into a notch or a bore
+//! — see [`a_tangent_wall_ending_on_a_line_the_lateral_runs_through`].
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
@@ -740,19 +742,6 @@ fn a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name() {
 /// check that refused every such touch would pass half of them.
 #[test]
 fn a_body_touching_itself_along_a_ruling_is_refused() {
-    fn bored_plate() -> Profile2d {
-        let square = nacre_ops::Ring2d::polygon_decimal(vec![
-            p2(-2.0, -2.0),
-            p2(2.0, -2.0),
-            p2(2.0, 2.0),
-            p2(-2.0, 2.0),
-        ])
-        .expect("a square");
-        let bore = nacre_ops::Ring2d::circle(p2(0.0, 0.0), 1.0).expect("a circle");
-        let mut plates = nacre_ops::from_paths(vec![square, bore]).expect("a plate with a bore");
-        assert_eq!(plates.len(), 1, "one plate");
-        plates.remove(0)
-    }
     let tau = 2.0 * std::f64::consts::PI;
     type Case = (
         &'static str,
@@ -763,13 +752,13 @@ fn a_body_touching_itself_along_a_ruling_is_refused() {
     let cases: [Case; 4] = [
         (
             "a wedge across the bore into the plate",
-            bored_plate,
+            bored_square,
             &[[1.0, 0.0], [-3.0, 1.0], [-3.0, -1.0]],
             None,
         ),
         (
             "a wedge inside the bore",
-            bored_plate,
+            bored_square,
             &[[1.0, 0.0], [0.0, 0.3], [0.0, -0.3]],
             Some((2, 32.0 - tau + 0.3)),
         ),
@@ -1253,6 +1242,125 @@ fn a_body_touching_itself_along_a_laterals_own_edge_is_refused() {
                 }
                 (Err(r), Err(w)) => assert_eq!(*r, w, "{p}: [{i}]"),
                 (got, want) => panic!("{p}: [{i}] {got:?}, want {want:?}"),
+            }
+        }
+    }
+}
+
+/// **A tangent wall ending on a line the lateral runs through** — `A` is [`notched_block`], whose
+/// notch's lateral keeps the material outside its cylinder and runs through the ruling `(1, 0)`;
+/// `B` is a box whose corner stands there, its side `x = 1` tangent to the notch along the line and
+/// its side `y = 0` crossing the notch, `B` above the line or below it. `B` ends on the line, so the
+/// structure judges it: the station on `y = 0`'s ruling takes `B`'s tangent face as one of the
+/// half-faces round the line (`cyl_chart::Station::tangent`), and `A − B` keeps the cusp between the
+/// notch and `x = 1` and the material beyond `y = 0` — two sectors meeting on the line alone. Where
+/// `B` cuts `A` through (past both caps) they are two bodies; elsewhere they join above or below
+/// `B`, one body touching itself along the line, refused as the inward wedge's is
+/// (`NonManifoldResultEdge`). Everything else builds, the volumes in closed form.
+///
+/// Beside it, the twin that must stay refused: [`bored_square`] less the same boxes, where the cusp
+/// and the far side join round the bore at every height — a station that cut the bore's lateral
+/// into two bodies on its own would build the notch and fail here.
+///
+/// Each twin stands on both sides of the axis — [`mirrored_notched_block`] and the boxes mirrored
+/// in `x = 0`, the line at `(−1, 0)`: the tangent side `x = 1` has the axis on its negative side
+/// and `x = −1` on its positive one, the two arms of the gate's `±w → ±τ` (`planes::Tangency`'s
+/// halves), so a sign right on one side alone fails the other. Every cell's bodies are pinned:
+/// the union and the common part are one, `B − A` the parts of `B` past `A` — none within the
+/// notched block's height, one past its top, two past both caps; one beside the bored plate, whose
+/// square `B` reaches past.
+#[test]
+fn a_tangent_wall_ending_on_a_line_the_lateral_runs_through() {
+    let above: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 2.0], [1.0, 2.0]];
+    let below: &[[f64; 2]] = &[[1.0, -2.0], [3.0, -2.0], [3.0, 0.0], [1.0, 0.0]];
+    let above_left: &[[f64; 2]] = &[[-3.0, 0.0], [-1.0, 0.0], [-1.0, 2.0], [-3.0, 2.0]];
+    let below_left: &[[f64; 2]] = &[[-3.0, -2.0], [-1.0, -2.0], [-1.0, 0.0], [-3.0, 0.0]];
+    let pi = std::f64::consts::PI;
+    // (A, `B` above and below the line, whether `A` is the notch, |A|, the area of `B`'s section
+    // inside `A` — `B` lies outside the disk but for the line)
+    type Twin<'q> = (
+        &'static str,
+        fn() -> Profile2d,
+        [&'q [[f64; 2]]; 2],
+        bool,
+        f64,
+        f64,
+    );
+    let (notch, bored) = (24.0 - pi, 2.0 * (16.0 - pi));
+    let twins: [Twin<'_>; 4] = [
+        (
+            "a notched block",
+            notched_block,
+            [above, below],
+            true,
+            notch,
+            4.0,
+        ),
+        (
+            "a mirrored notched block",
+            mirrored_notched_block,
+            [above_left, below_left],
+            true,
+            notch,
+            4.0,
+        ),
+        (
+            "a bored plate",
+            bored_square,
+            [above, below],
+            false,
+            bored,
+            2.0,
+        ),
+        (
+            "a bored plate, the boxes mirrored",
+            bored_square,
+            [above_left, below_left],
+            false,
+            bored,
+            2.0,
+        ),
+    ];
+    for (twin, a, [up, down], notched, vol, inside) in twins {
+        let all = every_six(a, &[("above the line", up), ("below the line", down)]);
+        assert_eq!(all.len(), 2 * 2 * 2 * 4, "{twin}: the family");
+        for (p, six) in &all {
+            identities_with(p, six, vol);
+            let two_bodies = notched && p.height == Height::PastBoth;
+            let b_less_a = match (notched, p.height) {
+                (false, _) => 1,
+                (true, Height::OnBase | Height::Inside) => 0,
+                (true, Height::PastTop) => 1,
+                (true, Height::PastBoth) => 2,
+            };
+            let (b, common) = (p.b_volume(), inside * p.height.shared());
+            let want = [
+                (1, vol + b - common),
+                (1, vol + b - common),
+                (2, vol - common),
+                (b_less_a, b - common),
+                (1, common),
+                (1, common),
+            ];
+            for (i, (got, (wn, wv))) in six.iter().zip(want).enumerate() {
+                match (i, got) {
+                    (2, Ok(_)) => assert!(two_bodies, "{twin}, {p}: A − B built"),
+                    (2, Err(reason)) => {
+                        assert!(!two_bodies, "{twin}, {p}: A − B refused");
+                        assert_eq!(
+                            *reason,
+                            RejectReason::NonManifoldResultEdge,
+                            "{twin}, {p}: A − B refused as {reason:?}"
+                        );
+                        continue;
+                    }
+                    (_, Err(reason)) => panic!("{twin}, {p}: [{i}] {reason:?}"),
+                    _ => {}
+                }
+                if let Ok((n, v)) = got {
+                    assert_eq!(*n, wn, "{twin}, {p}: [{i}] bodies");
+                    assert!((v - wv).abs() < 1e-9, "{twin}, {p}: [{i}] {v}, want {wv}");
+                }
             }
         }
     }

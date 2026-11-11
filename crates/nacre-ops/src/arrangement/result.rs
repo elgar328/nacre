@@ -122,10 +122,11 @@ pub(crate) struct RulingExtent {
     /// for, and where both speak the two must agree or the cell has no chamber.
     pub(crate) label: Option<Label>,
     /// The label of the cell this ruling borders **outside** the cylinder, on the same wall — the
-    /// other half-edge's. Where secant walls run through one ruling and the lateral keeps the
-    /// material outside the cylinder, the chambers that decide whether the lateral runs on across
-    /// the line are the ones between neighbouring walls out there, and only these cells state them
-    /// ([`crate::arrangement::cyl_chart::Chart::slit_at`]). `None` exactly where `label` is.
+    /// other half-edge's. Where the lateral keeps the material outside the cylinder, the chambers
+    /// that decide whether the lateral runs on across the line are the ones out there — between
+    /// neighbouring walls, and between a wall and another solid's tangent wall ending on the line —
+    /// and only these cells state them ([`crate::arrangement::cyl_chart::Chart::slit_at`]). `None`
+    /// exactly where `label` is.
     pub(crate) outer: Option<Label>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.

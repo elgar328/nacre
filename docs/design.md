@@ -1996,9 +1996,10 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 끊고(`split_rims`) 룰링 조각을 낸다(`arrangement::rulings::rulings_on_class`). 차트(`cyl_chart::chart_of`)는 그 조각을
 세로선(`ThetaSeg`)으로, 클래스의 자취를 선으로 얹는다(`cyl_chart` 의 모듈 doc).
 
-- **할선 벽들이 지나는 룰링은 정거장 하나다** — `stations_of_lines`·`Station::chords`·`ChordSays`·`Chart::slit_at`.
-  공유 룰링은 할선 벽들에 면이 없는 높이에서도 차트의 정거장이다 — 차트는 곡면 전체에 선을 깔고 칸을
-  분류하며(Requicha 의 분류, Mäntylä 의 이웃), 그 선에서 옆면이 끝나는지는 기록이 아니라 이 분류가 정한다.
+- **할선 룰링 하나는 정거장 하나이고, 그 별은 그 선에 간선을 가진 반쪽 면 전부다** — 할선 벽들의 현과 그 선에서 끝나는
+  다른 솔리드의 접선 벽 반쪽(`Station`·`Chart::slit_at`). 선을 품는 평면은 할선이거나 접선뿐이다. 공유 룰링은 할선
+  벽들에 면이 없는 높이에서도 차트의 정거장이다 — 차트는 곡면 전체에 선을 깔고 칸을 분류하며(Requicha 의 분류,
+  Mäntylä 의 이웃), 그 선에서 옆면이 끝나는지는 기록이 아니라 이 분류가 정한다.
 - **옆면 위의 곡선은 룰링이거나 θ 의 그래프다** — 높이 순서 `quad::section_height_order`(래퍼
   `combinatorics::line_order`·`ChartPoint::order`), θ 순서 `circular_order_about_seam`(두 점을 같은 원 위에서 받지 않으므로 다른 벽의 룰링도,
   위치가 무리수(`√(r²−d²)`)인 오프셋 벽(`0 < d < r`)의 룰링도 같은 산술로 비교한다), 코너의 각
@@ -2058,13 +2059,13 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 
 ### 접선·접촉·집힌 면
 
-접선은 게이트가 기록하고(`tangencies`, `planes::Tangency`) 배열은 무시하며, 조립의 판정 하나
+접선 접촉은 게이트가 기록하고(`tangencies`, `planes::Tangency`) 배열은 무시하며, 조립의 판정 하나
 (`assembly::self_touch::tangency_reject`)가 연산을 `keep` 으로 읽는다. 접선이 남긴 집힌 면은 메시가 다룬다
 (「Tessellation 층」 절).
 
-- **접선은 «가르지 않는다».** 게이트는 접선 쌍을 거절하지 않고 `tangencies` 로 기록하고, 배열은 그 선에서 어떤
-  셀도 나누지 않고 차트의 어떤 섹터에도 정거장을 세우지 않는다. **셋을 가르는 것은 연산이고, 연산은 `keep` 으로만
-  들어온다**(`self_touch::pinch`).
+- **접선은 «가르지 않는다».** 게이트는 접선 쌍을 거절하지 않고 `tangencies` 로 기록하고, 배열은 선을 관통하는 접선
+  면으로 어떤 셀도 나누지 않는다. **셋을 가르는 것은 연산이고, 연산은 `keep` 으로만 들어온다**(`self_touch::pinch`).
+  선에서 **끝나는** 접선 면은 접촉이 아니라 간선이다 — 정거장의 스포크(「룰링」).
 - **«갈라진다»가 곧 결함은 아니다** — 판정은 «두 덩이 ∧ 한 출력 솔리드»(`tangency_reject`, `SelfTouchingResult`).
 - **판정의 땅은 두 솔리드가 다 그 선을 관통하는 구간이다**(`Tangency::through`). 유효한 솔리드는 한 선을 면 하나로
   관통하거나 두 면으로 그 선에서 끝나므로, 거기엔 셋째 면이 없고 배열도 선을 긋지 않는다 — 세 영역이 전부다. 어느 솔리드가

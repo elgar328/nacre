@@ -734,3 +734,69 @@ fn a_lateral_cut_at_both_rims_is_an_operand_like_any_other() {
         }
     }
 }
+
+/// **The record of a tangent wall's line carries where that wall's faces lie on each side of it**
+/// (`SharedRuling::tangent_halves`, in the lateral's `+τ`, `−τ` order). `A` is the notched block
+/// (its notch's lateral through the ruling `(1, 0)`, `τ = +y` there), `B` a prism with its wall
+/// `x = 1` tangent to the notch along that line and a face on the plane `y = 0`, which holds the
+/// line and cuts the notch — the pair the record is written for. Over the lateral's span `z ∈ [0, 2]`:
+///
+/// - a box above the line (`y ∈ [0, 2]`) puts `x = 1` on the `+τ` side only — a face ending on the
+///   line, the whole span; below it (`y ∈ [−2, 0]`), on the `−τ` side only — the sign of `±w → ±τ`;
+/// - the same box standing in `z ∈ [1/2, 3/2]`, only there;
+/// - a prism whose wall `x = 1` runs across the line (`y ∈ [−1, 1]`), with its face on `y = 0` off to
+///   the side, on both sides — a contact, which divides nothing.
+#[test]
+fn a_tangent_walls_record_says_which_side_of_the_line_its_faces_lie_on() {
+    let halves_of = |quad: &[[f64; 2]], lift: f64, height: f64| {
+        let (m, a, b) = super::fixtures::a_solid_and_a_placed_prism(
+            |m| crate::SketchFrame::world(m, nacre_exact::Axis::Z),
+            super::fixtures::notched_block(),
+            quad,
+            lift,
+            height,
+        );
+        let setup = plane_index_setup(&m, a, b).expect("the gate passes it");
+        // The line through `(1, 0)` — the walls `y = ±1` of the prism across it are tangent to the
+        // notch's end rulings too, with no face there.
+        let at = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
+        let records: Vec<_> = setup.cyls[0]
+            .shared
+            .iter()
+            .filter(|sr| sr.at == at)
+            .filter_map(|sr| sr.tangent_halves.clone())
+            .collect();
+        assert_eq!(
+            records.len(),
+            1,
+            "one tangent wall, one holder: {records:?}"
+        );
+        records[0]
+            .iter()
+            .map(|side| {
+                side.iter()
+                    .map(|p| p.map(|v| v.as_rat().expect("a rational end")))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let r = |n: i128, d: i128| Rat::new(n, d).expect("a ratio");
+    let whole = vec![[r(0, 1), r(2, 1)]];
+    let above: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 2.0], [1.0, 2.0]];
+    let below: &[[f64; 2]] = &[[1.0, -2.0], [3.0, -2.0], [3.0, 0.0], [1.0, 0.0]];
+    let across: &[[f64; 2]] = &[
+        [1.0, -1.0],
+        [3.0, -1.0],
+        [3.0, 0.0],
+        [5.0, 0.0],
+        [5.0, 1.0],
+        [1.0, 1.0],
+    ];
+    assert_eq!(halves_of(above, -0.5, 3.0), vec![whole.clone(), vec![]]);
+    assert_eq!(halves_of(below, -0.5, 3.0), vec![vec![], whole.clone()]);
+    assert_eq!(
+        halves_of(above, 0.5, 1.0),
+        vec![vec![[r(1, 2), r(3, 2)]], vec![]]
+    );
+    assert_eq!(halves_of(across, -0.5, 3.0), vec![whole.clone(), whole]);
+}

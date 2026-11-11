@@ -82,15 +82,27 @@ pub(crate) struct CellRead<'a> {
 }
 
 impl Chart {
-    /// **Whether the lateral ends at station `i` on both sides** — a station two or more secant
-    /// walls run through, where the material the lateral bounds does not run round the line: a
-    /// chamber between two neighbouring walls ([`Station::chords`]), **on the lateral's material
-    /// side**, is not in the result. All kept, the material runs across the line and so does the
-    /// lateral; one not kept, what lies on the two sides meets on the line alone. `false` for a
-    /// station one wall runs through — there is no chamber between — and for one with a wall that
+    /// **Whether the lateral ends at station `i` on both sides** — where the material the lateral
+    /// bounds does not run round the line: a sector between two neighbouring spokes of the line's
+    /// star — the secant walls' chords ([`Station::chords`]) and the other solid's tangent wall
+    /// where it ends on the line ([`Station::tangent`]) — **on the lateral's material side**, is not
+    /// in the result. All kept, the material runs across the line and so does the lateral; one not
+    /// kept, what lies on the two sides meets on the line alone. `false` for a tangent ruling
+    /// (`side == 0`, whose `station` is `None` — no chord runs through it), for a station one chord
+    /// alone runs through with no tangent wall ending there — nothing lies between the lateral's
+    /// halves but that chord — and for one with a wall that
     /// draws no piece there ([`ChordSays::NoPiece`]): the line is then the lateral's own edge, and
     /// the lateral ends at it already (the walk refuses a station where it does not —
     /// `regions::walk`).
+    ///
+    /// **A tangent wall ending on the line** lies outside the cylinder, along `±τ`: between the
+    /// lateral's half on that side, which bends to the axis, and every chord's outer half. Where the
+    /// lateral keeps the outside, it splits the sector beside the lateral into the lateral's own
+    /// (kept, as below) and the one next to the nearest outer half, which that chord's outside cell
+    /// states — the last chord's on its `τ` side beside `+τ`, the first chord's on the other side
+    /// beside `−τ`. A notched block less a box whose corner stands on the notch's lateral, one side
+    /// tangent there and one across it, is two bodies meeting on that line only where this sector
+    /// is read (`edge_on_a_ruling`).
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
@@ -173,16 +185,36 @@ impl Chart {
         // of the lateral.
         let lateral = 0;
         let n = walls.len();
-        let star = crate::draft::LineStar::new(
-            std::iter::once(lateral)
-                .chain(1..=n)
-                .chain(std::iter::once(lateral))
-                .collect(),
-            std::iter::once(true)
-                .chain(between)
-                .chain([true, false])
-                .collect(),
-        );
+        let mut faces: Vec<usize> = vec![lateral];
+        let mut kept: Vec<bool> = vec![true];
+        if inside {
+            // Inside, nothing but chords: the tangent plane lies outside the cylinder.
+            faces.extend(1..=n);
+            kept.extend(between);
+        } else {
+            // Outside, counter-clockwise from the lateral's `+τ` half: the tangent wall's `+τ` half
+            // where it ends on the line, then the chords' outer halves from the last to the first,
+            // then the `−τ` half. Beyond a tangent half lies the sector next to the nearest outer
+            // half — the last chord's on its `τ` side, the first chord's on the other — which that
+            // chord's outside cell states; the sector between the lateral and the tangent half is
+            // the lateral's own, kept by the premise above.
+            let tangent = |at: usize| n + 1 + at;
+            if st.tangent[0] {
+                let (_, o, near) = walls[n - 1];
+                faces.push(tangent(0));
+                kept.push(keeps(read_bits(&o.ok_or(stages)?, side, near)));
+            }
+            faces.extend((1..=n).rev());
+            kept.extend(between.into_iter().rev());
+            if st.tangent[1] {
+                let (_, o, near) = walls[0];
+                kept.push(keeps(read_bits(&o.ok_or(stages)?, side, !near)));
+                faces.push(tangent(1));
+            }
+        }
+        faces.push(lateral);
+        kept.extend([true, false]);
+        let star = crate::draft::LineStar::new(faces, kept);
         Ok(star.continues(lateral) == Some(false))
     }
 
@@ -285,7 +317,7 @@ impl Chart {
             if seg.side == 0 {
                 return None;
             }
-            // A station secant walls run through answers each side from the wall that closes the
+            // A ruling's station answers each side from the wall that closes the
             // chamber there — the first chord beside `+θ`, the last beside `−θ`
             // (`Station::chords`); `starts_here` is the `+θ` side. Held here as well as in
             // `slit_at`, which reads the same order (and the walls' outside cells too): swapping
@@ -293,19 +325,15 @@ impl Chart {
             // the rims speak too and the swapped wall contradicts them. A closing wall with no
             // piece there has no label to read, and the station's own wall would answer for a
             // chamber between chords — so that side is silent.
-            let (l, (wall, sd)) = match &seg.station {
-                Some(st) => {
-                    let c = if starts_here {
-                        st.chords.first()?
-                    } else {
-                        st.chords.last()?
-                    };
-                    match c.says {
-                        ChordSays::Piece { label, .. } => (label?, (c.wall, c.side)),
-                        ChordSays::NoPiece => return None,
-                    }
-                }
-                None => (seg.label?, self.ruling_name(jd, k, def, i).ok()?),
+            let st = seg.station.as_ref()?;
+            let c = if starts_here {
+                st.chords.first()?
+            } else {
+                st.chords.last()?
+            };
+            let (l, (wall, sd)) = match c.says {
+                ChordSays::Piece { label, .. } => (label?, (c.wall, c.side)),
+                ChordSays::NoPiece => return None,
             };
             // The slab leaves its first event counter-clockwise and arrives at its second, so the
             // two walls are read from opposite sides of their own rulings.

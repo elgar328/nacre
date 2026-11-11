@@ -258,6 +258,89 @@ pub fn unit_disk() -> Profile2d {
     .remove(0)
 }
 
+/// **The square `[−2, 2]²` with the unit disk bored out** — a plate whose bore's lateral keeps the
+/// material outside its cylinder all round, the seam at `(1, 0)`.
+pub fn bored_square() -> Profile2d {
+    let square = nacre_ops::Ring2d::polygon_decimal(vec![
+        p2(-2.0, -2.0),
+        p2(2.0, -2.0),
+        p2(2.0, 2.0),
+        p2(-2.0, 2.0),
+    ])
+    .expect("a square");
+    let bore = nacre_ops::Ring2d::circle(p2(0.0, 0.0), 1.0).expect("a circle");
+    let mut plates = nacre_ops::from_paths(vec![square, bore]).expect("a plate with a bore");
+    assert_eq!(plates.len(), 1, "one plate");
+    plates.remove(0)
+}
+
+/// **The block `[0, 3] × [−2, 2]` with the right half of the unit disk notched out of its face
+/// `x = 0`** — the arc clockwise from `(0, 1)` through `(1, 0)` to `(0, −1)`, so the notch's
+/// lateral keeps the material outside its cylinder and runs through the ruling at `(1, 0)`.
+pub fn notched_block() -> Profile2d {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let ring = nacre_ops::Ring2d::new(
+        vec![
+            [r(0), r(-2)],
+            [r(3), r(-2)],
+            [r(3), r(2)],
+            [r(0), r(2)],
+            [r(0), r(1)],
+            [r(0), r(-1)],
+        ],
+        vec![
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Arc {
+                center: [r(0), r(0)],
+                r2: r(1),
+                ccw: false,
+            },
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a notched block");
+    nacre_ops::from_paths(vec![ring])
+        .expect("a notched block")
+        .remove(0)
+}
+
+/// **[`notched_block`] mirrored in `x = 0`** — the block `[−3, 0] × [−2, 2]` with the left half of
+/// the unit disk notched out, the arc clockwise from `(0, −1)` through `(−1, 0)` to `(0, 1)`.
+pub fn mirrored_notched_block() -> Profile2d {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let ring = nacre_ops::Ring2d::new(
+        vec![
+            [r(-3), r(-2)],
+            [r(0), r(-2)],
+            [r(0), r(-1)],
+            [r(0), r(1)],
+            [r(0), r(2)],
+            [r(-3), r(2)],
+        ],
+        vec![
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Arc {
+                center: [r(0), r(0)],
+                r2: r(1),
+                ccw: false,
+            },
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a mirrored notched block");
+    nacre_ops::from_paths(vec![ring])
+        .expect("a mirrored notched block")
+        .remove(0)
+}
+
 /// **The upper half of the unit disk** — the arc from `(1, 0)` to `(−1, 0)` and the diameter
 /// back, so the solid over it has a flat through its own cylinder's axis, and each end of that
 /// flat is an edge on a ruling.

@@ -216,6 +216,7 @@ pub(crate) fn cylinder_gate(
                         line: (c.min(x), c.max(x)),
                         stated_by: vec![x],
                         at,
+                        tangent_halves: None,
                     },
                 ));
             }
@@ -377,7 +378,7 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
-    for (ci, sr) in shared_rulings(faces, jd, &cyls, &meets)
+    for (ci, sr) in shared_rulings(faces, jd, &cyls, &meets, &tangencies)
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
         .into_iter()
         .chain(hinged)
@@ -666,8 +667,10 @@ fn class_meet(
                 // measured cells, the 15 outside the third-plane population (a third class's face
                 // reaching the line) assemble, `validate` clean and
                 // volumes exact. Its record is its own (`CylRecord::Touches`): the line divides
-                // no cell of this plane and no sector of the chart, and is the plane's one station
-                // on the cylinder.
+                // no cell of this plane, nor the chart where the wall's face runs through it, and is
+                // the plane's one station on the cylinder. A face of the wall **ending** on the line
+                // is an edge there, which the chart's station on a secant wall's ruling reads off the
+                // pair's record (`SharedRuling::tangent_halves`).
                 //
                 // What the pair can still do is pinch the *result*, and that is a question about
                 // the operation — so the geometry is stated in a row and
@@ -749,18 +752,25 @@ fn class_meet(
 /// or on an end is on the face: a line on a face's end ruling is the face's edge, the
 /// half-cylinder family) — which a [`Tangency`] row asks too, where the face's own stretches of the
 /// line cannot be read.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.
     pub(crate) line: (usize, usize),
     /// Which of the two state the ruling as a station of the cylinder's chart — the ones that cut
     /// the cylinder, so one (a tangent or a sectioned partner) or both. Both classes of the pair fold
-    /// their own segments on the line onto it (`split_rulings`); only these put the station on the
-    /// chart (`cyl_chart::stations_of_lines` gathers every pair through one line into one station).
+    /// their own segments on the line onto it (`split_rulings`); the chart gathers every secant
+    /// wall through the line into one station (`cyl_chart::stations_of_lines`).
     pub(crate) stated_by: Vec<usize>,
     /// A point of the line, exact: the line is the ruling through it, so a reader needs neither
     /// class's coefficients to say where it is — a sectioned partner has none.
     pub(crate) at: [nacre_exact::Rat; 3],
+    /// **For a tangent partner, where its faces lie on the line's `+τ` and `−τ` sides** — the
+    /// [`Tangency`] rows' halves of that class and cylinder, gathered (closed pieces in the axis
+    /// parameter, joined). One side alone is a face ending on the line, which the line's station
+    /// reads as a spoke; both sides is the face running through it — a contact, which divides
+    /// nothing. `None` for a pair of secant or sectioned partners, and for a tangent one whose rows
+    /// could not be read, which the gate refuses by the rows' own name before anything reads this.
+    pub(crate) tangent_halves: Option<[Vec<[nacre_exact::QuadVal; 2]>; 2]>,
 }
 
 impl SharedRuling {
@@ -846,6 +856,7 @@ fn shared_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
     meets: &[Vec<ClassMeet>],
+    tangencies: &[Tangency],
 ) -> Option<Vec<(usize, SharedRuling)>> {
     let mut out = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
@@ -873,6 +884,7 @@ fn shared_rulings(
                             line: (s, t),
                             stated_by: vec![s, t],
                             at: line.base(),
+                            tangent_halves: None,
                         },
                     ));
                 }
@@ -890,6 +902,19 @@ fn shared_rulings(
             if !on_a_face(&foot)? {
                 continue;
             }
+            // Every row of this class on this cylinder — one per wall face and lateral face that
+            // touch — reads the same faces of the wall's solid, over its lateral's stretches.
+            let halves = tangencies
+                .iter()
+                .filter(|row| row.wall == t && row.cyl == ci)
+                .try_fold([Vec::new(), Vec::new()], |mut acc, row| {
+                    let h = row.halves.as_ref()?;
+                    for (to, from) in acc.iter_mut().zip(h) {
+                        to.extend(from.iter().copied());
+                    }
+                    Some(acc)
+                })
+                .and_then(|[plus, minus]| Some([joined(plus)?, joined(minus)?]));
             for &s in holders {
                 if secants.binary_search(&s).is_ok() {
                     out.push((
@@ -898,6 +923,7 @@ fn shared_rulings(
                             line: (s.min(t), s.max(t)),
                             stated_by: vec![s],
                             at: foot,
+                            tangent_halves: halves.clone(),
                         },
                     ));
                 }
@@ -1076,6 +1102,15 @@ pub(crate) struct Tangency {
     /// it does not have, and reading one that runs through as ending passes a pinch nothing else
     /// sees.
     pub(crate) through: Option<Vec<[nacre_exact::QuadVal; 2]>>,
+    /// **Where the wall's solid has a face on the line's `+τ` side and on its `−τ` side** — `τ = m × r`
+    /// the lateral's `+θ` tangent at the line, `r` from the axis out to it; closed pieces in the axis
+    /// parameter, over this row's lateral's stretches, from every face of the wall's solid on the
+    /// class. [`Self::through`] is the stretch where both sides hold one, met with the lateral's own;
+    /// the record of the line ([`SharedRuling::tangent_halves`]) gathers these for the chart, where
+    /// one side alone is a face that **ends** on the line — its edge, a spoke of the line's star.
+    /// `None` where a face of the wall's solid could not be read (so `through` is `None` too) or the
+    /// lens' side could not be stated (`undecided`) — rows the gate refuses either way.
+    halves: Option<[Vec<[nacre_exact::QuadVal; 2]>; 2]>,
     /// The tangency point — `RejectWhere`'s doc asks for a witness that is actually there: the
     /// middle of the first stretch where the line runs through the wall face, else of the first it
     /// runs along, when that stretch has rational ends; otherwise the middle of the lateral face's
@@ -1375,7 +1410,8 @@ fn tangency_rows(
             // (over all its faces there) and the cylinder's solid on both sides of it on the
             // cylinder. `None` where a face could not be read.
             let lateral_through = lateral_through.get_or_insert_with(read_lateral_through);
-            let through = (|| {
+            // The wall's solid's faces on the class, by the side of the line they lie on (`±w`).
+            let wall_sides = (|| {
                 let b = base.as_ref()?;
                 let mut wall: [Vec<[nacre_exact::QuadVal; 2]>; 2] = [Vec::new(), Vec::new()];
                 for (j, row) in faces.iter().enumerate() {
@@ -1397,6 +1433,11 @@ fn tangency_rows(
                         }
                     }
                 }
+                let [plus, minus] = wall;
+                Some([joined(plus)?, joined(minus)?])
+            })();
+            let through = (|| {
+                let wall = wall_sides.as_ref()?;
                 let both =
                     meet_unions(&meet_unions(&wall[0], &wall[1])?, lateral_through.as_ref()?)?;
                 per_stretch.as_ref().and_then(|v| {
@@ -1407,6 +1448,16 @@ fn tangency_rows(
                     meet_unions(&own, &both)
                 })
             })();
+            // `w = n × m` and `τ = m × r`; the line's foot is `o − q·n` with `q = (n·o + d)/|n|²`, so
+            // `r = −q·n` and `τ = q·w`: `+w` is `+τ` exactly where the axis lies on the plane's
+            // positive side — the lens' side.
+            let halves = wall_sides.zip(lens_side).map(|([plus_w, minus_w], lens)| {
+                if lens > 0 {
+                    [plus_w, minus_w]
+                } else {
+                    [minus_w, plus_w]
+                }
+            });
             let witness_span = chosen.map(|(sp, _)| sp).or(cf.stretch);
             let witness = base.as_ref().zip(witness_span).and_then(|(b, span)| {
                 let mid = match contact.contact_at {
@@ -1449,6 +1500,7 @@ fn tangency_rows(
                 cyl_orient: cf.orient_sign,
                 undecided,
                 through,
+                halves,
                 witness: witness.unwrap_or(Point3::from_array([f64::NAN; 3])),
             });
         }
@@ -1510,7 +1562,13 @@ fn meet_unions(
             }
         }
     }
-    // Sorted by the lower end, overlapping and touching pieces joined.
+    joined(met)
+}
+
+/// **Closed pieces of the line, sorted by the lower end with overlapping and touching pieces
+/// joined** — `None` where two ends could not be compared.
+fn joined(met: Vec<[nacre_exact::QuadVal; 2]>) -> Option<Vec<[nacre_exact::QuadVal; 2]>> {
+    use core::cmp::Ordering;
     let mut sorted: Vec<[nacre_exact::QuadVal; 2]> = Vec::with_capacity(met.len());
     for p in met {
         let mut at = sorted.len();
