@@ -400,15 +400,10 @@ pub(crate) fn cylinder_gate(
     // through the line it is the only reader. So is a row whose stretches through the line could
     // not be read: read as running through, a solid that ends on the line would be judged by the
     // three regions it does not have; read as ending there, a pinch nothing else sees would pass.
+    // The row carries both as one refusal ([`Tangency::undecided`]).
     for t in &tangencies {
         if let Some(e) = t.undecided {
             return Err(e);
-        }
-        if t.through.is_none() {
-            return Err(crate::reject_at(
-                RejectReason::CylinderGateUndecided,
-                crate::RejectWhere::Point(t.witness),
-            ));
         }
     }
     Ok((cyls, tangencies))
@@ -1063,16 +1058,18 @@ pub(crate) struct Tangency {
     pub(crate) wall_solid: SolidSide,
     pub(crate) cyl_solid: SolidSide,
     /// Is the cylinder's side of the wall plane the wall **face**'s material side? Read from that
-    /// face's own outward statement, not from the class frame — one class can carry faces of both
-    /// operands with opposite material sides.
+    /// face's own facing against the class ([`face_facing`]), not from the class frame alone — one
+    /// class can carry faces of both operands with opposite material sides.
     pub(crate) lens_in_wall_solid: bool,
     /// `+1` material inside the cylinder (a boss), `-1` outside (a bore) — the lateral face's own
     /// [`CylFaceInfo::orient_sign`].
     pub(crate) cyl_orient: i8,
-    /// **Something above could not be stated, and the refusal that says what**: the wall face's
-    /// own, where the footprint reader could not read it (the name [`wall_faces_clear`] raises for
-    /// that face), else [`RejectReason::CylinderGateUndecided`] (a face with no world description
-    /// of its own, an overflow). The gate raises it; no row the verdict sees has one.
+    /// **Something this row needs could not be read, and the refusal that says what** — the first
+    /// cause, by its own name: a wall face the footprint reader could not read (the very refusal
+    /// [`wall_faces_clear`] raises for it), width ([`RejectReason::WitnessNotRational`]), a facing
+    /// the judge could not separate (its own name), or the stretches through the line
+    /// ([`Self::through`] — placed at the witness). The gate raises it; no row the verdict sees
+    /// has one.
     undecided: Option<BoolError>,
     /// **Where both solids run through the tangent line, on this row's ground** — closed pieces
     /// `[lo, hi]` in the axis parameter ([`axis_param_of_plane`]'s scale), within those where the
@@ -1097,10 +1094,10 @@ pub(crate) struct Tangency {
     /// `StripSide::Inside` for `U = 0` (*"merely conservative"* on a tangent plane's empty strip)
     /// says nothing on its own here.
     ///
-    /// `None` where a face could not be read — the gate refuses such a row: no default is safe,
-    /// since reading a solid that ends on the line as running through convicts it of three regions
-    /// it does not have, and reading one that runs through as ending passes a pinch nothing else
-    /// sees.
+    /// `None` where a face could not be read, and then [`Self::undecided`] says why — the gate
+    /// refuses such a row: no default is safe, since reading a solid that ends on the line as
+    /// running through convicts it of three regions it does not have, and reading one that runs
+    /// through as ending passes a pinch nothing else sees.
     pub(crate) through: Option<Vec<[nacre_exact::QuadVal; 2]>>,
     /// **Where the wall's solid has a face on the line's `+τ` side and on its `−τ` side** — `τ = m × r`
     /// the lateral's `+θ` tangent at the line, `r` from the axis out to it; closed pieces in the axis
@@ -1143,6 +1140,28 @@ fn tangency_foot(
 /// A lateral face's stretches of one ruling, in the axis parameter (`lateral_cover_on_ruling`).
 type Stretches = Vec<[nacre_exact::Rat; 2]>;
 
+/// Closed pieces of the tangent line, in the axis parameter.
+type Pieces = Vec<[nacre_exact::QuadVal; 2]>;
+
+/// **Why part of a tangency row could not be read** — a wall face the footprint reading could not
+/// read, by that very refusal (the same value whichever row reaches it), or a cause this row's own
+/// reading met, which the row places at its witness when it has one.
+#[derive(Clone, Copy)]
+enum RowFail {
+    Unread(BoolError),
+    At(RejectReason),
+}
+
+impl RowFail {
+    fn raise(&self, at: Option<Point3>) -> BoolError {
+        match (self, at) {
+            (Self::Unread(e), _) => *e,
+            (Self::At(reason), Some(p)) => crate::reject_at(*reason, crate::RejectWhere::Point(p)),
+            (Self::At(reason), None) => reject(*reason),
+        }
+    }
+}
+
 /// One lateral face as [`tangency_rows`] reads it against the tangent line.
 struct LateralOnLine<'a> {
     /// Its row in the face table.
@@ -1162,9 +1181,13 @@ struct LateralOnLine<'a> {
 /// **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing
 /// face and raises on shapes it cannot read; a raise propagated from the middle of this walk
 /// would outrank the gate's other refusals by the order the faces happen to be in. Every failure
-/// here becomes `undecided` on the row instead, carrying its refusal, and the gate raises the
-/// first such row's after its other questions — the same name for an unreadable face wherever it
-/// stands.
+/// here becomes `undecided` on the row instead, carrying its refusal by its cause's name (the
+/// module's rule: width, a statement the world does not hold, a shape the road cannot spell, a
+/// judgement that did not separate), and the gate raises the first such row's after its other
+/// questions. Each wall face's footprint is read once, and a row that reads a sibling face carries
+/// that face's own refusal — the same refusal for an unreadable face wherever it stands.
+/// Measured: of every row the suite, the census, the ignored sweep and kit write, none carries a
+/// cause but an unread face; the producers' names are locked where they are produced.
 #[allow(clippy::too_many_arguments)]
 fn tangency_rows(
     model: &Model,
@@ -1225,19 +1248,20 @@ fn tangency_rows(
         })
         .collect();
     // **Where the cylinder's solid runs through the line** — its lateral faces on this cylinder
-    // holding the generators on both sides of the line (a seam is no boundary); `None` where a face
-    // could not be read. Read once, and only for a pair that writes a row: most tangent pairs'
-    // wall faces clear the footprint, and reading every lateral here cost the census 1.1% of its
-    // instructions.
-    let read_lateral_through = || {
-        let b = base.as_ref()?;
-        let mut sides: [Vec<[nacre_exact::QuadVal; 2]>; 2] = [Vec::new(), Vec::new()];
+    // holding the generators on both sides of the line (a seam is no boundary); `Err` where a face
+    // could not be read, by its cause. Read once, and only for a pair that writes a row: most
+    // tangent pairs' wall faces clear the footprint, and reading every lateral here cost the census
+    // 1.1% of its instructions.
+    let read_lateral_through = || -> Result<Pieces, RejectReason> {
+        let b = base.as_ref().ok_or(RejectReason::WitnessNotRational)?;
+        let mut sides: [Pieces; 2] = [Vec::new(), Vec::new()];
         for row in faces {
             let FaceRow::Cylinder(cf) = row else { continue };
             if cf.surf != surf {
                 continue;
             }
-            let read = lateral_sides_on_ruling(model, model.face(cf.face?), def, b)?;
+            let fh = cf.face.ok_or(RejectReason::CylinderGateUndecided)?;
+            let read = lateral_sides_on_ruling(model, model.face(fh), def, b)?;
             for (to, from) in sides.iter_mut().zip(read) {
                 to.extend(
                     from.into_iter()
@@ -1245,60 +1269,29 @@ fn tangency_rows(
                 );
             }
         }
-        meet_unions(&sides[0], &sides[1])
+        meet_unions(&sides[0], &sides[1]).ok_or(RejectReason::WitnessNotRational)
     };
-    let mut lateral_through: Option<Option<Vec<[nacre_exact::QuadVal; 2]>>> = None;
-    // **The wall's solid's faces on the class, by the side of the line they lie on (`±w`)**, over
-    // one lateral's stretches — read once per lateral: every row's wall solid is the one that does
-    // not own the cylinder (same-solid pairs write no row, below). `None` where a face could not be
-    // read.
-    let read_wall_sides = |stretches: &Option<Stretches>| {
-        let b = base.as_ref()?;
-        let mut wall: [Vec<[nacre_exact::QuadVal; 2]>; 2] = [Vec::new(), Vec::new()];
-        for (j, row) in faces.iter().enumerate() {
+    let mut lateral_through: Option<Result<Pieces, RejectReason>> = None;
+    // **Every wall face's footprint reading, once** — read by the face's own row (`unread` below)
+    // and, for a sibling, by `read_wall_sides`, so a face that could not be read is refused by
+    // **one** refusal whichever row reaches it first. Indexed by face row; `Some` exactly on the
+    // faces the row loop below walks — the class's, off the cylinder's solid.
+    let footprint: Vec<Option<Result<bool, BoolError>>> = faces
+        .iter()
+        .enumerate()
+        .map(|(j, row)| {
             let (ClassIx::Plane(kj), FaceRow::Plane(fj)) = (plane_ix[j], row) else {
-                continue;
+                return None;
             };
+            // **Same-solid pairs write no row** (a valid solid's faces do not meet — the pair
+            // loop's premise). A wall tangent to its own solid's cylinder is that solid's smooth
+            // edge — a fillet — not a contact between operands. The judge would skip such a row
+            // anyway (the face ends on the line, so no piece runs through), but a row it could not
+            // decide would refuse the boolean by a name that is about nothing.
             if kj != c || side_of(j) == owner {
-                continue;
+                return None;
             }
-            let face = model.face(fj.face?);
-            for &sp in stretches.as_ref()? {
-                let read = line_runs_through_face(model, face, coeffs, b, &m, sp)?;
-                for (piece, on) in read.contact.iter().zip(&read.sides) {
-                    for (to, &here) in wall.iter_mut().zip(on) {
-                        if here {
-                            to.push(*piece);
-                        }
-                    }
-                }
-            }
-        }
-        let [plus, minus] = wall;
-        Some([joined(plus)?, joined(minus)?])
-    };
-    let mut wall_sides_of = vec![None; laterals.len()];
-    let mut out = Vec::new();
-    for (fi_ix, row) in faces.iter().enumerate() {
-        let (ClassIx::Plane(k), FaceRow::Plane(fi)) = (plane_ix[fi_ix], row) else {
-            continue;
-        };
-        if k != c {
-            continue;
-        }
-        let fh = fi.face.expect("collect_planes yields real faces");
-        // **Same-solid pairs write no row** (a valid solid's faces do not meet — the pair loop's
-        // premise). A wall tangent to its own solid's cylinder is that solid's smooth edge — a
-        // fillet — not a contact between operands. The judge would skip such a row anyway (the
-        // face ends on the line, so no piece runs through), but a row it could not decide would
-        // refuse the boolean by a name that is about nothing.
-        if matches!(
-            (side_of(fi_ix), owner),
-            (SolidSide::A, SolidSide::A) | (SolidSide::B, SolidSide::B)
-        ) {
-            continue;
-        }
-        let read = {
+            let fh = fj.face.expect("collect_planes yields real faces");
             let got = face_clears_footprint(model, model.face(fh), coeffs, &o, &m, r2, &spans);
             #[cfg(feature = "tangency-trace")]
             if got.is_err() {
@@ -1319,8 +1312,56 @@ fn tangency_rows(
                     );
                 }
             }
-            got
+            Some(got)
+        })
+        .collect();
+    // **The wall's solid's faces on the class, by the side of the line they lie on (`±w`)**, over
+    // one lateral's stretches — read once per lateral: every row's wall solid is the one that does
+    // not own the cylinder (same-solid pairs write no row, below). `Err` where a face could not be
+    // read: a face the footprint reading could not read fails by **that** refusal, as its own row
+    // does.
+    let read_wall_sides = |stretches: &Option<Stretches>| -> Result<[Pieces; 2], RowFail> {
+        let b = base
+            .as_ref()
+            .ok_or(RowFail::At(RejectReason::WitnessNotRational))?;
+        let stretches = stretches
+            .as_ref()
+            .ok_or(RowFail::At(RejectReason::CylinderGateUndecided))?;
+        let mut wall: [Pieces; 2] = [Vec::new(), Vec::new()];
+        for (j, row) in faces.iter().enumerate() {
+            let (Some(read), FaceRow::Plane(fj)) = (&footprint[j], row) else {
+                continue;
+            };
+            if let Err(e) = read {
+                return Err(RowFail::Unread(*e));
+            }
+            let face = model.face(fj.face.expect("collect_planes yields real faces"));
+            for &sp in stretches {
+                let read =
+                    line_runs_through_face(model, face, coeffs, b, &m, sp).map_err(RowFail::At)?;
+                for (piece, on) in read.contact.iter().zip(&read.sides) {
+                    for (to, &here) in wall.iter_mut().zip(on) {
+                        if here {
+                            to.push(*piece);
+                        }
+                    }
+                }
+            }
+        }
+        let [plus, minus] = wall;
+        let width = || RowFail::At(RejectReason::WitnessNotRational);
+        Ok([
+            joined(plus).ok_or_else(width)?,
+            joined(minus).ok_or_else(width)?,
+        ])
+    };
+    let mut wall_sides_of = vec![None; laterals.len()];
+    let mut out = Vec::new();
+    for (fi_ix, row) in faces.iter().enumerate() {
+        let (Some(read), FaceRow::Plane(fi)) = (footprint[fi_ix], row) else {
+            continue;
         };
+        let fh = fi.face.expect("collect_planes yields real faces");
         // **A face this could not read is «unknown», not «innocent».** Folded to «did not clear»,
         // it would write a row whose stretches through the line were **never computed**, and an
         // empty answer acquits. So the row carries the face's own refusal — the name
@@ -1393,31 +1434,42 @@ fn tangency_rows(
             // carrying its refusal, and reads as a contact through the interior — dropped here,
             // that refusal would vanish with it (`line_runs_through_face`); and so does a row any
             // stretch of which could not be read.
-            let per_stretch = base
-                .as_ref()
-                .zip(stretches.clone())
-                .filter(|_| unread.is_none())
-                .and_then(|(b, stretches)| {
-                    stretches
-                        .into_iter()
-                        .map(|sp| {
-                            line_runs_through_face(model, model.face(fh), coeffs, b, &m, sp)
-                                .map(|c| (sp, c))
-                        })
-                        .collect::<Option<Vec<_>>>()
-                });
-            let chosen = per_stretch.as_deref().and_then(row_witness);
-            let touches = per_stretch
-                .as_ref()
-                .is_none_or(|v| v.iter().any(|(_, c)| c.touches()));
-            if !touches {
-                #[cfg(feature = "tangency-trace")]
-                #[allow(clippy::print_stderr)]
-                {
-                    eprintln!("TSKIP the wall face does not reach the line on the lateral");
+            let per_stretch = (|| -> Result<Vec<_>, RowFail> {
+                if let Some(e) = &unread {
+                    return Err(RowFail::Unread(*e));
                 }
-                continue;
-            }
+                let b = base
+                    .as_ref()
+                    .ok_or(RowFail::At(RejectReason::WitnessNotRational))?;
+                let stretches = stretches
+                    .as_ref()
+                    .ok_or(RowFail::At(RejectReason::CylinderGateUndecided))?;
+                stretches
+                    .iter()
+                    .map(|&sp| {
+                        line_runs_through_face(model, model.face(fh), coeffs, b, &m, sp)
+                            .map(|c| (sp, c))
+                            .map_err(RowFail::At)
+                    })
+                    .collect()
+            })();
+            // The row's witness piece, or why the line's contact could not be read. A contact
+            // that was read and holds no piece is a wall face that does not reach the line on
+            // this lateral, and writes no row.
+            let chosen = match per_stretch.as_deref() {
+                Ok(v) => match row_witness(v) {
+                    Some(piece) => Ok(piece),
+                    None => {
+                        #[cfg(feature = "tangency-trace")]
+                        #[allow(clippy::print_stderr)]
+                        {
+                            eprintln!("TSKIP the wall face does not reach the line on the lateral");
+                        }
+                        continue;
+                    }
+                },
+                Err(fail) => Err(*fail),
+            };
             // **Where both solids run through the line, on this row's ground** — this wall face's
             // contact, where the wall's solid lies on both sides of the line in the class's plane
             // (over all its faces there) and the cylinder's solid on both sides of it on the
@@ -1426,53 +1478,80 @@ fn tangency_rows(
             let wall_sides = wall_sides_of[li]
                 .get_or_insert_with(|| read_wall_sides(stretches))
                 .clone();
-            let through = (|| {
-                let wall = wall_sides.as_ref()?;
-                let both =
-                    meet_unions(&meet_unions(&wall[0], &wall[1])?, lateral_through.as_ref()?)?;
-                per_stretch.as_ref().and_then(|v| {
-                    let own: Vec<[nacre_exact::QuadVal; 2]> = v
-                        .iter()
-                        .flat_map(|(_, c)| c.contact.iter().copied())
-                        .collect();
-                    meet_unions(&own, &both)
-                })
+            let through = (|| -> Result<Pieces, RowFail> {
+                let width = || RowFail::At(RejectReason::WitnessNotRational);
+                let wall = wall_sides.as_ref().map_err(|e| *e)?;
+                let lateral = lateral_through.as_ref().map_err(|&r| RowFail::At(r))?;
+                let both = meet_unions(&wall[0], &wall[1])
+                    .and_then(|w| meet_unions(&w, lateral))
+                    .ok_or_else(width)?;
+                let own: Pieces = per_stretch
+                    .as_ref()
+                    .map_err(|e| *e)?
+                    .iter()
+                    .flat_map(|(_, c)| c.contact.iter().copied())
+                    .collect();
+                meet_unions(&own, &both).ok_or_else(width)
             })();
             // `w = n × m` and `τ = m × r`; the line's foot is `o − q·n` with `q = (n·o + d)/|n|²`, so
             // `r = −q·n` and `τ = q·w`: `+w` is `+τ` exactly where the axis lies on the plane's
             // positive side — the lens' side.
-            let halves = wall_sides.zip(lens_side).map(|([plus_w, minus_w], lens)| {
-                if lens > 0 {
-                    [plus_w, minus_w]
-                } else {
-                    [minus_w, plus_w]
-                }
-            });
-            let witness_span = chosen.map(|(sp, _)| sp).or(cf.stretch);
-            let witness = base.as_ref().zip(witness_span).and_then(|(b, span)| {
-                let mid = match chosen.and_then(|(_, at)| at) {
+            let halves = wall_sides
+                .ok()
+                .zip(lens_side)
+                .map(|([plus_w, minus_w], lens)| {
+                    if lens > 0 {
+                        [plus_w, minus_w]
+                    } else {
+                        [minus_w, plus_w]
+                    }
+                });
+            // The witness: its piece's middle, else its stretch's. With no piece the line's contact
+            // was not read, and with no stretch either, that failure is why there is no witness.
+            let witness = (|| -> Result<Point3, RowFail> {
+                let width = || RowFail::At(RejectReason::WitnessNotRational);
+                let b = base.as_ref().ok_or_else(width)?;
+                let span = match chosen {
+                    Ok((sp, _)) => sp,
+                    Err(fail) => cf.stretch.ok_or(fail)?,
+                };
+                let mid = match chosen.ok().and_then(|(_, at)| at) {
                     Some(v) => v,
                     None => span[0]
-                        .checked_add(span[1])?
-                        .checked_mul(nacre_exact::Rat::new(1, 2)?)?,
+                        .checked_add(span[1])
+                        .and_then(|x| x.checked_mul(nacre_exact::Rat::new(1, 2)?))
+                        .ok_or_else(width)?,
                 };
                 let mut p = [0.0f64; 3];
                 for j in 0..3 {
-                    p[j] = b[j].checked_add(mid.checked_mul(m[j])?)?.to_f64();
+                    p[j] = b[j]
+                        .checked_add(mid.checked_mul(m[j]).ok_or_else(width)?)
+                        .ok_or_else(width)?
+                        .to_f64();
                 }
-                Some(Point3::from_array(p))
-            });
+                Ok(Point3::from_array(p))
+            })();
             let mat_side = read_mat_side();
+            // **The row's refusal — the first thing that stopped it, by its own name**, in this
+            // order: the face unread, the line's foot (width), the line on the lateral (width —
+            // with the line's own direction the reach reads no span: `lateral_reach`), the lens'
+            // side, the material side, the witness, and the stretches through the line. The last
+            // is placed at the witness, as every refusal of a stated row is.
             let undecided = unread.or_else(|| {
-                if base.is_none() || on_face.is_none() || lens_side.is_none() {
+                if base.is_none() || on_face.is_none() {
+                    return Some(reject(RejectReason::WitnessNotRational));
+                }
+                if lens_side.is_none() {
                     return Some(reject(RejectReason::CylinderGateUndecided));
                 }
                 if let Err(reason) = mat_side {
                     return Some(reject(reason));
                 }
-                witness
-                    .is_none()
-                    .then(|| reject(RejectReason::CylinderGateUndecided))
+                let at = match &witness {
+                    Ok(p) => *p,
+                    Err(fail) => return Some(fail.raise(None)),
+                };
+                through.as_ref().err().map(|fail| fail.raise(Some(at)))
             });
             #[cfg(feature = "tangency-trace")]
             #[allow(clippy::print_stderr)]
@@ -1481,8 +1560,8 @@ fn tangency_rows(
                     "TROW runs_through={} through={:?} undecided={}",
                     per_stretch
                         .as_ref()
-                        .is_none_or(|v| v.iter().any(|(_, c)| c.runs_through())),
-                    through.as_ref().map(Vec::len),
+                        .map_or(true, |v| v.iter().any(|(_, c)| c.runs_through())),
+                    through.as_ref().ok().map(Vec::len),
                     undecided.is_some()
                 );
             }
@@ -1494,7 +1573,7 @@ fn tangency_rows(
                 lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side.ok(),
                 cyl_orient: cf.orient_sign,
                 undecided,
-                through,
+                through: through.ok(),
                 halves,
                 witness: witness.unwrap_or(Point3::from_array([f64::NAN; 3])),
             });
@@ -1524,12 +1603,6 @@ struct LineContact {
 }
 
 impl LineContact {
-    /// The closed face meets the open stretch of the line in positive length — through its
-    /// interior or along its boundary. Without this the face touches nothing a row could speak of.
-    fn touches(&self) -> bool {
-        !self.contact.is_empty()
-    }
-
     /// The line runs through the face's **interior** over positive length.
     #[cfg(any(test, feature = "tangency-trace"))]
     fn runs_through(&self) -> bool {
@@ -1668,10 +1741,17 @@ enum LoopOnLine {
 /// that end is above. Roots of different circles are only compared, never combined, and
 /// [`nacre_exact::quad::QuadVal::cmp_value`] compares across radicals.
 ///
-/// `None` is «could not read the face»: a change of side that could not be placed, an outer piece
-/// [`corner_of`] cannot spell or that is off the class's plane. The caller reads that as a contact
-/// through the interior, never a silent acquittal. A **hole** that cannot be read is left out
-/// instead: the face only grows, so the answer can only lean towards a contact.
+/// `Err` is «could not read the face», by its cause, as the gate names everything it forms: a value
+/// `Rat` does not hold — an overflow, a `Wide` corner or radius — is width
+/// ([`RejectReason::WitnessNotRational`]); an outer piece [`corner_of`] cannot read fails by its
+/// cause ([`CornerFail::reason_on`] — the very name [`face_clears_footprint`] gives it), and so
+/// does a neighbour whose statement it cannot read ([`world_narrow`], [`world_cylinder`]); a piece
+/// off the class's plane, an edge its face's surface does not carry, or a step that runs along the
+/// line yet crosses it is two descriptions of the face disagreeing — the misfit
+/// `face_clears_footprint` refuses on, [`RejectReason::CylinderGateUndecided`]; any other shape
+/// this does not spell is [`unreadable_reason`]'s. The caller never reads it as a silent acquittal.
+/// A **hole** that cannot be read is left out instead: the face only grows, so the answer can only
+/// lean towards a contact.
 #[allow(clippy::too_many_arguments)]
 fn line_runs_through_face(
     model: &Model,
@@ -1680,7 +1760,7 @@ fn line_runs_through_face(
     foot: &[nacre_exact::Rat; 3],
     m: &[nacre_exact::Rat; 3],
     span: [nacre_exact::Rat; 2],
-) -> Option<LineContact> {
+) -> Result<LineContact, RejectReason> {
     use super::corners::Corner;
     use core::cmp::Ordering;
     use nacre_exact::{BigRat, Orient, QuadVal, Rat, StripSide, cross3_rat, dot3_rat};
@@ -1690,74 +1770,90 @@ fn line_runs_through_face(
     );
     let line_r2 = BigRat::zero();
     let zero = Rat::from_int(0);
+    let width = RejectReason::WitnessNotRational;
+    let misfit = RejectReason::CylinderGateUndecided;
+    let unreadable = || unreadable_reason(model, face);
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     // `w` is the direction across the line in the wall's plane; `StripSide::Plus` is its side.
-    let w = cross3_rat(&n, m)?;
-    let mm = dot3_rat(m, m)?;
-    let inv_mm = Rat::new(mm.denom(), mm.numer())?;
+    let w = cross3_rat(&n, m).ok_or(width)?;
+    let mm = dot3_rat(m, m).ok_or(width)?;
+    let inv_mm = Rat::new(mm.denom(), mm.numer()).ok_or(width)?;
     // A point's `(u, v)`: its offset across the line along `w`, and its axis parameter.
-    let uv = |base: &[Rat; 3], dir: &[Rat; 3], s: QuadVal| -> Option<(QuadVal, QuadVal)> {
-        let mut rel = [zero; 3];
-        for k in 0..3 {
-            rel[k] = base[k].checked_sub(foot[k])?;
-        }
-        let along = |e: &[Rat; 3], scale: Rat| -> Option<QuadVal> {
-            QuadVal::from_rat(dot3_rat(&rel, e)?.checked_mul(scale)?)
-                .checked_add(&s.checked_mul_rat(dot3_rat(dir, e)?.checked_mul(scale)?)?)
+    let uv =
+        |base: &[Rat; 3], dir: &[Rat; 3], s: QuadVal| -> Result<(QuadVal, QuadVal), RejectReason> {
+            let mut rel = [zero; 3];
+            for k in 0..3 {
+                rel[k] = base[k].checked_sub(foot[k]).ok_or(width)?;
+            }
+            let along = |e: &[Rat; 3], scale: Rat| -> Option<QuadVal> {
+                QuadVal::from_rat(dot3_rat(&rel, e)?.checked_mul(scale)?)
+                    .checked_add(&s.checked_mul_rat(dot3_rat(dir, e)?.checked_mul(scale)?)?)
+            };
+            Ok((
+                along(&w, Rat::from_int(1)).ok_or(width)?,
+                along(m, inv_mm).ok_or(width)?,
+            ))
         };
-        Some((along(&w, Rat::from_int(1))?, along(m, inv_mm)?))
-    };
-    let point_uv = |c: &Corner| -> Option<(QuadVal, QuadVal)> {
+    let point_uv = |c: &Corner| -> Result<(QuadVal, QuadVal), RejectReason> {
         match c {
-            Corner::Rational(p) => uv(p.narrow()?, &[zero; 3], QuadVal::from_rat(zero)),
+            Corner::Rational(p) => uv(
+                p.narrow().ok_or(width)?,
+                &[zero; 3],
+                QuadVal::from_rat(zero),
+            ),
             Corner::Pierce(line, s) => uv(&line.base(), &line.dir(), *s),
-            Corner::Round { .. } => None,
+            Corner::Round { .. } => Err(unreadable()),
         }
     };
     // The direction of the straight edge `he`, `a → b` being its two ends' pieces.
-    let step_dir = |he: &nacre_topo::HalfEdge, a: &Corner, b: &Corner| -> Option<[Rat; 3]> {
-        if let (Corner::Rational(pa), Corner::Rational(pb)) = (a, b)
-            && let (Some(pa), Some(pb)) = (pa.narrow(), pb.narrow())
-        {
-            let mut d = [zero; 3];
-            for k in 0..3 {
-                d[k] = pb[k].checked_sub(pa[k])?;
+    let step_dir =
+        |he: &nacre_topo::HalfEdge, a: &Corner, b: &Corner| -> Result<[Rat; 3], RejectReason> {
+            if let (Corner::Rational(pa), Corner::Rational(pb)) = (a, b)
+                && let (Some(pa), Some(pb)) = (pa.narrow(), pb.narrow())
+            {
+                let mut d = [zero; 3];
+                for k in 0..3 {
+                    d[k] = pb[k].checked_sub(pa[k]).ok_or(width)?;
+                }
+                return Ok(d);
             }
-            return Some(d);
-        }
-        let [s0, s1] = model.edge(he.edge).surfaces;
-        let other = match (s0 == face.surface, s1 == face.surface) {
-            (true, false) => s1,
-            (false, true) => s0,
-            _ => return None,
+            let [s0, s1] = model.edge(he.edge).surfaces;
+            let other = match (s0 == face.surface, s1 == face.surface) {
+                (true, false) => s1,
+                (false, true) => s0,
+                _ => return Err(misfit),
+            };
+            let stated = |f: CornerFail| f.reason_on(model, face);
+            match model.surface(other) {
+                nacre_topo::Surface::Plane { .. } => {
+                    let q = world_narrow(model, other).map_err(stated)?;
+                    cross3_rat(&n, &[q[0], q[1], q[2]]).ok_or(width)
+                }
+                nacre_topo::Surface::Cylinder { .. } => {
+                    Ok(world_cylinder(model, other).map_err(stated)?.dir())
+                }
+            }
         };
-        match model.surface(other) {
-            nacre_topo::Surface::Plane { .. } => {
-                let q = model.world_plane_name(other)?.narrow().copied()?;
-                cross3_rat(&n, &[q[0], q[1], q[2]])
-            }
-            nacre_topo::Surface::Cylinder { .. } => Some(model.world_cylinder_def(other)?.dir()),
-        }
-    };
     // Each loop's meeting with the line; `Err` is a loop that could not be read. The rule for an
     // arc is the one `nacre_geom::mixed` reads on rational 2-D rings; it is not shared, because a
     // tilted wall has no rational orthonormal frame to put its loops in 2-D, and the answer here is
     // stretches of the line rather than one point's side.
-    let read_loop = |lp: &nacre_topo::Loop| -> Result<LoopOnLine, ()> {
+    let read_loop = |lp: &nacre_topo::Loop| -> Result<LoopOnLine, RejectReason> {
         // Per half-edge, the point it starts at and, for an arc, its round piece — both through
         // `corner_of`'s readers. A whole circle has no end.
         let mut starts: Vec<Option<Corner>> = Vec::with_capacity(lp.half_edges.len());
         let mut rounds: Vec<Option<Corner>> = Vec::with_capacity(lp.half_edges.len());
         for he in &lp.half_edges {
-            let piece = corner_of(model, face, lp, he).map_err(|_| ())?;
+            let piece = corner_of(model, face, lp, he).map_err(|f| f.reason_on(model, face))?;
             let (start, round) = match piece {
                 Corner::Round {
                     theta: Theta::Whole,
                     ..
                 } => (None, Some(piece)),
-                Corner::Round { .. } => {
-                    (Some(start_corner(model, he).map_err(|_| ())?), Some(piece))
-                }
+                Corner::Round { .. } => (
+                    Some(start_corner(model, he).map_err(|f| f.reason_on(model, face))?),
+                    Some(piece),
+                ),
                 _ => (Some(piece), None),
             };
             starts.push(start);
@@ -1768,7 +1864,7 @@ fn line_runs_through_face(
         // refuses on. Unread, not guessed.
         let pieces = || starts.iter().chain(rounds.iter()).flatten();
         if !pieces().all(|c| c.on_plane(coeffs)) {
-            return Err(());
+            return Err(misfit);
         }
         let side_of = |c: &Corner| c.strip_side(coeffs, foot, m, &line_r2);
         if pieces().all(|c| side_of(c) == StripSide::Plus)
@@ -1780,7 +1876,7 @@ fn line_runs_through_face(
         let mut out: [Vec<QuadVal>; 2] = [Vec::new(), Vec::new()];
         for i in 0..k {
             let he = &lp.half_edges[i];
-            let next = || starts[(i + 1) % k].as_ref().ok_or(());
+            let next = || starts[(i + 1) % k].as_ref().ok_or_else(unreadable);
             match (&starts[i], &rounds[i]) {
                 (Some(a), None) => {
                     let b = next()?;
@@ -1801,17 +1897,19 @@ fn line_runs_through_face(
                     // `v − u·(d·m)/((d·w)(m·m))`.
                     let value = (|| {
                         let d = step_dir(he, a, b)?;
-                        let dw = dot3_rat(&d, &w)?;
+                        let dw = dot3_rat(&d, &w).ok_or(width)?;
                         if dw == zero {
-                            return None;
+                            return Err(misfit);
                         }
-                        let kk = dot3_rat(&d, m)?
-                            .checked_mul(Rat::new(dw.denom(), dw.numer())?)?
-                            .checked_mul(inv_mm)?;
-                        let (u, v) = point_uv(a).or_else(|| point_uv(b))?;
-                        v.checked_sub(&u.checked_mul_rat(kk)?)
-                    })()
-                    .ok_or(())?;
+                        let kk = dot3_rat(&d, m)
+                            .and_then(|dm| dm.checked_mul(Rat::new(dw.denom(), dw.numer())?))
+                            .and_then(|x| x.checked_mul(inv_mm))
+                            .ok_or(width)?;
+                        let (u, v) = point_uv(a).or_else(|_| point_uv(b))?;
+                        u.checked_mul_rat(kk)
+                            .and_then(|uk| v.checked_sub(&uk))
+                            .ok_or(width)
+                    })()?;
                     for r in 0..2 {
                         if crosses[r] {
                             out[r].push(value);
@@ -1830,9 +1928,12 @@ fn line_runs_through_face(
                     // The circle's roots on the line: its centre's `(u, v)`, and the half-chord
                     // `h` in the axis scale, `h² = (ρ² − d²)/(m·m)` with `d² = u²/(w·w)`. A
                     // tangent circle has one root.
+                    let (u, v) = uv(centre, &[zero; 3], QuadVal::from_rat(zero))?;
+                    let (u, v) = (
+                        u.as_rat().ok_or_else(unreadable)?,
+                        v.as_rat().ok_or_else(unreadable)?,
+                    );
                     let roots = (|| {
-                        let (u, v) = uv(centre, &[zero; 3], QuadVal::from_rat(zero))?;
-                        let (u, v) = (u.as_rat()?, v.as_rat()?);
                         let ww = dot3_rat(&w, &w)?;
                         let d2 = u
                             .checked_mul(u)?
@@ -1847,7 +1948,7 @@ fn line_runs_through_face(
                             ],
                         })
                     })()
-                    .ok_or(())?;
+                    .ok_or(width)?;
                     // **An end on the line** counts where the arc lies above it beside that end —
                     // the straight step's half-open rule, read on a curve: the end is «not above»,
                     // so the boundary changes sides there exactly when the arc's side next to it
@@ -1864,7 +1965,7 @@ fn line_runs_through_face(
                             (rim.to, rim.from)
                         };
                         let end = next()?;
-                        let start = start.as_ref().ok_or(())?;
+                        let start = start.as_ref().ok_or_else(unreadable)?;
                         for (corner, radial, leaving) in
                             [(start, r_start, true), (end, r_end, false)]
                         {
@@ -1888,8 +1989,8 @@ fn line_runs_through_face(
                                 }
                                 Some(dot3_rat(&radial, &w)? < zero)
                             })()
-                            .ok_or(())?;
-                            let (_, v) = point_uv(corner).ok_or(())?;
+                            .ok_or(width)?;
+                            let (_, v) = point_uv(corner)?;
                             // `beside` is the `+w` side, «above» in reading `0`; reading `1` swaps.
                             out[if beside { 0 } else { 1 }].push(v);
                             ends_on_line.push(v);
@@ -1902,7 +2003,7 @@ fn line_runs_through_face(
                     for (v, tangent) in roots {
                         let mut at_end = false;
                         for e in &ends_on_line {
-                            at_end |= v.cmp_value(e).ok_or(())? == Ordering::Equal;
+                            at_end |= v.cmp_value(e).ok_or(width)? == Ordering::Equal;
                         }
                         if at_end || tangent {
                             continue;
@@ -1913,14 +2014,14 @@ fn line_runs_through_face(
                                 let mut x = [QuadVal::from_rat(zero); 3];
                                 for c in 0..3 {
                                     x[c] = QuadVal::from_rat(
-                                        foot[c].checked_sub(centre[c]).ok_or(())?,
+                                        foot[c].checked_sub(centre[c]).ok_or(width)?,
                                     )
-                                    .checked_add(&v.checked_mul_rat(m[c]).ok_or(())?)
-                                    .ok_or(())?;
+                                    .checked_add(&v.checked_mul_rat(m[c]).ok_or(width)?)
+                                    .ok_or(width)?;
                                 }
-                                arc_contains(rim, &x, axis).ok_or(())?
+                                arc_contains(rim, &x, axis).ok_or(width)?
                             }
-                            Theta::At(_) => return Err(()),
+                            Theta::At(_) => return Err(unreadable()),
                         };
                         if on_arc {
                             out[0].push(v);
@@ -1928,14 +2029,14 @@ fn line_runs_through_face(
                         }
                     }
                 }
-                _ => return Err(()),
+                _ => return Err(unreadable()),
             }
         }
         Ok(LoopOnLine::Crossings(out))
     };
-    let outer = read_loop(&face.outer).ok()?;
+    let outer = read_loop(&face.outer)?;
     if matches!(outer, LoopOnLine::Clear) {
-        return Some(LineContact {
+        return Ok(LineContact {
             contact: Vec::new(),
             sides: Vec::new(),
         });
@@ -1957,7 +2058,7 @@ fn line_runs_through_face(
     for p in points {
         let mut at = sorted.len();
         for (i, q) in sorted.iter().enumerate() {
-            match p.cmp_value(q)? {
+            match p.cmp_value(q).ok_or(width)? {
                 Ordering::Equal => {
                     at = usize::MAX;
                     break;
@@ -1974,13 +2075,13 @@ fn line_runs_through_face(
         }
     }
     // Is the gap just above `lo` inside the loop's region, under reading `r`?
-    let inside = |l: &LoopOnLine, lo: QuadVal, r: usize| -> Option<bool> {
-        Some(match l {
+    let inside = |l: &LoopOnLine, lo: QuadVal, r: usize| -> Result<bool, RejectReason> {
+        Ok(match l {
             LoopOnLine::Clear => false,
             LoopOnLine::Crossings(c) => {
                 let mut below = 0usize;
                 for x in &c[r] {
-                    if x.cmp_value(&lo)? != Ordering::Greater {
+                    if x.cmp_value(&lo).ok_or(width)? != Ordering::Greater {
                         below += 1;
                     }
                 }
@@ -1995,7 +2096,9 @@ fn line_runs_through_face(
     };
     for pair in sorted.windows(2) {
         let (lo, hi) = (pair[0], pair[1]);
-        if lo.cmp_value(&s0)? == Ordering::Less || hi.cmp_value(&s1)? == Ordering::Greater {
+        if lo.cmp_value(&s0).ok_or(width)? == Ordering::Less
+            || hi.cmp_value(&s1).ok_or(width)? == Ordering::Greater
+        {
             continue;
         }
         let mut reading = [false; 2];
@@ -2011,7 +2114,7 @@ fn line_runs_through_face(
             out.sides.push(reading);
         }
     }
-    Some(out)
+    Ok(out)
 }
 
 /// The axis-parameter spans this cylinder's lateral faces occupy — one per face, in the scale

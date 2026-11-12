@@ -254,8 +254,7 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
   `ObliqueCylinderCut` 으로 나갈 수 있다(잰 인구 0).
 - 좁은 이름이라도 계수가 큰 비스듬한 평면은 게이트를 지난 뒤 분할의 선 만남(`circle_crossings` 의 `LineMeet::Overflow`, checked
   `i128`)에서 `WitnessNotRational` 이다 — `wide_datum_cost.rs` 의 좁은 판이 기둥을 자르는 배치.
-- 접선 행의 `undecided` 는 원인이 섞여 있다 — 면이 자기 세계 이름을 안 든 것(이름 짓기)과 checked 산술(폭)이 한
-  이름으로 나간다(잰 인구 0).
+- 접선 행을 읽는 checked 산술(선의 발, 선 위 면의 관통 판독, 옆면의 생성선 판독)의 넘침은 `WitnessNotRational` 이다(잰 인구 0).
 - topo 의 `EdgeDecline::Unstated`(`plane_cylinder_relation` 의 `None` — 넘침 포함)가 `reconstruct.rs` 에서
   `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 원인을 묻는 독자가 늘면 세계 서술의 문
   (`world_cylinder_def`·`chain_point_rat`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로
@@ -316,26 +315,10 @@ doc). 그래서 스크립트의 모든 중간값이 끝까지 살아 있고, 살
   도로(`rulings::cycle_on_wall`)는 룰링마다 `crossing_on_ruling` + `theta_place` 표(끝의 근은 같은 점으로 기록)로 묻는다 — 밑
   술어는 같고 출력의 꼴이 다르다. 한 함수로 합칠지는 재지 않았다. 합쳐도 열리는 칸은 없다(이름 없는 클래스의 남은 `Ruling` 3 은
   두 쪽 모두 같은 술어에서 멈춘다).
-
-### 못 읽은 접선 행의 거절 — 닿는 픽스처가 없다
-
-`planes/cyl_gate.rs` 의 `tangency_rows` 는 선과의 접촉을 읽지 못한 행을 버리지 않고 게이트가 그 행으로 거절하게 한다 — 버리면
-거절이 행과 함께 사라진다(그 본문 주석). 원인 둘에 닿는 픽스처가 없다: nacre-ops 스위트·census·무시 스윕·kit 에서 인구 0 이고,
-그 거절을 끄는 심기에도 초록이다.
-
-- **발·증인·이름을 못 구한 행** — 선의 발(`tangency_foot`)·선이 옆면 위에 놓이는지·증인 자리·렌즈의 쪽·벽 면의 재료 쪽·옆면의 세계 진술 — 은
-  `CylinderGateUndecided` 를 싣는다. 지어 본 셋은 다른 갈래로 갔다: z 축 둘레로 37° 돌렸다 되돌린 벽은 꼭짓점 사슬이 안 접혀
-  면 판독이 먼저 못 읽고(그 거절을 행이 나르는 갈래는 `an_unread_wall_face_rides_its_tangency_row` 가 잠근다), 두
-  피연산자나 한쪽을 17자리 십진으로 옮기면 `classes_holding_the_line` 이 `WitnessNotRational` 로 먼저 거절한다. 그래서 벽 면의
-  재료 쪽(`mat_side`)에 닿으려면 평면에는 제 세계 이름이 없고 꼭짓점은 읽히는 면이 필요하다 — `Through` 평면의 면은 지어 보지
-  않았다.
-- **관통 구간(`Tangency::through`)을 못 읽은 행** — 게이트가 그 증인에서 `CylinderGateUndecided` 로 거절한다. 원인은
-  `line_runs_through_face` 가 `None` 을 내는 자리(교점을 놓지 못한 걸음, 넘침)와 구간을 합치고 교차하는 산술(`meet_unions`)의
-  넘침이다. 끝이 유리수인 호가 낀 벽 면은 읽히므로(`a_rod_lying_on_a_rounded_plate`) 그 꼴은 이 갈래에 닿지 않고, `None` 을
-  내는 시험의 면(물린 판, `d_rod_on_a_bitten_slab`)은 면 판독(`face_clears_footprint`)이 먼저 못 읽어 그 행은 면의
-  거절(`CurvedOperandBoundary`)을 나른다(`an_unread_wall_face_rides_its_tangency_row`).
-
-잠그려면 원인마다 그런 행을 지어 이름을 단언한다.
+- **평면의 좁은 세계 계수.** `corners::world_narrow` 는 못 읽은 까닭(`Unstated`·`Width`)을 내고, `cyl_geom::world_plane_coeffs`
+  (와 `lateral_theta_extent` 의 `rim_arc_union` 안의 같은 식)는 `None` 하나로 버린다 — 원인을 나르는 접선 판독은 앞의 것을 쓴다. 그리고 앞의 것도
+  `Model::world_plane_name` 이 `None` 인 자리를 모두 `Unstated` 로 읽어, 넓은 이름의 **움직인** 평면과 접히는 사슬의 넘침(폭)을
+  진술 불가로 부른다.
 
 ## 보류 — 인구가 생기면
 

@@ -748,11 +748,11 @@ fn yz_prism_face(tri: [(f64, f64); 3]) -> (Model, Handle<Face>, [Rat; 4]) {
 /// **A face meeting the line at a single corner does not touch it, and the contact is where the
 /// face meets the line.** The line `x = 0, y = 1` along `z`, read over `0 < z < 2` on the plane `x
 /// = 0`: a triangle with one corner on it at `z = 1.75` and the rest at `y > 1` meets it at that
-/// point alone — no positive length, so it does not touch (`LineContact::touches`) and its contact
-/// is empty; a triangle with an edge on it over `1 ≤ z ≤ 1.5` touches there, along its boundary,
-/// never through its interior, and its contact is that edge; a triangle the line crosses runs
-/// through it over `0.5 ≤ z ≤ 1.5`, its contact. The corner's other two steps both cross the line
-/// at `1.75` under the reading that counts a piece on it as above, so the parity stays even.
+/// point alone — no positive length, so it does not touch: its contact is empty; a triangle with an
+/// edge on it over `1 ≤ z ≤ 1.5` touches there, along its boundary, never through its interior, and
+/// its contact is that edge; a triangle the line crosses runs through it over `0.5 ≤ z ≤ 1.5`, its
+/// contact. The corner's other two steps both cross the line at `1.75` under the reading that
+/// counts a piece on it as above, so the parity stays even.
 #[test]
 fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
@@ -784,7 +784,7 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
             .map(|p| p.map(|x| x.as_rat().expect("a rational end")))
             .collect();
         let at = row_witness(&[([z(0), z(2)], c.clone())]).and_then(|(_, at)| at);
-        (c.touches(), c.runs_through(), at, contact)
+        (!c.contact.is_empty(), c.runs_through(), at, contact)
     };
     assert_eq!(
         read([(1.0, 1.75), (2.5, 1.2), (2.5, 2.5)]),
@@ -1071,6 +1071,7 @@ fn a_tangent_line_meets_a_filleted_face_where_each_piece_crosses() {
             &[z(0), z(0), z(1)],
             span,
         )
+        .ok()
         .map(|lc| lc.contact.into_iter().zip(lc.sides).collect::<Vec<Piece>>())
     };
     let read = |rings, x0, c, span| read_on(rings, &world, x0, c, span);
@@ -1422,5 +1423,188 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
                 "{lo:?}: the {tier} table"
             );
         }
+    }
+}
+
+/// The class `x = 1`, the D rod's cylinder and the gate's setup for one of the bitten slabs —
+/// the rod is the first operand.
+fn rod_against(
+    m: &Model,
+    rod: Handle<Solid>,
+    slab: Handle<Solid>,
+) -> (
+    crate::arrangement::PlaneSetup,
+    usize,
+    usize,
+    Handle<Surface>,
+    nacre_topo::CylinderDef,
+) {
+    let z = Rat::from_int;
+    let (setup, cyl_surfs) =
+        crate::arrangement::plane_index_setup_inner(m, rod, slab).expect("setup");
+    let c = {
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        (0..setup.geom.len())
+            .find(|&k| {
+                jd.world_rat(k).is_some_and(|w| {
+                    w[0] != z(0)
+                        && w[1] == z(0)
+                        && w[2] == z(0)
+                        && w[0].checked_add(w[3]) == Some(z(0))
+                })
+            })
+            .expect("the class x = 1")
+    };
+    let (ci, surf, def) = cyl_surfs
+        .iter()
+        .enumerate()
+        .find_map(|(i, &s)| {
+            let d = m.world_cylinder_def(s)?;
+            (d.dir()[0] == z(0) && d.dir()[1] == z(0)).then_some((i, s, d))
+        })
+        .expect("the rod's cylinder");
+    (setup, c, ci, surf, def)
+}
+
+/// **The line reader names what stopped it.** On the bitten slab's face `x = 1` the corner reader
+/// cannot spell the bite's irrational arc ends, and the line reader refuses by the very name the
+/// footprint reader gives that face (`CurvedOperandBoundary`, its boundary running along a
+/// cylinder); on the rod's own flat, readable, an axis direction whose squared length leaves `Rat`
+/// stops it for its width.
+#[test]
+fn the_line_reader_names_what_stopped_it() {
+    let z = Rat::from_int;
+    let mut m = Model::new();
+    let (rod, slab) = crate::tests::d_rod_on_a_bitten_slab(&mut m);
+    let (setup, c, _, surf, def) = rod_against(&m, rod, slab);
+    let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
+        .world_rat(c)
+        .expect("narrow");
+    let foot = tangency_foot(&coeffs, &def.origin()).expect("rational");
+    let face_of = |slab_side: bool| {
+        (0..setup.planes.len())
+            .find_map(|i| match &setup.planes[i] {
+                FaceRow::Plane(p)
+                    if setup.plane_ix[i] == ClassIx::Plane(c) && (i >= setup.n_a) == slab_side =>
+                {
+                    p.face
+                }
+                _ => None,
+            })
+            .expect("a face on x = 1")
+    };
+    let bitten = m.face(face_of(true));
+    assert!(
+        bitten.outer.half_edges.iter().any(|he| matches!(
+            corner_of(&m, bitten, &bitten.outer, he),
+            Err(CornerFail::Shape)
+        )),
+        "the corner reader cannot spell the bitten face"
+    );
+    let spans = lateral_spans(&setup.planes, surf);
+    assert!(matches!(
+        face_clears_footprint(
+            &m,
+            bitten,
+            &coeffs,
+            &def.origin(),
+            &def.dir(),
+            def.r2(),
+            &spans
+        ),
+        Err(BoolError::Rejected {
+            reason: RejectReason::CurvedOperandBoundary,
+            at: None,
+        })
+    ));
+    let got = line_runs_through_face(&m, bitten, &coeffs, &foot, &def.dir(), [z(0), z(2)]);
+    assert_eq!(got.err(), Some(RejectReason::CurvedOperandBoundary));
+    let big = Rat::from_int(1 << 64);
+    let flat = m.face(face_of(false));
+    assert!(line_runs_through_face(&m, flat, &coeffs, &foot, &def.dir(), [z(0), z(2)]).is_ok());
+    let got = line_runs_through_face(&m, flat, &coeffs, &foot, &[z(0), big, big], [z(0), z(2)]);
+    assert_eq!(got.err(), Some(RejectReason::WitnessNotRational));
+}
+
+/// **A lateral's sides of a ruling stop for width where a value leaves `Rat`.** The cylinder of
+/// [`the_tangent_wall_states_itself_exactly`] stands at `x = 1/2`; a foot at `x = (2¹²⁷ − 1)/3`
+/// cannot be taken off the axis.
+#[test]
+fn a_lateral_read_stops_for_its_width() {
+    let mut m = Model::new();
+    let cyl = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.5, 1.0, -1.0]),
+        nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+        nacre_math::Vector3::from_array([0.0, -1.0, 0.0]),
+        0.5,
+        4.0,
+    );
+    let lateral = cyl.lateral;
+    let def = m
+        .world_cylinder_def(m.face(lateral).surface)
+        .expect("a world cylinder");
+    let z = Rat::from_int;
+    let foot = [Rat::new(i128::MAX, 3).expect("a value"), z(1), z(0)];
+    assert_eq!(
+        lateral_sides_on_ruling(&m, m.face(lateral), &def, &foot).err(),
+        Some(RejectReason::WitnessNotRational)
+    );
+}
+
+/// **A wall face read through a sibling refuses by the sibling's own refusal.** The split bitten
+/// slab's two faces on `x = 1`: the lower runs through the rod's line and reads; the upper carries
+/// the bite, stands above the lateral, and cannot be read. The lower face's row reads the upper
+/// to place the slab's sides of the line, and it carries the upper face's footprint refusal — the
+/// very value the upper face's own row carries — so whichever row the gate reaches first, the
+/// refusal is one.
+#[test]
+fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
+    let mut m = Model::new();
+    let (rod, slab) = crate::tests::d_rod_on_a_split_bitten_slab(&mut m);
+    let (setup, c, ci, surf, def) = rod_against(&m, rod, slab);
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let coeffs = jd.world_rat(c).expect("narrow");
+    let spans = lateral_spans(&setup.planes, surf);
+    let reads: Vec<_> = (setup.n_a..setup.planes.len())
+        .filter(|&i| setup.plane_ix[i] == ClassIx::Plane(c))
+        .map(|i| {
+            let face = m.face(setup.planes[i].plane().face.expect("a face"));
+            face_clears_footprint(
+                &m,
+                face,
+                &coeffs,
+                &def.origin(),
+                &def.dir(),
+                def.r2(),
+                &spans,
+            )
+        })
+        .collect();
+    let unread = BoolError::Rejected {
+        reason: RejectReason::CurvedOperandBoundary,
+        at: None,
+    };
+    assert_eq!(reads.len(), 2, "{reads:?}");
+    assert!(
+        reads.contains(&Ok(false)) && reads.contains(&Err(unread)),
+        "{reads:?}"
+    );
+    let rows = tangency_rows(
+        &m,
+        &setup.planes,
+        &setup.plane_ix,
+        setup.n_a,
+        c,
+        ci,
+        &coeffs,
+        &def,
+        surf,
+        SolidSide::A,
+        &jd,
+    );
+    assert_eq!(rows.len(), 2, "one row per slab face: {rows:?}");
+    for t in &rows {
+        assert_eq!(t.undecided, Some(unread), "{t:?}");
     }
 }

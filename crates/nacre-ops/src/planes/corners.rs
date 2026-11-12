@@ -195,25 +195,35 @@ fn pierce_corner(
     cylinder: Handle<Surface>,
     rank: u8,
 ) -> Result<Corner, CornerFail> {
-    let p1 = world_narrow(model, planes[0])?;
-    let p2 = world_narrow(model, planes[1])?;
-    let def = world_cylinder(model, cylinder)?;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let meet =
-        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2).ok_or(CornerFail::Width)?;
-    let (line, s) = nacre_exact::quad::seam_ranked(meet, &o, &m, &def.ref_dir())
-        .ok_or(CornerFail::Width)?
-        .into_iter()
-        .nth(usize::from(rank))
-        .ok_or(CornerFail::Inconsistent)?;
+    let (line, s) = pierce_on(model, planes, &world_cylinder(model, cylinder)?, rank)?;
     Ok(Corner::Pierce(line, s))
 }
 
+/// [`pierce_corner`] on its cylinder's world statement `def`, for a reader that holds it already.
+pub(super) fn pierce_on(
+    model: &Model,
+    planes: [Handle<Surface>; 2],
+    def: &nacre_topo::CylinderDef,
+    rank: u8,
+) -> Result<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal), CornerFail> {
+    let p1 = world_narrow(model, planes[0])?;
+    let p2 = world_narrow(model, planes[1])?;
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let meet =
+        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2).ok_or(CornerFail::Width)?;
+    nacre_exact::quad::seam_ranked(meet, &o, &m, &def.ref_dir())
+        .ok_or(CornerFail::Width)?
+        .into_iter()
+        .nth(usize::from(rank))
+        .ok_or(CornerFail::Inconsistent)
+}
+
 /// Why a boundary piece could not be read — four causes, four names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CornerFail {
     /// A shape this road cannot spell at all — a seam vertex, a circle on a face it is not a disk
     /// of, an arc end at an irrational root (its radial vector is no rational vector). The name
-    /// depends on the boundary (`face_clears_footprint`'s `unreadable`).
+    /// depends on the boundary ([`unreadable_reason`]).
     Shape,
     /// A statement that cannot be put in the world in one frame — a plane with no world name, a
     /// chain that does not fold. Geometry: [`RejectReason::CylinderGateUndecided`].
@@ -248,11 +258,18 @@ impl CornerFail {
             Self::Inconsistent => Some(RejectReason::CylinderStagesDisagree),
         }
     }
+
+    /// The name this failure refuses under on `face`: its stated name, else the one the face's
+    /// boundary gives a shape this road cannot spell ([`unreadable_reason`]).
+    pub(super) fn reason_on(self, model: &Model, face: &Face) -> RejectReason {
+        self.stated_reason()
+            .unwrap_or_else(|| unreadable_reason(model, face))
+    }
 }
 
 /// A plane's narrow world coefficients, or why it has none: no world name (`Unstated`), or a
 /// `Wide` one (`Width`).
-fn world_narrow(
+pub(super) fn world_narrow(
     model: &Model,
     plane: Handle<Surface>,
 ) -> Result<[nacre_exact::Rat; 4], CornerFail> {
@@ -570,6 +587,47 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corn
     })
 }
 
+/// **The name a face this road cannot spell refuses under** — the boundary decides it, the answer
+/// is not touched.
+///
+/// Not every abstention is `CylinderGateUndecided`, whose sentence is "the gate could not decide
+/// exactly". For a face whose ring runs along a cylinder that sentence is **false**: the gate can
+/// decide, and what cannot read the shape is the road behind it — `combinatorics::loop_triples`
+/// declines such a ring by name (`CurvedOperandBoundary`). This population is a boolean's result
+/// fed back in as an operand, which is why a *gate* is the first thing to meet it.
+///
+/// **An edge's carriers are the adjacency answer** — [`nacre_topo::Edge::surfaces`] says so in its
+/// own doc ("the two faces that use the edge"), so a cylinder among them is exactly "the face
+/// across this edge is a lateral". That is the same fact `loop_triples` reads through classes,
+/// spelled here from the model because this side has no class table for the operand.
+///
+/// **And it carries that road's exception with it — a *single-edge* loop is a full circle, which
+/// the road does speak** (`LoopRing::Circle`, named by the cylinder's class). Measured: without the
+/// `len() > 1`, the crosswise bore's cap face — one arc and one seam vertex — took
+/// `CurvedOperandBoundary`, and for that face its sentence is simply false. The two conditions have
+/// to agree, or this one is claiming a limit the other does not have.
+///
+/// This is for a shape the road cannot spell at all ([`CornerFail::Shape`] — a seam vertex, an arc
+/// end at an irrational root). A statement that cannot be put in the world in one frame, or one
+/// the world holds and `Rat` does not, has its own name whatever the boundary looks like
+/// ([`CornerFail::stated_reason`]) — and since a **pierce corner is readable**, calling those
+/// "curved" would put a false sentence on a true refusal.
+pub(super) fn unreadable_reason(model: &Model, face: &Face) -> RejectReason {
+    let curved = face.outer.half_edges.len() > 1
+        && face.outer.half_edges.iter().any(|he| {
+            model
+                .edge(he.edge)
+                .surfaces
+                .iter()
+                .any(|&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
+        });
+    if curved {
+        RejectReason::CurvedOperandBoundary
+    } else {
+        RejectReason::CylinderGateUndecided
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn face_clears_footprint(
     model: &Model,
@@ -581,50 +639,9 @@ pub(super) fn face_clears_footprint(
     spans: &[[nacre_exact::Rat; 2]],
 ) -> Result<bool, BoolError> {
     use nacre_exact::{Orient, StripSide};
-    // **Which refusal this is, decided once — the answer is not touched.**
-    //
-    // Every abstention below turns into a refusal at the caller, and not every one is
-    // `CylinderGateUndecided`, whose sentence is "the gate could not decide exactly". For a face
-    // whose ring runs along a cylinder that sentence is **false**: the gate can decide, and what
-    // cannot read the shape is the road behind it — `combinatorics::loop_triples` declines such a
-    // ring by name (`CurvedOperandBoundary`). This population is a boolean's result fed back in as
-    // an operand, which is why a *gate* is the first thing to meet it.
-    //
-    // **An edge's carriers are the adjacency answer** — [`nacre_topo::Edge::surfaces`] says so
-    // in its own doc ("the two faces that use the edge"), so a cylinder among them is exactly "the
-    // face across this edge is a lateral". That is the same fact `loop_triples` reads through
-    // classes, spelled here from the model because this side has no class table for the operand.
-    //
-    // **And it carries that road's exception with it — a *single-edge* loop is a full circle,
-    // which the road does speak** (`LoopRing::Circle`, named by the cylinder's class). Measured:
-    // without the `len() > 1`, the crosswise bore's cap face — one arc and one seam vertex — took
-    // `CurvedOperandBoundary`, and for that face its sentence is simply false. The two conditions
-    // have to agree, or this one is claiming a limit the other does not have.
-    let curved = face.outer.half_edges.len() > 1
-        && face.outer.half_edges.iter().any(|he| {
-            model
-                .edge(he.edge)
-                .surfaces
-                .iter()
-                .any(|&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
-        });
-    // **Three refusals, split by cause rather than by the flag.** `unreadable` is for a shape
-    // this road cannot spell at all — a seam vertex, an arc end at an irrational root — and there
-    // `CurvedOperandBoundary`'s sentence ("the road behind cannot read this ring") is true. A
-    // statement that cannot be put in the world in one frame (no world name, a chain that does not
-    // fold) is geometry, [`RejectReason::CylinderGateUndecided`]; one the world holds and `Rat`
-    // does not (a `Wide` name, an overflow) is width, [`RejectReason::WitnessNotRational`]
-    // ([`CornerFail::stated_reason`]). Neither depends on what the boundary looks like, because the
-    // road behind has nothing to do with them — and since a **pierce corner is readable**,
-    // calling them "curved" would put a false sentence on a true refusal. A class whose
-    // coefficients miss its own face is the gate's own (`misfit` below).
-    let unreadable = || {
-        reject(if curved {
-            RejectReason::CurvedOperandBoundary
-        } else {
-            RejectReason::CylinderGateUndecided
-        })
-    };
+    // A piece this road cannot read refuses under its cause's name
+    // ([`CornerFail::reason_on`]); a class whose coefficients miss its own face is the gate's own
+    // (`misfit` below).
     let misfit = || reject(RejectReason::CylinderGateUndecided);
     let mut side: Option<StripSide> = None;
     let mut across = true;
@@ -637,7 +654,8 @@ pub(super) fn face_clears_footprint(
         // below then ask it the same things whichever spelling it wears, and the straddle road
         // reads it the very same way.
         let corner = corner_of(model, face, &face.outer, he)
-            .map_err(|e| e.stated_reason().map_or_else(unreadable, reject))?; // **The class's coefficients must actually describe *this* face's plane.** Classes merge
+            .map_err(|e| reject(e.reason_on(model, face)))?;
+        // **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
         // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions
         // hazard). The strip decomposition takes the plane's

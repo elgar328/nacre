@@ -665,7 +665,7 @@ pub enum RejectReason {
     // abstains. So `Self::CylinderGateUndecided` means the geometry and this one the arithmetic: the
     // gate raises this where its descriptions are wider than `Rat` — a class whose world name is
     // `Wide`, a cylinder statement or a face corner that overflows on its way to the world, a meet
-    // with another class that overflows.
+    // with another class that overflows, a tangency row's reading of the line that leaves `Rat`.
     /// **An exact *value* could not be formed** — a coordinate or coefficient the model states
     /// exactly is too wide for the kernel's exact arithmetic.
     ///

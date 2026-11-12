@@ -933,6 +933,28 @@ fn a_rounded_slab_across_a_cylinders_tangent_line() {
 /// bore along `x` about `(y, z) = (4.5, 1)`, `r = 1`, so the slab's face `x = 1` carries an arc
 /// whose ends `z = 1 ± √3/2` are irrational.
 pub(crate) fn d_rod_on_a_bitten_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let rod = d_rod(m);
+    let slab = crate::fixtures::cuboid(m, [1.0, -4.0, -3.0], [2.0, 4.0, 5.0]);
+    let bore = axis_cylinder(m, [0.5, 4.5, 1.0], [1.0, 0.0, 0.0], 1.0, 2.0);
+    let slab = boolean(m, BoolKind::Cut, slab, bore).expect("the bite")[0];
+    (rod, slab)
+}
+
+/// [`d_rod_on_a_bitten_slab`]'s rod against the slab grooved across `x = 1` over `z ∈ [2.4, 2.6]`,
+/// which splits that face in two: the lower one, plain, runs through the rod's line over the
+/// lateral's `z ∈ [0, 2]`; the upper one carries the bite (about `z = 3.8`, ends
+/// `z = 3.8 ± √3/2`) and stands above the lateral.
+pub(crate) fn d_rod_on_a_split_bitten_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let rod = d_rod(m);
+    let slab = crate::fixtures::cuboid(m, [1.0, -4.0, -3.0], [2.0, 4.0, 5.0]);
+    let groove = crate::fixtures::cuboid(m, [0.5, -5.0, 2.4], [1.5, 5.0, 2.6]);
+    let slab = boolean(m, BoolKind::Cut, slab, groove).expect("the groove")[0];
+    let bore = axis_cylinder(m, [0.5, 4.5, 3.8], [1.0, 0.0, 0.0], 1.0, 2.0);
+    let slab = boolean(m, BoolKind::Cut, slab, bore).expect("the bite")[0];
+    (rod, slab)
+}
+
+fn d_rod(m: &mut Model) -> Handle<Solid> {
     let profile = stated(vec![
         arc_turns(p2(0.0, 0.0), p2(1.0, 0.0), 3),
         line(p2(0.0, -1.0), p2(1.0, -1.0)),
@@ -952,10 +974,7 @@ pub(crate) fn d_rod_on_a_bitten_slab(m: &mut Model) -> (Handle<Solid>, Handle<So
     .expect("the D rod extrudes") else {
         unreachable!()
     };
-    let slab = crate::fixtures::cuboid(m, [1.0, -4.0, -3.0], [2.0, 4.0, 5.0]);
-    let bore = axis_cylinder(m, [0.5, 4.5, 1.0], [1.0, 0.0, 0.0], 1.0, 2.0);
-    let slab = boolean(m, BoolKind::Cut, slab, bore).expect("the bite")[0];
-    (rod, slab)
+    rod
 }
 
 /// **A wall face the gate cannot read carries its own refusal on the tangency row.** The bitten

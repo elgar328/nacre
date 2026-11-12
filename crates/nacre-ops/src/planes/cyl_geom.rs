@@ -332,7 +332,7 @@ fn rim_arc_union(
         model.world_plane_name(plane)?.narrow().copied()
     };
     let radial =
-        |vh: Handle<Vertex>, cap: [Rat; 4]| rim_radial(model, face, def, vh, &cap)?.as_rat();
+        |vh: Handle<Vertex>, cap: [Rat; 4]| rim_radial(model, face, def, vh, &cap).ok()?.as_rat();
     let mut acc: Option<RimArc> = None;
     for he in &face.outer.half_edges {
         let coeffs = world_coeffs(boundary_plane(model, face, he))?;
@@ -449,66 +449,56 @@ impl QuadVec {
 /// **A rim corner's radial vector** — the corner's direction off the axis: the corner minus the axis
 /// point on its cap `cap`, less any part along the axis (none on a cap across it; an oblique cap
 /// meets the axis away from the corner's own height). A pierce corner is the meet line's point at
-/// its rank, held with its radical. One rule for both readers:
-/// [`lateral_theta_extent`] folds it to a rational vector, [`lateral_cover_on_ruling`] reads it as
-/// it is.
+/// its rank, held with its radical — the meet [`pierce_on`] solves, so a corner it cannot read
+/// fails by its cause. One rule for both readers: [`lateral_theta_extent`] folds it to a rational
+/// vector, [`lateral_cover_on_ruling`] reads it as it is.
 pub(super) fn rim_radial(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
     vh: Handle<nacre_topo::Vertex>,
     cap: &[nacre_exact::Rat; 4],
-) -> Option<QuadVec> {
+) -> Result<QuadVec, CornerFail> {
     use nacre_exact::Rat;
     use nacre_topo::Vertex;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let (o, m) = (def.origin(), def.dir());
     let zero = Rat::from_int(0);
-    let centre = nacre_exact::axis_plane_meet(cap, &o, &m)?;
+    let width = CornerFail::Width;
+    let centre = nacre_exact::axis_plane_meet(cap, &o, &m).ok_or(width)?;
     match *model.vertex(vh) {
         // A seam vertex ends only a whole rim (`[v, v]`), which both readers answer as the whole
         // circle before asking for a corner.
-        Vertex::OnSeam(_) => None,
+        Vertex::OnSeam(_) => Err(CornerFail::Shape),
         Vertex::Pierce {
             planes,
             cylinder,
             rank,
         } => {
             if cylinder != face.surface {
-                return None;
+                return Err(CornerFail::Shape);
             }
-            // The rank reads only the cylinder's statement (`Vertex::Pierce`'s convention), so the
-            // planes' world names answer it in any order.
-            let (c0, c1) = (
-                world_plane_coeffs(model, planes[0])?,
-                world_plane_coeffs(model, planes[1])?,
-            );
-            let (line, s) = nacre_exact::quad::seam_ranked(
-                nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
-                &o,
-                &m,
-                &def.ref_dir(),
-            )?
-            .into_iter()
-            .nth(usize::from(rank))?;
+            // `def` is this face's own cylinder's world statement.
+            let (line, s) = pierce_on(model, planes, def, rank)?;
             let (b, d) = (line.base(), line.dir());
             let (mut r0, mut r1) = ([zero; 3], [zero; 3]);
             for k in 0..3 {
                 r0[k] = b[k]
-                    .checked_add(s.a().checked_mul(d[k])?)?
-                    .checked_sub(centre[k])?;
-                r1[k] = s.b().checked_mul(d[k])?;
+                    .checked_add(s.a().checked_mul(d[k]).ok_or(width)?)
+                    .and_then(|x| x.checked_sub(centre[k]))
+                    .ok_or(width)?;
+                r1[k] = s.b().checked_mul(d[k]).ok_or(width)?;
             }
             // Both parts off the axis: the projection is linear, and leaves a vector across the
             // axis as it is.
-            Some(QuadVec {
-                r0: nacre_exact::off_axis_rat(&r0, &m)?,
-                r1: nacre_exact::off_axis_rat(&r1, &m)?,
+            Ok(QuadVec {
+                r0: nacre_exact::off_axis_rat(&r0, &m).ok_or(width)?,
+                r1: nacre_exact::off_axis_rat(&r1, &m).ok_or(width)?,
                 c: s.c(),
             })
         }
         // A boolean refuses an operand with a two-cylinder edge before the gate reads its rims
         // (`CylinderPairEdge`); unread, the corner answers as one the rule cannot state.
-        Vertex::ThreePlane(_) | Vertex::CylinderPair { .. } => None,
+        Vertex::ThreePlane(_) | Vertex::CylinderPair { .. } => Err(CornerFail::Shape),
     }
 }
 
@@ -577,7 +567,7 @@ pub(super) fn lateral_cover_on_ruling(
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
 ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
-    lateral_stations_on_ruling(model, face, def, foot, None)
+    lateral_stations_on_ruling(model, face, def, foot, None).ok()
 }
 
 /// **Where a lateral face lies on each side of one ruling** — `[ccw, cw]`: the axis-parameter
@@ -586,15 +576,15 @@ pub(super) fn lateral_cover_on_ruling(
 /// through the line; one side alone is where the line is the face's edge. The stations are
 /// [`lateral_cover_on_ruling`]'s, each arc counted on the side it lies ([`arc_holds_beside`]); a
 /// ruling edge on the line is the face's boundary there and a seam on it is no boundary at all, so
-/// neither is a station. `None` is a face this cannot read: a corner off the rational seam, or
-/// stations that do not pair.
+/// neither is a station. `Err` is a face this cannot read, by its cause
+/// ([`lateral_stations_on_ruling`]).
 pub(super) fn lateral_sides_on_ruling(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
-) -> Option<[Vec<[nacre_exact::Rat; 2]>; 2]> {
-    Some([
+) -> Result<[Vec<[nacre_exact::Rat; 2]>; 2], RejectReason> {
+    Ok([
         lateral_stations_on_ruling(model, face, def, foot, Some(true))?,
         lateral_stations_on_ruling(model, face, def, foot, Some(false))?,
     ])
@@ -602,27 +592,37 @@ pub(super) fn lateral_sides_on_ruling(
 
 /// The stations both readings above pair: `beside` `None` is the cover (counter-clockwise
 /// half-open, and a ruling edge on the line unread), `Some(ccw)` one side of the line.
+///
+/// `Err` names why the face could not be read, as the gate names everything it forms: a value
+/// `Rat` does not hold is width ([`RejectReason::WitnessNotRational`]); a neighbour with no world
+/// statement, or a corner [`rim_radial`] cannot state, by the corner reader's cause
+/// ([`CornerFail::stated_reason`]); and a shape this reading does not spell — an edge to a surface
+/// that is not a plane (in the cover, the face's own seam), a corner it cannot spell, stations that
+/// do not pair, the cover's ruling edge on the line — is the lateral the gate could not read,
+/// [`RejectReason::CylinderGateUndecided`].
 fn lateral_stations_on_ruling(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
     beside: Option<bool>,
-) -> Option<Vec<[nacre_exact::Rat; 2]>> {
+) -> Result<Vec<[nacre_exact::Rat; 2]>, RejectReason> {
     use nacre_exact::Rat;
+    let width = RejectReason::WitnessNotRational;
+    let unread = RejectReason::CylinderGateUndecided;
     let (o, m) = (def.origin(), def.dir());
     let zero = Rat::from_int(0);
     // The ruling's radial direction: `foot − o` off the axis.
     let mut w = [zero; 3];
     for k in 0..3 {
-        w[k] = foot[k].checked_sub(o[k])?;
+        w[k] = foot[k].checked_sub(o[k]).ok_or(width)?;
     }
-    let x = nacre_exact::off_axis_rat(&w, &m)?;
+    let x = nacre_exact::off_axis_rat(&w, &m).ok_or(width)?;
     // The generator's point at the axis origin's height, `o + x`: a section's height on this
     // generator is where the plane meets it — for a plane across the axis, its height everywhere.
     let mut g = o;
     for k in 0..3 {
-        g[k] = o[k].checked_add(x[k])?;
+        g[k] = o[k].checked_add(x[k]).ok_or(width)?;
     }
     let mut stations: Vec<Rat> = Vec::new();
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
@@ -633,35 +633,40 @@ fn lateral_stations_on_ruling(
             if other == face.surface && beside.is_some() {
                 continue; // a seam: the face runs on across it
             }
-            let coeffs = world_plane_coeffs(model, other)?;
+            if !matches!(model.surface(other), nacre_topo::Surface::Plane { .. }) {
+                return Err(unread);
+            }
+            let coeffs =
+                world_narrow(model, other).map_err(|f| f.stated_reason().unwrap_or(unread))?;
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             if nacre_exact::axis_relation(&n, &m) == nacre_exact::AxisRelation::Along {
                 // A ruling edge: off the line it never meets it; on it, the face ends there.
-                let side = nacre_exact::dot3_rat(&n, foot)?.checked_add(coeffs[3])?;
+                let side = nacre_exact::dot3_rat(&n, foot)
+                    .and_then(|v| v.checked_add(coeffs[3]))
+                    .ok_or(width)?;
                 if side == zero && beside.is_none() {
-                    return None;
+                    return Err(unread);
                 }
             } else {
                 let [va, vb] = e.vertices;
+                let radial = |vh| {
+                    rim_radial(model, face, def, vh, &coeffs)
+                        .map_err(|f| f.stated_reason().unwrap_or(unread))
+                };
                 let held = va == vb
-                    || arc_holds_beside(
-                        &rim_radial(model, face, def, va, &coeffs)?,
-                        &rim_radial(model, face, def, vb, &coeffs)?,
-                        &x,
-                        &m,
-                        beside.unwrap_or(true),
-                    )?;
+                    || arc_holds_beside(&radial(va)?, &radial(vb)?, &x, &m, beside.unwrap_or(true))
+                        .ok_or(width)?;
                 if held {
-                    stations.push(nacre_exact::axis_param_of_plane(&coeffs, &g, &m)?);
+                    stations.push(nacre_exact::axis_param_of_plane(&coeffs, &g, &m).ok_or(width)?);
                 }
             }
         }
     }
     if stations.len() % 2 != 0 {
-        return None;
+        return Err(unread);
     }
     stations.sort_unstable();
-    Some(stations.chunks(2).map(|p| [p[0], p[1]]).collect())
+    Ok(stations.chunks(2).map(|p| [p[0], p[1]]).collect())
 }
 
 /// **How far an arc reaches either side of its centre, along `d`** — the rule for a
