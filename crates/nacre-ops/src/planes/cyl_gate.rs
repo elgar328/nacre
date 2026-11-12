@@ -1112,9 +1112,8 @@ pub(crate) struct Tangency {
     /// lens' side could not be stated (`undecided`) — rows the gate refuses either way.
     halves: Option<[Vec<[nacre_exact::QuadVal; 2]>; 2]>,
     /// The tangency point — `RejectWhere`'s doc asks for a witness that is actually there: the
-    /// middle of the first stretch where the line runs through the wall face, else of the first it
-    /// runs along, when that stretch has rational ends; otherwise the middle of the lateral face's
-    /// own span.
+    /// piece [`row_witness`] picks, at its middle, or at its stretch's middle where its ends are
+    /// irrational; the lateral face's own span's middle where no piece meets the line.
     pub(crate) witness: Point3,
 }
 
@@ -1363,41 +1362,11 @@ fn tangency_rows(
                         })
                         .collect::<Option<Vec<_>>>()
                 });
-            let chosen = per_stretch.as_ref().and_then(|v| {
-                v.iter()
-                    .find(|(_, c)| c.runs_through)
-                    .or_else(|| v.iter().find(|(_, c)| c.touches))
-                    .map(|(sp, c)| (*sp, c.contact_at))
-            });
-            let contact = match &per_stretch {
-                Some(v) => LineContact {
-                    touches: v.iter().any(|(_, c)| c.touches),
-                    runs_through: v.iter().any(|(_, c)| c.runs_through),
-                    contact_at: chosen.and_then(|(_, at)| at),
-                    contact: v
-                        .iter()
-                        .flat_map(|(_, c)| c.contact.iter().copied())
-                        .collect(),
-                    sides: v
-                        .iter()
-                        .flat_map(|(_, c)| c.sides.iter().copied())
-                        .collect(),
-                },
-                // Read as a contact through the interior — over every stretch of this lateral, the
-                // ground that reading claims.
-                None => LineContact {
-                    touches: true,
-                    runs_through: true,
-                    contact_at: None,
-                    contact: stretches
-                        .iter()
-                        .flatten()
-                        .map(|sp| sp.map(nacre_exact::QuadVal::from_rat))
-                        .collect(),
-                    sides: stretches.iter().flatten().map(|_| [true; 2]).collect(),
-                },
-            };
-            if !contact.touches {
+            let chosen = per_stretch.as_deref().and_then(row_witness);
+            let touches = per_stretch
+                .as_ref()
+                .is_none_or(|v| v.iter().any(|(_, c)| c.touches()));
+            if !touches {
                 #[cfg(feature = "tangency-trace")]
                 #[allow(clippy::print_stderr)]
                 {
@@ -1460,7 +1429,7 @@ fn tangency_rows(
             });
             let witness_span = chosen.map(|(sp, _)| sp).or(cf.stretch);
             let witness = base.as_ref().zip(witness_span).and_then(|(b, span)| {
-                let mid = match contact.contact_at {
+                let mid = match chosen.and_then(|(_, at)| at) {
                     Some(v) => v,
                     None => span[0]
                         .checked_add(span[1])?
@@ -1486,7 +1455,9 @@ fn tangency_rows(
             {
                 eprintln!(
                     "TROW runs_through={} through={:?} undecided={}",
-                    contact.runs_through,
+                    per_stretch
+                        .as_ref()
+                        .is_none_or(|v| v.iter().any(|(_, c)| c.runs_through())),
                     through.as_ref().map(Vec::len),
                     undecided.is_some()
                 );
@@ -1518,23 +1489,52 @@ fn tangency_rows(
 /// answer [`line_runs_through_face`] gives when it could read the face.
 #[derive(Clone, Debug)]
 struct LineContact {
-    /// The closed face meets the open stretch of the line in positive length — through its
-    /// interior or along its boundary. Without this the face touches nothing a row could speak of.
-    touches: bool,
-    /// The line runs through the face's **interior** over positive length.
-    runs_through: bool,
-    /// The middle of the first stretch where the face meets the line — through the interior when
-    /// there is one, else along the boundary — when that stretch has rational ends: the row's
-    /// witness, which then sits on the contact.
-    contact_at: Option<nacre_exact::Rat>,
     /// **Where** the closed face meets the open stretch in positive length — the closed pieces
-    /// `[lo, hi]` of the line, in the axis parameter, that make `touches` true, through the
-    /// interior or along the boundary alike.
+    /// `[lo, hi]` of the line, in the axis parameter, through the interior or along the boundary
+    /// alike.
     contact: Vec<[nacre_exact::QuadVal; 2]>,
     /// Beside each piece of `contact`, whether the face lies on the line's `+w` side and on its
     /// `−w` side there (`w = n × m`, the direction across the line in the face's plane): both is
     /// the line running through the face's interior, one is the line along its boundary.
     sides: Vec<[bool; 2]>,
+}
+
+impl LineContact {
+    /// The closed face meets the open stretch of the line in positive length — through its
+    /// interior or along its boundary. Without this the face touches nothing a row could speak of.
+    fn touches(&self) -> bool {
+        !self.contact.is_empty()
+    }
+
+    /// The line runs through the face's **interior** over positive length.
+    #[cfg(any(test, feature = "tangency-trace"))]
+    fn runs_through(&self) -> bool {
+        self.sides.iter().any(|s| s[0] && s[1])
+    }
+}
+
+/// **The row's witness** — over the row's stretches in order, the first piece the line runs
+/// through, else the first piece it meets: that piece's stretch, and its middle when its ends are
+/// rational. `None` where no piece meets the line.
+fn row_witness(
+    per_stretch: &[([nacre_exact::Rat; 2], LineContact)],
+) -> Option<([nacre_exact::Rat; 2], Option<nacre_exact::Rat>)> {
+    let pieces = || {
+        per_stretch.iter().flat_map(|(sp, c)| {
+            c.contact
+                .iter()
+                .zip(&c.sides)
+                .map(move |(p, s)| (*sp, p, s))
+        })
+    };
+    let (sp, [lo, hi], _) = pieces()
+        .find(|(_, _, s)| s[0] && s[1])
+        .or_else(|| pieces().next())?;
+    let mid = lo
+        .as_rat()
+        .zip(hi.as_rat())
+        .and_then(|(a, b)| a.checked_add(b)?.checked_mul(nacre_exact::Rat::new(1, 2)?));
+    Some((sp, mid))
 }
 
 /// **`(∪a) ∩ (∪b)`** for closed pieces of the line, as sorted disjoint pieces of positive length —
@@ -1809,9 +1809,6 @@ fn line_runs_through_face(
     let outer = read_loop(&face.outer).ok()?;
     if matches!(outer, LoopOnLine::Clear) {
         return Some(LineContact {
-            touches: false,
-            runs_through: false,
-            contact_at: None,
             contact: Vec::new(),
             sides: Vec::new(),
         });
@@ -1870,9 +1867,6 @@ fn line_runs_through_face(
     };
     let (s0, s1) = (QuadVal::from_rat(span[0]), QuadVal::from_rat(span[1]));
     let mut out = LineContact {
-        touches: false,
-        runs_through: false,
-        contact_at: None,
         contact: Vec::new(),
         sides: Vec::new(),
     };
@@ -1889,22 +1883,9 @@ fn line_runs_through_face(
             }
             *slot = inn;
         }
-        let middle = || {
-            lo.as_rat()
-                .zip(hi.as_rat())
-                .and_then(|(a, b)| a.checked_add(b)?.checked_mul(Rat::new(1, 2)?))
-        };
         if reading[0] || reading[1] {
             out.contact.push([lo, hi]);
             out.sides.push(reading);
-        }
-        if (reading[0] || reading[1]) && !out.touches {
-            out.touches = true;
-            out.contact_at = middle();
-        }
-        if reading[0] && reading[1] && !out.runs_through {
-            out.runs_through = true;
-            out.contact_at = middle();
         }
     }
     Some(out)

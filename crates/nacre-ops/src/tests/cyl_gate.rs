@@ -754,7 +754,8 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
             .iter()
             .map(|p| p.map(|x| x.as_rat().expect("a rational end")))
             .collect();
-        (c.touches, c.runs_through, c.contact_at, contact)
+        let at = row_witness(&[([z(0), z(2)], c.clone())]).and_then(|(_, at)| at);
+        (c.touches(), c.runs_through(), at, contact)
     };
     assert_eq!(
         read([(1.0, 1.75), (2.5, 1.2), (2.5, 2.5)]),
@@ -768,6 +769,57 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
         read([(1.0, 1.5), (0.5, 0.5), (1.5, 0.5)]),
         (true, true, Some(z(1)), vec![[r(1, 2), r(3, 2)]])
     );
+}
+
+/// **A row's witness is the first piece the line runs through, over its stretches in order, else
+/// the first piece it meets** ([`row_witness`]). A through piece in a later stretch outranks a
+/// boundary piece in an earlier one; a stretch the face clears has no piece and is passed over; and
+/// a through piece with irrational ends keeps its stretch with no middle rather than falling back
+/// to a rational piece before it.
+#[test]
+fn the_rows_witness_is_the_first_piece_the_line_runs_through() {
+    use nacre_exact::QuadVal;
+    let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let z = Rat::from_int;
+    let q = |v: i128| QuadVal::from_rat(z(v));
+    let (along, through) = ([true, false], [true, true]);
+    let contact = |pieces: &[([QuadVal; 2], [bool; 2])]| LineContact {
+        contact: pieces.iter().map(|p| p.0).collect(),
+        sides: pieces.iter().map(|p| p.1).collect(),
+    };
+    let (first, second) = ([z(0), z(4)], [z(4), z(8)]);
+    assert_eq!(
+        row_witness(&[
+            (first, contact(&[([q(0), q(1)], along)])),
+            (
+                second,
+                contact(&[([q(4), q(5)], along), ([q(6), q(7)], through)])
+            ),
+        ]),
+        Some((second, Some(r(13, 2)))),
+        "a through piece in a later stretch"
+    );
+    assert_eq!(
+        row_witness(&[
+            (first, contact(&[])),
+            (
+                second,
+                contact(&[([q(4), q(5)], along), ([q(6), q(7)], along)])
+            ),
+        ]),
+        Some((second, Some(r(9, 2)))),
+        "nothing through, an empty stretch passed over"
+    );
+    let irrational = QuadVal::new(z(2), r(1, 4), z(2)).expect("2 + √2/4");
+    assert_eq!(
+        row_witness(&[(
+            first,
+            contact(&[([q(0), q(1)], along), ([q(2), irrational], through)])
+        )]),
+        Some((first, None)),
+        "an irrational through piece"
+    );
+    assert_eq!(row_witness(&[(first, contact(&[]))]), None, "no piece");
 }
 
 /// **A plane against a face's boundary sections: clear of them, reaching them, or touching one.**
