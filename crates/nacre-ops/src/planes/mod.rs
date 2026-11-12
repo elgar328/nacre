@@ -196,29 +196,51 @@ fn turn(
     nacre_exact::dot3_rat(&nacre_exact::cross3_rat(u, v)?, m)
 }
 
+/// [`turn`]'s sign with the second direction `x` carrying one radical: `(u × x)·m = x·(m × u)` is
+/// linear in `x`, so it is one [`nacre_exact::quad::QuadVal`] and its sign is exact.
+fn turn_sign(
+    u: &[nacre_exact::Rat; 3],
+    x: &[nacre_exact::quad::QuadVal; 3],
+    m: &[nacre_exact::Rat; 3],
+) -> Option<nacre_exact::Orient> {
+    let mu = nacre_exact::cross3_rat(m, u)?;
+    let mut acc = nacre_exact::quad::QuadVal::from_rat(nacre_exact::Rat::from_int(0));
+    for k in 0..3 {
+        acc = acc.checked_add(&x[k].checked_mul_rat(mu[k])?)?;
+    }
+    Some(acc.sign())
+}
+
 /// Whether the radial direction `x` lies on the arc `from → to` (counter-clockwise about `m`,
 /// ends included). The sign of `(u × v)·m` says whether `v` is counter-clockwise of `u` by less
 /// than a half turn; an arc of more than a half turn is the complement of the shorter way round —
-/// the same three-way reading `nacre_geom::mixed`'s arc containment makes in 2D.
+/// the same three-way reading `nacre_geom::mixed`'s arc containment makes in 2D. `x` may carry one
+/// radical (a root of the arc's circle on a line): every question here is linear in it.
 fn arc_contains(
     arc: &RimArc,
-    x: &[nacre_exact::Rat; 3],
+    x: &[nacre_exact::quad::QuadVal; 3],
     m: &[nacre_exact::Rat; 3],
 ) -> Option<bool> {
-    use nacre_exact::Rat;
+    use nacre_exact::{Orient, Rat};
     let zero = Rat::from_int(0);
     let ft = turn(&arc.from, &arc.to, m)?;
-    let fx = turn(&arc.from, x, m)?;
-    let xt = turn(x, &arc.to, m)?;
+    // `(from × x)·m` and `(x × to)·m = −(to × x)·m`.
+    let fx = turn_sign(&arc.from, x, m)?;
+    let tx = turn_sign(&arc.to, x, m)?;
     Some(if ft > zero {
-        fx >= zero && xt >= zero
+        fx != Orient::Negative && tx != Orient::Positive
     } else if ft < zero {
-        !(turn(&arc.to, x, m)? > zero && turn(x, &arc.from, m)? > zero)
+        !(tx == Orient::Positive && fx == Orient::Negative)
     } else if nacre_exact::dot3_rat(&arc.from, &arc.to)? > zero {
         true // `from` and `to` point the same way: the whole circle
     } else {
-        fx >= zero // exactly a half turn
+        fx != Orient::Negative // exactly a half turn
     })
+}
+
+/// A rational direction as [`arc_contains`] reads it.
+fn rat_dir(x: &[nacre_exact::Rat; 3]) -> [nacre_exact::quad::QuadVal; 3] {
+    x.map(nacre_exact::quad::QuadVal::from_rat)
 }
 
 /// **A plane's statement in the world: its canonical name there, and which way that name faces.**

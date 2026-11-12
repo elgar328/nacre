@@ -244,22 +244,51 @@ fn a_lateral_faces_reach_and_what_clears_it() {
         from: [q(-1, 5), z(0), z(0)],
         to: [z(0), q(-1, 5), z(0)],
     };
-    assert_eq!(arc_contains(&arc, &[z(-1), z(-1), z(0)], &m), Some(true)); // 225°
-    assert_eq!(arc_contains(&arc, &arc.from, &m), Some(true)); // an end is on it
-    assert_eq!(arc_contains(&arc, &[z(0), z(1), z(0)], &m), Some(false)); // 90°
-    assert_eq!(arc_contains(&arc, &[z(1), z(-1), z(0)], &m), Some(false)); // 315°
+    assert_eq!(
+        arc_contains(&arc, &rat_dir(&[z(-1), z(-1), z(0)]), &m),
+        Some(true)
+    ); // 225°
+    assert_eq!(arc_contains(&arc, &rat_dir(&arc.from), &m), Some(true)); // an end is on it
+    assert_eq!(
+        arc_contains(&arc, &rat_dir(&[z(0), z(1), z(0)]), &m),
+        Some(false)
+    ); // 90°
+    assert_eq!(
+        arc_contains(&arc, &rat_dir(&[z(1), z(-1), z(0)]), &m),
+        Some(false)
+    ); // 315°
+    // A direction carrying a radical — a root of the circle on a line — is read the same way.
+    let root =
+        |c: [(Rat, Rat); 2]| c.map(|(a, b)| nacre_exact::quad::QuadVal::new(a, b, z(3)).unwrap());
+    let [x240, y240] = root([(q(-1, 2), z(0)), (z(0), q(-1, 2))]);
+    let [x330, y330] = root([(z(0), q(1, 2)), (q(-1, 2), z(0))]);
+    let zq = nacre_exact::quad::QuadVal::from_rat(z(0));
+    assert_eq!(arc_contains(&arc, &[x240, y240, zq], &m), Some(true)); // 240°
+    assert_eq!(arc_contains(&arc, &[x330, y330, zq], &m), Some(false)); // 330°
     let long = RimArc {
         from: arc.to,
         to: arc.from,
     }; // the other three quarters
-    assert_eq!(arc_contains(&long, &[z(1), z(1), z(0)], &m), Some(true));
-    assert_eq!(arc_contains(&long, &[z(-1), z(-1), z(0)], &m), Some(false));
+    assert_eq!(
+        arc_contains(&long, &rat_dir(&[z(1), z(1), z(0)]), &m),
+        Some(true)
+    );
+    assert_eq!(
+        arc_contains(&long, &rat_dir(&[z(-1), z(-1), z(0)]), &m),
+        Some(false)
+    );
     let half = RimArc {
         from: [z(1), z(0), z(0)],
         to: [z(-1), z(0), z(0)],
     }; // exactly a half turn, through +y
-    assert_eq!(arc_contains(&half, &[z(0), z(1), z(0)], &m), Some(true));
-    assert_eq!(arc_contains(&half, &[z(0), z(-1), z(0)], &m), Some(false));
+    assert_eq!(
+        arc_contains(&half, &rat_dir(&[z(0), z(1), z(0)]), &m),
+        Some(true)
+    );
+    assert_eq!(
+        arc_contains(&half, &rat_dir(&[z(0), z(-1), z(0)]), &m),
+        Some(false)
+    );
     let fq = |span: Option<[Rat; 2]>| Footprint {
         span,
         theta: Theta::Arc(arc),
@@ -913,5 +942,263 @@ fn a_section_beside_another_axis_carries_traces_no_road_nests() {
     assert!(
         !carries_unnested(&[(up, &across), (along, &across)]),
         "no section: the class is not asked"
+    );
+}
+
+/// A slab swept along `+x` from `x = 0` to `x = 2` over the rings, sketched on `frame` (a frame on
+/// `x = 0` facing `+x`), its face on `x = x0` (`0` or `2`), and that face's plane as the gate names
+/// it.
+fn yz_slab_face(
+    rings: Vec<crate::Ring2d>,
+    frame: impl FnOnce(&mut Model) -> crate::SketchFrame,
+    x0: i128,
+) -> (Model, Handle<Face>, [Rat; 4]) {
+    let mut m = Model::new();
+    let profile = crate::from_paths(rings).expect("one profile").remove(0);
+    let frame = frame(&mut m);
+    let out = crate::apply(
+        &mut m,
+        &crate::Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    );
+    let Ok(crate::OpOutput::Extrude { solid, .. }) = out else {
+        panic!("the slab extrudes: {out:?}")
+    };
+    let zero = Rat::from_int(0);
+    let (face, name) = m
+        .shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .find_map(|&f| {
+            let name = *m.world_plane_name(m.face(f).surface)?.narrow()?;
+            (name[1] == zero && name[2] == zero && name[3] == Rat::from_int(-x0))
+                .then_some((f, name))
+        })
+        .expect("the face on x = x0");
+    (m, face, name)
+}
+
+/// The rectangle `[y0, y1] × [z0, z1]` with its corners rounded — radii lower-left, lower-right,
+/// upper-right, upper-left — counter-clockwise.
+fn rounded_ring(lo: [Rat; 2], hi: [Rat; 2], radii: [Rat; 4]) -> crate::Ring2d {
+    let ([y0, z0], [y1, z1]) = (lo, hi);
+    let [ll, lr, ur, ul] = radii;
+    let add = |a: Rat, b: Rat| a.checked_add(b).unwrap();
+    let sub = |a: Rat, b: Rat| a.checked_sub(b).unwrap();
+    let arc = |c: [Rat; 2], r: Rat| crate::Edge2d::Arc {
+        center: c,
+        r2: r.checked_mul(r).unwrap(),
+        ccw: true,
+    };
+    crate::Ring2d::new(
+        vec![
+            [add(y0, ll), z0],
+            [sub(y1, lr), z0],
+            [y1, add(z0, lr)],
+            [y1, sub(z1, ur)],
+            [sub(y1, ur), z1],
+            [add(y0, ul), z1],
+            [y0, sub(z1, ul)],
+            [y0, add(z0, ll)],
+        ],
+        vec![
+            crate::Edge2d::Line,
+            arc([sub(y1, lr), add(z0, lr)], lr),
+            crate::Edge2d::Line,
+            arc([sub(y1, ur), sub(z1, ur)], ur),
+            crate::Edge2d::Line,
+            arc([add(y0, ul), sub(z1, ul)], ul),
+            crate::Edge2d::Line,
+            arc([add(y0, ll), add(z0, ll)], ll),
+        ],
+    )
+    .expect("a rounded rectangle")
+}
+
+/// **A tangent line meets a filleted face where each piece of its boundary changes sides of it.**
+/// The line `x = x0, y = c` along `z`, read over a span, on a slab face whose outline carries arcs
+/// (`line_runs_through_face`). On the square `[0, 4]²` with every corner rounded `r = 1`, over
+/// `0 < z < 4`, on both of the slab's faces (`x = 0` and `x = 2` walk the loop opposite ways):
+///
+/// - `c = 2` meets only the straight edges: the whole span, through the interior;
+/// - `c = 1/2` crosses the two left arcs inside them, at `z = 1 − √3/2` and `z = 3 + √3/2` (the
+///   circles' other roots, `1 + √3/2` and `3 − √3/2`, lie off the arcs);
+/// - `c = 1` runs through the arcs' ends `(1, 0)` and `(1, 4)`, where each arc meets a straight
+///   edge: each end changes sides once, the whole span through the interior;
+/// - `c = 0` lies along the left edge, and the arcs leave its ends `(0, 1)`, `(0, 3)` along the
+///   line — each end is its circle's extreme point across the line, and the arc bends to the
+///   face's side: `[1, 3]`, on that side only (`w = n × m = −y`, so the `−w` reading).
+///
+/// An arc bending away from the face, stated clockwise on the outer loop: the same square less the
+/// quarter disk `r = 1` about its corner `(0, 0)`, on both faces. `c = 1/2` crosses that arc inside
+/// it, at `√3/2`: `[√3/2, 4]`. `c = 1` meets the arc only at its end `(1, 0)`, its circle's extreme
+/// point across the line, where the arc bends to the centre's side — off the face — and the bottom
+/// edge leaves to the face's side: one change, `[0, 4]` through the interior. `c = 0` runs along the
+/// left edge, whose end `(0, 1)` the arc leaves across the line: `[1, 4]`, on the `−w` side only.
+///
+/// Two radicals on one line: lower-left `r = 1`, upper-left `r = 1/2`, `c = 1/4` crosses them at
+/// `1 − √7/4` and `7/2 + √3/4`. An end off the line with the same `v` as a root is another point:
+/// on a 3-4-5 frame, a quarter arc about `(3/5, 4)`, `r = 1`, from `(−1/5, 17/5)` to `(6/5, 16/5)`
+/// meets `y = 0` at `(0, 16/5)` — the end's `z` — and the face runs from there to where the line
+/// leaves its far edge, `z = 73/10`.
+/// And a hole whose arcs end on the line: the square `[−2, 6]²` less the rounded square, `c = 1`,
+/// is the face on `[−2, 0]` and `[4, 6]`.
+#[test]
+fn a_tangent_line_meets_a_filleted_face_where_each_piece_crosses() {
+    use nacre_exact::QuadVal;
+    // A stretch of the line the face meets, and its sides.
+    type Piece = ([QuadVal; 2], [bool; 2]);
+    let z = Rat::from_int;
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let qv = |a: Rat, b: Rat, c: Rat| QuadVal::new(a, b, c).unwrap();
+    let r = |a: Rat| QuadVal::from_rat(a);
+    // The world frame on `x = 0`: `u` on `y`, `v` on `z`.
+    let world = |m: &mut Model| crate::SketchFrame::world(m, nacre_exact::Axis::X);
+    let read_on = |rings: Vec<crate::Ring2d>,
+                   frame: &dyn Fn(&mut Model) -> crate::SketchFrame,
+                   x0: i128,
+                   c: Rat,
+                   span: [Rat; 2]| {
+        let (m, face, coeffs) = yz_slab_face(rings, frame, x0);
+        line_runs_through_face(
+            &m,
+            m.face(face),
+            &coeffs,
+            &[z(x0), c, z(0)],
+            &[z(0), z(0), z(1)],
+            span,
+        )
+        .map(|lc| lc.contact.into_iter().zip(lc.sides).collect::<Vec<Piece>>())
+    };
+    let read = |rings, x0, c, span| read_on(rings, &world, x0, c, span);
+    let same = |got: &Option<Vec<Piece>>, want: &[Piece]| {
+        let Some(got) = got else {
+            return false;
+        };
+        got.len() == want.len()
+            && got.iter().zip(want).all(|((p, s), (wp, ws))| {
+                s == ws
+                    && p.iter()
+                        .zip(wp)
+                        .all(|(a, b)| a.cmp_value(b) == Some(core::cmp::Ordering::Equal))
+            })
+    };
+    let square = || rounded_ring([z(0), z(0)], [z(4), z(4)], [z(1); 4]);
+    let both = [true, true];
+    for x0 in [0, 2] {
+        let cases: [(Rat, Vec<Piece>); 4] = [
+            (z(2), vec![([r(z(0)), r(z(4))], both)]),
+            (
+                q(1, 2),
+                vec![([qv(z(1), z(-1), q(3, 4)), qv(z(3), z(1), q(3, 4))], both)],
+            ),
+            (z(1), vec![([r(z(0)), r(z(4))], both)]),
+            (z(0), vec![([r(z(1)), r(z(3))], [false, true])]),
+        ];
+        for (c, want) in cases {
+            let got = read(vec![square()], x0, c, [z(0), z(4)]);
+            assert!(same(&got, &want), "x = {x0}, y = {c:?}: {got:?}");
+        }
+        let notched = || {
+            crate::Ring2d::new(
+                vec![
+                    [z(1), z(0)],
+                    [z(4), z(0)],
+                    [z(4), z(4)],
+                    [z(0), z(4)],
+                    [z(0), z(1)],
+                ],
+                vec![
+                    crate::Edge2d::Line,
+                    crate::Edge2d::Line,
+                    crate::Edge2d::Line,
+                    crate::Edge2d::Line,
+                    crate::Edge2d::Arc {
+                        center: [z(0), z(0)],
+                        r2: z(1),
+                        ccw: false,
+                    },
+                ],
+            )
+            .expect("a square with a notched corner")
+        };
+        let cases: [(Rat, Vec<Piece>); 3] = [
+            (q(1, 2), vec![([qv(z(0), z(1), q(3, 4)), r(z(4))], both)]),
+            (z(1), vec![([r(z(0)), r(z(4))], both)]),
+            (z(0), vec![([r(z(1)), r(z(4))], [false, true])]),
+        ];
+        for (c, want) in cases {
+            let got = read(vec![notched()], x0, c, [z(0), z(4)]);
+            assert!(same(&got, &want), "notched, x = {x0}, y = {c:?}: {got:?}");
+        }
+    }
+    let two_radii = rounded_ring([z(0), z(0)], [z(4), z(4)], [z(1), z(1), z(1), q(1, 2)]);
+    let got = read(vec![two_radii], 0, q(1, 4), [z(0), z(4)]);
+    let want = [(
+        [qv(z(1), z(-1), q(7, 16)), qv(q(7, 2), z(1), q(3, 16))],
+        both,
+    )];
+    assert!(same(&got, &want), "two radicals: {got:?}");
+    // The quarter arc about the frame's origin from `−v` to `+u`, on the 3-4-5 frame at
+    // `(y, z) = (3/5, 4)` with `u = (3/5, −4/5)`, `v = (4/5, 3/5)`: its end `+u` is `(6/5, 16/5)`, and
+    // `y = 0` meets the circle at `(0, 16/5)` — on the arc, where the radial is `(7/25, −24/25)` in
+    // the frame — and at `(0, 24/5)`, the radial `−u`, off it. The face is the frame's rectangle
+    // `[−3, 1] × [−1, 2]` with that corner rounded; `y = 0` leaves it on the left edge, `u = −3`, at
+    // `z = 73/10`.
+    let tilted = |m: &mut Model| match crate::apply(
+        m,
+        &crate::Operation::DatumPlane {
+            def: crate::DatumDef::Stated(crate::SketchPlane::from_axes(
+                Point3::from_array([0.0, 0.6, 4.0]),
+                nacre_math::Vector3::from_array([0.0, 0.6, -0.8]),
+                nacre_math::Vector3::from_array([0.0, 0.8, 0.6]),
+            )),
+        },
+    ) {
+        Ok(crate::OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("the 3-4-5 frame: {other:?}"),
+    };
+    let bitten = crate::Ring2d::new(
+        vec![
+            [z(0), z(-1)],
+            [z(1), z(0)],
+            [z(1), z(2)],
+            [z(-3), z(2)],
+            [z(-3), z(-1)],
+        ],
+        vec![
+            crate::Edge2d::Arc {
+                center: [z(0), z(0)],
+                r2: z(1),
+                ccw: true,
+            },
+            crate::Edge2d::Line,
+            crate::Edge2d::Line,
+            crate::Edge2d::Line,
+            crate::Edge2d::Line,
+        ],
+    )
+    .expect("a rectangle with a rounded corner");
+    let got = read_on(vec![bitten], &tilted, 0, z(0), [z(0), z(8)]);
+    assert!(
+        same(&got, &[([r(q(16, 5)), r(q(73, 10))], both)]),
+        "a root beside an end off the line: {got:?}"
+    );
+    let frame = crate::Ring2d::polygon_decimal(
+        [(-2.0, -2.0), (6.0, -2.0), (6.0, 6.0), (-2.0, 6.0)]
+            .map(|(u, v)| nacre_math::Point2::from_array([u, v]))
+            .to_vec(),
+    )
+    .expect("a square");
+    let got = read(vec![frame, square()], 0, z(1), [z(-2), z(6)]);
+    assert!(
+        same(
+            &got,
+            &[([r(z(-2)), r(z(0))], both), ([r(z(4)), r(z(6))], both)]
+        ),
+        "a hole whose arcs end on the line: {got:?}"
     );
 }

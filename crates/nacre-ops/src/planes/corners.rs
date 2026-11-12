@@ -312,6 +312,13 @@ pub(super) fn corner_of(
             return arc_of(model, face, he);
         }
     }
+    start_corner(model, he)
+}
+
+/// **The point a half-edge starts at, as a piece** — whatever the edge's curve: the corner
+/// [`corner_of`] reads for a straight edge, and the end an arc leaves from for a reader that walks
+/// a loop's points as well as its pieces (`cyl_gate`'s line reader).
+pub(super) fn start_corner(model: &Model, he: &nacre_topo::HalfEdge) -> Result<Corner, CornerFail> {
     let vh = he_start(model, *he);
     match model.vertex_meet(vh) {
         // The point is stated in `frame`; the cylinder and the coefficients are world. A

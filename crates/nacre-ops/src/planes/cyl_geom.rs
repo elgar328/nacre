@@ -353,14 +353,14 @@ fn rim_arc_union(
             None => arc,
             Some(cur) => {
                 let (f_in, t_in) = (
-                    arc_contains(&cur, &arc.from, &m)?,
-                    arc_contains(&cur, &arc.to, &m)?,
+                    arc_contains(&cur, &rat_dir(&arc.from), &m)?,
+                    arc_contains(&cur, &rat_dir(&arc.to), &m)?,
                 );
                 if f_in && t_in {
                     // Inside the current arc — or the two together close the circle.
                     if arc != cur
-                        && arc_contains(&arc, &cur.from, &m)?
-                        && arc_contains(&arc, &cur.to, &m)?
+                        && arc_contains(&arc, &rat_dir(&cur.from), &m)?
+                        && arc_contains(&arc, &rat_dir(&cur.to), &m)?
                     {
                         return None;
                     }
@@ -375,7 +375,9 @@ fn rim_arc_union(
                         from: arc.from,
                         to: cur.to,
                     }
-                } else if arc_contains(&arc, &cur.from, &m)? && arc_contains(&arc, &cur.to, &m)? {
+                } else if arc_contains(&arc, &rat_dir(&cur.from), &m)?
+                    && arc_contains(&arc, &rat_dir(&cur.to), &m)?
+                {
                     arc // the current arc lies inside this one
                 } else {
                     return None; // two arcs that do not chain: no single extent
@@ -713,7 +715,7 @@ pub(super) fn arc_extent(
                 nacre_exact::dot3_rat(d, &arc.from)?,
                 nacre_exact::dot3_rat(d, &arc.to)?,
             );
-            let (hi_off, hi_rad) = if arc_contains(arc, &dperp, axis)? {
+            let (hi_off, hi_rad) = if arc_contains(arc, &rat_dir(&dperp), axis)? {
                 (zero, rho2()?)
             } else {
                 (f.max(t), zero)
@@ -722,7 +724,7 @@ pub(super) fn arc_extent(
             for x in neg.iter_mut() {
                 *x = zero.checked_sub(*x)?;
             }
-            let (lo_off, lo_rad) = if arc_contains(arc, &neg, axis)? {
+            let (lo_off, lo_rad) = if arc_contains(arc, &rat_dir(&neg), axis)? {
                 (zero, rho2()?)
             } else {
                 (f.min(t), zero)

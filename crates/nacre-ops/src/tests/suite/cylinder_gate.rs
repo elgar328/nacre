@@ -812,49 +812,117 @@ fn rod_on_the_plate(m: &mut Model, fillets: usize, y0: f64) -> (Handle<Solid>, H
 /// **A rod lying on a plate whose corners are rounded.** The rod touches the plate's top face
 /// along a line, so the gate writes a tangency row for that face, and the row reads where the line
 /// runs through the face (`line_runs_through_face`) — a face whose outline carries the four fillet
-/// arcs.
-///
-/// - With square corners (`rounded_plate(_, 0, _)`) every kind builds: the fuse is the two bodies
-///   that meet along the line alone, the cuts leave each operand whole, the common part is empty.
-/// - With rounded corners, across the middle (`y = 0`, far from every arc) and along the edge
-///   (`y = −22.5`, where the line runs on past the rod and through two of the fillet arcs, at
-///   `x = ±(40 + √18.75)`), every kind is refused as `CylinderGateUndecided`: the reader declines a
-///   loop the line reaches that holds an arc, and the row it cannot read is refused at the line's
-///   witness — the middle of the rod's span, `(0, −22.5, 12)`.
+/// arcs. Square-cornered (`rounded_plate(_, 0, _)`) or rounded, across the middle (`y = 0`, far
+/// from every arc) or along the edge (`y = −22.5`, where the line runs on past the rod and meets
+/// the outline only on two fillet arcs, at `x = ±(40 + √18.75)`), every kind builds: the fuse is
+/// the two bodies that meet along the line alone, the cuts leave each operand whole, the common
+/// part is empty.
 #[test]
 fn a_rod_lying_on_a_rounded_plate() {
     let pi = std::f64::consts::PI;
     let rod = pi * 4.0 * 40.0;
     let square = 90.0 * 50.0 * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0;
-    every_kind(
-        |m| rod_on_the_plate(m, 0, 0.0),
-        [
+    for (fillets, y0, plate) in [
+        (0, 0.0, square),
+        (4, 0.0, rounded_plate_volume()),
+        (4, -22.5, rounded_plate_volume()),
+    ] {
+        every_kind(
+            |m| rod_on_the_plate(m, fillets, y0),
             [
-                Want::Built(2, square + rod),
-                Want::Built(1, square),
-                Want::Built(0, 0.0),
+                [
+                    Want::Built(2, plate + rod),
+                    Want::Built(1, plate),
+                    Want::Built(0, 0.0),
+                ],
+                [
+                    Want::Built(2, plate + rod),
+                    Want::Built(1, rod),
+                    Want::Built(0, 0.0),
+                ],
             ],
-            [
-                Want::Built(2, square + rod),
-                Want::Built(1, rod),
-                Want::Built(0, 0.0),
-            ],
-        ],
-    );
-    let refused = [Want::Refused(RejectReason::CylinderGateUndecided); 3];
-    for y0 in [0.0, -22.5] {
-        every_kind(|m| rod_on_the_plate(m, 4, y0), [refused, refused]);
+        );
     }
-    let mut m = Model::new();
-    let (plate, rod) = rod_on_the_plate(&mut m, 4, -22.5);
-    match boolean(&mut m, BoolKind::Fuse, plate, rod) {
-        Err(BoolError::Rejected {
-            reason: RejectReason::CylinderGateUndecided,
-            at: Some(crate::RejectWhere::Point(p)),
-        }) => assert!(
-            p.distance(Point3::from_array([0.0, -22.5, 12.0])) < 1e-12,
-            "the row's witness, {p:?}"
-        ),
-        got => panic!("{got:?}"),
+}
+
+/// **A slab across a cylinder's tangent line, where only its fillet arcs meet that line.** `A` is
+/// the unit cylinder along `z` over `[0, 2]`; `B` the slab `x ∈ [0, 1]` over the rectangle
+/// `y ∈ [−4, 3/10]`, `z ∈ [−3, 5]`, square or with every corner rounded `r = 1/2`. Its face `x = 1` is
+/// tangent to `A` along `(1, 0)` and lies on both sides of that line, as `A` does: both solids run
+/// through it. The line meets the face's outline only on the two fillet arcs at `y1 = 3/10`, far
+/// past `A`'s span — none of the straight edges reaches it — so where the line runs through the
+/// face is read from the arcs alone (`line_runs_through_face`). `B − A` keeps two cusps of the slab
+/// meeting along the line, a pinch refused as `SelfTouchingResult`; read as meeting nothing, the line
+/// would write no row and the pinch would build. Every other kind builds: with `C = A ∩ B`, the part
+/// of the disk at `x ≥ 0`, `y ≤ 3/10`, two tall — `π/2 + (3/10)√(91/100) + asin(3/10)` — `A ∪ B` is
+/// `2π + |B| − C` and `A − B` is `2π − C`.
+#[test]
+fn a_rounded_slab_across_a_cylinders_tangent_line() {
+    let pi = std::f64::consts::PI;
+    let a = 2.0 * pi;
+    let common = pi / 2.0 + 0.3 * 0.91f64.sqrt() + 0.3f64.asin();
+    let rounded_rect = |r: f64| {
+        let (y0, y1, z0, z1) = (-4.0, 0.3, -3.0, 5.0);
+        if r == 0.0 {
+            return crate::Profile2d::polygon(vec![p2(y0, z0), p2(y1, z0), p2(y1, z1), p2(y0, z1)])
+                .expect("a rectangle");
+        }
+        stated(vec![
+            line(p2(y0 + r, z0), p2(y1 - r, z0)),
+            arc_turns(p2(y1 - r, z0 + r), p2(y1 - r, z0), 1),
+            line(p2(y1, z0 + r), p2(y1, z1 - r)),
+            arc_turns(p2(y1 - r, z1 - r), p2(y1, z1 - r), 1),
+            line(p2(y1 - r, z1), p2(y0 + r, z1)),
+            arc_turns(p2(y0 + r, z1 - r), p2(y0 + r, z1), 1),
+            line(p2(y0, z1 - r), p2(y0, z0 + r)),
+            arc_turns(p2(y0 + r, z0 + r), p2(y0, z0 + r), 1),
+        ])
+        .expect("a rounded rectangle")
+        .remove(0)
+    };
+    for (r, b) in [(0.0, 34.4), (0.5, 33.4 + pi / 4.0)] {
+        let build = |m: &mut Model| {
+            let cyl = axis_cylinder(m, [0.0; 3], [0.0, 0.0, 1.0], 1.0, 2.0);
+            let frame = match apply(
+                m,
+                &Operation::DatumPlane {
+                    def: DatumDef::Stated(SketchPlane::from_axes(
+                        Point3::from_array([0.0; 3]),
+                        Vector3::from_array([0.0, 1.0, 0.0]),
+                        Vector3::from_array([0.0, 0.0, 1.0]),
+                    )),
+                },
+            ) {
+                Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+                other => panic!("the frame on x = 0: {other:?}"),
+            };
+            let OpOutput::Extrude { solid: slab, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile: rounded_rect(r),
+                    dist: 1.0,
+                },
+            )
+            .expect("the slab extrudes") else {
+                unreachable!()
+            };
+            (cyl, slab)
+        };
+        every_kind(
+            build,
+            [
+                [
+                    Want::Built(1, a + b - common),
+                    Want::Built(1, a - common),
+                    Want::Built(1, common),
+                ],
+                [
+                    Want::Built(1, a + b - common),
+                    Want::Refused(RejectReason::SelfTouchingResult),
+                    Want::Built(1, common),
+                ],
+            ],
+        );
     }
 }

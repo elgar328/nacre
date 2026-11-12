@@ -1608,9 +1608,7 @@ fn joined(met: Vec<[nacre_exact::QuadVal; 2]>) -> Option<Vec<[nacre_exact::QuadV
 enum LoopOnLine {
     /// The loop's pieces all lie strictly on one side: its region meets the line nowhere.
     Clear,
-    /// A disk the line crosses: its region on the line is the open chord between the two values.
-    Chord(nacre_exact::QuadVal, nacre_exact::QuadVal),
-    /// A polygon: the values where its steps cross the line, under each of the two half-open
+    /// The values where its boundary changes sides of the line, under each of the two half-open
     /// readings — `[0]` counts a piece on the line as below it, `[1]` as above.
     Crossings([Vec<nacre_exact::QuadVal>; 2]),
 }
@@ -1633,28 +1631,33 @@ enum LoopOnLine {
 /// of positive width about the axis, of which the line is one edge, and only the radius-`0` strip
 /// reads it.
 ///
-/// **It is point-in-polygon with the line itself as the ray.** Every loop — the outer and
-/// every hole — is read through [`corner_of`], and a step whose ends lie on opposite sides of the
-/// line crosses it once; the parity of the crossings below a point says whether the point is in
-/// that loop's region, and the face's region is inside the outer and outside every hole. The
-/// crossing rule is [`nacre_geom::intersect::ray_straddle`]'s, the one half-open rule the ring
-/// walks read: a piece *on* the line is «not above». Asked twice — once as is, once with the
-/// sides swapped — it reads the face along the line pushed off to either side, and a stretch is
-/// **interior** exactly when both readings put it inside: a face that ends on the line along an
-/// edge, or meets it at one corner, is inside on one side only. The arrangement's own sweep
-/// (`trace_transversal_face`) answers the same kind of question, but `planes` sits below the
-/// engine and runs before it.
+/// **It is point-in-region with the line itself as the ray.** Every loop — the outer and every
+/// hole — is read through [`corner_of`] (each half-edge's piece, and the point an arc starts at),
+/// and the parity of the boundary's changes of side below a point says whether the point is in that
+/// loop's region; the face's region is inside the outer and outside every hole. **A point of the
+/// line counts once where the boundary is on different sides of the line just before and just after
+/// it**, under the one half-open rule the ring walks read
+/// ([`nacre_geom::intersect::ray_straddle`]): a piece *on* the line is «not above». Asked twice —
+/// once as is, once with the sides swapped — it reads the face along the line pushed off to either
+/// side, and a stretch is **interior** exactly when both readings put it inside: a face that ends
+/// on the line along an edge, or meets it at one corner, is inside on one side only. The
+/// arrangement's own sweep (`trace_transversal_face`) answers the same kind of question, but
+/// `planes` sits below the engine and runs before it.
 ///
-/// **The crossing is placed from one end of the step and the step's direction** — the edge's
-/// two ends when both are rational, else its carrier pair (`Edge::surfaces`): a plane neighbour's
-/// meet with the wall, a cylinder neighbour's ruling. That is linear in the end's coordinates, so
-/// a pierce corner's value keeps its own one radical.
+/// **Each piece places its own changes of side.** A straight step changes at most once, where its
+/// carrier meets the line — placed from one end and the step's direction (the edge's two ends when
+/// both are rational, else its carrier pair, `Edge::surfaces`: a plane neighbour's meet with the
+/// wall, a cylinder neighbour's ruling), linear in the end's coordinates, so a pierce corner's
+/// value keeps its own one radical. An arc changes at its circle's roots on the line that lie on
+/// it — `v ± h` in the circle's own radical, a whole circle being an arc with no ends — except
+/// where the circle only touches the line, and at an end on the line exactly when the arc beside
+/// that end is above. Roots of different circles are only compared, never combined, and
+/// [`nacre_exact::quad::QuadVal::cmp_value`] compares across radicals.
 ///
-/// `None` is «could not read the face»: a step whose crossing could not be placed, an arc in a loop
-/// the line reaches, an outer piece [`corner_of`] cannot spell or that is off the class's plane.
-/// The caller reads that as a contact through the interior, never a silent acquittal. A **hole**
-/// that cannot be read is left out instead: the face only grows, so the answer can only lean
-/// towards a contact.
+/// `None` is «could not read the face»: a change of side that could not be placed, an outer piece
+/// [`corner_of`] cannot spell or that is off the class's plane. The caller reads that as a contact
+/// through the interior, never a silent acquittal. A **hole** that cannot be read is left out
+/// instead: the face only grows, so the answer can only lean towards a contact.
 #[allow(clippy::too_many_arguments)]
 fn line_runs_through_face(
     model: &Model,
@@ -1722,96 +1725,196 @@ fn line_runs_through_face(
             nacre_topo::Surface::Cylinder { .. } => Some(model.world_cylinder_def(other)?.dir()),
         }
     };
-    // Each loop's meeting with the line; `Err` is a loop that could not be read.
+    // Each loop's meeting with the line; `Err` is a loop that could not be read. The rule for an
+    // arc is the one `nacre_geom::mixed` reads on rational 2-D rings; it is not shared, because a
+    // tilted wall has no rational orthonormal frame to put its loops in 2-D, and the answer here is
+    // stretches of the line rather than one point's side.
     let read_loop = |lp: &nacre_topo::Loop| -> Result<LoopOnLine, ()> {
-        let pieces: Vec<Corner> = lp
-            .half_edges
-            .iter()
-            .map(|he| corner_of(model, face, lp, he).map_err(|_| ()))
-            .collect::<Result<_, ()>>()?;
+        // Per half-edge, the point it starts at and, for an arc, its round piece — both through
+        // `corner_of`'s readers. A whole circle has no end.
+        let mut starts: Vec<Option<Corner>> = Vec::with_capacity(lp.half_edges.len());
+        let mut rounds: Vec<Option<Corner>> = Vec::with_capacity(lp.half_edges.len());
+        for he in &lp.half_edges {
+            let piece = corner_of(model, face, lp, he).map_err(|_| ())?;
+            let (start, round) = match piece {
+                Corner::Round {
+                    theta: Theta::Whole,
+                    ..
+                } => (None, Some(piece)),
+                Corner::Round { .. } => {
+                    (Some(start_corner(model, he).map_err(|_| ())?), Some(piece))
+                }
+                _ => (Some(piece), None),
+            };
+            starts.push(start);
+            rounds.push(round);
+        }
         // The strip test's precondition: a piece off the class's plane is judged against a
         // distance that is not its own — the two-descriptions hazard `face_clears_footprint`
         // refuses on. Unread, not guessed.
-        if !pieces.iter().all(|c| c.on_plane(coeffs)) {
+        let pieces = || starts.iter().chain(rounds.iter()).flatten();
+        if !pieces().all(|c| c.on_plane(coeffs)) {
             return Err(());
         }
-        let sides: Vec<StripSide> = pieces
-            .iter()
-            .map(|c| c.strip_side(coeffs, foot, m, &line_r2))
-            .collect();
-        if sides.iter().all(|s| *s == StripSide::Plus)
-            || sides.iter().all(|s| *s == StripSide::Minus)
+        let side_of = |c: &Corner| c.strip_side(coeffs, foot, m, &line_r2);
+        if pieces().all(|c| side_of(c) == StripSide::Plus)
+            || pieces().all(|c| side_of(c) == StripSide::Minus)
         {
             return Ok(LoopOnLine::Clear);
         }
-        if let [
-            Corner::Round {
-                centre,
-                rho2,
-                theta: Theta::Whole,
-                ..
-            },
-        ] = pieces.as_slice()
-        {
-            if sides[0] != StripSide::Crosses {
-                // On the line at one point, or nowhere: no positive length either way.
-                return Ok(LoopOnLine::Clear);
-            }
-            // The chord: centre `c`, half-length `h` in the axis scale, `h² = (ρ² − d²)/(m·m)`
-            // with `d² = u_c²/(w·w)`.
-            let chord = (|| {
-                let (u, v) = uv(centre, &[zero; 3], QuadVal::from_rat(zero))?;
-                let (u, v) = (u.as_rat()?, v.as_rat()?);
-                let ww = dot3_rat(&w, &w)?;
-                let d2 = u
-                    .checked_mul(u)?
-                    .checked_mul(Rat::new(ww.denom(), ww.numer())?)?;
-                let h2 = rho2.narrow()?.checked_sub(d2)?.checked_mul(inv_mm)?;
-                Some(LoopOnLine::Chord(
-                    QuadVal::new(v, Rat::from_int(-1), h2)?,
-                    QuadVal::new(v, Rat::from_int(1), h2)?,
-                ))
-            })();
-            return chord.ok_or(());
-        }
-        if pieces.iter().any(|c| matches!(c, Corner::Round { .. })) {
-            return Err(()); // an arc in a loop the line reaches: no crossing value for it here
-        }
-        let k = pieces.len();
+        let k = lp.half_edges.len();
         let mut out: [Vec<QuadVal>; 2] = [Vec::new(), Vec::new()];
         for i in 0..k {
-            let (a, b) = (&pieces[i], &pieces[(i + 1) % k]);
-            let (sa, sb) = (sides[i], sides[(i + 1) % k]);
-            let orient = |s: StripSide, flip: bool| match (s, flip) {
-                (StripSide::Plus, false) | (StripSide::Minus, true) => Orient::Positive,
-                (StripSide::Minus, false) | (StripSide::Plus, true) => Orient::Negative,
-                _ => Orient::Zero,
-            };
-            let crosses: [bool; 2] = core::array::from_fn(|r| {
-                nacre_geom::intersect::ray_straddle(orient(sa, r == 1), orient(sb, r == 1))
-                    .is_some()
-            });
-            if !crosses[0] && !crosses[1] {
-                continue;
-            }
-            // Where the step meets `u = 0`: from an end `(u, v)` along `d`, `v − u·(d·m)/((d·w)(m·m))`.
-            let value = (|| {
-                let d = step_dir(&lp.half_edges[i], a, b)?;
-                let dw = dot3_rat(&d, &w)?;
-                if dw == zero {
-                    return None;
+            let he = &lp.half_edges[i];
+            let next = || starts[(i + 1) % k].as_ref().ok_or(());
+            match (&starts[i], &rounds[i]) {
+                (Some(a), None) => {
+                    let b = next()?;
+                    let (sa, sb) = (side_of(a), side_of(b));
+                    let orient = |s: StripSide, flip: bool| match (s, flip) {
+                        (StripSide::Plus, false) | (StripSide::Minus, true) => Orient::Positive,
+                        (StripSide::Minus, false) | (StripSide::Plus, true) => Orient::Negative,
+                        _ => Orient::Zero,
+                    };
+                    let crosses: [bool; 2] = core::array::from_fn(|r| {
+                        nacre_geom::intersect::ray_straddle(orient(sa, r == 1), orient(sb, r == 1))
+                            .is_some()
+                    });
+                    if !crosses[0] && !crosses[1] {
+                        continue;
+                    }
+                    // Where the step meets `u = 0`: from an end `(u, v)` along `d`,
+                    // `v − u·(d·m)/((d·w)(m·m))`.
+                    let value = (|| {
+                        let d = step_dir(he, a, b)?;
+                        let dw = dot3_rat(&d, &w)?;
+                        if dw == zero {
+                            return None;
+                        }
+                        let kk = dot3_rat(&d, m)?
+                            .checked_mul(Rat::new(dw.denom(), dw.numer())?)?
+                            .checked_mul(inv_mm)?;
+                        let (u, v) = point_uv(a).or_else(|| point_uv(b))?;
+                        v.checked_sub(&u.checked_mul_rat(kk)?)
+                    })()
+                    .ok_or(())?;
+                    for r in 0..2 {
+                        if crosses[r] {
+                            out[r].push(value);
+                        }
+                    }
                 }
-                let kk = dot3_rat(&d, m)?
-                    .checked_mul(Rat::new(dw.denom(), dw.numer())?)?
-                    .checked_mul(inv_mm)?;
-                let (u, v) = point_uv(a).or_else(|| point_uv(b))?;
-                v.checked_sub(&u.checked_mul_rat(kk)?)
-            })()
-            .ok_or(())?;
-            for r in 0..2 {
-                if crosses[r] {
-                    out[r].push(value);
+                (
+                    start,
+                    Some(Corner::Round {
+                        centre,
+                        rho2,
+                        axis,
+                        theta,
+                    }),
+                ) => {
+                    // The circle's roots on the line: its centre's `(u, v)`, and the half-chord
+                    // `h` in the axis scale, `h² = (ρ² − d²)/(m·m)` with `d² = u²/(w·w)`. A
+                    // tangent circle has one root.
+                    let roots = (|| {
+                        let (u, v) = uv(centre, &[zero; 3], QuadVal::from_rat(zero))?;
+                        let (u, v) = (u.as_rat()?, v.as_rat()?);
+                        let ww = dot3_rat(&w, &w)?;
+                        let d2 = u
+                            .checked_mul(u)?
+                            .checked_mul(Rat::new(ww.denom(), ww.numer())?)?;
+                        let h2 = rho2.narrow()?.checked_sub(d2)?.checked_mul(inv_mm)?;
+                        Some(match h2.cmp(&zero) {
+                            Ordering::Less => Vec::new(),
+                            Ordering::Equal => vec![(QuadVal::from_rat(v), true)],
+                            Ordering::Greater => vec![
+                                (QuadVal::new(v, Rat::from_int(-1), h2)?, false),
+                                (QuadVal::new(v, Rat::from_int(1), h2)?, false),
+                            ],
+                        })
+                    })()
+                    .ok_or(())?;
+                    // **An end on the line** counts where the arc lies above it beside that end —
+                    // the straight step's half-open rule, read on a curve: the end is «not above»,
+                    // so the boundary changes sides there exactly when the arc's side next to it
+                    // is «above». The neighbouring step reads the same end with
+                    // `ray_straddle`, so each change is counted once.
+                    let mut ends_on_line: Vec<QuadVal> = Vec::new();
+                    if let Theta::Arc(rim) = theta {
+                        // `rim` runs counter-clockwise about `axis` in the edge's stored order;
+                        // the half-edge travels it that way when it is forward.
+                        let ccw = he.forward;
+                        let (r_start, r_end) = if ccw {
+                            (rim.from, rim.to)
+                        } else {
+                            (rim.to, rim.from)
+                        };
+                        let end = next()?;
+                        let start = start.as_ref().ok_or(())?;
+                        for (corner, radial, leaving) in
+                            [(start, r_start, true), (end, r_end, false)]
+                        {
+                            if matches!(side_of(corner), StripSide::Plus | StripSide::Minus) {
+                                continue;
+                            }
+                            // The arc beside the end: along its tangent there, the way it leaves
+                            // the start or comes into the end — or, where that tangent runs along
+                            // the line (the end is the circle's extreme point across it), towards
+                            // the centre, the way the circle bends.
+                            let beside = (|| {
+                                let t = cross3_rat(axis, &radial)?;
+                                let along = dot3_rat(&t, &w)?;
+                                let along = if ccw == leaving {
+                                    along
+                                } else {
+                                    zero.checked_sub(along)?
+                                };
+                                if along != zero {
+                                    return Some(along > zero);
+                                }
+                                Some(dot3_rat(&radial, &w)? < zero)
+                            })()
+                            .ok_or(())?;
+                            let (_, v) = point_uv(corner).ok_or(())?;
+                            // `beside` is the `+w` side, «above» in reading `0`; reading `1` swaps.
+                            out[if beside { 0 } else { 1 }].push(v);
+                            ends_on_line.push(v);
+                        }
+                    }
+                    // **A root inside the arc** crosses the line — both readings change sides
+                    // there — unless the circle only touches it, where the arc stays on one side.
+                    // A root at an end on the line is that end, read above; an end off the line
+                    // is another point, whatever its `v`.
+                    for (v, tangent) in roots {
+                        let mut at_end = false;
+                        for e in &ends_on_line {
+                            at_end |= v.cmp_value(e).ok_or(())? == Ordering::Equal;
+                        }
+                        if at_end || tangent {
+                            continue;
+                        }
+                        let on_arc = match theta {
+                            Theta::Whole => true,
+                            Theta::Arc(rim) => {
+                                let mut x = [QuadVal::from_rat(zero); 3];
+                                for c in 0..3 {
+                                    x[c] = QuadVal::from_rat(
+                                        foot[c].checked_sub(centre[c]).ok_or(())?,
+                                    )
+                                    .checked_add(&v.checked_mul_rat(m[c]).ok_or(())?)
+                                    .ok_or(())?;
+                                }
+                                arc_contains(rim, &x, axis).ok_or(())?
+                            }
+                            Theta::At(_) => return Err(()),
+                        };
+                        if on_arc {
+                            out[0].push(v);
+                            out[1].push(v);
+                        }
+                    }
                 }
+                _ => return Err(()),
             }
         }
         Ok(LoopOnLine::Crossings(out))
@@ -1828,12 +1931,11 @@ fn line_runs_through_face(
         .iter()
         .filter_map(|lp| read_loop(lp).ok())
         .collect();
-    // The breakpoints along the line, in order: every crossing and chord end, and the span's ends.
+    // The breakpoints along the line, in order: every crossing, and the span's ends.
     let mut points: Vec<QuadVal> = vec![QuadVal::from_rat(span[0]), QuadVal::from_rat(span[1])];
     for l in core::iter::once(&outer).chain(holes.iter()) {
         match l {
             LoopOnLine::Clear => {}
-            LoopOnLine::Chord(lo, hi) => points.extend([*lo, *hi]),
             LoopOnLine::Crossings(c) => points.extend(c[0].iter().chain(c[1].iter()).copied()),
         }
     }
@@ -1858,12 +1960,9 @@ fn line_runs_through_face(
         }
     }
     // Is the gap just above `lo` inside the loop's region, under reading `r`?
-    let inside = |l: &LoopOnLine, lo: QuadVal, hi: QuadVal, r: usize| -> Option<bool> {
+    let inside = |l: &LoopOnLine, lo: QuadVal, r: usize| -> Option<bool> {
         Some(match l {
             LoopOnLine::Clear => false,
-            LoopOnLine::Chord(a, b) => {
-                a.cmp_value(&lo)? != Ordering::Greater && hi.cmp_value(b)? != Ordering::Greater
-            }
             LoopOnLine::Crossings(c) => {
                 let mut below = 0usize;
                 for x in &c[r] {
@@ -1887,9 +1986,9 @@ fn line_runs_through_face(
         }
         let mut reading = [false; 2];
         for (r, slot) in reading.iter_mut().enumerate() {
-            let mut inn = inside(&outer, lo, hi, r)?;
+            let mut inn = inside(&outer, lo, r)?;
             for h in &holes {
-                inn = inn && !inside(h, lo, hi, r)?;
+                inn = inn && !inside(h, lo, r)?;
             }
             *slot = inn;
         }

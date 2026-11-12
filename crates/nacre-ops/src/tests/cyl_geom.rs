@@ -64,7 +64,7 @@ fn the_half_open_arc_is_the_closed_arc_less_its_end() {
                         from: *from,
                         to: *to,
                     },
-                    x,
+                    &rat_dir(x),
                     &m,
                 )
                 .unwrap()
