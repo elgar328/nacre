@@ -220,15 +220,12 @@ fn knife_parts(kind: BoolKind, merged: &[(SolidSide, SegKind)], label: Label) ->
     // chamber on `side`, the knife's two faces round the wedge between them, the chamber again,
     // the plane's other half, and the far side.
     let (plane, (first, second)) = (0, (1, 2));
-    let star = crate::draft::LineStar::new(
-        vec![plane, first, second, plane],
-        vec![
-            kept(label, side),
-            kept(wedge, side),
-            kept(label, side),
-            kept(label, !side),
-        ],
-    );
+    let star = crate::draft::LineStar::new([
+        (plane, kept(label, side)),
+        (first, kept(wedge, side)),
+        (second, kept(label, side)),
+        (plane, kept(label, !side)),
+    ]);
     star.continues(plane) == Some(false)
 }
 

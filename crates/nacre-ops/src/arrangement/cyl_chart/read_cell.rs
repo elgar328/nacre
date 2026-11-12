@@ -185,12 +185,12 @@ impl Chart {
         // of the lateral.
         let lateral = 0;
         let n = walls.len();
-        let mut faces: Vec<usize> = vec![lateral];
-        let mut kept: Vec<bool> = vec![true];
+        // Each spoke with the sector counter-clockwise after it.
+        let mut star: Vec<(usize, bool)> = vec![(lateral, true)];
         if inside {
-            // Inside, nothing but chords: the tangent plane lies outside the cylinder.
-            faces.extend(1..=n);
-            kept.extend(between);
+            // Inside, nothing but chords: the tangent plane lies outside the cylinder. The sector
+            // after the last chord is the lateral's own.
+            star.extend((1..=n).zip(between.into_iter().chain([true])));
         } else {
             // Outside, counter-clockwise from the lateral's `+τ` half: the tangent wall's `+τ` half
             // where it ends on the line, then the chords' outer halves from the last to the first,
@@ -199,22 +199,33 @@ impl Chart {
             // chord's outside cell states; the sector between the lateral and the tangent half is
             // the lateral's own, kept by the premise above.
             let tangent = |at: usize| n + 1 + at;
+            let outside = |w: usize, toward_tau: bool| -> Result<bool, RejectReason> {
+                let (_, o, near) = walls[w];
+                Ok(keeps(read_bits(
+                    &o.ok_or(stages)?,
+                    side,
+                    near == toward_tau,
+                )))
+            };
             if st.tangent[0] {
-                let (_, o, near) = walls[n - 1];
-                faces.push(tangent(0));
-                kept.push(keeps(read_bits(&o.ok_or(stages)?, side, near)));
+                star.push((tangent(0), outside(n - 1, true)?));
             }
-            faces.extend((1..=n).rev());
-            kept.extend(between.into_iter().rev());
+            let beyond_first = if st.tangent[1] {
+                outside(0, false)?
+            } else {
+                true
+            };
+            star.extend(
+                (1..=n)
+                    .rev()
+                    .zip(between.into_iter().rev().chain([beyond_first])),
+            );
             if st.tangent[1] {
-                let (_, o, near) = walls[0];
-                kept.push(keeps(read_bits(&o.ok_or(stages)?, side, !near)));
-                faces.push(tangent(1));
+                star.push((tangent(1), true));
             }
         }
-        faces.push(lateral);
-        kept.extend([true, false]);
-        let star = crate::draft::LineStar::new(faces, kept);
+        star.push((lateral, false));
+        let star = crate::draft::LineStar::new(star);
         Ok(star.continues(lateral) == Some(false))
     }
 

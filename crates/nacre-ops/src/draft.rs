@@ -393,9 +393,10 @@ pub(crate) struct Spoke {
 }
 
 impl LineStar {
-    /// A star whose sectors' keep the caller has already read (a class's labels).
-    pub(crate) fn new(faces: Vec<usize>, kept: Vec<bool>) -> Self {
-        debug_assert_eq!(faces.len(), kept.len(), "one sector after each spoke");
+    /// A star whose sectors' keep the caller has already read (a class's labels): each spoke's face
+    /// with whether the sector counter-clockwise after it is kept, from any one spoke round.
+    pub(crate) fn new(spokes: impl IntoIterator<Item = (usize, bool)>) -> Self {
+        let (faces, kept) = spokes.into_iter().unzip();
         Self { faces, kept }
     }
 
@@ -433,8 +434,10 @@ impl LineStar {
     pub(crate) fn from_spokes(kind: BoolKind, spokes: &[Spoke]) -> Option<Self> {
         let sectors = Self::sectors_of(spokes)?;
         Some(Self::new(
-            spokes.iter().map(|s| s.face).collect(),
-            sectors.iter().map(|&(a, b)| keep(kind, a, b)).collect(),
+            spokes
+                .iter()
+                .zip(&sectors)
+                .map(|(s, &(a, b))| (s.face, keep(kind, a, b))),
         ))
     }
 

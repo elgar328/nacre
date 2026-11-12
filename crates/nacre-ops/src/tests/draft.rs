@@ -5,7 +5,7 @@ use crate::planes::SolidSide;
 
 /// Spokes `0..n` with these faces and kept sectors.
 fn star(faces: &[usize], kept: &[bool]) -> LineStar {
-    LineStar::new(faces.to_vec(), kept.to_vec())
+    LineStar::new(faces.iter().copied().zip(kept.iter().copied()))
 }
 
 /// **A face runs on across the line exactly when every sector between its two halves, on the side
