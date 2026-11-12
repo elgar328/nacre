@@ -1249,6 +1249,36 @@ fn tangency_rows(
         meet_unions(&sides[0], &sides[1])
     };
     let mut lateral_through: Option<Option<Vec<[nacre_exact::QuadVal; 2]>>> = None;
+    // **The wall's solid's faces on the class, by the side of the line they lie on (`±w`)**, over
+    // one lateral's stretches — read once per lateral: every row's wall solid is the one that does
+    // not own the cylinder (same-solid pairs write no row, below). `None` where a face could not be
+    // read.
+    let read_wall_sides = |stretches: &Option<Stretches>| {
+        let b = base.as_ref()?;
+        let mut wall: [Vec<[nacre_exact::QuadVal; 2]>; 2] = [Vec::new(), Vec::new()];
+        for (j, row) in faces.iter().enumerate() {
+            let (ClassIx::Plane(kj), FaceRow::Plane(fj)) = (plane_ix[j], row) else {
+                continue;
+            };
+            if kj != c || side_of(j) == owner {
+                continue;
+            }
+            let face = model.face(fj.face?);
+            for &sp in stretches.as_ref()? {
+                let read = line_runs_through_face(model, face, coeffs, b, &m, sp)?;
+                for (piece, on) in read.contact.iter().zip(&read.sides) {
+                    for (to, &here) in wall.iter_mut().zip(on) {
+                        if here {
+                            to.push(*piece);
+                        }
+                    }
+                }
+            }
+        }
+        let [plus, minus] = wall;
+        Some([joined(plus)?, joined(minus)?])
+    };
+    let mut wall_sides_of = vec![None; laterals.len()];
     let mut out = Vec::new();
     for (fi_ix, row) in faces.iter().enumerate() {
         let (ClassIx::Plane(k), FaceRow::Plane(fi)) = (plane_ix[fi_ix], row) else {
@@ -1316,12 +1346,15 @@ fn tangency_rows(
             .as_ref()
             .filter(|w| w.name.narrow() == Some(coeffs))
             .map(|w| -fi.orient_sign * w.sense.sign());
-        for LateralOnLine {
-            ix: cy_ix,
-            cf,
-            cover,
-            stretches,
-        } in &laterals
+        for (
+            li,
+            LateralOnLine {
+                ix: cy_ix,
+                cf,
+                cover,
+                stretches,
+            },
+        ) in laterals.iter().enumerate()
         {
             // The line must lie on this lateral **face** (`Tangency`'s doc): read off the
             // face's stretches of the line when it could be, else off its angular extent. `None`
@@ -1379,32 +1412,9 @@ fn tangency_rows(
             // (over all its faces there) and the cylinder's solid on both sides of it on the
             // cylinder. `None` where a face could not be read.
             let lateral_through = lateral_through.get_or_insert_with(read_lateral_through);
-            // The wall's solid's faces on the class, by the side of the line they lie on (`±w`).
-            let wall_sides = (|| {
-                let b = base.as_ref()?;
-                let mut wall: [Vec<[nacre_exact::QuadVal; 2]>; 2] = [Vec::new(), Vec::new()];
-                for (j, row) in faces.iter().enumerate() {
-                    let (ClassIx::Plane(kj), FaceRow::Plane(fj)) = (plane_ix[j], row) else {
-                        continue;
-                    };
-                    if kj != c || side_of(j) != side_of(fi_ix) {
-                        continue;
-                    }
-                    let face = model.face(fj.face?);
-                    for &sp in stretches.as_ref()? {
-                        let read = line_runs_through_face(model, face, coeffs, b, &m, sp)?;
-                        for (piece, on) in read.contact.iter().zip(&read.sides) {
-                            for (to, &here) in wall.iter_mut().zip(on) {
-                                if here {
-                                    to.push(*piece);
-                                }
-                            }
-                        }
-                    }
-                }
-                let [plus, minus] = wall;
-                Some([joined(plus)?, joined(minus)?])
-            })();
+            let wall_sides = wall_sides_of[li]
+                .get_or_insert_with(|| read_wall_sides(stretches))
+                .clone();
             let through = (|| {
                 let wall = wall_sides.as_ref()?;
                 let both =

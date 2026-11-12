@@ -689,6 +689,17 @@ fn stations_of_lines(
             continue;
         }
         let (wall, side) = (theta[i].wall, theta[i].side);
+        // A tangent ruling has no chord: the face ends there, and no wall runs through it. Nor does
+        // a two-secant record name its class — a class tangent to the cylinder is no secant of it.
+        if side == 0 {
+            debug_assert!(
+                records
+                    .iter()
+                    .all(|sr| sr.line.0 != wall && sr.line.1 != wall),
+                "a two-secant record names the tangent class {wall}"
+            );
+            continue;
+        }
         // Every partner of this piece's line, with its own side of it and a record to read the
         // line's direction off.
         let mut partners: Vec<(usize, i8, &crate::planes::SharedRuling)> = Vec::new();
@@ -701,10 +712,6 @@ fn stations_of_lines(
             if side_of(r, wall)? == side && !partners.iter().any(|p| p.0 == other) {
                 partners.push((other, side_of(r, other)?, sr));
             }
-        }
-        // A tangent ruling has no chord: the face ends there, and no wall runs through it.
-        if side == 0 {
-            continue;
         }
         let mut members = vec![i];
         let mut chords = vec![(
