@@ -800,3 +800,61 @@ fn a_tangent_walls_record_says_which_side_of_the_line_its_faces_lie_on() {
     );
     assert_eq!(halves_of(across, -0.5, 3.0), vec![whole.clone(), whole]);
 }
+
+/// A rod — `r = 2` along `x` over `[−20, 20]`, its axis at height `14` — lying on [`rounded_plate`]'s
+/// top face `z = 12`, tangent to it along the line `y = y0`.
+fn rod_on_the_plate(m: &mut Model, fillets: usize, y0: f64) -> (Handle<Solid>, Handle<Solid>) {
+    let plate = rounded_plate(m, fillets, 4);
+    let rod = axis_cylinder(m, [-20.0, y0, 14.0], [1.0, 0.0, 0.0], 2.0, 40.0);
+    (plate, rod)
+}
+
+/// **A rod lying on a plate whose corners are rounded.** The rod touches the plate's top face
+/// along a line, so the gate writes a tangency row for that face, and the row reads where the line
+/// runs through the face (`line_runs_through_face`) — a face whose outline carries the four fillet
+/// arcs.
+///
+/// - With square corners (`rounded_plate(_, 0, _)`) every kind builds: the fuse is the two bodies
+///   that meet along the line alone, the cuts leave each operand whole, the common part is empty.
+/// - With rounded corners, across the middle (`y = 0`, far from every arc) and along the edge
+///   (`y = −22.5`, where the line runs on past the rod and through two of the fillet arcs, at
+///   `x = ±(40 + √18.75)`), every kind is refused as `CylinderGateUndecided`: the reader declines a
+///   loop the line reaches that holds an arc, and the row it cannot read is refused at the line's
+///   witness — the middle of the rod's span, `(0, −22.5, 12)`.
+#[test]
+fn a_rod_lying_on_a_rounded_plate() {
+    let pi = std::f64::consts::PI;
+    let rod = pi * 4.0 * 40.0;
+    let square = 90.0 * 50.0 * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0;
+    every_kind(
+        |m| rod_on_the_plate(m, 0, 0.0),
+        [
+            [
+                Want::Built(2, square + rod),
+                Want::Built(1, square),
+                Want::Built(0, 0.0),
+            ],
+            [
+                Want::Built(2, square + rod),
+                Want::Built(1, rod),
+                Want::Built(0, 0.0),
+            ],
+        ],
+    );
+    let refused = [Want::Refused(RejectReason::CylinderGateUndecided); 3];
+    for y0 in [0.0, -22.5] {
+        every_kind(|m| rod_on_the_plate(m, 4, y0), [refused, refused]);
+    }
+    let mut m = Model::new();
+    let (plate, rod) = rod_on_the_plate(&mut m, 4, -22.5);
+    match boolean(&mut m, BoolKind::Fuse, plate, rod) {
+        Err(BoolError::Rejected {
+            reason: RejectReason::CylinderGateUndecided,
+            at: Some(crate::RejectWhere::Point(p)),
+        }) => assert!(
+            p.distance(Point3::from_array([0.0, -22.5, 12.0])) < 1e-12,
+            "the row's witness, {p:?}"
+        ),
+        got => panic!("{got:?}"),
+    }
+}

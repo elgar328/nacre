@@ -40,13 +40,6 @@ fn user_rib(m: &mut Model, x: f64) -> Handle<Solid> {
     .expect("the rib moves")
 }
 
-/// The plate's own volume, by hand: a 90 × 50 rectangle less four fillet corners, twelve thick,
-/// less four bores.
-fn rounded_plate_volume() -> f64 {
-    let pi = std::f64::consts::PI;
-    (90.0 * 50.0 - 4.0 * (25.0 - pi * 25.0 / 4.0)) * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0
-}
-
 /// **A fully rounded plate enters a boolean**, in every operation and either operand
 /// order. Its cap ring has no three-plane corner at all, so an arm that asks for one against a
 /// bore's disk finds no witness and refuses; the engine asks for the witnesses the ring actually

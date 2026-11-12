@@ -998,6 +998,13 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     solid
 }
 
+/// [`rounded_plate`]'s volume with every corner rounded and all four bores, by hand: a 90 × 50
+/// rectangle less four fillet corners, twelve thick, less four bores.
+fn rounded_plate_volume() -> f64 {
+    let pi = std::f64::consts::PI;
+    (90.0 * 50.0 - 4.0 * (25.0 - pi * 25.0 / 4.0)) * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0
+}
+
 /// What one kind answers.
 #[derive(Clone, Copy, Debug)]
 enum Want {
