@@ -231,12 +231,19 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 
 ### `Wide` 이름 평면 곁의 원통 — `WitnessNotRational`
 
-원통 게이트와 그 면 판독기는 클래스·꼭짓점·원통의 **좁은** 세계 서술(`Rat`)을 읽는다. 그래서 `Wide` 이름의
-평면(기울어진 부품의 꼭짓점 셋으로 잡은 datum)이 원통과 한 모델에 있으면, 기하의 답이 무엇이든 폭으로 거절한다 —
-기둥이 판에서 먼 배치에서 좁은 이름 판은 빌드되는데 Wide 판은 기둥이 어디 서든 `WitnessNotRational` 을 받는다
-(`wide_datum_cost.rs` 의 `a_wide_datum_beside_a_cylinder_is_refused_for_its_width`). census 0 — 코퍼스에 그런
-배치가 없다. 다음 단계는 게이트 산술을 폭에서 자유롭게 하는 것(부호 질문을 BigInt 로 total 하게 만든 원칙을 서술
-읽기까지). 같은 일로 사라질 자리:
+원통 게이트와 그 면 판독기, 그리고 원통이 낀 배열은 클래스·꼭짓점·원통의 **좁은** 세계 서술(`Rat`)을 읽는다. 그래서
+`Wide` 이름의 평면(기울어진 부품의 꼭짓점 셋으로 잡은 datum)이 원통과 한 모델에 있으면, 기하의 답이 무엇이든 폭으로
+거절한다 — 기둥이 판에서 먼 배치에서 좁은 이름 판은 빌드되는데 Wide 판은 기둥이 어디 서든 `WitnessNotRational` 을
+받는다(`wide_datum_cost.rs` 의 `a_wide_datum_beside_a_cylinder_is_refused_for_its_width`). census 0 — 코퍼스에 그런
+배치가 없다.
+
+게이트 입구(`class_meet`)만 폭에서 자유롭게 해서는 여는 칸이 없다(쟀다): 그 슬라이스를 기둥 75 배치로 자르면서 게이트가
+Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와 먼 기둥이 게이트를 지났고, 모두 배열에서 같은 이름으로
+거절됐다 — 기둥의 원을 든 캡 클래스가 Wide 벽의 선분과 만나는지 묻는 `circle_crossings` 다(그 선분의 끝은 Wide 평면이
+낀 세 평면 점이라 `node_coords_rat` 가 없어 싼 거르기 `segment_meets_cylinder` 도 못 돈다). 그래서 이 거절을 여는 일은
+원통 도로 전체가 평면의 세계 계수를 폭 없이 읽는 것이다 — 좁은 투영(`Judge::world_rat`·`stored_world_rat`)을 읽는 제품
+호출 약 80곳(21 파일, grep 근사)과 `[Rat; 4]` 를 받는 `nacre-exact` 의 공개 함수 23개(grep 근사)가 그 크기다. 같은 일로
+사라질 자리:
 
 - 옆면 위 한 곳이 면 안인지 물을 때 생성선이 정말 필요한 물음(단면이 가로지르거나 접함, 위쪽 호의 각, 룰링)에서 그 점의
   실현(checked `i128`)이 넘치면 트레이서가 `DeclineKind::Width` 로 기권하고 축을 가로지르는 클래스에서는 `WitnessNotRational`,
