@@ -946,7 +946,7 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// The rounded plate: a 90 × 50 × 12 plate whose corners are filleted (r 5) and which carries four
 /// bores (d 7). With every corner rounded its cap ring has **no three-plane corner at all** — eight
 /// fillet tangencies and nothing else.
-fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
+pub(crate) fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let corner = [
         ([45.0, -25.0], [1.0, 0.0], [0.0, 1.0]),

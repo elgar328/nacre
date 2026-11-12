@@ -56,7 +56,7 @@ mod transform;
 
 pub use boolean::{BoolReport, boolean, boolean_with_report};
 pub use error::{BoolError, DeclineKind, RejectClass, RejectReason, RejectWhere};
-pub(crate) use error::{reject, reject_at};
+pub(crate) use error::{abstention_reason, reject, reject_at};
 // The report's vocabulary: what a judgement was asked about, and what it established. Re-exported
 // so a consumer reads one crate, not two.
 pub use draft::BoolKind;

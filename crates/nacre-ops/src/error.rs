@@ -1262,6 +1262,18 @@ pub(crate) fn reject_at(reason: RejectReason, at: RejectWhere) -> BoolError {
     }
 }
 
+/// **The name an undecided judgement refuses under** — `None` for an outcome that is an answer
+/// (a proved sign, or a coincidence proved within the coincidence precision). The two causes get
+/// their own names because they call for opposite responses: one is a budget (raise it, or
+/// simplify the model), the other is the question itself (nothing to raise).
+pub(crate) fn abstention_reason(outcome: &nacre_judge::Decision) -> Option<RejectReason> {
+    match outcome {
+        nacre_judge::Decision::Exhausted { .. } => Some(RejectReason::JudgeExhausted),
+        nacre_judge::Decision::Degenerate => Some(RejectReason::DegenerateWitness),
+        nacre_judge::Decision::Sign(_) | nacre_judge::Decision::Coincident { .. } => None,
+    }
+}
+
 /// **Where the refusals were raised** — so a test can say a refusal came from the guard it
 /// locks: every refusal raised through [`reject`] or [`reject_at`], with its file. Rows carry
 /// their owner (`crate::ledger`); read `mine()`, and assert sets, not counts — the debug build's

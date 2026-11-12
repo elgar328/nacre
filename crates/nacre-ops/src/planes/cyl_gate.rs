@@ -1209,8 +1209,7 @@ fn tangency_rows(
                 let cover = base
                     .as_ref()
                     .zip(cf.face)
-                    .zip(cf.def.as_ref())
-                    .and_then(|((b, fh), d)| lateral_cover_on_ruling(model, model.face(fh), d, b));
+                    .and_then(|(b, fh)| lateral_cover_on_ruling(model, model.face(fh), def, b));
                 let stretches = match &cover {
                     Some(c) => Some(c.clone()),
                     None => cf.stretch.map(|sp| vec![sp]),
@@ -1238,7 +1237,7 @@ fn tangency_rows(
             if cf.surf != surf {
                 continue;
             }
-            let read = lateral_sides_on_ruling(model, model.face(cf.face?), cf.def.as_ref()?, b)?;
+            let read = lateral_sides_on_ruling(model, model.face(cf.face?), def, b)?;
             for (to, from) in sides.iter_mut().zip(read) {
                 to.extend(
                     from.into_iter()
@@ -1334,18 +1333,30 @@ fn tangency_rows(
         if cleared {
             continue; // a face that clears the footprint cannot reach the tangent line
         }
-        // The wall face's material side, w.r.t. the class's coefficients. The outward direction
-        // is `orient_sign` times the way the face's plane faces, material lies opposite it, so the
-        // answer is `−orient_sign · κ` where `κ` relates the plane's facing to the class's rational
-        // name. `world_rat` is **not** that relation — the seed plane `x = 0` carries
-        // `world_rat = (1,0,0,0)` while it faces `−x`. The face's own world sense is
-        // ([`WorldName`]), where its world name *is* the class's; a face that joined the class by
-        // its definitions, with no world name of its own, is left `undecided`.
-        let mat_side = fi
-            .world
-            .as_ref()
-            .filter(|w| w.name.narrow() == Some(coeffs))
-            .map(|w| -fi.orient_sign * w.sense.sign());
+        // **The wall face's material side**, w.r.t. the class's coefficients: material lies
+        // opposite the outward, which runs `f` against the class root's outward
+        // ([`face_facing`] — the tiers the class merge itself stands on), and
+        // [`Judge::outward_fix`] carries the root's outward to the name's frame. One reading for
+        // every face of the class, named or not; a facing the judge could not separate refuses
+        // the row by that judgement's name ([`crate::abstention_reason`]) — carried on the
+        // row rather than noted ([`face_facing_noted`]), since the row raises it itself. Read
+        // once per face, and only for a face that writes a row.
+        let mut mat_side: Option<Result<i8, RejectReason>> = None;
+        let mut read_mat_side = || {
+            *mat_side.get_or_insert_with(|| {
+                // An outcome with no abstention name — the two witnesses proved to have no turn
+                // between them (`Sign(Zero)`, `Coincident`) — states no facing either, and is the
+                // gate's own undecided.
+                let f = face_facing(jd, faces, fi_ix, c).map_err(|outcome| {
+                    crate::abstention_reason(&outcome)
+                        .unwrap_or(RejectReason::CylinderGateUndecided)
+                })?;
+                let fix = jd
+                    .outward_fix(c)
+                    .ok_or(RejectReason::CylinderGateUndecided)?;
+                Ok(-f * fix)
+            })
+        };
         for (
             li,
             LateralOnLine {
@@ -1451,14 +1462,17 @@ fn tangency_rows(
                 }
                 Some(Point3::from_array(p))
             });
+            let mat_side = read_mat_side();
             let undecided = unread.or_else(|| {
-                (base.is_none()
-                    || on_face.is_none()
-                    || lens_side.is_none()
-                    || mat_side.is_none()
-                    || witness.is_none()
-                    || cf.def.is_none())
-                .then(|| reject(RejectReason::CylinderGateUndecided))
+                if base.is_none() || on_face.is_none() || lens_side.is_none() {
+                    return Some(reject(RejectReason::CylinderGateUndecided));
+                }
+                if let Err(reason) = mat_side {
+                    return Some(reject(reason));
+                }
+                witness
+                    .is_none()
+                    .then(|| reject(RejectReason::CylinderGateUndecided))
             });
             #[cfg(feature = "tangency-trace")]
             #[allow(clippy::print_stderr)]
@@ -1477,7 +1491,7 @@ fn tangency_rows(
                 cyl: ci,
                 wall_solid: side_of(fi_ix),
                 cyl_solid: side_of(*cy_ix),
-                lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side,
+                lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side.ok(),
                 cyl_orient: cf.orient_sign,
                 undecided,
                 through,

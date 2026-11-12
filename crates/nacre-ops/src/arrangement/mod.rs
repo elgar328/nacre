@@ -26,7 +26,6 @@ use crate::tolerant::Judge;
 #[cfg(test)]
 use crate::transform::transform;
 use nacre_geom::intersect::three_planes;
-use nacre_judge::Decision;
 use nacre_judge::predicate::Notes;
 
 /// `phase::timed` where the counters exist, and a plain call where they do not.
@@ -611,15 +610,12 @@ pub(crate) fn boolean(
 ///
 /// `Decision::orient` collapses every inconclusive outcome to `Zero`, which the arrangement reads
 /// as "these are the same thing" — so an undecided judgement that reaches the geometry has
-/// already merged something the kernel never established. The two causes get their own names,
-/// because they call for opposite responses: one is a budget (raise it, or simplify the model),
-/// the other is the arrangement itself (nothing to raise).
+/// already merged something the kernel never established. Each refuses under its outcome's name
+/// ([`crate::abstention_reason`]).
 fn undecided_reject(notes: &Notes) -> Result<(), BoolError> {
     for e in notes.sorted() {
-        match e.outcome {
-            Decision::Exhausted { .. } => return Err(reject(RejectReason::JudgeExhausted)),
-            Decision::Degenerate => return Err(reject(RejectReason::DegenerateWitness)),
-            _ => {}
+        if let Some(reason) = crate::abstention_reason(&e.outcome) {
+            return Err(reject(reason));
         }
     }
     Ok(())

@@ -1314,3 +1314,113 @@ fn an_unread_wall_face_rides_its_tangency_row() {
         );
     }
 }
+
+/// **A wall face's material side is read from its facing, whatever the face states of itself.**
+/// The rounded plate's corner fillet (axis `x = 40, y = −20`, `r = 5`) is tangent to the class
+/// `x = 45`, whose root is the plate's own side (outward `+x`); a block's face on `x = 45` is the
+/// wall. Two placements give both signs and both answers: beside the plate (the block's face looks
+/// `−x`, against the root, and the lens is outside the block) and over it (`+x`, the lens inside).
+/// The wall face is never the root, so a reading that dropped the facing or the root's frame sign
+/// would answer the first placement wrongly.
+///
+/// [`tangency_rows`] is asked with three tables that differ only in the wall face's row: as built
+/// (one surface with the root — [`face_facing`]'s first tier), on another surface handle (its world
+/// name is the root's — the second tier), and on another handle with no world name (the judge's
+/// witnesses — the third). The rows are the same in all three.
+#[test]
+fn a_wall_face_reads_its_material_side_from_its_facing() {
+    let z = Rat::from_int;
+    for (lo, hi, facing, lens_in) in [
+        ([45.0, -30.0, 0.0], [50.0, -10.0, 12.0], -1i8, false),
+        ([35.0, -30.0, 0.0], [45.0, -10.0, 12.0], 1, true),
+    ] {
+        let mut m = Model::new();
+        let plate = crate::tests::rounded_plate(&mut m, 1, 0);
+        let block = crate::fixtures::cuboid(&mut m, lo, hi);
+        let (setup, cyl_surfs) =
+            crate::arrangement::plane_index_setup_inner(&m, plate, block).expect("setup");
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let c = (0..setup.geom.len())
+            .find(|&k| {
+                jd.world_rat(k).is_some_and(|w| {
+                    w[0] != z(0)
+                        && w[1] == z(0)
+                        && w[2] == z(0)
+                        && w[0].checked_mul(z(45)).and_then(|a| a.checked_add(w[3])) == Some(z(0))
+                })
+            })
+            .expect("the class x = 45");
+        let coeffs = jd.world_rat(c).expect("checked above");
+        let (ci, surf, def) = cyl_surfs
+            .iter()
+            .enumerate()
+            .find_map(|(i, &s)| {
+                let d = m.world_cylinder_def(s)?;
+                (nacre_exact::point_plane_clearance_rat(&coeffs, &d.origin(), d.r2())
+                    == nacre_exact::Orient::Zero)
+                    .then_some((i, s, d))
+            })
+            .expect("the fillet is tangent to x = 45");
+        let in_class: Vec<usize> = (0..setup.planes.len())
+            .filter(|&i| setup.plane_ix[i] == ClassIx::Plane(c))
+            .collect();
+        let wall = *in_class
+            .iter()
+            .find(|&&i| i >= setup.n_a)
+            .expect("the block's face on x = 45");
+        assert_ne!(wall, in_class[0], "the wall face is not the class root");
+        let root_surf = jd.planes[c].surf;
+        let other = setup
+            .planes
+            .iter()
+            .find_map(|row| match row {
+                FaceRow::Plane(p) if p.surf != root_surf => Some(p.surf),
+                _ => None,
+            })
+            .expect("another plane");
+        let mut named = setup.planes.clone();
+        if let FaceRow::Plane(fi) = &mut named[wall] {
+            fi.surf = other;
+        }
+        let mut judged = named.clone();
+        if let FaceRow::Plane(fi) = &mut judged[wall] {
+            fi.world = None;
+        }
+        let rows_of = |faces: &[FaceRow]| {
+            assert_eq!(face_facing(&jd, faces, wall, c), Ok(facing), "{lo:?}");
+            tangency_rows(
+                &m,
+                faces,
+                &setup.plane_ix,
+                setup.n_a,
+                c,
+                ci,
+                &coeffs,
+                &def,
+                surf,
+                SolidSide::A,
+                &jd,
+            )
+        };
+        let built = rows_of(&setup.planes);
+        assert!(!built.is_empty(), "{lo:?}: the block's face writes a row");
+        for t in &built {
+            assert!(t.undecided.is_none(), "{lo:?}: {t:?}");
+            assert_eq!(t.lens_in_wall_solid, lens_in, "{lo:?}: {t:?}");
+        }
+        assert_eq!(
+            setup.planes[wall].plane().surf,
+            root_surf,
+            "{lo:?}: one surface with the root"
+        );
+        assert!(named[wall].plane().surf != root_surf && named[wall].plane().world.is_some());
+        assert!(judged[wall].plane().surf != root_surf && judged[wall].plane().world.is_none());
+        for (tier, faces) in [("named", &named), ("judged", &judged)] {
+            assert_eq!(
+                format!("{:?}", rows_of(faces)),
+                format!("{built:?}"),
+                "{lo:?}: the {tier} table"
+            );
+        }
+    }
+}
