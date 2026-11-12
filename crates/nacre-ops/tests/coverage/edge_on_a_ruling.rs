@@ -30,8 +30,9 @@
 //! `B`'s own, three planes on one line, it builds ([`three_planes_on_a_laterals_own_edge_build`]);
 //! and a wall through that edge from the side `A` does not fill — see
 //! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`]. And the line running through
-//! `A`'s lateral where `B` ends on it with one side tangent and one across, into a notch or a bore
-//! — see [`a_tangent_wall_ending_on_a_line_the_lateral_runs_through`].
+//! `A`'s lateral where `B` ends on it with one side tangent and one across, into a notch or a bore,
+//! and past the notch over a plane through the line — see
+//! [`a_tangent_wall_ending_on_a_line_the_lateral_runs_through`].
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
@@ -1267,32 +1268,77 @@ fn a_body_touching_itself_along_a_laterals_own_edge_is_refused() {
 /// and `x = −1` on its positive one, the two arms of the gate's `±w → ±τ` (`planes::Tangency`'s
 /// halves), so a sign right on one side alone fails the other. Every cell's bodies are pinned:
 /// the union and the common part are one, `B − A` the parts of `B` past `A` — none within the
-/// notched block's height, one past its top, two past both caps; one beside the bored plate, whose
-/// square `B` reaches past.
+/// notched block's height, one past its top, two past both caps; one where `B`'s section reaches
+/// past `A`'s, as beside the bored plate.
+///
+/// And a second chord at the station: `B` reaching past the notched block's side `x = 3`, its far
+/// side on the plane `x + 2y = 1` (or its mirror) — a plane through the line that cuts the lateral,
+/// so its class leaves a ruling piece there and is a chord of the station, with no face on the line
+/// (`B`'s face on it stands at `x ≥ 3`). That plane lies outside `B`'s corner, beyond its side
+/// `y = 0`: the sector beside `B`'s tangent half is `B`'s, the one beyond `y = 0`'s outer half is
+/// not, and only the chord next to the tangent half states the first (`Chart::slit_at` — the last
+/// chord beside `+τ`, the first beside `−τ`). Such a plane inside `B`'s corner would part two
+/// sectors of one material, where either chord answers alike.
 #[test]
 fn a_tangent_wall_ending_on_a_line_the_lateral_runs_through() {
     let above: &[[f64; 2]] = &[[1.0, 0.0], [3.0, 0.0], [3.0, 2.0], [1.0, 2.0]];
     let below: &[[f64; 2]] = &[[1.0, -2.0], [3.0, -2.0], [3.0, 0.0], [1.0, 0.0]];
     let above_left: &[[f64; 2]] = &[[-3.0, 0.0], [-1.0, 0.0], [-1.0, 2.0], [-3.0, 2.0]];
     let below_left: &[[f64; 2]] = &[[-3.0, -2.0], [-1.0, -2.0], [-1.0, 0.0], [-3.0, 0.0]];
+    // `B` past the block's side, its far side on `x + 2y = 1` (mirrored: `y` and `x` negated).
+    let past: &[[f64; 2]] = &[
+        [1.0, 0.0],
+        [3.0, 0.0],
+        [3.0, -1.0],
+        [5.0, -2.0],
+        [5.0, 2.0],
+        [1.0, 2.0],
+    ];
+    let past_below: &[[f64; 2]] = &[
+        [1.0, 0.0],
+        [1.0, -2.0],
+        [5.0, -2.0],
+        [5.0, 2.0],
+        [3.0, 1.0],
+        [3.0, 0.0],
+    ];
+    let past_left: &[[f64; 2]] = &[
+        [-1.0, 0.0],
+        [-1.0, 2.0],
+        [-5.0, 2.0],
+        [-5.0, -2.0],
+        [-3.0, -1.0],
+        [-3.0, 0.0],
+    ];
+    let past_below_left: &[[f64; 2]] = &[
+        [-1.0, 0.0],
+        [-3.0, 0.0],
+        [-3.0, 1.0],
+        [-5.0, 2.0],
+        [-5.0, -2.0],
+        [-1.0, -2.0],
+    ];
     let pi = std::f64::consts::PI;
-    // (A, `B` above and below the line, whether `A` is the notch, |A|, the area of `B`'s section
-    // inside `A` — `B` lies outside the disk but for the line)
+    // (A, `B` above and below the line, whether `A` is the notch, whether `B`'s section reaches
+    // past `A`'s, |A|, the area of `B`'s section inside `A` — `B` lies outside the disk but for
+    // the line)
     type Twin<'q> = (
         &'static str,
         fn() -> Profile2d,
         [&'q [[f64; 2]]; 2],
         bool,
+        bool,
         f64,
         f64,
     );
     let (notch, bored) = (24.0 - pi, 2.0 * (16.0 - pi));
-    let twins: [Twin<'_>; 4] = [
+    let twins: [Twin<'_>; 6] = [
         (
             "a notched block",
             notched_block,
             [above, below],
             true,
+            false,
             notch,
             4.0,
         ),
@@ -1300,6 +1346,25 @@ fn a_tangent_wall_ending_on_a_line_the_lateral_runs_through() {
             "a mirrored notched block",
             mirrored_notched_block,
             [above_left, below_left],
+            true,
+            false,
+            notch,
+            4.0,
+        ),
+        (
+            "a notched block, B past its side",
+            notched_block,
+            [past, past_below],
+            true,
+            true,
+            notch,
+            4.0,
+        ),
+        (
+            "a mirrored notched block, B past its side",
+            mirrored_notched_block,
+            [past_left, past_below_left],
+            true,
             true,
             notch,
             4.0,
@@ -1309,6 +1374,7 @@ fn a_tangent_wall_ending_on_a_line_the_lateral_runs_through() {
             bored_square,
             [above, below],
             false,
+            true,
             bored,
             2.0,
         ),
@@ -1317,21 +1383,22 @@ fn a_tangent_wall_ending_on_a_line_the_lateral_runs_through() {
             bored_square,
             [above_left, below_left],
             false,
+            true,
             bored,
             2.0,
         ),
     ];
-    for (twin, a, [up, down], notched, vol, inside) in twins {
+    for (twin, a, [up, down], notched, reaches_past, vol, inside) in twins {
         let all = every_six(a, &[("above the line", up), ("below the line", down)]);
         assert_eq!(all.len(), 2 * 2 * 2 * 4, "{twin}: the family");
         for (p, six) in &all {
             identities_with(p, six, vol);
             let two_bodies = notched && p.height == Height::PastBoth;
-            let b_less_a = match (notched, p.height) {
-                (false, _) => 1,
-                (true, Height::OnBase | Height::Inside) => 0,
-                (true, Height::PastTop) => 1,
-                (true, Height::PastBoth) => 2,
+            let b_less_a = match (reaches_past, p.height) {
+                (true, _) => 1,
+                (false, Height::OnBase | Height::Inside) => 0,
+                (false, Height::PastTop) => 1,
+                (false, Height::PastBoth) => 2,
             };
             let (b, common) = (p.b_volume(), inside * p.height.shared());
             let want = [

@@ -102,7 +102,9 @@ impl Chart {
     /// states — the last chord's on its `τ` side beside `+τ`, the first chord's on the other side
     /// beside `−τ`. A notched block less a box whose corner stands on the notch's lateral, one side
     /// tangent there and one across it, is two bodies meeting on that line only where this sector
-    /// is read (`edge_on_a_ruling`).
+    /// is read; and where the box also reaches past the block over a plane through the line — a
+    /// second chord, with no face there, outside the box's corner — only the chord next to the
+    /// tangent half reads the box's own sector (`edge_on_a_ruling`).
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
