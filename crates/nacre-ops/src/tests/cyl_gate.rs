@@ -1202,3 +1202,115 @@ fn a_tangent_line_meets_a_filleted_face_where_each_piece_crosses() {
         "a hole whose arcs end on the line: {got:?}"
     );
 }
+
+/// **A wall face the footprint reader cannot spell rides its tangency row with its own refusal,
+/// and the gate reaches that row only when the class's first face is another.** The D rod and the
+/// bitten slab of `d_rod_on_a_bitten_slab`, against the class `x = 1` and the rod's cylinder: the
+/// gate's two readers of the class raise the very same value — [`face_clears_footprint`]'s
+/// `CurvedOperandBoundary`, with no place — whichever reaches the slab's face, so the boolean's
+/// answer cannot say which did, and each is asked here directly (the row builder is a pure
+/// function of the setup, as [`the_tangent_wall_states_itself_exactly`] says).
+///
+/// - [`wall_faces_clear`] stops at the class's first face that does not clear: with the rod first
+///   that is the rod's own flat (`Ok(false)`, the class is read row by row), with the slab first it
+///   is the slab's face, whose refusal it raises.
+/// - [`tangency_rows`] writes one row for the slab's face against the rod's lateral in either
+///   order: it carries that refusal, and its stretches through the line are not read (`None`) —
+///   an unread face is unknown, not innocent.
+#[test]
+fn an_unread_wall_face_rides_its_tangency_row() {
+    let z = Rat::from_int;
+    for rod_first in [true, false] {
+        let mut m = Model::new();
+        let (rod, slab) = crate::tests::d_rod_on_a_bitten_slab(&mut m);
+        let (a, b) = if rod_first { (rod, slab) } else { (slab, rod) };
+        let (setup, cyl_surfs) =
+            crate::arrangement::plane_index_setup_inner(&m, a, b).expect("setup");
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        // The class `x = 1` by its name: `y = −1` is tangent to the rod's cylinder too.
+        let c = (0..setup.geom.len())
+            .find(|&k| {
+                jd.world_rat(k).is_some_and(|w| {
+                    w[0] != z(0)
+                        && w[1] == z(0)
+                        && w[2] == z(0)
+                        && w[0].checked_add(w[3]) == Some(z(0))
+                })
+            })
+            .expect("the class x = 1");
+        let coeffs = jd.world_rat(c).expect("checked above");
+        // The rod's cylinder runs along `z`; the bore that bit the slab runs along `x`.
+        let (ci, surf, def) = cyl_surfs
+            .iter()
+            .enumerate()
+            .find_map(|(i, &s)| {
+                let d = m.world_cylinder_def(s)?;
+                (d.dir()[0] == z(0) && d.dir()[1] == z(0)).then_some((i, s, d))
+            })
+            .expect("the rod's cylinder");
+        let (rod_side, slab_side) = if rod_first {
+            (SolidSide::A, SolidSide::B)
+        } else {
+            (SolidSide::B, SolidSide::A)
+        };
+        let order = if rod_first { "rod first" } else { "slab first" };
+        let spans = lateral_spans(&setup.planes, surf);
+        let class_wide = wall_faces_clear(
+            &m,
+            &setup.planes,
+            &setup.plane_ix,
+            c,
+            &coeffs,
+            &def.origin(),
+            &def.dir(),
+            def.r2(),
+            &spans,
+        );
+        if rod_first {
+            assert!(matches!(class_wide, Ok(false)), "{order}: {class_wide:?}");
+        } else {
+            assert!(
+                matches!(
+                    class_wide,
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::CurvedOperandBoundary,
+                        at: None,
+                    })
+                ),
+                "{order}: {class_wide:?}"
+            );
+        }
+        let rows = tangency_rows(
+            &m,
+            &setup.planes,
+            &setup.plane_ix,
+            setup.n_a,
+            c,
+            ci,
+            &coeffs,
+            &def,
+            surf,
+            rod_side,
+            &jd,
+        );
+        assert_eq!(rows.len(), 1, "{order}: {rows:?}");
+        let t = &rows[0];
+        assert_eq!((t.wall, t.cyl), (c, ci), "{order}");
+        assert_eq!(
+            (t.wall_solid, t.cyl_solid),
+            (slab_side, rod_side),
+            "{order}"
+        );
+        assert!(t.through.is_none(), "{order}: {t:?}");
+        assert!(
+            matches!(
+                t.undecided,
+                Some(BoolError::Rejected {
+                    reason: RejectReason::CurvedOperandBoundary,
+                    at: None,
+                })
+            ),
+            "{order}: {t:?}"
+        );
+    }
+}

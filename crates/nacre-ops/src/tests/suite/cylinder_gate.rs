@@ -926,3 +926,49 @@ fn a_rounded_slab_across_a_cylinders_tangent_line() {
         );
     }
 }
+
+/// A D-shaped rod — the unit disk's three quarters from `(1, 0)` round to `(0, −1)`, closed by the
+/// square corner `(1, −1)` — along `z` over `[0, 2]`, its flat `x = 1` tangent to its own lateral
+/// along `(1, 0)`; and a slab `x ∈ [1, 2]` against that flat, bitten at its far edge `y = 4` by a
+/// bore along `x` about `(y, z) = (4.5, 1)`, `r = 1`, so the slab's face `x = 1` carries an arc
+/// whose ends `z = 1 ± √3/2` are irrational.
+pub(crate) fn d_rod_on_a_bitten_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let profile = stated(vec![
+        arc_turns(p2(0.0, 0.0), p2(1.0, 0.0), 3),
+        line(p2(0.0, -1.0), p2(1.0, -1.0)),
+        line(p2(1.0, -1.0), p2(1.0, 0.0)),
+    ])
+    .expect("the D")
+    .remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid: rod, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    )
+    .expect("the D rod extrudes") else {
+        unreachable!()
+    };
+    let slab = crate::fixtures::cuboid(m, [1.0, -4.0, -3.0], [2.0, 4.0, 5.0]);
+    let bore = axis_cylinder(m, [0.5, 4.5, 1.0], [1.0, 0.0, 0.0], 1.0, 2.0);
+    let slab = boolean(m, BoolKind::Cut, slab, bore).expect("the bite")[0];
+    (rod, slab)
+}
+
+/// **A wall face the gate cannot read carries its own refusal on the tangency row.** The bitten
+/// slab's face `x = 1` touches the D rod's lateral along `(1, 0)`, and its arc's ends are
+/// irrational, which the footprint reader cannot spell (`face_clears_footprint`) — the rod's
+/// solid's own flat on that plane is the class's first face and does not clear the footprint, so
+/// the class is read row by row (`tangency_rows`), and the slab's face writes a row carrying that
+/// reader's refusal, `CurvedOperandBoundary`, which the gate raises. With the slab given first, the
+/// class's first face is the bitten one and the class-wide read raises the same name before any
+/// row is written. Both raise the very value the footprint reader made, so this answer cannot say
+/// which road refused; `an_unread_wall_face_rides_its_tangency_row` asks each road directly.
+#[test]
+fn an_unread_wall_face_refuses_through_its_tangency_row() {
+    let refused = [Want::Refused(RejectReason::CurvedOperandBoundary); 3];
+    every_kind(d_rod_on_a_bitten_slab, [refused, refused]);
+}
