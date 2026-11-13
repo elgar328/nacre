@@ -21,7 +21,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 ├── nacre-judge      # 정확히 답할 수 없는 회전 좌표의 부호 판정(CIP): f64 필터→상승→«증명 또는 미결»
 │                    #   kernel(WitnessPoint) + predicate(질의를 이름 경로나 kernel 로 보내는 라우터)
 │                    #   + cylinder(두 평면이 원통과 만나는 점 PiercePoint 와 그 질문)
-│                    #   ← exact · predicates · math
+│                    #   ← exact · predicates
 ├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect)·호가 낀 링의 정확 술어(mixed)
 │                    #   ← math · exact(유리수 링 술어)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model(진실과 그 캐시)   ← store · geom · math · exact
@@ -2188,7 +2188,7 @@ A 를 받치던 다섯 근거가 이 커널에서 서지 않는 까닭:
 
 - `nacre-predicates` 는 평면 계수·좌표를 **평범한 배열**로만 받는다(커널 타입 무의존, standalone 분리 가능).
 - Handle 기반 정의(`Vertex::ThreePlane([Handle<Surface>; 3])`)는 위상 계층(`nacre-topo`)에 살고, 부호 판정 시 위층이 Handle → 계수를 뽑아 술어에 넘긴다.
-- `nacre-judge` 도 같은 규율이다: `nacre-exact`·`nacre-predicates`·`nacre-math` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
+- `nacre-judge` 도 같은 규율이다: `nacre-exact`·`nacre-predicates` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
 
 ## 면 위 작업(pad/pocket)은 부호 있는 extrude + 불리언
 

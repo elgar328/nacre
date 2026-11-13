@@ -11,7 +11,6 @@ readme = "../LAYER-README.md"
 [dependencies]
 nacre-exact = { workspace = true }
 nacre-predicates = { workspace = true }
-nacre-math = { workspace = true }
 astro-float = "0.9.5"
 # Wide frames: a plane whose canonical data exceeds `i128` realizes from arbitrary-precision
 # integers. Pure Rust, and already in the product path via nacre-exact.
@@ -31,5 +30,7 @@ test-util = []
 
 [dev-dependencies]
 proptest.workspace = true
+# The unit tests state their fixtures' points as `Point3`; the product never reads it.
+nacre-math = { path = "../nacre-math" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.
