@@ -621,7 +621,7 @@ fn touching(va: f64, vb: f64) -> [[Want; 3]; 2] {
 /// is tangent to the unit cylinder along the line `x = 0, y = 1`; the notch's wall (or the arm's
 /// end, or the block's side) `x = 0` holds that line as a plane, but its face stands at `y ≥ 3` (or
 /// `y ≤ −1`), off the line. Both solids run through the line where the slab meets it — no face
-/// of either ends there (`planes::Tangency::through`) — so the verdict reads three regions there; the rulings split carries the slab face's segment on
+/// of either ends there (`planes::TangentReading::through`) — so the verdict reads three regions there; the rulings split carries the slab face's segment on
 /// `x = 0` onto that class's ruling. Four constructions — the notch, the arm, the block on the
 /// cylinder's side, the notch turned and moved — each the same answers as its control below with
 /// the third plane at `x = 0.5`.

@@ -515,7 +515,7 @@ fn half_bored_box() -> Profile2d {
 /// `(1, 0)`, and `B`'s wall `x = 1` is tangent to the bore there. `B` stands below the face beside
 /// the bore, on it away from the bore, or on it over the bore, or its wall runs across the line —
 /// away from the bore or over it, the bore's lateral and `A`'s face ending on the line, which the
-/// structure judges (`planes::Tangency::through` is empty). Away from the bore, on `B`'s
+/// structure judges (`planes::TangentReading::through` is empty). Away from the bore, on `B`'s
 /// cross-section the wall's line runs on through the corner where the bore's arc and `A`'s flat
 /// end, the arc leaving tangent to the line: with the line's one way as the reference, its other
 /// way and the arc are both a half turn off it, and only the arc's bending orders the two
@@ -941,12 +941,12 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
 /// **A tangent face that ends on the line at one height and crosses it at another.** `B` is an
 /// L-shaped profile in the plane `x = −1` extruded to `x = 1`: its caps `x = ±1` are tangent to
 /// `A`'s unit cylinder, each an L whose concave corner puts one stretch of its boundary on the line
-/// `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that stretch the
-/// line runs through the cap's interior. One row, two grounds: where the cap ends on the line `B`
-/// has an edge there and the structure judges; where both the cap and `A`'s lateral run through
+/// `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that stretch
+/// the line runs through the cap's interior. One row, two grounds: where the cap ends on the line
+/// `B` has an edge there and the structure judges; where both the cap and `A`'s lateral run through
 /// it, the tangency's three regions are the whole picture and its verdict judges
-/// (`planes::Tangency::through`). `(1, 0)` is the unit disk's seam and `(−1, 0)` is not, so the
-/// caps read the line once on the seam and once off it.
+/// (`planes::TangentReading::through`). `(1, 0)` is the unit disk's seam and `(−1, 0)` is not, so
+/// the caps read the line once on the seam and once off it.
 ///
 /// - **The L** (`y` from `−1`): `B`'s face `y = −1` is tangent to `A` as well. `A − B` is two bodies —
 ///   the slab `z ∈ [1/2, 1]` takes the whole disk — and `B − A` is refused: below the corner each
@@ -1265,11 +1265,11 @@ fn a_body_touching_itself_along_a_laterals_own_edge_is_refused() {
 ///
 /// Each twin stands on both sides of the axis — [`mirrored_notched_block`] and the boxes mirrored
 /// in `x = 0`, the line at `(−1, 0)`: the tangent side `x = 1` has the axis on its negative side
-/// and `x = −1` on its positive one, the two arms of the gate's `±w → ±τ` (`planes::Tangency`'s
-/// halves), so a sign right on one side alone fails the other. Every cell's bodies are pinned:
-/// the union and the common part are one, `B − A` the parts of `B` past `A` — none within the
-/// notched block's height, one past its top, two past both caps; one where `B`'s section reaches
-/// past `A`'s, as beside the bored plate.
+/// and `x = −1` on its positive one, the two arms of the gate's `±w → ±τ`
+/// (`planes::TangentReading`'s halves), so a sign right on one side alone fails the other. Every
+/// cell's bodies are pinned: the union and the common part are one, `B − A` the parts of `B` past
+/// `A` — none within the notched block's height, one past its top, two past both caps; one where
+/// `B`'s section reaches past `A`'s, as beside the bored plate.
 ///
 /// And a second chord at the station: `B` reaching past the notched block's side `x = 3`, its far
 /// side on the plane `x + 2y = 1` (or its mirror) — a plane through the line that cuts the lateral,

@@ -47,9 +47,9 @@ pub(crate) enum Pinch {
 /// (material inside) and `-1` for a bore. Those two bits fix all six memberships, because near the
 /// line the only boundaries are those two surfaces — which is why this is exact without touching
 /// the arrangement — on the stretches where both solids run through the line
-/// (`planes::Tangency::through`): a valid solid meets a line with one face running through it or
-/// two faces ending on it, so there no third face reaches the line and these two surfaces are all
-/// there is.
+/// (`planes::TangentReading::through`): a valid solid meets a line with one face running through it
+/// or two faces ending on it, so there no third face reaches the line and these two surfaces are
+/// all there is.
 pub(crate) fn pinch(
     kind: BoolKind,
     wall_solid: crate::planes::SolidSide,
@@ -122,13 +122,13 @@ pub(crate) fn pinch(
 /// read that:
 ///
 /// - **The wedges** are both bounded by the one wall face the line runs through (this verdict's
-///   ground, `Tangency::through`), and a tangency splits no face — it mints no vertex and no edge — so that
-///   face ties them into one component of the result. A statement about the engine's result, not
-///   the geometry: two pieces touching along two lines still share the face.
+///   ground, `TangentReading::through`), and a tangency splits no face — it mints no vertex and no
+///   edge — so that face ties them into one component of the result. A statement about the engine's
+///   result, not the geometry: two pieces touching along two lines still share the face.
 /// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
 ///   and a wall it touches from outside (the truth table in `bands`). The lens is then the
 ///   cylinder's operand's material alone and the far side the wall's alone — two different solids
-///   (the gate keeps no row of a solid tangent to itself, `cylinder_gate`'s `retain`). An operand is
+///   (the gate keeps no row of a solid tangent to itself, `tangency_rows`' `retain`). An operand is
 ///   one lump (a solid is one outer shell and its cavities, and a boolean hands back one solid per
 ///   material component), so the union is one body or two, and the lumps are in one body exactly
 ///   when the result is **one** body: two is the valid pair touching along the line; one is the two
@@ -147,21 +147,26 @@ pub(crate) fn pinch(
 /// on the cylinder's is not the rule: read alone, it convicts the lens and the far side of two
 /// bodies whenever one of them has a face anywhere on the wall's plane.
 ///
-/// **The ground is the stretches where both solids run through the line** (`Tangency::through`).
-/// Elsewhere on a row's contact one solid has an edge on the line: the arrangement draws that
-/// line, a face that ends there ends on an edge, and the structure judges what meets on it — the
-/// self-touch check's arms on an edge along a ruling or inside a face, the shell guard on an edge
-/// four faces use. A row that could not be stated, or whose stretches through the line could not
-/// be read, was refused by the gate before anything was arranged (`planes::cylinder_gate`).
+/// **The ground is the stretches where both solids run through the line**
+/// (`TangentReading::through`). Elsewhere on a row's contact one solid has an edge on the line: the
+/// arrangement draws that line, a face that ends there ends on an edge, and the structure judges
+/// what meets on it — the self-touch check's arms on an edge along a ruling or inside a face, the
+/// shell guard on an edge four faces use. Every row here was read whole — a row the gate could not
+/// read never reaches the verdict (`planes::TangentReading`).
 pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), BoolError> {
     for t in tg.rows {
         // Two lumps, and a stretch of positive length where both solids run through the line — a
         // corner grazing the line at a point is a valid tangency (measured), and so is a solid
         // ending on it, whose edge the structure reads.
-        if t.through.as_ref().is_none_or(Vec::is_empty) {
+        if t.reading.through.is_empty() {
             continue;
         }
-        let Some(shape) = pinch(tg.kind, t.wall_solid, t.lens_in_wall_solid, t.cyl_orient) else {
+        let Some(shape) = pinch(
+            tg.kind,
+            t.wall_solid,
+            t.reading.lens_in_wall_solid,
+            t.cyl_orient,
+        ) else {
             continue;
         };
         let together = match shape {
@@ -171,7 +176,7 @@ pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), B
         if together {
             return Err(crate::reject_at(
                 RejectReason::SelfTouchingResult,
-                crate::RejectWhere::Point(t.witness),
+                crate::RejectWhere::Point(t.reading.witness),
             ));
         }
     }
@@ -709,13 +714,13 @@ enum Hand {
 
 /// **Is the point `n`, found on a lateral of cylinder `k`, a point of a line contact the tangency
 /// verdict judges?** — it lies on a tangent line on a stretch where a row says both solids run
-/// through it (`planes::Tangency::through`, closed), and a result face on the wall's class covers
-/// it (a node of the face's rings, or read inside it or on its boundary). That stretch is the
-/// verdict's ground, so the two ask one population: a corner meeting the line at a point, a face
-/// reaching the line past the lateral's span, a wall tangent to its own solid's cylinder, a solid
-/// ending on the line — no row's verdict speaks for those, and the point is a touch. The row is the operands'; the
-/// result face is asked too, because where the boolean cut the wall face away around `n` the
-/// lateral is met there by something else.
+/// through it (`planes::TangentReading::through`, closed), and a result face on the wall's class
+/// covers it (a node of the face's rings, or read inside it or on its boundary). That stretch is
+/// the verdict's ground, so the two ask one population: a corner meeting the line at a point, a
+/// face reaching the line past the lateral's span, a wall tangent to its own solid's cylinder, a
+/// solid ending on the line — no row's verdict speaks for those, and the point is a touch. The row
+/// is the operands'; the result face is asked too, because where the boolean cut the wall face away
+/// around `n` the lateral is met there by something else.
 ///
 /// Whatever cannot be read — which side of the wall's plane `n` lies on, its height, a face's
 /// reading — holds its failure: the touch is proved, only its owner is unknown, and a proof
@@ -754,7 +759,7 @@ fn tangent_hand(
             continue;
         };
         let mut within = Some(false);
-        for [lo, hi] in t.through.iter().flatten() {
+        for [lo, hi] in &t.reading.through {
             match (lo.cmp_value(&v), v.cmp_value(hi)) {
                 (Some(a), Some(b)) if a != Ordering::Greater && b != Ordering::Greater => {
                     within = Some(true);

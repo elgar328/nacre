@@ -158,7 +158,7 @@ pub(crate) struct Station {
     /// the lateral's half on that side (the lateral bends to the axis) and before every chord's outer
     /// half, so it closes the sector beside the lateral there. A wall on both sides runs through the
     /// line — a contact, which divides nothing; the gate states it, the operation judges it
-    /// (`planes::Tangency::through`).
+    /// (`planes::TangentReading::through`).
     pub(crate) tangent: [bool; 2],
 }
 

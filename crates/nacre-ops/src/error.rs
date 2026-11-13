@@ -473,7 +473,8 @@ pub enum RejectReason {
     // The placements are a class with no world name (a rotated one) the gate could not prove clear
     // of the cylinder, a cylinder on a chain that does not fold (its def is pre-motion), and a
     // tangent line where the gate could not read whether both solids run through it
-    // (`planes::Tangency::through` — none in the suite, the ignored sweep, the census or kit).
+    // (`planes::TangentReading::through` — none in the suite, the ignored sweep, the census or
+    // kit).
     /// The kernel could not decide where a plane and a cylinder stand relative to each other
     /// **exactly** because one of them is placed by motions it cannot resolve into one frame (a
     /// plane or cylinder turned by an angle other than a quarter turn, or placed by a frame),

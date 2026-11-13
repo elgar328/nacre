@@ -1164,10 +1164,7 @@ fn a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure() {
         .expect("the gate passes")
         .tangencies;
     assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(
-        rows[0].through.as_ref().is_some_and(Vec::is_empty),
-        "{rows:?}"
-    );
+    assert!(rows[0].reading.through.is_empty(), "{rows:?}");
     let (r, d, h): (f64, f64, f64) = (2.5, 2.0, 1.0);
     let overlap = h
         * (std::f64::consts::PI * r * r / 2.0 + r * r * (d / r).acos()

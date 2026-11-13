@@ -255,6 +255,9 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 - 좁은 이름이라도 계수가 큰 비스듬한 평면은 게이트를 지난 뒤 분할의 선 만남(`circle_crossings` 의 `LineMeet::Overflow`, checked
   `i128`)에서 `WitnessNotRational` 이다 — `wide_datum_cost.rs` 의 좁은 판이 기둥을 자르는 배치.
 - 접선 행을 읽는 checked 산술(선의 발, 선 위 면의 관통 판독, 옆면의 생성선 판독)의 넘침은 `WitnessNotRational` 이다(잰 인구 0).
+  행 안에서 구간을 교차하고 잇는 넘침(`meet_unions`·`joined`)과 증인 좌표의 넘침, 그리고 게이트가 `shared_rulings` 의 `None` 을
+  거절하는 자리는 잠기지 않았다 — 표 편집으로는 닿지 않고(끝이 큰 분모인 구간은 증인의 가운데가 먼저 넘친다), 기본값으로 접는
+  심기는 조용한 무죄다.
 - topo 의 `EdgeDecline::Unstated`(`plane_cylinder_relation` 의 `None` — 넘침 포함)가 `reconstruct.rs` 에서
   `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 원인을 묻는 독자가 늘면 세계 서술의 문
   (`world_cylinder_def`·`chain_point_rat`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로

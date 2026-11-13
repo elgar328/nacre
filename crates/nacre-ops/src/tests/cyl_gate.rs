@@ -384,25 +384,23 @@ fn the_tangent_wall_states_itself_exactly() {
         (SolidSide::A, SolidSide::B),
         "the cube is the first operand"
     );
+    let read = t.reading.as_ref().expect("the row is read");
     // The cube's material is `x > 0` and the whole cylinder stands there too.
-    assert!(t.lens_in_wall_solid, "{t:?}");
+    assert!(read.lens_in_wall_solid, "{t:?}");
     // A solid cylinder operand keeps its material inside.
     assert_eq!(t.cyl_orient, 1, "{t:?}");
     // The face `x = 0` runs from `y = 0` to `y = 2` across the tangent line `y = 1`, and its
     // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`, which runs on either
     // side of the line: both solids run through it over `[1, 3]`.
-    let through: Option<Vec<[Option<Rat>; 2]>> = t
-        .through
-        .as_ref()
-        .map(|v| v.iter().map(|p| p.map(|q| q.as_rat())).collect());
+    let through: Vec<[Option<Rat>; 2]> =
+        read.through.iter().map(|p| p.map(|q| q.as_rat())).collect();
     assert_eq!(
         through,
-        Some(vec![[Some(Rat::from_int(1)), Some(Rat::from_int(3))]]),
+        vec![[Some(Rat::from_int(1)), Some(Rat::from_int(3))]],
         "{t:?}"
     );
-    assert!(t.undecided.is_none(), "{t:?}");
     // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.
-    let w = t.witness.as_array();
+    let w = read.witness.as_array();
     assert!(
         (w[0] - 0.0).abs() < 1e-12 && (w[1] - 1.0).abs() < 1e-12 && (w[2] - 1.0).abs() < 1e-12,
         "the witness sits on the contact, mid-span: {w:?}"
@@ -538,17 +536,10 @@ fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
     assert!(missing.is_empty(), "{missing:?}");
     let present = half_cylinder_and_box([-0.5, 1.0], [0.5, 2.0]).expect("setup");
     assert_eq!(present.len(), 1, "{present:?}");
-    assert!(
-        present[0].undecided.is_none()
-            && present[0].through.as_ref().is_some_and(|v| !v.is_empty()),
-        "{present:?}"
-    );
+    assert!(!present[0].reading.through.is_empty(), "{present:?}");
     let end = half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]).expect("setup");
     assert_eq!(end.len(), 1, "{end:?}");
-    assert!(
-        end[0].undecided.is_none() && end[0].through.as_ref().is_some_and(Vec::is_empty),
-        "{end:?}"
-    );
+    assert!(end[0].reading.through.is_empty(), "{end:?}");
 }
 
 /// **The same U face, read over two spans.** The block `[0, 6] × [−3, 3] × [0, 2]` with the slot
@@ -584,11 +575,8 @@ fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
     assert!(in_the_gap.is_empty(), "{in_the_gap:?}");
     let across = rows(0.5, 1.3);
     assert_eq!(across.len(), 1, "{across:?}");
-    assert!(
-        across[0].through.as_ref().is_some_and(|v| !v.is_empty()),
-        "{across:?}"
-    );
-    let w = across[0].witness.as_array();
+    assert!(!across[0].reading.through.is_empty(), "{across:?}");
+    let w = across[0].reading.witness.as_array();
     assert!(
         w[0].abs() < 1e-12 && w[1].abs() < 1e-12 && (w[2] - 0.75).abs() < 1e-12,
         "the witness sits on the contact: {w:?}"
@@ -624,7 +612,7 @@ fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
             let longer = rows(w, seam, [1.0, 3.0]);
             assert_eq!(longer.len(), 1, "w {w} seam {seam}: {longer:?}");
             assert!(
-                longer[0].through.as_ref().is_some_and(|v| !v.is_empty()),
+                !longer[0].reading.through.is_empty(),
                 "w {w} seam {seam}: {longer:?}"
             );
         }
@@ -1302,11 +1290,10 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             (slab_side, rod_side),
             "{order}"
         );
-        assert!(t.through.is_none(), "{order}: {t:?}");
         assert!(
             matches!(
-                t.undecided,
-                Some(BoolError::Rejected {
+                t.reading,
+                Err(BoolError::Rejected {
                     reason: RejectReason::CurvedOperandBoundary,
                     at: None,
                 })
@@ -1330,38 +1317,13 @@ fn an_unread_wall_face_rides_its_tangency_row() {
 /// witnesses — the third). The rows are the same in all three.
 #[test]
 fn a_wall_face_reads_its_material_side_from_its_facing() {
-    let z = Rat::from_int;
     for (lo, hi, facing, lens_in) in [
         ([45.0, -30.0, 0.0], [50.0, -10.0, 12.0], -1i8, false),
         ([35.0, -30.0, 0.0], [45.0, -10.0, 12.0], 1, true),
     ] {
-        let mut m = Model::new();
-        let plate = crate::tests::rounded_plate(&mut m, 1, 0);
-        let block = crate::fixtures::cuboid(&mut m, lo, hi);
-        let (setup, cyl_surfs) =
-            crate::arrangement::plane_index_setup_inner(&m, plate, block).expect("setup");
+        let (m, setup, c, ci, surf, def) = fillet_against_block(lo, hi);
         let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
-        let c = (0..setup.geom.len())
-            .find(|&k| {
-                jd.world_rat(k).is_some_and(|w| {
-                    w[0] != z(0)
-                        && w[1] == z(0)
-                        && w[2] == z(0)
-                        && w[0].checked_mul(z(45)).and_then(|a| a.checked_add(w[3])) == Some(z(0))
-                })
-            })
-            .expect("the class x = 45");
-        let coeffs = jd.world_rat(c).expect("checked above");
-        let (ci, surf, def) = cyl_surfs
-            .iter()
-            .enumerate()
-            .find_map(|(i, &s)| {
-                let d = m.world_cylinder_def(s)?;
-                (nacre_exact::point_plane_clearance_rat(&coeffs, &d.origin(), d.r2())
-                    == nacre_exact::Orient::Zero)
-                    .then_some((i, s, d))
-            })
-            .expect("the fillet is tangent to x = 45");
+        let coeffs = jd.world_rat(c).expect("narrow");
         let in_class: Vec<usize> = (0..setup.planes.len())
             .filter(|&i| setup.plane_ix[i] == ClassIx::Plane(c))
             .collect();
@@ -1406,8 +1368,8 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
         let built = rows_of(&setup.planes);
         assert!(!built.is_empty(), "{lo:?}: the block's face writes a row");
         for t in &built {
-            assert!(t.undecided.is_none(), "{lo:?}: {t:?}");
-            assert_eq!(t.lens_in_wall_solid, lens_in, "{lo:?}: {t:?}");
+            let read = t.reading.as_ref().expect("the row is read");
+            assert_eq!(read.lens_in_wall_solid, lens_in, "{lo:?}: {t:?}");
         }
         assert_eq!(
             setup.planes[wall].plane().surf,
@@ -1424,6 +1386,324 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
             );
         }
     }
+}
+
+/// The rounded plate of [`a_wall_face_reads_its_material_side_from_its_facing`] against a block
+/// `[lo, hi]`, and the gate's setup (the plate first): the class `x = 45` and the corner fillet's
+/// cylinder, tangent to it along `x = 45, y = −20`.
+fn fillet_against_block(
+    lo: [f64; 3],
+    hi: [f64; 3],
+) -> (
+    Model,
+    crate::arrangement::PlaneSetup,
+    usize,
+    usize,
+    Handle<Surface>,
+    nacre_topo::CylinderDef,
+) {
+    let z = Rat::from_int;
+    let mut m = Model::new();
+    let plate = crate::tests::rounded_plate(&mut m, 1, 0);
+    let block = crate::fixtures::cuboid(&mut m, lo, hi);
+    let (setup, cyl_surfs) =
+        crate::arrangement::plane_index_setup_inner(&m, plate, block).expect("setup");
+    let (c, coeffs) = {
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let c = (0..setup.geom.len())
+            .find(|&k| {
+                jd.world_rat(k).is_some_and(|w| {
+                    w[0] != z(0)
+                        && w[1] == z(0)
+                        && w[2] == z(0)
+                        && w[0].checked_mul(z(45)).and_then(|a| a.checked_add(w[3])) == Some(z(0))
+                })
+            })
+            .expect("the class x = 45");
+        (c, jd.world_rat(c).expect("checked above"))
+    };
+    let (ci, surf, def) = cyl_surfs
+        .iter()
+        .enumerate()
+        .find_map(|(i, &s)| {
+            let d = m.world_cylinder_def(s)?;
+            (nacre_exact::point_plane_clearance_rat(&coeffs, &d.origin(), d.r2())
+                == nacre_exact::Orient::Zero)
+                .then_some((i, s, d))
+        })
+        .expect("the fillet is tangent to x = 45");
+    (m, setup, c, ci, surf, def)
+}
+
+/// **A tangency row refuses by the first cause that stopped it, named and placed as
+/// [`tangency_rows`]' reading orders them.** The block beside the rounded plate of
+/// [`a_wall_face_reads_its_material_side_from_its_facing`] writes one row, read; each edit below
+/// reaches a cause no row of the corpus carries (the row builder is a pure function of the setup,
+/// as [`the_tangent_wall_states_itself_exactly`] says), and they are stacked from the last cause to
+/// the first, so every step moves the answer to the earlier cause's name and place:
+///
+/// 1. the fillet's lateral row without its face — its sides of the line cannot be read, so the
+///    stretches through the line cannot either: `CylinderGateUndecided` at the witness;
+/// 2. and the lateral's stretch `[1/p, 12 − 1/q]` (`p`, `q` coprime near `2⁶⁴`), whose middle
+///    leaves `Rat`: no witness, `WitnessNotRational` with no place;
+/// 3. and the wall face on another handle with no world name and a degenerate witness triangle —
+///    its facing is the judge's `Degenerate`: `DegenerateWitness`;
+/// 4. and the class with no world statement — no lens' side: `CylinderGateUndecided`;
+/// 5. and the class's coefficients scaled by `2⁶⁴` (the same plane), whose `n·n` leaves `Rat`: no
+///    foot, `WitnessNotRational`.
+///
+/// Alone: the axis direction scaled by `2⁴⁰` stops the lateral's reading for its width, which the
+/// stretches through the line carry to the witness; by `2⁶⁴ + 1` it stops the reading of whether
+/// the line lies on the lateral at all. And the D rod's bitten slab face, which the footprint
+/// reader cannot spell, carries its own refusal under the last two edits of the stack.
+#[test]
+fn a_tangency_row_refuses_by_its_first_cause() {
+    let z = Rat::from_int;
+    let (m, setup, c, ci, surf, def) =
+        fillet_against_block([45.0, -30.0, 0.0], [50.0, -10.0, 12.0]);
+    let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
+        .world_rat(c)
+        .expect("narrow");
+    let lateral = (0..setup.planes.len())
+        .find(|&i| matches!(&setup.planes[i], FaceRow::Cylinder(cf) if cf.surf == surf))
+        .expect("the fillet's lateral");
+    let wall = (setup.n_a..setup.planes.len())
+        .find(|&i| setup.plane_ix[i] == ClassIx::Plane(c))
+        .expect("the block's face on x = 45");
+    let other = setup
+        .planes
+        .iter()
+        .find_map(|row| match row {
+            FaceRow::Plane(p) if p.surf != setup.planes[wall].plane().surf => Some(p.surf),
+            _ => None,
+        })
+        .expect("another plane");
+    let big = (1i128 << 64) + 1;
+    let scaled = |by: i128| {
+        nacre_topo::CylinderDef::new(
+            def.origin(),
+            def.dir().map(|v| v.checked_mul(z(by)).expect("fits")),
+            def.ref_dir(),
+            def.r2().clone(),
+        )
+        .expect("a cylinder")
+    };
+    // The rows of an edited setup: the first `steps` edits of the stack, and the axis `dir`.
+    let rows = |steps: usize, dir: &nacre_topo::CylinderDef| {
+        let mut faces = setup.planes.clone();
+        let mut geom = setup.geom.clone();
+        let mut coeffs = coeffs;
+        if steps >= 1
+            && let FaceRow::Cylinder(cf) = &mut faces[lateral]
+        {
+            cf.face = None;
+        }
+        if steps >= 2
+            && let FaceRow::Cylinder(cf) = &mut faces[lateral]
+        {
+            let q = big + 2;
+            cf.stretch = Some([
+                Rat::new(1, big).expect("a ratio"),
+                Rat::new(12 * q - 1, q).expect("a ratio"),
+            ]);
+        }
+        if steps >= 3
+            && let FaceRow::Plane(fi) = &mut faces[wall]
+        {
+            fi.surf = other;
+            fi.world = None;
+            let a = fi.tri_pt3[0].clone();
+            fi.tri_pt3 = [a.clone(), a.clone(), a];
+        }
+        if steps >= 4 {
+            geom[c].world = None;
+        }
+        if steps >= 5 {
+            coeffs = coeffs.map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
+        }
+        let jd = Judge::new(&geom, setup.standard, &setup.notes);
+        tangency_rows(
+            &m,
+            &faces,
+            &setup.plane_ix,
+            setup.n_a,
+            c,
+            ci,
+            &coeffs,
+            dir,
+            surf,
+            SolidSide::A,
+            &jd,
+        )
+        .into_iter()
+        .map(|t| t.reading.map(|r| r.witness))
+        .collect::<Vec<_>>()
+    };
+    let witness = Point3::from_array([45.0, -20.0, 6.0]);
+    let refused = |reason, at: Option<Point3>| {
+        vec![Err(BoolError::Rejected {
+            reason,
+            at: at.map(crate::RejectWhere::Point),
+        })]
+    };
+    use RejectReason::{
+        CylinderGateUndecided as Undecided, DegenerateWitness, WitnessNotRational as Width,
+    };
+    assert_eq!(rows(0, &def), vec![Ok(witness)], "as built");
+    for (steps, want) in [
+        (1, refused(Undecided, Some(witness))),
+        (2, refused(Width, None)),
+        (3, refused(DegenerateWitness, None)),
+        (4, refused(Undecided, None)),
+        (5, refused(Width, None)),
+    ] {
+        assert_eq!(rows(steps, &def), want, "the first {steps} edits");
+    }
+    assert_eq!(
+        rows(0, &scaled(1 << 40)),
+        refused(Width, Some(witness)),
+        "the lateral's width"
+    );
+    assert_eq!(
+        rows(0, &scaled(big)),
+        refused(Width, None),
+        "the line on the lateral"
+    );
+
+    let mut m = Model::new();
+    let (rod, slab) = crate::tests::d_rod_on_a_bitten_slab(&mut m);
+    let (setup, c, ci, surf, def) = rod_against(&m, rod, slab);
+    let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
+        .world_rat(c)
+        .expect("narrow")
+        .map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
+    let mut geom = setup.geom.clone();
+    geom[c].world = None;
+    let jd = Judge::new(&geom, setup.standard, &setup.notes);
+    let got: Vec<_> = tangency_rows(
+        &m,
+        &setup.planes,
+        &setup.plane_ix,
+        setup.n_a,
+        c,
+        ci,
+        &coeffs,
+        &def,
+        surf,
+        SolidSide::A,
+        &jd,
+    )
+    .into_iter()
+    .map(|t| t.reading.map(|r| r.witness))
+    .collect();
+    assert_eq!(
+        got,
+        refused(RejectReason::CurvedOperandBoundary, None),
+        "the unread face first"
+    );
+}
+
+/// **A tangent partner's record gathers its rows' halves of the line, joined, and refuses a join it
+/// cannot order.** The block standing on `y ∈ [−20, −10]` beside the rounded plate puts a face on
+/// `y = −20`, through the fillet's axis, which cuts the cylinder and holds the tangent line of
+/// `x = 45`: the gate records that pair ([`SharedRuling`]). [`shared_rulings`] is asked with the
+/// two records the gate keeps for it — the secant `y = −20` and the tangent `x = 45` holding the
+/// line with it, checked against the gate's own record — and with the rows edited:
+///
+/// - two rows, one per lateral as two faces on the line would write, with `+τ` halves `[0, 1]`
+///   and `[1, 2]`: one piece `[0, 2]`;
+/// - `[1/p, 1]` and `[1/(p + 2), 2]` (`p` near `2⁶⁴`), whose ends `Rat` cannot subtract: `None`,
+///   not an empty half, which would read as no face on that side.
+#[test]
+fn a_shared_line_gathers_its_rows_halves() {
+    let z = Rat::from_int;
+    let mut m = Model::new();
+    let plate = crate::tests::rounded_plate(&mut m, 1, 0);
+    let block = crate::fixtures::cuboid(&mut m, [45.0, -20.0, 0.0], [50.0, -10.0, 12.0]);
+    let setup =
+        crate::arrangement::plane_index_setup(&m, plate, block).expect("the gate passes it");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let t = (0..setup.geom.len())
+        .find(|&k| {
+            jd.world_rat(k).is_some_and(|w| {
+                w[0] != z(0)
+                    && w[1] == z(0)
+                    && w[2] == z(0)
+                    && w[0].checked_mul(z(45)).and_then(|a| a.checked_add(w[3])) == Some(z(0))
+            })
+        })
+        .expect("the class x = 45");
+    let coeffs = jd.world_rat(t).expect("checked above");
+    let ci = (0..setup.cyls.len())
+        .find(|&i| {
+            let d = &setup.cyls[i].def;
+            nacre_exact::point_plane_clearance_rat(&coeffs, &d.origin(), d.r2())
+                == nacre_exact::Orient::Zero
+        })
+        .expect("the fillet is tangent to x = 45");
+    let holders = classes_holding_the_line(&jd, t, &coeffs, &setup.cyls[ci].def).expect("rational");
+    assert_eq!(holders.len(), 1, "y = −20 holds the line: {holders:?}");
+    let meets: Vec<Vec<ClassMeet>> = (0..setup.cyls.len())
+        .map(|i| {
+            (0..setup.geom.len())
+                .map(|k| match k {
+                    _ if i != ci => ClassMeet::Across,
+                    _ if k == holders[0] => ClassMeet::Cuts,
+                    _ if k == t => ClassMeet::Tangent {
+                        holders: holders.clone(),
+                        other_owner: true,
+                    },
+                    _ => ClassMeet::Across,
+                })
+                .collect()
+        })
+        .collect();
+    let records = |rows: &[Tangency]| {
+        shared_rulings(&setup.planes, &jd, &setup.cyls, &meets, rows).map(|out| {
+            out.into_iter()
+                .filter(|(i, _)| *i == ci)
+                .map(|(_, sr)| sr)
+                .collect::<Vec<_>>()
+        })
+    };
+    let built = records(&setup.tangencies).expect("rational");
+    assert_eq!(built.len(), 1, "{built:?}");
+    assert_eq!(
+        format!("{built:?}"),
+        format!("{:?}", setup.cyls[ci].shared),
+        "the gate's own record"
+    );
+    let row = setup
+        .tangencies
+        .iter()
+        .find(|row| row.wall == t && row.cyl == ci)
+        .expect("the block's row");
+    let q = |v: Rat| nacre_exact::QuadVal::from_rat(v);
+    let two_rows = |a: [Rat; 2], b: [Rat; 2]| {
+        let mut rows = vec![row.clone(), row.clone()];
+        rows[0].reading.halves[0] = vec![a.map(q)];
+        rows[1].reading.halves[0] = vec![b.map(q)];
+        records(&rows)
+    };
+    let joined = two_rows([z(0), z(1)], [z(1), z(2)]).expect("rational");
+    let halves = joined[0]
+        .tangent_halves
+        .as_ref()
+        .expect("a tangent partner");
+    let rat = |side: &[[nacre_exact::QuadVal; 2]]| -> Vec<[Rat; 2]> {
+        side.iter()
+            .map(|piece| piece.map(|v| v.as_rat().expect("a rational end")))
+            .collect()
+    };
+    assert_eq!(rat(&halves[0]), vec![[z(0), z(2)]]);
+    let p = (1i128 << 64) + 1;
+    assert!(
+        two_rows(
+            [Rat::new(1, p).expect("a ratio"), z(1)],
+            [Rat::new(1, p + 2).expect("a ratio"), z(2)]
+        )
+        .is_none()
+    );
 }
 
 /// The class `x = 1`, the D rod's cylinder and the gate's setup for one of the bitten slabs —
@@ -1605,6 +1885,6 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
     );
     assert_eq!(rows.len(), 2, "one row per slab face: {rows:?}");
     for t in &rows {
-        assert_eq!(t.undecided, Some(unread), "{t:?}");
+        assert_eq!(t.reading.as_ref().err(), Some(&unread), "{t:?}");
     }
 }

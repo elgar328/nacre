@@ -45,7 +45,7 @@ pub(crate) fn cylinder_gate(
     use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
-    let mut tangencies: Vec<Tangency> = Vec::new();
+    let mut tangencies: Vec<RowDraft> = Vec::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         // **The world statement or nothing.** A moved cylinder's def is written before its
@@ -378,6 +378,14 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
+    // **A row that could not be read does not pass** — refused here, by the row's own name
+    // ([`RowDraft`]), before the first reader of a row's reading: the records of the lines two
+    // classes share, then the verdict, which on the stretches where both solids run through the
+    // line is the only reader. The questions above read a row's classes alone.
+    let tangencies = tangencies
+        .into_iter()
+        .map(RowDraft::stated)
+        .collect::<Result<Vec<_>, _>>()?;
     for (ci, sr) in shared_rulings(faces, jd, &cyls, &meets, &tangencies)
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
         .into_iter()
@@ -394,17 +402,6 @@ pub(crate) fn cylinder_gate(
     }
     for (ci, gl) in grazed {
         cyls[ci].grazed.push(gl);
-    }
-    // **A row that could not be stated does not pass** — refused here, by the row's own name,
-    // rather than arranged: the verdict would have nothing to read, and where both solids run
-    // through the line it is the only reader. So is a row whose stretches through the line could
-    // not be read: read as running through, a solid that ends on the line would be judged by the
-    // three regions it does not have; read as ending there, a pinch nothing else sees would pass.
-    // The row carries both as one refusal ([`Tangency::undecided`]).
-    for t in &tangencies {
-        if let Some(e) = t.undecided {
-            return Err(e);
-        }
     }
     Ok((cyls, tangencies))
 }
@@ -478,8 +475,8 @@ struct PairCx<'a, 'j> {
 ///
 ///   **One clearance call, three answers.** Past the lateral faces' question, `Positive` clears;
 ///   `Negative` cuts (two rulings); `Zero` is tangent (one grazing line) — not `Cuts`, for the
-///   reason the record-and-pass arm gives. A row that could not be stated is refused at the gate's
-///   end, by its own name, before anything is arranged.
+///   reason the record-and-pass arm gives. A row that could not be read is refused by the gate, by
+///   its own name, before anything reads it ([`RowDraft`]).
 /// - anything else — an oblique plane, [`ClassMeet::Clear`] when every lateral face of the
 ///   cylinder provably misses the plane — the face's reach along `n` against the plane's station
 ///   ([`lateral_reach`], [`laterals_clear_plane`]) — then [`ClassMeet::Sections`] when the plane
@@ -497,7 +494,7 @@ fn class_meet(
     ci: usize,
     cyl: &WorkingCyl,
     footprints: &mut Option<Vec<Footprint>>,
-) -> Result<(ClassMeet, Vec<Tangency>), BoolError> {
+) -> Result<(ClassMeet, Vec<RowDraft>), BoolError> {
     let PairCx {
         model,
         faces,
@@ -671,8 +668,7 @@ fn class_meet(
                 // the operation — so the geometry is stated in a row and
                 // `assembly::tangency_reject` asks `keep` — beside `self_touch_reject`, where the
                 // grouping can also say whether the pieces share a solid. A row that could not be
-                // stated, or whose stretches through the line could not be read, is refused at this
-                // gate's end.
+                // read is refused by the gate before anything reads it ([`RowDraft`]).
                 if clearance == Orient::Zero {
                     rows = tangency_rows(
                         model, faces, plane_ix, n_a, c, ci, &coeffs, &cyl.def, cyl.surf, cyl.owner,
@@ -763,8 +759,7 @@ pub(crate) struct SharedRuling {
     /// [`Tangency`] rows' halves of that class and cylinder, gathered (closed pieces in the axis
     /// parameter, joined). One side alone is a face ending on the line, which the line's station
     /// reads as a spoke; both sides is the face running through it — a contact, which divides
-    /// nothing. `None` for a pair of secant or sectioned partners, and for a tangent one whose rows
-    /// could not be read, which the gate refuses by the rows' own name before anything reads this.
+    /// nothing. `None` for a pair of secant or sectioned partners.
     pub(crate) tangent_halves: Option<[Vec<[nacre_exact::QuadVal; 2]>; 2]>,
 }
 
@@ -899,19 +894,23 @@ fn shared_rulings(
             }
             // Every row of this class on this cylinder — one per wall face and lateral face that
             // touch — reads the same faces of the wall's solid, over its lateral's stretches.
-            let halves = tangencies
-                .iter()
-                .filter(|row| row.wall == t && row.cyl == ci)
-                .try_fold([Vec::new(), Vec::new()], |mut acc, row| {
-                    let h = row.halves.as_ref()?;
-                    for (to, from) in acc.iter_mut().zip(h) {
-                        to.extend(from.iter().copied());
-                    }
-                    Some(acc)
-                })
-                .and_then(|[plus, minus]| Some([joined(plus)?, joined(minus)?]));
+            // Gathered once, for the first line it records.
+            let mut halves = None;
             for &s in holders {
                 if secants.binary_search(&s).is_ok() {
+                    if halves.is_none() {
+                        let mut acc = [Vec::new(), Vec::new()];
+                        for row in tangencies
+                            .iter()
+                            .filter(|row| row.wall == t && row.cyl == ci)
+                        {
+                            for (to, from) in acc.iter_mut().zip(&row.reading.halves) {
+                                to.extend(from.iter().copied());
+                            }
+                        }
+                        let [plus, minus] = acc;
+                        halves = Some([joined(plus)?, joined(minus)?]);
+                    }
                     out.push((
                         ci,
                         SharedRuling {
@@ -1031,8 +1030,8 @@ fn wall_faces_clear(
 /// splits into three regions — the lens inside the cylinder, the **two** wedges between the
 /// parabola and the plane, and the far half-space — and whether the kept ones hang together is a
 /// question only [`crate::draft::keep`] can answer. So this is a *record*, not a verdict: the
-/// gate states the geometry, the operation decides, and the gate refuses a row the verdict cannot
-/// read ([`cylinder_gate`]'s last check).
+/// gate states the geometry, the operation decides, and the gate refuses a row it could not read
+/// ([`RowDraft`]) — the verdict and the chart receive only [`TangentReading`]s.
 ///
 /// **A row is about a lateral *face*, not its surface.** A half cylinder's surface is tangent to
 /// a wall on the side the face does not have, where nothing touches: a row there made the verdict
@@ -1050,27 +1049,60 @@ fn wall_faces_clear(
 /// lower's height on the upper's side writes no row for the upper (no built shape has two such
 /// faces yet).
 #[derive(Clone, Debug)]
-pub(crate) struct Tangency {
+pub(crate) struct Tangency<R = TangentReading> {
     /// The plane class the wall face lies on.
     pub(crate) wall: usize,
     /// The cylinder class the lateral face lies on.
     pub(crate) cyl: usize,
     pub(crate) wall_solid: SolidSide,
     pub(crate) cyl_solid: SolidSide,
+    /// `+1` material inside the cylinder (a boss), `-1` outside (a bore) — the lateral face's own
+    /// [`CylFaceInfo::orient_sign`].
+    pub(crate) cyl_orient: i8,
+    /// What the row read on the line — a [`TangentReading`] on every row past the gate.
+    pub(crate) reading: R,
+}
+
+/// **A tangency row as [`tangency_rows`] writes it: read, or refused by the first cause that
+/// stopped it** — a wall face the footprint reader could not read (the very refusal
+/// [`wall_faces_clear`] raises for it), width ([`RejectReason::WitnessNotRational`]), a facing the
+/// judge could not separate (its own name), or the stretches through the line (placed at the
+/// witness). The gate refuses the first such row before anything reads a row's reading
+/// ([`RowDraft::stated`] in [`cylinder_gate`]): no default is safe — reading a solid that ends on
+/// the line as running through convicts it of three regions it does not have, and reading one
+/// that runs through as ending passes a pinch nothing else sees.
+type RowDraft = Tangency<Result<TangentReading, BoolError>>;
+
+impl RowDraft {
+    /// The row the verdict reads, or the refusal that says why it could not be read.
+    fn stated(self) -> Result<Tangency, BoolError> {
+        let Self {
+            wall,
+            cyl,
+            wall_solid,
+            cyl_solid,
+            cyl_orient,
+            reading,
+        } = self;
+        Ok(Tangency {
+            wall,
+            cyl,
+            wall_solid,
+            cyl_solid,
+            cyl_orient,
+            reading: reading?,
+        })
+    }
+}
+
+/// **What a tangency row read on its line** — every field stated; a row with any of them unread
+/// is a refused [`RowDraft`].
+#[derive(Clone, Debug)]
+pub(crate) struct TangentReading {
     /// Is the cylinder's side of the wall plane the wall **face**'s material side? Read from that
     /// face's own facing against the class ([`face_facing`]), not from the class frame alone — one
     /// class can carry faces of both operands with opposite material sides.
     pub(crate) lens_in_wall_solid: bool,
-    /// `+1` material inside the cylinder (a boss), `-1` outside (a bore) — the lateral face's own
-    /// [`CylFaceInfo::orient_sign`].
-    pub(crate) cyl_orient: i8,
-    /// **Something this row needs could not be read, and the refusal that says what** — the first
-    /// cause, by its own name: a wall face the footprint reader could not read (the very refusal
-    /// [`wall_faces_clear`] raises for it), width ([`RejectReason::WitnessNotRational`]), a facing
-    /// the judge could not separate (its own name), or the stretches through the line
-    /// ([`Self::through`] — placed at the witness). The gate raises it; no row the verdict sees
-    /// has one.
-    undecided: Option<BoolError>,
     /// **Where both solids run through the tangent line, on this row's ground** — closed pieces
     /// `[lo, hi]` in the axis parameter ([`axis_param_of_plane`]'s scale), within those where the
     /// closed wall face meets the line inside the lateral face's open stretches in positive length
@@ -1093,24 +1125,17 @@ pub(crate) struct Tangency {
     /// piece — a point tangency is a valid solid, and [`nacre_exact::cylinder_strip_side`]'s
     /// `StripSide::Inside` for `U = 0` (*"merely conservative"* on a tangent plane's empty strip)
     /// says nothing on its own here.
-    ///
-    /// `None` where a face could not be read, and then [`Self::undecided`] says why — the gate
-    /// refuses such a row: no default is safe, since reading a solid that ends on the line as
-    /// running through convicts it of three regions it does not have, and reading one that runs
-    /// through as ending passes a pinch nothing else sees.
-    pub(crate) through: Option<Vec<[nacre_exact::QuadVal; 2]>>,
+    pub(crate) through: Pieces,
     /// **Where the wall's solid has a face on the line's `+τ` side and on its `−τ` side** — `τ = m × r`
     /// the lateral's `+θ` tangent at the line, `r` from the axis out to it; closed pieces in the axis
     /// parameter, over this row's lateral's stretches, from every face of the wall's solid on the
     /// class. [`Self::through`] is the stretch where both sides hold one, met with the lateral's own;
     /// the record of the line ([`SharedRuling::tangent_halves`]) gathers these for the chart, where
     /// one side alone is a face that **ends** on the line — its edge, a spoke of the line's star.
-    /// `None` where a face of the wall's solid could not be read (so `through` is `None` too) or the
-    /// lens' side could not be stated (`undecided`) — rows the gate refuses either way.
-    halves: Option<[Vec<[nacre_exact::QuadVal; 2]>; 2]>,
+    halves: [Pieces; 2],
     /// The tangency point — `RejectWhere`'s doc asks for a witness that is actually there: the
     /// piece [`row_witness`] picks, at its middle, or at its stretch's middle where its ends are
-    /// irrational; the lateral face's own span's middle where no piece meets the line.
+    /// irrational.
     pub(crate) witness: Point3,
 }
 
@@ -1178,16 +1203,18 @@ struct LateralOnLine<'a> {
 /// face did not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
 /// contributes nothing; that is why collecting here neither widens nor narrows the rule.
 ///
-/// **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing
-/// face and raises on shapes it cannot read; a raise propagated from the middle of this walk
-/// would outrank the gate's other refusals by the order the faces happen to be in. Every failure
-/// here becomes `undecided` on the row instead, carrying its refusal by its cause's name (the
-/// module's rule: width, a statement the world does not hold, a shape the road cannot spell, a
-/// judgement that did not separate), and the gate raises the first such row's after its other
-/// questions. Each wall face's footprint is read once, and a row that reads a sibling face carries
-/// that face's own refusal — the same refusal for an unreadable face wherever it stands.
-/// Measured: of every row the suite, the census, the ignored sweep and kit write, none carries a
-/// cause but an unread face; the producers' names are locked where they are produced.
+/// **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing face
+/// and raises on shapes it cannot read; a raise propagated from the middle of this walk would
+/// outrank the gate's other refusals by the order the faces happen to be in. Every failure here
+/// becomes the row's refusal instead ([`RowDraft`]), by its cause's name (the module's rule: width,
+/// a statement the world does not hold, a shape the road cannot spell, a judgement that did not
+/// separate), and the gate raises the first such row's after its other questions, before the first
+/// reader of a row's reading. Each wall face's footprint is read once, and a row that reads a
+/// sibling face carries that face's own refusal — the same refusal for an unreadable face wherever
+/// it stands. Measured: of every row the suite, the census, the ignored sweep and kit write, none
+/// carries a cause but an unread face. Each cause's name, its place and their order are locked on
+/// edited tables (`a_tangency_row_refuses_by_its_first_cause`), the producers' names where they are
+/// produced; the width of the joins and of the witness's point is not.
 #[allow(clippy::too_many_arguments)]
 fn tangency_rows(
     model: &Model,
@@ -1201,7 +1228,7 @@ fn tangency_rows(
     surf: Handle<Surface>,
     owner: SolidSide,
     jd: &Judge<'_, WorkingPlane>,
-) -> Vec<Tangency> {
+) -> Vec<RowDraft> {
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let side_of = |i: usize| {
         if i < n_a { SolidSide::A } else { SolidSide::B }
@@ -1212,7 +1239,7 @@ fn tangency_rows(
     // `r = 0`; `CylinderDef` refuses that at construction (`NonPositiveRadius`, "positive by
     // construction"). Filtered anyway rather than assumed: a `Some(0)` here would compare unequal
     // to every material side and hand the verdict a silent `false`, and this file's own rule is
-    // that an answer it cannot state becomes `undecided`, never a default. The sign is the
+    // that an answer it cannot state refuses the row, never a default. The sign is the
     // class's world name's own, the frame `mat_side` below is read in.
     let lens_side = jd.planes[c]
         .world
@@ -1385,9 +1412,9 @@ fn tangency_rows(
         let mut mat_side: Option<Result<i8, RejectReason>> = None;
         let mut read_mat_side = || {
             *mat_side.get_or_insert_with(|| {
-                // An outcome with no abstention name — the two witnesses proved to have no turn
-                // between them (`Sign(Zero)`, `Coincident`) — states no facing either, and is the
-                // gate's own undecided.
+                // An outcome with no abstention name (`Sign(Zero)`, `Coincident` —
+                // `normals_agree_judge` reports no gap that could give one) states no facing
+                // either, and is the gate's own undecided.
                 let f = face_facing(jd, faces, fi_ix, c).map_err(|outcome| {
                     crate::abstention_reason(&outcome)
                         .unwrap_or(RejectReason::CylinderGateUndecided)
@@ -1410,7 +1437,7 @@ fn tangency_rows(
         {
             // The line must lie on this lateral **face** (`Tangency`'s doc): read off the
             // face's stretches of the line when it could be, else off its angular extent. `None`
-            // (arithmetic) keeps the row, undecided.
+            // (arithmetic) keeps the row, refused for its width.
             let on_face = match cover {
                 Some(c) => Some(!c.is_empty()),
                 None => base.as_ref().and_then(|b| {
@@ -1470,17 +1497,18 @@ fn tangency_rows(
                 },
                 Err(fail) => Err(*fail),
             };
-            // **Where both solids run through the line, on this row's ground** — this wall face's
-            // contact, where the wall's solid lies on both sides of the line in the class's plane
-            // (over all its faces there) and the cylinder's solid on both sides of it on the
-            // cylinder. `None` where a face could not be read.
+            // **The wall's sides of the line, and where both solids run through it on this row's
+            // ground** — this wall face's contact, where the wall's solid lies on both sides of the
+            // line in the class's plane (over all its faces there) and the cylinder's solid on both
+            // sides of it on the cylinder. One result, its first cause the wall's sides: the
+            // stretches through the line rest on them. `Err` where a face could not be read.
             let lateral_through = lateral_through.get_or_insert_with(read_lateral_through);
             let wall_sides = wall_sides_of[li]
                 .get_or_insert_with(|| read_wall_sides(stretches))
                 .clone();
-            let through = (|| -> Result<Pieces, RowFail> {
+            let sides = (|| -> Result<([Pieces; 2], Pieces), RowFail> {
                 let width = || RowFail::At(RejectReason::WitnessNotRational);
-                let wall = wall_sides.as_ref().map_err(|e| *e)?;
+                let wall = wall_sides?;
                 let lateral = lateral_through.as_ref().map_err(|&r| RowFail::At(r))?;
                 let both = meet_unions(&wall[0], &wall[1])
                     .and_then(|w| meet_unions(&w, lateral))
@@ -1491,21 +1519,8 @@ fn tangency_rows(
                     .iter()
                     .flat_map(|(_, c)| c.contact.iter().copied())
                     .collect();
-                meet_unions(&own, &both).ok_or_else(width)
+                Ok((wall, meet_unions(&own, &both).ok_or_else(width)?))
             })();
-            // `w = n × m` and `τ = m × r`; the line's foot is `o − q·n` with `q = (n·o + d)/|n|²`, so
-            // `r = −q·n` and `τ = q·w`: `+w` is `+τ` exactly where the axis lies on the plane's
-            // positive side — the lens' side.
-            let halves = wall_sides
-                .ok()
-                .zip(lens_side)
-                .map(|([plus_w, minus_w], lens)| {
-                    if lens > 0 {
-                        [plus_w, minus_w]
-                    } else {
-                        [minus_w, plus_w]
-                    }
-                });
             // The witness: its piece's middle, else its stretch's. With no piece the line's contact
             // was not read, and with no stretch either, that failure is why there is no witness.
             let witness = (|| -> Result<Point3, RowFail> {
@@ -1532,50 +1547,57 @@ fn tangency_rows(
                 Ok(Point3::from_array(p))
             })();
             let mat_side = read_mat_side();
-            // **The row's refusal — the first thing that stopped it, by its own name**, in this
-            // order: the face unread, the line's foot (width), the line on the lateral (width —
-            // with the line's own direction the reach reads no span: `lateral_reach`), the lens'
-            // side, the material side, the witness, and the stretches through the line. The last
-            // is placed at the witness, as every refusal of a stated row is.
-            let undecided = unread.or_else(|| {
-                if base.is_none() || on_face.is_none() {
-                    return Some(reject(RejectReason::WitnessNotRational));
-                }
-                if lens_side.is_none() {
-                    return Some(reject(RejectReason::CylinderGateUndecided));
-                }
-                if let Err(reason) = mat_side {
-                    return Some(reject(reason));
-                }
-                let at = match &witness {
-                    Ok(p) => *p,
-                    Err(fail) => return Some(fail.raise(None)),
-                };
-                through.as_ref().err().map(|fail| fail.raise(Some(at)))
-            });
             #[cfg(feature = "tangency-trace")]
             #[allow(clippy::print_stderr)]
             {
                 eprintln!(
-                    "TROW runs_through={} through={:?} undecided={}",
+                    "TROW runs_through={} through={:?}",
                     per_stretch
                         .as_ref()
                         .map_or(true, |v| v.iter().any(|(_, c)| c.runs_through())),
-                    through.as_ref().ok().map(Vec::len),
-                    undecided.is_some()
+                    sides.as_ref().ok().map(|(_, through)| through.len()),
                 );
             }
+            // **The row's reading, or its refusal — the first thing that stopped it, by its own
+            // name**, in this order: the face unread, the line's foot (width), the line on the
+            // lateral (width — with the line's own direction the reach reads no span:
+            // `lateral_reach`), the lens' side, the material side, the witness, and the stretches
+            // through the line with the wall's sides they rest on — placed at the witness, as every
+            // refusal of a stated row is.
+            let reading = (|| -> Result<TangentReading, BoolError> {
+                if let Some(e) = unread {
+                    return Err(e);
+                }
+                if base.is_none() || on_face.is_none() {
+                    return Err(reject(RejectReason::WitnessNotRational));
+                }
+                let lens = lens_side.ok_or_else(|| reject(RejectReason::CylinderGateUndecided))?;
+                let mat = mat_side.map_err(reject)?;
+                let witness = witness.map_err(|fail| fail.raise(None))?;
+                let ([plus_w, minus_w], through) =
+                    sides.map_err(|fail| fail.raise(Some(witness)))?;
+                // `w = n × m` and `τ = m × r`; the line's foot is `o − q·n` with
+                // `q = (n·o + d)/|n|²`, so `r = −q·n` and `τ = q·w`: `+w` is `+τ` exactly where the
+                // axis lies on the plane's positive side — the lens' side.
+                let halves = if lens > 0 {
+                    [plus_w, minus_w]
+                } else {
+                    [minus_w, plus_w]
+                };
+                Ok(TangentReading {
+                    lens_in_wall_solid: lens == mat,
+                    through,
+                    halves,
+                    witness,
+                })
+            })();
             out.push(Tangency {
                 wall: c,
                 cyl: ci,
                 wall_solid: side_of(fi_ix),
                 cyl_solid: side_of(*cy_ix),
-                lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side.ok(),
                 cyl_orient: cf.orient_sign,
-                undecided,
-                through: through.ok(),
-                halves,
-                witness: witness.unwrap_or(Point3::from_array([f64::NAN; 3])),
+                reading,
             });
         }
     }
@@ -1703,7 +1725,7 @@ enum LoopOnLine {
 /// **Where does the tangent line run through a face whose plane holds it, over one stretch of the
 /// line a lateral face covers?** — of the wall face, where a row's contact is; of every face of the
 /// wall's solid on its class, where that solid lies on each side of the line
-/// ([`Tangency::through`]).
+/// ([`TangentReading::through`]).
 ///
 /// The line is `foot + v·m` (`foot` is the perpendicular foot from the axis origin onto the wall,
 /// so `v` is the axis parameter itself — the scale the span is in), and the question is about the
