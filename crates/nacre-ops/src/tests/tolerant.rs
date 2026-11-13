@@ -759,9 +759,9 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
             // (`ε·(|2c| + |x|)`), not the realized error — so it is a couple of ulp, not
             // zero. Sound, and it costs nothing here: the base frame is chosen on the
             // rational `base`, not on `tol`.
-            for k in 0..3 {
-                let t = b.tri_pt3[i].coord_iv[k].error;
-                let c = b.tri_pt3[i].coord_iv[k].value.abs();
+            for iv in &b.tri_pt3[i].coord_iv {
+                let t = iv.error;
+                let c = iv.value.abs();
                 assert!(
                     t <= 4.0 * f64::EPSILON * c.max(1.0),
                     "reflection tol stays within a few ulp"
