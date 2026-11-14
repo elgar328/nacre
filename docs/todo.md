@@ -260,7 +260,7 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
   심기는 조용한 무죄다.
 - topo 의 `EdgeDecline::Unstated`(`plane_cylinder_relation` 의 `None` — 넘침 포함)가 `reconstruct.rs` 에서
   `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 원인을 묻는 독자가 늘면 세계 서술의 문
-  (`world_cylinder_def`·`chain_point_rat`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로
+  (`world_cylinder_def`·`chain_point_rat`·`world_plane_name`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로
   정확히 가른다.
 - 배열의 룰링 분할에서 `lateral_crossings` 의 `plane_plane_cylinder`(checked `i128`)가 넘치면 불리언을
   `WitnessNotRational` 로 거절한다(잰 인구: 스위트·무시 스윕·census·kit 0). 재현한 배치는 이동량을 f64 의 정확한

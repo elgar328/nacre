@@ -429,9 +429,10 @@ impl Model {
 
     /// Whether `leaf`'s whole chain folds to a rational map (translations, quarter turns and axis
     /// mirrors) — `false` for a frame node or a turn off the quarters. This is the one question
-    /// that tells apart the two ways [`Model::world_cylinder_def`] and [`Model::chain_point_rat`]
-    /// answer `None`: a chain that does not fold has no world statement to give, one that folds
-    /// overflowed `Rat` carrying it.
+    /// that tells apart the two ways [`Model::world_cylinder_def`], [`Model::chain_point_rat`] and
+    /// a moved named plane's [`Model::world_plane_name`] answer `None`: a chain that does not fold
+    /// has no world statement to give, and on one that folds the carry failed for width — it
+    /// overflowed `Rat`, or a `Wide` name had no narrow vessel to carry in.
     pub fn chain_folds(&self, leaf: Handle<MotionNode>) -> bool {
         self.chain_affine(leaf).is_some()
     }

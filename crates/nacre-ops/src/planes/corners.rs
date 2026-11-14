@@ -218,18 +218,18 @@ pub(super) fn pierce_on(
         .ok_or(CornerFail::Inconsistent)
 }
 
-/// Why a boundary piece could not be read — four causes, four names.
+/// Why a boundary piece, or a statement it reads, could not be read — four causes, four names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CornerFail {
     /// A shape this road cannot spell at all — a seam vertex, a circle on a face it is not a disk
     /// of, an arc end at an irrational root (its radial vector is no rational vector). The name
     /// depends on the boundary ([`unreadable_reason`]).
     Shape,
-    /// A statement that cannot be put in the world in one frame — a plane with no world name, a
-    /// chain that does not fold. Geometry: [`RejectReason::CylinderGateUndecided`].
+    /// A statement that cannot be put in the world in one frame — a plane with no name, a chain
+    /// that does not fold. Geometry: [`RejectReason::CylinderGateUndecided`].
     Unstated,
-    /// A statement the world holds and `Rat` does not — a `Wide` name or meet, an overflow
-    /// carrying or combining. Width: [`RejectReason::WitnessNotRational`].
+    /// A statement the world holds and `Rat` does not — a `Wide` name (moved or not) or meet, an
+    /// overflow carrying or combining. Width: [`RejectReason::WitnessNotRational`].
     Width,
     /// A stored pierce definition its own re-solved meet does not offer as a point — the name was
     /// minted from that meet. A defect: [`RejectReason::CylinderStagesDisagree`].
@@ -238,8 +238,10 @@ pub(super) enum CornerFail {
 
 impl CornerFail {
     /// Why carrying a statement along `leaf` to the world came back `None` —
-    /// `world_cylinder_def` and `chain_point_rat` fold the chain and then carry, so a chain that
-    /// folds overflowed `Rat` (`Width`) and one that does not has no world statement (`Unstated`).
+    /// `world_cylinder_def`, `chain_point_rat` and a moved named plane's `world_plane_name` fold
+    /// the chain and then carry, so on a chain that folds the carry failed for width — it
+    /// overflowed `Rat`, or a `Wide` name had no narrow vessel to carry in (`Width`) — and one that
+    /// does not has no world statement (`Unstated`).
     pub(super) fn of_carry(model: &Model, leaf: Handle<nacre_topo::MotionNode>) -> Self {
         if model.chain_folds(leaf) {
             Self::Width
@@ -267,14 +269,23 @@ impl CornerFail {
     }
 }
 
-/// A plane's narrow world coefficients, or why it has none: no world name (`Unstated`), or a
-/// `Wide` one (`Width`).
+/// **A plane's narrow world coefficients, or why it has none** — the narrow projection of
+/// [`nacre_topo::Model::world_plane_name`]. Geometry (`Unstated`) when the plane has no name or
+/// its chain does not fold; width (`Width`) when its name is `Wide` or a chain that folds
+/// overflows carrying it. A `Wide` name on a chain that does not fold is geometry: no width would
+/// give that plane a world statement.
 pub(super) fn world_narrow(
     model: &Model,
     plane: Handle<Surface>,
 ) -> Result<[nacre_exact::Rat; 4], CornerFail> {
-    let name = model.world_plane_name(plane).ok_or(CornerFail::Unstated)?;
-    name.narrow().copied().ok_or(CornerFail::Width)
+    match model.world_plane_name(plane) {
+        Some(name) => name.narrow().copied().ok_or(CornerFail::Width),
+        // A named plane with no world name is a moved one: unmoved, the name is the world's.
+        None => match (model.surface_name(plane), model.surface_motion(plane)) {
+            (Some(_), Some(leaf)) => Err(CornerFail::of_carry(model, leaf)),
+            _ => Err(CornerFail::Unstated),
+        },
+    }
 }
 
 /// A cylinder's world statement, or why it has none ([`CornerFail::of_carry`] for its motion — an
@@ -705,3 +716,7 @@ pub(super) fn face_clears_footprint(
     // `spans` empty means the axis is unusable, not that every rectangle was missed.
     Ok(!spans.is_empty() && along.iter().all(|(below, above)| *below || *above))
 }
+
+#[cfg(test)]
+#[path = "../tests/corners.rs"]
+mod tests;
