@@ -337,6 +337,14 @@ pub(crate) struct FaceInfo {
     /// **Set together with `tri_pt3`, and only here.** The surface answers for itself, not its
     /// solid's vertices, and one solid can hold both kinds at once (fuse an axis-aligned hub with
     /// a turned fin).
+    ///
+    /// **Not a restatement of `world`.** This flag is the licence the exact shortcuts read before
+    /// taking the plane's *name* as a world statement, and a moved plane's name speaks its
+    /// pre-motion frame — so the flag stays set whatever `world` holds, and the world description
+    /// rides *beside* it. Clearing the flag would send a merge through an exact-`f64` triangle
+    /// test on the face corners — measured: two unit cubes shifted by `7/11` and `18/11`, sharing
+    /// a wall whose two `f64` images differ in the last place, came back as two bodies; the class
+    /// merge reads world names, never those corners.
     pub(crate) rotated: bool,
 }
 

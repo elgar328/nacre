@@ -220,7 +220,7 @@ pub(super) fn pierce_on(
 
 /// Why a boundary piece, or a statement it reads, could not be read — four causes, four names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CornerFail {
+pub(crate) enum CornerFail {
     /// A shape this road cannot spell at all — a seam vertex, a circle on a face it is not a disk
     /// of, an arc end at an irrational root (its radial vector is no rational vector). The name
     /// depends on the boundary ([`unreadable_reason`]).
@@ -274,7 +274,7 @@ impl CornerFail {
 /// its chain does not fold; width (`Width`) when its name is `Wide` or a chain that folds
 /// overflows carrying it. A `Wide` name on a chain that does not fold is geometry: no width would
 /// give that plane a world statement.
-pub(super) fn world_narrow(
+pub(crate) fn world_narrow(
     model: &Model,
     plane: Handle<Surface>,
 ) -> Result<[nacre_exact::Rat; 4], CornerFail> {

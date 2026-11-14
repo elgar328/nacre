@@ -1,20 +1,4 @@
 use super::*;
-/// **A plane's exact rational coefficients in the world** — the narrow projection of
-/// [`nacre_topo::Model::world_plane_name`], which is the one place the rule lives.
-///
-/// **Not a restatement of the row.** A moved plane's `rotated` flag is the licence the exact
-/// shortcuts read before taking the plane's *name* as a world statement, and a moved plane's name
-/// speaks its pre-motion frame — so the flag stays set whatever this answers, and the world
-/// description rides *beside* it. Clearing the flag would send a merge through an exact-`f64`
-/// triangle test on the face corners — measured: two unit cubes shifted by `7/11` and `18/11`,
-/// sharing a wall whose two `f64` images differ in the last place, came back as two bodies; the
-/// class merge reads world names, never those corners.
-pub(crate) fn world_plane_coeffs(
-    model: &Model,
-    surf: Handle<Surface>,
-) -> Option<[nacre_exact::Rat; 4]> {
-    model.world_plane_name(surf)?.narrow().copied()
-}
 
 /// **Does an increasing axis parameter move toward this class's "above"?** — where "above" is the
 /// side the class's plane faces, which is the frame every cell label is written in.
@@ -211,9 +195,7 @@ pub(crate) fn lateral_boundary_sections(
         .chain(&face.inner)
         .flat_map(|l| &l.half_edges)
     {
-        let coeffs = *model
-            .world_plane_name(boundary_plane(model, face, he))?
-            .narrow()?;
+        let coeffs = world_narrow(model, boundary_plane(model, face, he)).ok()?;
         if nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m)
             != nacre_exact::AxisRelation::Along
             && !out.contains(&coeffs)
@@ -274,7 +256,7 @@ pub(super) fn lateral_circle_heights(
         // motion names, and this parameter is read against a *world* axis. One whose chain does
         // not fold has no world description and the face declines (`None`), which is the same
         // answer the whole row already gives for a rim with no narrow name.
-        let coeffs = *model.world_plane_name(cap)?.narrow()?;
+        let coeffs = world_narrow(model, cap).ok()?;
         // A carrier parallel to the axis is a ruling's wall: it has no station and is not one.
         // An oblique carrier's section has no one height, so the question has no answer.
         match nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
@@ -328,14 +310,11 @@ fn rim_arc_union(
     use nacre_exact::Rat;
     use nacre_topo::Vertex;
     let m = def.dir();
-    let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
-        model.world_plane_name(plane)?.narrow().copied()
-    };
     let radial =
         |vh: Handle<Vertex>, cap: [Rat; 4]| rim_radial(model, face, def, vh, &cap).ok()?.as_rat();
     let mut acc: Option<RimArc> = None;
     for he in &face.outer.half_edges {
-        let coeffs = world_coeffs(boundary_plane(model, face, he))?;
+        let coeffs = world_narrow(model, boundary_plane(model, face, he)).ok()?;
         if nacre_exact::axis_relation(&[coeffs[0], coeffs[1], coeffs[2]], &m)
             == nacre_exact::AxisRelation::Along
         {

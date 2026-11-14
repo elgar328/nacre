@@ -270,6 +270,11 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 - 평면 판정의 차트 패리티(`Chart2dRat::of_normal`)는 원시 법선(`primitive_normal`)이 약 2⁶³ 을 넘으면 `None` 이고
   불리언은 `WitnessNotRational` 이다 — 여유는 약 6비트, 코퍼스에 그런 법선은 없다. 총함수 답은 끝 질문(패리티 =
   부호)을 `BigInt` 로 올리는 것이다(게이트의 술어가 이미 그렇다).
+- 클래스 표는 넓은 이름을 움직였는지로 가른다: 움직이지 않은 넓은 이름의 클래스는 세계 이름이 있어 게이트가
+  `WitnessNotRational` 로 거절하고(`class_meet`), 접히는 사슬이 옮긴 넓은 이름은 `WorldName::of` 가 `None` 이라
+  이름 없는 클래스의 길(`nameless_stance`)로 가서 설 수 있다(논증 — 그 꼴은 지어 보지 않았다). 원인은 같은 폭이다(`world_narrow` 는 둘 다 `Width`). 원통이 낀
+  불리언의 인구 0 — 접히는 사슬 위 움직인 넓은 이름의 클래스는 스위트에 한 시험(원통 없음), census·무시 스윕·kit 0. 이름을
+  폭으로 맞추면 오늘 서는 몸이 거절로 바뀔 수 있어, 이 항목이 넓은 계수를 읽게 될 때 함께 정한다.
 
 ### 불리언이 이름 붙여 거절하는 인구
 
@@ -318,10 +323,6 @@ doc). 그래서 스크립트의 모든 중간값이 끝까지 살아 있고, 살
   도로(`rulings::cycle_on_wall`)는 룰링마다 `crossing_on_ruling` + `theta_place` 표(끝의 근은 같은 점으로 기록)로 묻는다 — 밑
   술어는 같고 출력의 꼴이 다르다. 한 함수로 합칠지는 재지 않았다. 합쳐도 열리는 칸은 없다(이름 없는 클래스의 남은 `Ruling` 3 은
   두 쪽 모두 같은 술어에서 멈춘다).
-- **평면의 좁은 세계 계수.** `corners::world_narrow` 는 못 읽은 까닭(`Unstated`·`Width`)을 내고, `cyl_geom::world_plane_coeffs`
-  (와 `lateral_theta_extent` 의 `rim_arc_union` 안의 같은 식)는 `None` 하나로 버린다 — 원인을 나르는 접선 판독은 앞의 것을 쓴다. 그리고 앞의 것도
-  `Model::world_plane_name` 이 `None` 인 자리를 모두 `Unstated` 로 읽어, 넓은 이름의 **움직인** 평면과 접히는 사슬의 넘침(폭)을
-  진술 불가로 부른다.
 
 ## 보류 — 인구가 생기면
 

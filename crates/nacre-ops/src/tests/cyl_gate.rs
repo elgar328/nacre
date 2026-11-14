@@ -726,7 +726,7 @@ fn yz_prism_face(tri: [(f64, f64); 3]) -> (Model, Handle<Face>, [Rat; 4]) {
         .faces
         .iter()
         .find_map(|&f| {
-            let name = *m.world_plane_name(m.face(f).surface)?.narrow()?;
+            let name = world_narrow(&m, m.face(f).surface).ok()?;
             (name[1] == zero && name[2] == zero && name[3] == zero).then_some((f, name))
         })
         .expect("the face on x = 0");
@@ -961,7 +961,7 @@ fn yz_slab_face(
         .faces
         .iter()
         .find_map(|&f| {
-            let name = *m.world_plane_name(m.face(f).surface)?.narrow()?;
+            let name = world_narrow(&m, m.face(f).surface).ok()?;
             (name[1] == zero && name[2] == zero && name[3] == Rat::from_int(-x0))
                 .then_some((f, name))
         })

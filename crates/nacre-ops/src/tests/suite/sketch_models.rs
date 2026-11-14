@@ -449,8 +449,8 @@ fn pierce_meets(m: &Model, s: Handle<Solid>) -> Vec<String> {
             };
             let def = m.world_cylinder_def(cylinder).expect("a stated cylinder");
             let meet = nacre_exact::quad::plane_plane_cylinder(
-                &crate::planes::world_plane_coeffs(m, planes[0]).expect("a stated plane"),
-                &crate::planes::world_plane_coeffs(m, planes[1]).expect("a stated plane"),
+                &crate::planes::world_narrow(m, planes[0]).expect("a stated plane"),
+                &crate::planes::world_narrow(m, planes[1]).expect("a stated plane"),
                 &def.origin(),
                 &def.dir(),
                 def.r2(),

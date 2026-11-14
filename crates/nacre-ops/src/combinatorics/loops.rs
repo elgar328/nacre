@@ -635,7 +635,7 @@ fn curved_wall(
                 crate::planes::section_plane(
                     planes
                         .iter()
-                        .filter_map(|&h| model.world_plane_name(h)?.narrow().copied()),
+                        .filter_map(|&h| crate::planes::world_narrow(model, h).ok()),
                     &def,
                 )
             };

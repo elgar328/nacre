@@ -59,8 +59,7 @@ pub(crate) fn pierce_name_from_def(
     // its sign no longer matters.
     let mut seen: [Option<usize>; 2] = [None, None];
     for (i, &h) in planes.iter().enumerate() {
-        let name = model.world_plane_name(h)?;
-        let c = name.narrow()?;
+        let c = crate::planes::world_narrow(model, h).ok()?;
         for &k in candidates {
             // A candidate with no narrow description cannot be this handle's class and is passed
             // over — the corner's other planes still decide; a handle none answers to leaves
@@ -68,7 +67,7 @@ pub(crate) fn pierce_name_from_def(
             let Some(kc) = jd.world_rat(k) else {
                 continue;
             };
-            if plane_sense(c, &kc).is_none() {
+            if plane_sense(&c, &kc).is_none() {
                 continue;
             }
             if seen[i].is_some() {

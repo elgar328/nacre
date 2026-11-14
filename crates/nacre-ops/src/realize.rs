@@ -1401,7 +1401,7 @@ fn rim_centre(
     };
     if budget == Budget::Cheap
         && (deep(*motion)
-            || (crate::planes::world_plane_coeffs(model, cap).is_none()
+            || (crate::planes::world_narrow(model, cap).is_err()
                 && model.plane_replay_depth(cap, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP))
     {
         return None;
@@ -1438,7 +1438,7 @@ fn line_direction(
     // history, and a push must not pay for a history the cheap road would not.
     if budget == Budget::Cheap
         && s.iter().any(|&h| {
-            crate::planes::world_plane_coeffs(model, h).is_none()
+            crate::planes::world_narrow(model, h).is_err()
                 && model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP
         })
     {
@@ -1468,9 +1468,9 @@ fn plane_coeffs_hp(
     bits: usize,
     memo: &mut PlaneMemo,
 ) -> Result<[HpBounded; 4], RealizeError> {
-    match crate::planes::world_plane_coeffs(model, h) {
-        Some(c) => Ok(c.map(|r| HpBounded::of_rat(r, bits))),
-        None => memo.plane(model, h, bits),
+    match crate::planes::world_narrow(model, h) {
+        Ok(c) => Ok(c.map(|r| HpBounded::of_rat(r, bits))),
+        Err(_) => memo.plane(model, h, bits),
     }
 }
 
@@ -1843,7 +1843,7 @@ fn seam_point_stated(
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
     let def = model.world_cylinder_def(cyl)?;
-    let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
+    let coeffs = crate::planes::world_narrow(model, cap).ok()?;
     let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
     let centre = nacre_exact::axis_plane_meet(&coeffs, &o, &m)?;
     let e1 = perp_component(&e, &m)?;
@@ -2057,7 +2057,7 @@ fn ruling_point(
         )),
     };
     if let (Some(cap), Some((foot, dir))) = (
-        crate::planes::world_plane_coeffs(model, plane),
+        crate::planes::world_narrow(model, plane).ok(),
         s.as_rat()
             .and_then(|t| line.point_at(t))
             .and_then(|f| folded(f, def.dir())),
@@ -2168,7 +2168,7 @@ fn pierce_point(
         }
     };
     let world = model.world_cylinder_def(cylinder).and_then(|w| {
-        let read = planes.map(|h| crate::planes::world_plane_coeffs(model, h));
+        let read = planes.map(|h| crate::planes::world_narrow(model, h).ok());
         Some((wall_of(read, w.dir())?, w))
     });
     let ((wall, other), frame, chain) = match world {

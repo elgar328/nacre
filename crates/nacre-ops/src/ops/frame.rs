@@ -247,7 +247,7 @@ fn world_placement(
     plane: Handle<Surface>,
     outward: Orientation,
 ) -> Option<nacre_topo::FramePlacement> {
-    let world = *model.world_plane_name(plane)?.narrow()?;
+    let world = crate::planes::world_narrow(model, plane).ok()?;
     let zero = Rat::from_int(0);
     let world = if model.world_plane_name_sense(plane)?.sign() * outward.sign() > 0 {
         world
