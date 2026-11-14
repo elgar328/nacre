@@ -110,7 +110,7 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "nacre-ops/src/combinatorics/in_faces.rs",
         2,
         "`side_of`: a point question in `point_in_component` (does the query lie on the face's \
-         plane); `point_in_mixed_ring`: `rational_ring_side`'s mixed arm, the one coordinate \
+         plane); `point_in_mixed_ring`: `rational_ring_side`'s walk, the one coordinate \
          reading of a ring",
     ),
     (

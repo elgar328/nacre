@@ -2052,9 +2052,9 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 
 - 실패의 이름(`RingHasNoWitness`·`NoClearRay`·`WitnessNotRational`·`CylinderGateUndecided`)과 도로가 대상을 못
   읽는 사건(`Said::Declines`)은 `Said`·`WitnessTally`·`Said::of_ray_error` 의 doc.
-- **말 없는 클래스가 낀 물음은 게이트의 증명으로 답하고, 못 하면 게이트의 이름을 든다** — 정확한 도로가 못 읽는
-  링 물음은 «링이 든 상자 밖이면 밖» 한 규칙이 2차원·3차원에서 함께 답한다(`combinatorics::ring_box_says`·
-  `silent_name_by_box`).
+- **말 없는 클래스가 낀 물음은 게이트의 증명과 판정층의 구간으로 답하고, 못 하면 게이트의 이름을 든다** — 링 물음은
+  «링이 든 상자 밖이면 밖»이 먼저 답하고(`combinatorics::ring_box_says`, 이름 점은 이것만), 유리수 점은 차트의 홀짝
+  걸음이 꼭짓점을 판정층의 상자로 읽어 잇는다(`rational_ring_side`).
 - 링의 닫힘이 암묵인 관례는 「Tessellation 층」 절과 `Tessellation` 의 doc.
 
 ### 접선·접촉·집힌 면
@@ -2153,8 +2153,8 @@ A 를 받치던 다섯 근거가 이 커널에서 서지 않는 까닭:
   답 하나를 읽는다 — 정확 도로만 말할 수 있는 모양(평행·일치·옆면 위·접점)은 구간 도로에서 «말하지 못함»이다(정확 전용
   `plane_plane_cylinder` 호출은 그 밖에도 남는다). nacre-ops 에 남는 것: 정확 팔(선 위 순서·세계 축·축 좌표의 `a + b√c`
   비교), 점의 계단으로 거절 이름을 고르는 자리(`crossing_on_ruling`), 링 상자 탐침(`ring_box_points_hp`·`plane_sign_hp`·
-  `outside_ring_box`, `nesting` 의 말 없는 클래스 탐침), 정확한 점만 받는 구성과 판정(관통점의 유리수 좌표·켤레 중점·섞인 링·
-  룰링 접기·별칭 기록·호의 접선 방향). 두 도로가 한 몸통이 될 수 없는 물음은 «한 점의 두 이름»이다 — 원 위 순서
+  `outside_ring_box`, `nesting` 의 말 없는 클래스 탐침, 섞인 링 걸음의 구간 꼭짓점), 정확한 점만 받는 구성과 판정(관통점의
+  유리수 좌표·켤레 중점·섞인 링 걸음의 호·룰링 접기·별칭 기록·호의 접선 방향). 두 도로가 한 몸통이 될 수 없는 물음은 «한 점의 두 이름»이다 — 원 위 순서
   (`theta_between`)에서 정확 도로만 그것을 말한다(정밀도를 올려도 구간은 0 을 증명하지 못한다 — todo 「원통 판정의 상승 —
   인구가 생기면」). 실현(`realize.rs` 의 고정밀 재생)은 판정이 아니라 이 목록 밖이다.
 - 원통 면 위 사건들의 원형 순서는 서로 다른 절단면(서로 다른 판별식 u, v)에서 온 두 점의 비교라 `ℚ(√u,√v)` 의 4항 원소 부호가 필요하다. 이것은 재귀 탑으로 닫힌형이다(`P+√v·Q` 분해 → 상반 부호면 `sign(P)·sign(P²−vQ²)` — nacre-exact `quad.rs` 의 `biquad_sign`).

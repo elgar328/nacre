@@ -28,7 +28,8 @@ use nacre_geom::intersect::RingSide;
 ///
 /// [`Said::In`] or [`Said::Out`] decide; [`Said::Abstain`] is a ray that grazed, and
 /// [`Said::Silent`] one stopped by a class the gate passed silent — a face on such a class it could
-/// not show it misses, or a crossing a ring that class names could not show outside by its box.
+/// not show it misses, or a crossing that neither the box nor the walk of a ring that class names
+/// could place.
 /// In both the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(
     jd: &Judge<'_, WorkingPlane>,
@@ -87,8 +88,8 @@ pub(crate) fn point_in_faces_rat(
         // side of a plane through the ray, or strictly behind its origin ([`ray_misses_face`]).
         // What that cannot show — the ray may well cross the face — this ray cannot count, and
         // another direction may miss it. A face on a stated plane whose outline a silent class
-        // names has an exact crossing, and is read like any stated face below; only the ring that
-        // class names answers by its box, inside the one coordinate reading of a ring.
+        // names has an exact crossing, and is read like any stated face below; the ring that class
+        // names is read inside the one coordinate reading of a ring, by its box and then its walk.
         let Some(coeffs) = jd.world_rat(q) else {
             let unstated = crate::planes::silent_among(cyls, &[q])
                 || std::iter::once(&f.outer)
@@ -137,9 +138,9 @@ pub(crate) fn point_in_faces_rat(
         })()
         .ok_or_else(not_rational)?;
         // The face is read by the one coordinate reading of a face ([`rational_point_in_face`]); a
-        // ring a silent class names answers by its box there, and what the box cannot show leaves
-        // this ray to the gate's undecidedness. A value that reading could not form is raised here,
-        // not abstained on — the coordinate ray's rule.
+        // ring a silent class names is read there by its box and then its walk, and what neither
+        // can place leaves this ray to the gate's undecidedness. A value that reading could not
+        // form is raised here, not abstained on — the coordinate ray's rule.
         let material = match rational_point_in_face(jd, cyls, q, &x, f)? {
             Said::In => true,
             Said::Out => false,
@@ -248,26 +249,24 @@ pub(crate) enum RingRead {
 /// saying ([`RingRead::Cannot`]). The one witness reading ([`rational_point_in_ring`]) and the named
 /// reading of a point ([`named_point_in_face`]) both ask it.
 ///
-/// It says [`RingRead::Cannot`] with [`Said::Abstain`] where the mixed walk abstains (a point on a
-/// mixed ring among its causes — that walk does not tell it from a graze), with [`Said::Silent`]
-/// for a ring whose corners name a class the gate passed silent, when the ring's box does not show
-/// the point outside, and with [`Said::Unformed`] for a value that could not be formed — a class
-/// with no rational description, or a corner or the chart past `Rat`. It never declines: a
-/// coordinate reads every ring kind. `Err` is a producer defect, a straight ring of fewer than three
-/// edges.
+/// It says [`RingRead::Cannot`] when it cannot place the point, named by why: [`Said::Silent`] for
+/// a ring whose corners name a class the gate passed silent, [`Said::Unformed`] for one with a
+/// three-plane corner no exact meet spells, or for a value that could not be formed — a class with
+/// no rational description, the chart past `Rat` — and [`Said::Abstain`] where the walk over exact
+/// corners abstains (a point on a mixed ring among its causes — the walk does not tell it from a
+/// graze). It never declines: a coordinate reads every ring kind. `Err` is a producer defect, a
+/// straight ring of fewer than three edges.
 /// **The order is the rule; the cause that knows itself speaks first.**
-/// 1. A ring a silent class names has no rational corners, for the gate's own reason, so its box
-///    answers ([`ring_box_says`]) before anything reads a corner.
+/// 1. A ring a silent class names has no rational corners, for the gate's own reason, and the
+///    point outside its box is outside it ([`ring_box_says`]) — an answer that needs no chart.
 /// 2. A straight ring of fewer than three edges is no boundary: the polygon walk would answer
 ///    `Outside` by contract and make it invisible. A mixed ring that short is a lens — a chord and
 ///    its arc, a half-disc cap — and is read below: asked of every ring, this refuses six census
 ///    cells for being what they are, a boss straddling a bore and an annulus profile in each of the
 ///    three operations (measured).
-/// 3. A three-plane corner with no rational meet is no circumstance of this point: every other
-///    witness of the ring meets it too, so it is `Unformed` and not an abstention of the mixed walk
-///    — which is why it is asked before the fork. The chart is formed here, once per ring, so its
-///    overflow has one name on both roads.
-/// 4. A ring with a pierce corner or an arc step takes [`point_in_mixed_ring`].
+/// 3. The chart is formed here, once per ring, so its overflow has one name on both roads.
+/// 4. A ring with a pierce corner, an arc step or a three-plane corner no exact meet spells takes
+///    the walk ([`point_in_mixed_ring`]), which reads such a corner as the judge's box for it.
 /// 5. Every other ring is a polygon of rational corners in the class's chart
 ///    ([`nacre_geom::intersect::point_in_ring_2d_rat`] — half-open in y, so a corner on the ray is
 ///    decided rather than abstained on), and a point on the polygon is on it.
@@ -278,43 +277,51 @@ pub(crate) fn rational_ring_side(
     p: &[nacre_exact::Rat; 3],
     ring: &[RingEdge],
 ) -> Result<RingRead, BoolError> {
-    if names_a_silent_class(cyls, ring) {
+    let silent = names_a_silent_class(cyls, ring);
+    if silent {
         let prec = jd.standard.prec;
         let ph = p.map(|v| nacre_exact::HpBounded::of_rat(v, prec));
-        return Ok(match ring_box_says(jd, cyls, wc, &ph, ring) {
-            Said::In => RingRead::At(RingSide::Inside),
-            Said::Out => RingRead::At(RingSide::Outside),
-            said => RingRead::Cannot(said),
-        });
+        if let Said::Out = ring_box_says(jd, cyls, wc, &ph, ring) {
+            return Ok(RingRead::At(RingSide::Outside));
+        }
     }
+    let unspelled = ring
+        .iter()
+        .any(|e| three_plane_name(e.node).is_some() && node_coords_rat(jd, e.node).is_none());
+    // What a reading that could not say is named by: the reason a corner has no exact value —
+    // the gate's undecidedness first, then a value past the rational vessel — and only a ring of
+    // exact corners abstains for the point's own sake.
+    let cannot = |own: Said| {
+        RingRead::Cannot(if silent {
+            Said::Silent
+        } else if unspelled {
+            Said::Unformed
+        } else {
+            own
+        })
+    };
     let mixed = ring_is_mixed(ring);
     if !mixed && ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
     let Some(coeffs) = jd.world_rat(wc) else {
-        return Ok(RingRead::Cannot(Said::Unformed));
+        return Ok(cannot(Said::Unformed));
     };
     let Some((chart, p2)) = Chart2dRat::of_normal(&[coeffs[0], coeffs[1], coeffs[2]])
         .and_then(|chart| chart.project(p).map(|p2| (chart, p2)))
     else {
-        return Ok(RingRead::Cannot(Said::Unformed));
+        return Ok(cannot(Said::Unformed));
     };
-    if ring
-        .iter()
-        .any(|e| three_plane_name(e.node).is_some() && node_coords_rat(jd, e.node).is_none())
-    {
-        return Ok(RingRead::Cannot(Said::Unformed));
-    }
-    if mixed {
+    if mixed || unspelled {
         #[expect(
             clippy::disallowed_methods,
-            reason = "the one coordinate reading of a ring: its mixed arm"
+            reason = "the one coordinate reading of a ring: its walk"
         )]
         let inside = point_in_mixed_ring(jd, cyls, &coeffs, p, ring);
         return Ok(match inside {
             Some(true) => RingRead::At(RingSide::Inside),
             Some(false) => RingRead::At(RingSide::Outside),
-            None => RingRead::Cannot(Said::Abstain),
+            None => cannot(Said::Abstain),
         });
     }
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();

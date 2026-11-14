@@ -1,8 +1,9 @@
 use super::*;
-/// A ring the rational chart road cannot name: a pierce corner (no rational coordinates) or an
-/// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
-/// step by step in quadratic radicals; the one coordinate reading of a ring
-/// ([`rational_ring_side`]) forks on this.
+/// A ring the rational chart road cannot name by its shape: a pierce corner (no rational
+/// coordinates) or an arc step (no straight chart image). Such a ring takes
+/// [`point_in_mixed_ring`], which walks it step by step in quadratic radicals; the one coordinate
+/// reading of a ring ([`rational_ring_side`]) forks on this, and on a three-plane corner no exact
+/// meet spells.
 pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
     ring.iter()
         .any(|e| matches!(e.carrier, Carrier::Arc(_)) || pierce_name(e.node).is_some())
@@ -123,8 +124,55 @@ impl ChartCorner {
     }
 }
 
-/// **Parity of a rational point against a ring with pierce corners and arc steps** — the mixed
-/// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
+/// **A line step's corner as its name gives it** — exact chart coordinates where the name has an
+/// exact meet, else the judge's box for the point ([`node_point_hp`]) taken onto the chart's
+/// rational axes. A corner named by a turned wall of no world statement, or by a `Wide` plane, has
+/// no exact meet and is the second kind; the walk reads both, and only its signs differ in how
+/// they are decided ([`interval_orient`]).
+enum StepCorner {
+    Exact(ChartCorner),
+    Bounded([nacre_exact::HpBounded; 2]),
+}
+
+impl StepCorner {
+    /// The chart coordinates as intervals at `prec` — exact corners realized through
+    /// [`nacre_exact::quad_hp`], which never hands an approached value a zero radius.
+    fn hp(&self, prec: usize) -> Option<[nacre_exact::HpBounded; 2]> {
+        match self {
+            StepCorner::Exact(c) => {
+                let [x, y] = c.values()?;
+                Some([
+                    nacre_exact::quad_hp(&x, prec)?,
+                    nacre_exact::quad_hp(&y, prec)?,
+                ])
+            }
+            StepCorner::Bounded(b) => Some(b.clone()),
+        }
+    }
+}
+
+/// **The sign an interval proves, as an [`nacre_exact::Orient`]** — never `Zero`: an interval
+/// proves «apart from zero» and nothing else, so a value that may be zero is `None` and the walk
+/// abstains. Two points named differently are never shown equal by their boxes (design
+/// 「가지 말 것」, the row on comparing coordinates by intervals alone), which is why the walk's
+/// zero arms — a corner on the ray, the probe on a step — are reached only from exact values.
+fn interval_orient(v: &nacre_exact::HpBounded) -> Option<nacre_exact::Orient> {
+    v.sign().map(|positive| {
+        if positive {
+            nacre_exact::Orient::Positive
+        } else {
+            nacre_exact::Orient::Negative
+        }
+    })
+}
+
+#[cfg(test)]
+#[path = "../tests/mixed_ring.rs"]
+mod tests;
+
+/// **Parity of a rational point against a ring the rational chart road cannot name** — pierce
+/// corners, arc steps, or three-plane corners with no exact meet — the sibling of the chart road,
+/// asked only when `node_coords_rat` cannot name every corner or a step is an arc.
 ///
 /// The ray runs along the chart's own first axis (`Chart2dRat::axes` — one decision rule, not a
 /// second basis spelling): in chart coordinates it is `{ y = q.y, x > q.x }`. Each ring step
@@ -136,7 +184,9 @@ impl ChartCorner {
 ///   Its two corners need not spell one radical — the ends of one ruling named by two plane
 ///   pairs carry `c` and `k²c`, and two circles' corners carry two radicals — so the orientation
 ///   is one `QuadVal` expression where they do and the two-radical sign (`biquad_sign`) where
-///   they do not;
+///   they do not. A corner no exact meet spells — named by a turned wall of no world statement, or
+///   by a `Wide` plane — is the judge's box for it ([`StepCorner::Bounded`]), and a step with such
+///   a corner reads the same three signs in intervals ([`interval_orient`]);
 /// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
 ///   class plane and the cylinder is [`nacre_exact::quad::plane_plane_cylinder`], the pierce
 ///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
@@ -161,10 +211,11 @@ impl ChartCorner {
 /// along such a ray, and the boolean would have no witness (`tests/coverage/edge_on_a_ruling.rs`).
 ///
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
-/// across the ray, at an arc root inside the arc's closed span), checked-`Rat` overflow, among
-/// them — and its one reader takes it as
-/// one: the coordinate reading of a ring ([`rational_ring_side`]) as what it cannot say,
-/// [`Said::Abstain`]. A root
+/// across the ray, at an arc root inside the arc's closed span), a sign an interval could not
+/// prove, an arc end with no exact meet, checked-`Rat` overflow, among them — and its one reader
+/// takes it as
+/// one: the coordinate reading of a ring ([`rational_ring_side`]) as what it cannot say, named
+/// by why the ring's corners are not exact ([`Said::Abstain`] where they all are). A root
 /// on the seam is none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
 /// **A radical mismatch is not among them**, and nothing here can reach one: every value two
@@ -195,7 +246,7 @@ pub(crate) fn point_in_mixed_ring(
     // coordinate's own `QuadVal` folds `c` to 0 where its radical part vanishes, so the two
     // coordinates of one corner can spell different `c()`s, and the radical read off either one
     // would drop the other's `√c` term.
-    let corner = |nd: NodeId| -> Option<ChartCorner> {
+    let exact_corner = |nd: NodeId| -> Option<ChartCorner> {
         if let Some((_, cyl, _)) = pierce_name(nd) {
             let def = def_of(cyl)?;
             let (line, s) = pierce_meet(jd, cyl, def, nd)?.into_exact()?;
@@ -224,6 +275,26 @@ pub(crate) fn point_in_mixed_ring(
             })
         }
     };
+    // A corner with no exact spelling — no exact meet, or checked arithmetic past `Rat` — is read
+    // as the judge's box for the point, projected onto the chart's rational axes.
+    let prec = jd.standard.prec;
+    let on_axis = |x: &[nacre_exact::HpBounded; 3], e: &[Rat; 3]| -> nacre_exact::HpBounded {
+        let mut v = nacre_exact::HpBounded::of_rat(Rat::from_int(0), prec);
+        for k in 0..3 {
+            v = v.add(
+                &nacre_exact::HpBounded::of_rat(e[k], prec).mul(&x[k], prec),
+                prec,
+            );
+        }
+        v
+    };
+    let corner = |nd: NodeId| -> Option<StepCorner> {
+        if let Some(c) = exact_corner(nd) {
+            return Some(StepCorner::Exact(c));
+        }
+        let x = node_point_hp(jd, cyls, nd)?;
+        Some(StepCorner::Bounded([on_axis(&x, e1), on_axis(&x, e2)]))
+    };
     let k = ring.len();
     let mut inside = false;
     for i in 0..k {
@@ -232,7 +303,33 @@ pub(crate) fn point_in_mixed_ring(
             // A ruling is a straight step like a plane step — same y-straddle, same orient2d;
             // its corners are pierce points, which `corner` already evaluates exactly.
             Carrier::Plane { .. } | Carrier::Ruling(_) => {
-                let (ca, cb) = (corner(na)?, corner(nb)?);
+                let (ca, cb) = match (corner(na)?, corner(nb)?) {
+                    (StepCorner::Exact(ca), StepCorner::Exact(cb)) => (ca, cb),
+                    // **A corner known only as a box is read by the same rule in intervals.**
+                    // Every sign an interval decides is the true sign, so the parity is the true
+                    // one; a sign it cannot decide — a corner truly on the ray, the probe on the
+                    // step — abstains rather than being folded into a side.
+                    (sa, sb) => {
+                        let (a, b) = (sa.hp(prec)?, sb.hp(prec)?);
+                        let qxh = nacre_exact::HpBounded::of_rat(qx, prec);
+                        let qyh = nacre_exact::HpBounded::of_rat(qy, prec);
+                        let ya = interval_orient(&a[1].sub(&qyh, prec))?;
+                        let yb = interval_orient(&b[1].sub(&qyh, prec))?;
+                        if ray_straddle(ya, yb).is_none() {
+                            continue;
+                        }
+                        let o = interval_orient(
+                            &b[0].sub(&a[0], prec).mul(&qyh.sub(&a[1], prec), prec).sub(
+                                &b[1].sub(&a[1], prec).mul(&qxh.sub(&a[0], prec), prec),
+                                prec,
+                            ),
+                        )?;
+                        if ray_step_crossing(ya, yb, o)? {
+                            inside = !inside;
+                        }
+                        continue;
+                    }
+                };
                 let (a, b) = (ca.values()?, cb.values()?);
                 let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
                 let yb = b[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
@@ -333,6 +430,12 @@ pub(crate) fn point_in_mixed_ring(
                 // same convention every arc consumer reads (membership is direction-agnostic,
                 // so the *set* is what the CCW pair names).
                 let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
+                // An end with no exact meet abstains: no arc of a ring the box could not settle has
+                // one over the suite, the census, the ignored sweep and the kit (measured) — a
+                // class the gate passed silent has no face reaching the lateral, so its planes put
+                // no point on an arc of the ring. The judge's turn on the circle
+                // (`Judge::circle_turn`, the door `between_on_circle_hp` asks) is the reading such
+                // an end would take.
                 let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?.into_exact()?;
                 let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?.into_exact()?;
                 let ends = if lo_nd == hi_nd {

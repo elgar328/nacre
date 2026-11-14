@@ -267,8 +267,8 @@ pub(crate) fn rim_arc_of(
 /// circle with no exact description.
 ///
 /// Read backwards on a plate whose arc bulges past its corners' hull, the box proves a ray clear
-/// of a face it passes through; `a_pin_under_a_bulging_arc_is_inside_its_box_and_the_ray_down_answers`
-/// locks the reading.
+/// of a face it passes through;
+/// `a_pin_under_a_bulging_arc_is_inside_its_box_and_the_walk_places_it` locks the reading.
 pub(crate) fn ring_box_points_hp(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -328,11 +328,12 @@ fn outside_ring_box(
     })
 }
 
-/// **What a ring an exact road could not read says of a point** because a class the gate passed
-/// silent names its corners or the point — the one question intervals answer: outside the ring's
-/// box ([`outside_ring_box`]) is [`Said::Out`]; anything else is the gate's undecidedness,
-/// [`Said::Silent`]. Names read it through [`silent_name_by_box`], coordinates through the one
-/// coordinate reading of a ring ([`rational_ring_side`]).
+/// **What a ring's box says of a point** where a class the gate passed silent names its corners or
+/// the point — the question intervals answer with no chart to walk: outside the ring's box
+/// ([`outside_ring_box`]) is [`Said::Out`]; anything else is the gate's undecidedness,
+/// [`Said::Silent`]. A name reads it alone ([`silent_name_by_box`]): its point is an interval, and
+/// an interval origin has no rational ray plane to solve an arc step against. A coordinate reads it
+/// first, as the filter before the walk ([`rational_ring_side`]).
 pub(crate) fn ring_box_says(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

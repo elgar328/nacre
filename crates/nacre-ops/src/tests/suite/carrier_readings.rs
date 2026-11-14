@@ -336,18 +336,20 @@ fn a_pin_under_a_bulging_arc_beside_a_nameless_hole_builds() {
 
 /// **A pin under the bulge — the arc's own box holds it.** The box straddles the plate's edge
 /// `y = 40`, so the top face's outer ring itself carries corners its nameless walls name as well
-/// as the half round, and is read by its box alone. The half round bulges past the plate's straight
-/// corners, so the crossing of the Fuse's ray up the pin's axis is inside the arc's box: it cannot
-/// be shown outside — rightly, the ray does cross the face — and the ray down answers, the pin apart
-/// from the plate. This is the lock on the arc's direction: read the other way round, the box is the
-/// complementary half's, which lies inside the corners' hull, the crossing would be shown outside a
-/// face it is in, the ray up would count the bottom face alone and put the pin inside the plate. The
-/// lock rides on the ray up being asked before the ray down (`combinatorics::probe_dirs`'s order).
+/// as the half round. The half round bulges past the plate's straight corners, so the crossing of
+/// the Fuse's ray up the pin's axis is inside the arc's box: the box cannot show it outside —
+/// rightly, the ray does cross the face — and the walk over the ring, its turned corners read as
+/// the judge's boxes, places it inside, the pin apart from the plate. This is the lock on the arc's
+/// direction in the ring's box: read the other way round, the box is the complementary half's,
+/// which lies inside the corners' hull, the crossing would be shown outside a face it is in before
+/// the walk is asked, the ray up would count the bottom face alone and put the pin inside the
+/// plate. The lock rides on the ray up being asked before the ray down
+/// (`combinatorics::probe_dirs`'s order).
 ///
 /// The box's centre is on the edge, and a centrally symmetric square is halved by any line through
 /// its centre: half its `z ∈ [5, 10]` part is in the plate, so it adds `125 + 62.5`.
 #[test]
-fn a_pin_under_a_bulging_arc_is_inside_its_box_and_the_ray_down_answers() {
+fn a_pin_under_a_bulging_arc_is_inside_its_box_and_the_walk_places_it() {
     every_kind(
         |m| {
             let a = bulged_with_box(m, [20.0, 40.0]);

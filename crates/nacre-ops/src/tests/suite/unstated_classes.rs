@@ -216,7 +216,8 @@ fn nameless_classes_beside_world_cylinders() {
             ],
         },
         // The box encloses a pin of radius 1: Common is `25·2 + 3π`, which a road that guessed
-        // "outside" for the pin's disk answered as 50.
+        // "outside" for the pin's disk answered as 50. The disk's witnesses lie inside the box's
+        // ring, whose corners only the judge's boxes hold — the walk reads them there.
         Family {
             name: "box turned 37 around a pin",
             build: |m| {
@@ -226,17 +227,74 @@ fn nameless_classes_beside_world_cylinders() {
                 )
             },
             gate: Ok((4, 0, 0, 0)),
-            want: refused,
+            want: [
+                Built(1, 16200.0),
+                Built(1, 15950.0),
+                Built(1, 50.0 + 3.0 * pi),
+            ],
+        },
+        // A pin of radius 0.4 at `(33, 33)` stands inside the turned box's bounding square
+        // (`|x − 30|, |y − 30| ≤ 2.5(cos 37° + sin 37°) ≈ 3.50` holds every rim point) but outside
+        // the box: its nearest point is `3.80` along the wall normal `(cos 37°, sin 37°)`, past the
+        // half-width 2.5. The box cannot show the disk outside, so the walk places it — outside —
+        // and Common is the box's share of the plate alone.
+        Family {
+            name: "box turned 37 with a pin inside its bounding square",
+            build: |m| {
+                (
+                    plate_with_pin(m, [33.0, 33.0, 10.0], 0.4, 3.0),
+                    turned_box(m, 37, [30, 30], 8.0, 10.0),
+                )
+            },
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, 16200.0 + 0.48 * pi),
+                Built(1, 15950.0 + 0.48 * pi),
+                Built(1, 50.0),
+            ],
+        },
+        // The same pair with the box first: the cut is the box less the pinned plate.
+        Family {
+            name: "box turned 37 around a pin, the box first",
+            build: |m| {
+                let p = plate_with_pin(m, [30.0, 30.0, 10.0], 1.0, 3.0);
+                (turned_box(m, 37, [30, 30], 8.0, 10.0), p)
+            },
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, 16200.0),
+                Built(1, 200.0 - 3.0 * pi),
+                Built(1, 50.0 + 3.0 * pi),
+            ],
         },
         // The box encloses the bore: each wall stands 2.5 from the axis, beyond the radius 2, which
         // the gate shows from the axis's distance to the plane once the box test cannot (the box of
-        // the bore's lateral straddles every wall) — four beside. What refuses is the nesting, as
-        // with the box turned around the pin.
+        // the bore's lateral straddles every wall) — four beside. The bore's disks lie inside the
+        // box's ring on the plate's top and the box's bottom, as with the box turned around the
+        // pin: the box shares `25·5 − 4π·5` with the plate.
         Family {
             name: "box turned 37 across the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [10, 10], 5.0, 10.0)),
             gate: Ok((4, 0, 0, 0)),
-            want: refused,
+            want: [
+                Built(1, 16125.0 - 20.0 * pi),
+                Built(1, 15875.0 - 20.0 * pi),
+                Built(1, 125.0 - 20.0 * pi),
+            ],
+        },
+        // The same pair with the box first.
+        Family {
+            name: "box turned 37 across the bore, the box first",
+            build: |m| {
+                let p = plate_with_bore(m);
+                (turned_box(m, 37, [10, 10], 5.0, 10.0), p)
+            },
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, 16125.0 - 20.0 * pi),
+                Built(1, 125.0 + 20.0 * pi),
+                Built(1, 125.0 - 20.0 * pi),
+            ],
         },
         // A lone cylinder and a box above its top, apart.
         Family {

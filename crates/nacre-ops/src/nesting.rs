@@ -416,7 +416,8 @@ fn ask(
                         .any(|x| combinatorics::pierce_name(x.node).is_some()),
                     combinatorics::ring_is_mixed(rb),
                 )? {
-                    // The coordinate arm below asks the same box.
+                    // A name is an interval, which has no rational ray to walk from: it is asked
+                    // the ring's box alone, the filter the coordinate arm below asks first.
                     Said::Declines | Said::Abstain
                         if crate::planes::silent_among(cyls, &name_planes(*n)) =>
                     {
@@ -426,9 +427,10 @@ fn ask(
                 },
             }
         }
-        // The one coordinate reading of a ring: it answers a silent class's ring by its box and
-        // names a value it could not form; a straight ring too short to bound anything is a
-        // producer defect and is raised, as the ray road's reading raises it.
+        // The one coordinate reading of a ring: it reads a silent class's ring by its box and then
+        // by the walk over its corners' intervals, and names a value it could not form; a straight
+        // ring too short to bound anything is a producer defect and is raised, as the ray road's
+        // reading raises it.
         (Where::Coord(p), Cell::Ring(rb)) => {
             combinatorics::rational_point_in_ring(jd, cyls, wc, p, rb)?
         }
