@@ -2223,45 +2223,6 @@ fn lateral_reach(
     })
 }
 
-/// Per axis, the low and high ends of where a vertex's truth can be.
-pub(crate) type CacheReach = ([f64; 3], [f64; 3]);
-
-/// **Where a vertex's truth can be** — per axis, the interval its cache proves. The self-touch
-/// sieve reads it for seam vertices, the gate for the corners of a face it asks to stand apart.
-///
-/// A `Realized` cache holds the truth within `coord ± bound`; the radius is widened by a few ulps
-/// of both operands (and the smallest normal), since `coord − bound` computed in `f64` may round
-/// inward by half an ulp of the result — which the widening outgrows on either side of a binade.
-/// Widening only over-keeps. Any other variant proves nothing, and the answer is the whole line:
-/// the sieve then keeps every candidate the vertex takes part in and leaves it to the exact test,
-/// which is the only safe reading of "no bound". Measured: every seam point in the census and the
-/// perf folds is `Realized`; the suite's 72 others (a history past the cost cap, a carrier with no
-/// witness) are where this arm runs.
-pub(crate) fn cache_reach(cache: &nacre_topo::PointCache) -> CacheReach {
-    match *cache {
-        nacre_topo::PointCache::Realized { coord, bound } => {
-            let c = coord.as_array();
-            let w: [f64; 3] = core::array::from_fn(|k| {
-                bound[k].upper_f64() * (1.0 + 4.0 * f64::EPSILON) + round_slack(c[k])
-            });
-            (
-                core::array::from_fn(|k| c[k] - w[k]),
-                core::array::from_fn(|k| c[k] + w[k]),
-            )
-        }
-        nacre_topo::PointCache::Ceiling { .. } | nacre_topo::PointCache::Unrealized { .. } => {
-            ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3])
-        }
-    }
-}
-
-/// **A few ulps of `x`, and the smallest normal** — how far an `f64` computed near `x` may round
-/// from the value it stands for. A bound read in `f64` is widened by it to hold the truth:
-/// [`cache_reach`]'s radius, and the self-touch sieve's rational circle boxes.
-pub(crate) fn round_slack(x: f64) -> f64 {
-    x.abs() * (4.0 * f64::EPSILON) + f64::MIN_POSITIVE
-}
-
 /// **Does this cylinder leave only whole rims?** — every loop of every lateral face is one edge
 /// that closes on itself (a whole circle, the spelling [`lateral_spans`] reads a rim by), and
 /// every planar face whose outer loop is such a circle (a cap's disk, a blind bore's floor) holds

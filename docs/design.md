@@ -174,7 +174,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **바닥.** 다음 자리는 `f64` 로 읽은 오차 경계를, 0 이 아니면 `f64::MIN_POSITIVE`(가장 작은 정상수) 아래로 내리지
 않는다: `Mag::upper_f64`·`bigfloat_upper_f64`(둘이 `pow2_upper_f64` 를 나눠 쓰고 정확한 0 은 0 으로 읽는다),
-`Bounded::round_off`(0 도 내지 않는다 — 반올림이 정확했는지 아는 호출자가 0 을 준다), `cyl_gate::round_slack`,
+`Bounded::round_off`(0 도 내지 않는다 — 반올림이 정확했는지 아는 호출자가 0 을 준다), `corners::round_slack`,
 `Realization::to_f64` 의 `half_ulp`, STEP 불확도의 `half_ulp`, 계측 `audit_rim_centre`. 비정규수 구역의 반올림 오차는
 값에 비례하지 않고 고정된 반 칸(`2⁻¹⁰⁷⁵`)이라 상대 오차로 쓴 식이 거기서 성립하지 않기 때문이다: `|x|·ε/2` 는 0 이
 되고(정확하다는 거짓) `× (1 + kε)` 는 대개 값을 키우지 못한다.
