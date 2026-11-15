@@ -745,6 +745,51 @@ fn a_face_meeting_the_line_at_a_corner_does_not_touch_it() {
     );
 }
 
+/// **A box never reads as a corner on the line.** On the named wall fused with a turned box
+/// ([`crate::tests::named_wall_with_unspelled_corners`]) the faces on `x = 9` carry corners known
+/// only as boxes. A vertical line through one of them — at the rational its cached `y` is, which the
+/// true point need not be — passes within the box, so the box proves neither side of it. The face's
+/// other steps there run along caps it shares with exact corners, so a reader taking the unproven
+/// side for «on the line» would place the crossings from those exact ends and answer; it is
+/// refused instead, by the corner's own cause.
+#[test]
+fn a_line_through_a_boxed_corner_does_not_read_the_face() {
+    let z = Rat::from_int;
+    let mut m = Model::new();
+    let (_, tool) = crate::tests::named_wall_with_unspelled_corners(&mut m);
+    let wall = [z(1), z(0), z(0), z(-9)];
+    let sol = m.solid(tool);
+    let mut asked = 0;
+    for &fh in &m.shell(sol.outer).faces {
+        let face = m.face(fh);
+        if world_narrow(&m, face.surface).ok() != Some(wall) {
+            continue;
+        }
+        for he in &face.outer.half_edges {
+            let Ok(super::super::corners::Corner::Bounded { .. }) =
+                corner_of(&m, face, &face.outer, he)
+            else {
+                continue;
+            };
+            let y = m.vertex_cache(he_start(&m, *he)).coord().as_array()[1];
+            let foot = [
+                z(9),
+                Rat::try_from_f64(y).expect("a cached coordinate"),
+                z(0),
+            ];
+            let read =
+                line_runs_through_face(&m, face, &wall, &foot, &[z(0), z(0), z(1)], [z(0), z(20)]);
+            assert_eq!(
+                read.err(),
+                Some(RejectReason::CylinderGateUndecided),
+                "the line through the box at y = {y} is not read"
+            );
+            asked += 1;
+        }
+    }
+    assert_eq!(asked, 4, "every boxed corner is asked");
+}
+
 /// **A row's witness is the first piece the line runs through, over its stretches in order, else
 /// the first piece it meets** ([`row_witness`]). A through piece in a later stretch outranks a
 /// boundary piece in an earlier one; a stretch the face clears has no piece and is passed over; and
@@ -1717,7 +1762,9 @@ fn the_line_reader_names_what_stopped_it() {
     let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
         .world_rat(c)
         .expect("narrow");
-    let foot = tangency_foot(&coeffs, &def.origin()).expect("rational");
+    let foot =
+        nacre_exact::axis_plane_meet(&coeffs, &def.origin(), &[coeffs[0], coeffs[1], coeffs[2]])
+            .expect("rational");
     let face_of = |slab_side: bool| {
         (0..setup.planes.len())
             .find_map(|i| match &setup.planes[i] {

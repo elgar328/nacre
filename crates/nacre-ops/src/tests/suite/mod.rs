@@ -1161,6 +1161,7 @@ mod oblique_cut_rod;
 mod oblique_sections;
 pub(crate) use cylinder_gate::{d_rod_on_a_bitten_slab, d_rod_on_a_split_bitten_slab};
 pub(crate) use oblique_sections::{SUNK, gusset};
+pub(crate) use unstated_classes::named_wall_with_unspelled_corners;
 mod overhang_corners;
 mod parallel;
 mod pierce_corners;

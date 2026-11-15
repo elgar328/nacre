@@ -274,3 +274,145 @@ fn a_reach_holds_the_proven_interval_and_nothing_else_is_finite() {
         );
     }
 }
+
+/// The faces of `solid` whose plane's world name is `coeffs`.
+fn faces_on(m: &Model, solid: Handle<nacre_topo::Solid>, coeffs: &[Rat; 4]) -> Vec<Handle<Face>> {
+    let s = m.solid(solid);
+    std::iter::once(&s.outer)
+        .chain(s.cavities.iter())
+        .flat_map(|&sh| m.shell(sh).faces.iter().copied())
+        .filter(|&fh| world_narrow(m, m.face(fh).surface).ok().as_ref() == Some(coeffs))
+        .collect()
+}
+
+/// **A corner no exact spelling names is read on its proven box, by the one door.** The named wall
+/// fused with a turned box ([`crate::tests::named_wall_with_unspelled_corners`]) carries, on its
+/// faces on `x = 9` (the box runs through the wall's height, so it parts the face in two), corners
+/// of that world plane, a turned wall of no world statement and a cap: no
+/// frame holds the three, so the exact spelling stops at their shape. Each such corner comes back
+/// as a box whose cause is that shape and whose carriers name `x = 9`, so the face's own class is
+/// shown to hold it; the face's other corners keep their rational spelling.
+#[test]
+fn a_corner_no_exact_spelling_names_is_read_on_its_box() {
+    let mut m = Model::new();
+    let (_, tool) = crate::tests::named_wall_with_unspelled_corners(&mut m);
+    let wall = [q(1, 1), q(0, 1), q(0, 1), q(-9, 1)];
+    let faces = faces_on(&m, tool, &wall);
+    assert_eq!(faces.len(), 2, "the box parts the wall's face on x = 9");
+    let (mut boxed, mut rational) = (0, 0);
+    for &fh in &faces {
+        let face = m.face(fh);
+        for he in &face.outer.half_edges {
+            let c = corner_of(&m, face, &face.outer, he).expect("every corner of the face is read");
+            assert!(c.on_plane(&wall), "the corner is shown on its face's plane");
+            match c {
+                Corner::Bounded { cause, .. } => {
+                    assert_eq!(
+                        cause,
+                        CornerFail::Shape,
+                        "no frame holds the corner's planes"
+                    );
+                    boxed += 1;
+                }
+                Corner::Rational(_) => rational += 1,
+                Corner::Pierce(..) | Corner::Round { .. } => panic!("a straight face of planes"),
+            }
+        }
+    }
+    assert_eq!(boxed, 4, "the box's two walls cross the face at both caps");
+    assert!(
+        rational >= 2,
+        "the wall's own corners stay exact ({rational})"
+    );
+}
+
+/// A box corner about `centre` with reach `rho`, its carriers `carriers`.
+fn bounded(centre: [Rat; 3], rho: Rat, carriers: [Option<[Rat; 4]>; 3]) -> Corner {
+    Corner::Bounded {
+        centre,
+        rho,
+        carriers,
+        cause: CornerFail::Shape,
+    }
+}
+
+/// **A box proves a side of the strip only when its disk is clear of it.** The plane `x = 0` holds
+/// the axis of a radius-2 cylinder along `z`, so its strip is `|y| < 2`, with `Plus` on `−y`
+/// (`n × m = −ŷ`). A box clear on either side says so — its centre may sit off the plane, since
+/// its projection is what is asked — and a box touching the strip, or spanning one of its rulings,
+/// proves no side: the true point may be anywhere in it.
+#[test]
+fn a_box_proves_a_strip_side_only_clear_of_the_strip() {
+    use nacre_exact::StripSide::{Minus, Plus};
+    let plane = [q(1, 1), q(0, 1), q(0, 1), q(0, 1)];
+    let (o, m) = ([q(0, 1); 3], [q(0, 1), q(0, 1), q(1, 1)]);
+    let r2 = nacre_exact::BigRat::from_rat(q(4, 1));
+    let side = |c: [Rat; 3], rho: Rat| bounded(c, rho, [None; 3]).strip_side(&plane, &o, &m, &r2);
+    let one = q(1, 1);
+    assert_eq!(
+        side([q(0, 1), q(5, 1), one], one),
+        Some(Minus),
+        "clear on +y"
+    );
+    assert_eq!(
+        side([q(0, 1), q(-5, 1), one], one),
+        Some(Plus),
+        "clear on −y"
+    );
+    assert_eq!(
+        side([q(1, 2), q(5, 1), one], one),
+        Some(Minus),
+        "off the plane, projected"
+    );
+    assert_eq!(
+        side([q(0, 1), q(5, 2), one], one),
+        None,
+        "spanning the ruling y = 2"
+    );
+    assert_eq!(side([q(0, 1), q(0, 1), one], one), None, "inside the strip");
+    assert_eq!(
+        side([q(0, 1), q(3, 1), one], one),
+        None,
+        "touching the ruling"
+    );
+}
+
+/// **A box reaches past a station when its ball does** — the axis question, about the same box:
+/// centre at `z = 1`, reach `1`, so it sweeps `z ∈ [0, 2]`.
+#[test]
+fn a_box_reaches_past_a_station_by_its_ball() {
+    use nacre_exact::Orient::{Negative, Positive};
+    let (o, m) = ([q(0, 1); 3], [q(0, 1), q(0, 1), q(1, 1)]);
+    let c = bounded([q(0, 1), q(5, 1), q(1, 1)], q(1, 1), [None; 3]);
+    assert!(
+        !c.reaches(&o, &m, q(3, 1), Positive),
+        "z = 3 is past its reach"
+    );
+    assert!(c.reaches(&o, &m, q(3, 2), Positive), "z = 3/2 is within it");
+    assert!(
+        c.reaches(&o, &m, q(3, 1), Negative),
+        "its centre is below z = 3"
+    );
+    assert!(
+        !c.reaches(&o, &m, q(-1, 1), Negative),
+        "nothing of it is below z = −1"
+    );
+    assert!(
+        c.reaches(&o, &m, q(1, 2), Negative),
+        "its reach is below z = 1/2"
+    );
+}
+
+/// **A box is on a plane exactly when one of its corner's planes is that plane** — the box cannot
+/// show a zero, so the corner's definition answers.
+#[test]
+fn a_box_is_on_a_plane_only_through_its_carriers() {
+    let x0 = [q(1, 1), q(0, 1), q(0, 1), q(0, 1)];
+    let x1 = [q(1, 1), q(0, 1), q(0, 1), q(-1, 1)];
+    let c = bounded([q(0, 1); 3], q(1, 1), [None, Some(x0), None]);
+    assert!(c.on_plane(&x0), "a carrier names x = 0");
+    assert!(
+        !c.on_plane(&x1),
+        "no carrier names x = 1, though the box reaches it"
+    );
+}

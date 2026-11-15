@@ -232,9 +232,10 @@ pub(crate) fn cylinder_gate(
         // which makes one point with two names at a ruling's end, while the question is whether the
         // line lies on a lateral face. Measured: an `x = y` prism across a half cylinder, with the
         // wall of a box turned 45° tangent at that ruling, puts no face on the line, and with the
-        // refusal off it builds in both orders by derived volume. The narrowed question cannot be
-        // measured yet: a shape whose face does run through the line is refused first, at a corner
-        // where a named face calls a nameless class (`corners.rs`).
+        // refusal off it builds in both orders by derived volume. A shape whose face does run
+        // through the line reaches this refusal too, and with it off the split refuses that shape
+        // by the same name (`arrangement::split`) — measured on the same prism with the box's wall
+        // face across the tangent point, both orders, all three operations.
         for g in meeting(ci, ClassMeet::Silent(Silence::Grazes)) {
             let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
             let others = meeting(ci, ClassMeet::Cuts)
@@ -888,7 +889,8 @@ fn shared_rulings(
             else {
                 continue;
             };
-            let foot = tangency_foot(&jd.world_rat(t)?, &o)?;
+            let tc = jd.world_rat(t)?;
+            let foot = nacre_exact::axis_plane_meet(&tc, &o, &[tc[0], tc[1], tc[2]])?;
             if !on_a_face(&foot)? {
                 continue;
             }
@@ -1139,29 +1141,6 @@ pub(crate) struct TangentReading {
     pub(crate) witness: Point3,
 }
 
-/// The foot of the perpendicular from the axis origin to the plane — **rational**, because it is
-/// `o - ((n·o + d)/(n·n))·n` and nothing there leaves the field. This is the tangency line's base
-/// point; the line itself is that point plus `t·m`.
-fn tangency_foot(
-    coeffs: &[nacre_exact::Rat; 4],
-    o: &[nacre_exact::Rat; 3],
-) -> Option<[nacre_exact::Rat; 3]> {
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let mut num = coeffs[3];
-    for k in 0..3 {
-        num = num.checked_add(n[k].checked_mul(o[k])?)?;
-    }
-    let den = nacre_exact::dot3_rat(&n, &n)?;
-    // `Rat` has no division: the reciprocal is the exact inverse and `Rat::new` refuses `0`,
-    // which is precisely the degenerate normal this must not divide by.
-    let q = num.checked_mul(nacre_exact::Rat::new(den.denom(), den.numer())?)?;
-    let mut out = [nacre_exact::Rat::from_int(0); 3];
-    for k in 0..3 {
-        out[k] = o[k].checked_sub(q.checked_mul(n[k])?)?;
-    }
-    Some(out)
-}
-
 /// A lateral face's stretches of one ruling, in the axis parameter (`lateral_cover_on_ruling`).
 type Stretches = Vec<[nacre_exact::Rat; 2]>;
 
@@ -1233,7 +1212,10 @@ fn tangency_rows(
     let side_of = |i: usize| {
         if i < n_a { SolidSide::A } else { SolidSide::B }
     };
-    let base = tangency_foot(coeffs, &o);
+    // The tangency line's base point: the foot of the perpendicular from the axis origin to the
+    // wall, the plane's meet with the line along its normal — **rational**, because nothing in
+    // `o − ((n·o + d)/(n·n))·n` leaves the field. The line itself is that point plus `t·m`.
+    let base = nacre_exact::axis_plane_meet(coeffs, &o, &[coeffs[0], coeffs[1], coeffs[2]]);
     // Which side of the wall plane the cylinder is on — the lens' side. A tangency puts the
     // whole cylinder on one side, and `0` would mean the axis lies *in* the plane, which needs
     // `r = 0`; `CylinderDef` refuses that at construction (`NonPositiveRadius`, "positive by
@@ -1733,7 +1715,7 @@ enum LoopOnLine {
 /// face's stretches in turn. `coeffs` are the face's own plane's, and `foot` lies on it.
 ///
 /// **The line is a strip of width zero.** A piece's side is asked as the strip test asks it
-/// ([`nacre_exact::cylinder_strip_side`]), about `foot` at radius `0`: the strip a radius-`0`
+/// ([`Corner::strip_side`]), about `foot` at radius `0`: the strip a radius-`0`
 /// cylinder on the line cuts from any plane holding the line is the line itself. The wall's own
 /// strip about the axis is that line already — its plane is `r` from the axis, so the half-width is
 /// `0` — so the wall reads as it does about the axis; a secant plane holding the line cuts a strip
@@ -1751,7 +1733,8 @@ enum LoopOnLine {
 /// side, and a stretch is **interior** exactly when both readings put it inside: a face that ends
 /// on the line along an edge, or meets it at one corner, is inside on one side only. The
 /// arrangement's own sweep (`trace_transversal_face`) answers the same kind of question, but
-/// `planes` sits below the engine and runs before it.
+/// `planes` sits below the engine and runs before it. A corner known only as a box
+/// ([`Corner::Bounded`]) has a side only where its box is clear of the line: it is never «on» it.
 ///
 /// **Each piece places its own changes of side.** A straight step changes at most once, where its
 /// carrier meets the line — placed from one end and the step's direction (the edge's two ends when
@@ -1766,14 +1749,15 @@ enum LoopOnLine {
 /// `Err` is «could not read the face», by its cause, as the gate names everything it forms: a value
 /// `Rat` does not hold — an overflow, a `Wide` corner or radius — is width
 /// ([`RejectReason::WitnessNotRational`]); an outer piece [`corner_of`] cannot read fails by its
-/// cause ([`CornerFail::reason_on`] — the very name [`face_clears_footprint`] gives it), and so
-/// does a neighbour whose statement it cannot read ([`world_narrow`], [`world_cylinder`]); a piece
-/// off the class's plane, an edge its face's surface does not carry, or a step that runs along the
-/// line yet crosses it is two descriptions of the face disagreeing — the misfit
-/// `face_clears_footprint` refuses on, [`RejectReason::CylinderGateUndecided`]; any other shape
-/// this does not spell is [`unreadable_reason`]'s. The caller never reads it as a silent acquittal.
-/// A **hole** that cannot be read is left out instead: the face only grows, so the answer can only
-/// lean towards a contact.
+/// cause ([`CornerFail::reason_on`] — the very name [`face_clears_footprint`] gives it), so does
+/// a boxed corner whose side or value a step needs and the box cannot prove ([`Corner::refusal`]),
+/// and so does a neighbour whose statement it cannot read ([`world_narrow`],
+/// [`world_cylinder`]); a piece off the class's plane, an edge its face's surface does not carry,
+/// or a step that runs along the line yet crosses it is two descriptions of the face disagreeing —
+/// the misfit `face_clears_footprint` refuses on, [`RejectReason::CylinderGateUndecided`]; any
+/// other shape this does not spell is [`unreadable_reason`]'s. The caller never reads it as a
+/// silent acquittal. A **hole** that cannot be read is left out instead: the face only grows, so
+/// the answer can only lean towards a contact.
 #[allow(clippy::too_many_arguments)]
 fn line_runs_through_face(
     model: &Model,
@@ -1824,7 +1808,7 @@ fn line_runs_through_face(
                 QuadVal::from_rat(zero),
             ),
             Corner::Pierce(line, s) => uv(&line.base(), &line.dir(), *s),
-            Corner::Round { .. } => Err(unreadable()),
+            Corner::Round { .. } | Corner::Bounded { .. } => Err(c.refusal(model, face)),
         }
     };
     // The direction of the straight edge `he`, `a → b` being its two ends' pieces.
@@ -1889,8 +1873,8 @@ fn line_runs_through_face(
             return Err(misfit);
         }
         let side_of = |c: &Corner| c.strip_side(coeffs, foot, m, &line_r2);
-        if pieces().all(|c| side_of(c) == StripSide::Plus)
-            || pieces().all(|c| side_of(c) == StripSide::Minus)
+        if pieces().all(|c| side_of(c) == Some(StripSide::Plus))
+            || pieces().all(|c| side_of(c) == Some(StripSide::Minus))
         {
             return Ok(LoopOnLine::Clear);
         }
@@ -1902,7 +1886,12 @@ fn line_runs_through_face(
             match (&starts[i], &rounds[i]) {
                 (Some(a), None) => {
                     let b = next()?;
-                    let (sa, sb) = (side_of(a), side_of(b));
+                    // An exact end's `Inside` is that end **on** the line, which the half-open rule
+                    // reads; an end whose side is not proven is not on the line, nor off it.
+                    let (sa, sb) = (
+                        side_of(a).ok_or_else(|| a.refusal(model, face))?,
+                        side_of(b).ok_or_else(|| b.refusal(model, face))?,
+                    );
                     let orient = |s: StripSide, flip: bool| match (s, flip) {
                         (StripSide::Plus, false) | (StripSide::Minus, true) => Orient::Positive,
                         (StripSide::Minus, false) | (StripSide::Plus, true) => Orient::Negative,
@@ -1991,8 +1980,10 @@ fn line_runs_through_face(
                         for (corner, radial, leaving) in
                             [(start, r_start, true), (end, r_end, false)]
                         {
-                            if matches!(side_of(corner), StripSide::Plus | StripSide::Minus) {
-                                continue;
+                            match side_of(corner) {
+                                Some(StripSide::Plus | StripSide::Minus) => continue,
+                                Some(StripSide::Inside | StripSide::Crosses) => {}
+                                None => return Err(corner.refusal(model, face)),
                             }
                             // The arc beside the end: along its tangent there, the way it leaves
                             // the start or comes into the end — or, where that tangent runs along

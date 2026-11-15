@@ -60,6 +60,18 @@ fn turned_box(m: &mut Model, deg: i128, c: [i128; 2], z0: f64, h: f64) -> Handle
     shift(m, b, [c[0], c[1], 0])
 }
 
+/// **A named wall across the bore carrying corners no exact meet names** — the bored plate, and the
+/// wall `[9,11] × [0,40] × [5,15]` fused with a box turned 37° at `(9, 32)` over the same height.
+/// The box's walls cross the wall's faces `x = 9` and `x = 11`, and each crossing is a corner of a
+/// world plane, a turned wall of no world statement and a cap: no frame holds all three, so it has
+/// no exact meet. The walls' planes run within the bore's radius.
+pub(crate) fn named_wall_with_unspelled_corners(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let w = cuboid(m, [9.0, 0.0, 5.0], [11.0, 40.0, 15.0]);
+    let r = turned_box(m, 37, [9, 32], 5.0, 10.0);
+    let tool = op(m, BoolKind::Fuse, w, r);
+    (plate_with_bore(m), tool)
+}
+
 /// The plate `[0,40]²×[0,10]` with a slot through it: the stadium of half-width 3 about the segment
 /// `y = 20`, `x ∈ [15, 25]` — two half-cylinder ends whose lateral faces have no whole rim, joined
 /// by walls tangent to them.
@@ -141,6 +153,19 @@ fn nameless_classes_beside_world_cylinders() {
         25.0 * (10.0 - z0) + strip * (15.0 - 10.0)
     };
     let refused = [Refused(Undecided); 3];
+    // The wall `[9,11] × [0,40] × [5,15]` fused with the box turned 37 at `(9, 32)` over `[5,15]`:
+    // the wall, the box, less their overlap — the turned square inside the wall's strip, over the
+    // height 10. Inside the plate (`z` up to 10) the wall loses the bore's strip `|x − 10| ≤ 1` of
+    // the radius-2 disk, `2√3 + 4π/3`, and the box sinks its whole square.
+    let wall_strip = turned_square_within([9.0, 32.0], 37.0, 0, 9.0, 11.0);
+    let walled_tool = 800.0 + 250.0 - 10.0 * wall_strip;
+    let walled_common =
+        400.0 - 5.0 * (2.0 * 3f64.sqrt() + 4.0 * pi / 3.0) + 125.0 - 5.0 * wall_strip;
+    // The bar `[12,14] × [0,40] × [5,15]` fused with the box turned 37 at `(12, 30)` over `[5,15]`,
+    // reckoned the same way; the bar is tangent to the bore, so the plate keeps all of its strip.
+    let bar_strip = turned_square_within([12.0, 30.0], 37.0, 0, 12.0, 14.0);
+    let tangent_tool = 800.0 + 250.0 - 10.0 * bar_strip;
+    let tangent_common = 400.0 + 125.0 - 5.0 * bar_strip;
     let fams = [
         // The control: a quarter turn keeps every name, and the box sits on the plate far from
         // the bore — it overlaps the plate over `z ∈ [5, 10]`, 125.
@@ -599,18 +624,65 @@ fn nameless_classes_beside_world_cylinders() {
                 Built(1, sunk(8.0)),
             ],
         },
-        // A world wall crossing the bore, fused with a turned box: the wall's face carries the
-        // box's irrational corners.
+        // A world wall crossing the bore, fused with a turned box: the wall's faces carry the
+        // box's corners, which no exact meet names (`named_wall_with_unspelled_corners`). The
+        // gate reads them on their proven boxes; the walls run within the radius, so they are
+        // recorded as cutting whatever the boxes say. The box's wall planes stand 9.94, 14.94,
+        // 15.67 and 20.67 from the axis (beside).
         Family {
-            name: "named wall across the bore with irrational corners",
+            name: "named wall across the bore with unspelled corners",
+            build: named_wall_with_unspelled_corners,
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, bored + walled_tool - walled_common),
+                Built(1, bored - walled_common),
+                Built(2, walled_common),
+            ],
+        },
+        Family {
+            name: "named wall across the bore with unspelled corners, operands swapped",
             build: |m| {
-                let w = cuboid(m, [9.0, 0.0, 5.0], [11.0, 40.0, 15.0]);
-                let r = turned_box(m, 37, [9, 32], 5.0, 10.0);
-                let tool = op(m, BoolKind::Fuse, w, r);
-                (plate_with_bore(m), tool)
+                let (plate, tool) = named_wall_with_unspelled_corners(m);
+                (tool, plate)
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, bored + walled_tool - walled_common),
+                Built(1, walled_tool - walled_common),
+                Built(2, walled_common),
+            ],
+        },
+        // A bar `x ∈ [12, 14]` tangent to the bore along its line `x = 12`, fused with the box
+        // turned 37 at `(12, 30)`: the bar's tangent face carries the box's unspelled corners, and
+        // the tangency road reads them on their boxes, far from the line. `A − B` is the plate
+        // touching itself along that line, as with the bar alone. The box's wall planes stand
+        // 11.13, 16.13, 12.27 and 17.27 from the axis (beside).
+        Family {
+            name: "bar tangent to the bore with unspelled corners on its tangent face",
+            build: |m| {
+                let t = turned_box(m, 37, [12, 30], 5.0, 10.0);
+                (plate_with_bore(m), bar_and(m, [12.0, 14.0], [5.0, 15.0], t))
+            },
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, bored + tangent_tool - tangent_common),
+                Refused(RejectReason::SelfTouchingResult),
+                Built(1, tangent_common),
+            ],
+        },
+        Family {
+            name: "bar tangent to the bore with unspelled corners on its tangent face, operands swapped",
+            build: |m| {
+                let t = turned_box(m, 37, [12, 30], 5.0, 10.0);
+                let bar = bar_and(m, [12.0, 14.0], [5.0, 15.0], t);
+                (bar, plate_with_bore(m))
+            },
+            gate: Ok((4, 0, 0, 0)),
+            want: [
+                Built(1, bored + tangent_tool - tangent_common),
+                Built(1, tangent_tool - tangent_common),
+                Built(1, tangent_common),
+            ],
         },
         // Out of scope: the bored plate itself turned, so the cylinder has no world statement.
         Family {
@@ -1602,10 +1674,12 @@ fn prism_on_the_diagonal(m: &mut Model, z: [f64; 2]) -> Handle<Solid> {
 ///   (the box's wall stops short of the tangent point), and without the refusal both orders build
 ///   their derived volumes — `Common = 12π`, the 135° sector of the half disk on `y ≥ x` over the
 ///   overlap `z ∈ [2, 10]`. The refusal is wider than the harm it stands for, a face on the line
-///   meeting a ruling end in one point under two names; that shape is refused earlier today (a named
-///   face carrying a corner a nameless class names), so the narrower question cannot be measured
-///   yet. The box's corners stay off `x = 10`: a turn of 45° that puts one there ties it with the
-///   half bar's flat face in the winding's extreme-point search, a coincidence of the fixture.
+///   meeting a ruling end in one point under two names. The box moved so its wall's face runs
+///   across the tangent point (`y0 = −2.5`, the other walls still beside) is that shape: it reaches
+///   the same refusal, and with the refusal off the split refuses it by the same name
+///   (`split_at_crossings`), in both orders and all three operations. The box's corners stay off
+///   `x = 10`: a turn of 45° that puts one there ties it with the half bar's flat face in the
+///   winding's extreme-point search, a coincidence of the fixture.
 #[test]
 fn a_wall_turned_about_the_axis_grazing_the_cylinder_is_read_before_its_turn() {
     use RejectReason::CylinderGateUndecided;

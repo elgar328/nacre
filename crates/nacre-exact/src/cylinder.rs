@@ -80,8 +80,9 @@ pub fn axis_param_of_plane(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Opt
 }
 
 /// **The point where a plane meets the line `o + t·m`** — `o + t·m` at [`axis_param_of_plane`]'s
-/// `t`, exact: a cap's circle centre on a cylinder's axis. `None` where that `t` is, or where a
-/// coordinate leaves `i128`.
+/// `t`, exact: a cap's circle centre on a cylinder's axis, and, with `m` the plane's normal, the
+/// foot of the perpendicular from `o`. `None` where that `t` is, or where a coordinate leaves
+/// `i128`.
 pub fn axis_plane_meet(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Option<[Rat; 3]> {
     let t = axis_param_of_plane(coeffs, o, m)?;
     let mut p = *o;

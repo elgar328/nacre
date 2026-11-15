@@ -112,6 +112,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A body whose flat wall crosses a bore's plane and carries the corners of a box turned off the quarter turns — a straight wall fused with such a box, or a bar tangent to the bore with one on its tangent face — builds in a boolean with the bored body, in either order; it was refused with `RejectReason::CylinderGateUndecided`, because the kernel could not read the corners the turned box left on the wall's face.
 - A box turned off the quarter turns that encloses a pin or a bore builds, in either order; the boolean was refused with `RejectReason::CylinderGateUndecided`, because the kernel's inside test could not place the pin's or the bore's disk against the box's outline.
 - A cylinder tangent to a flat face whose outline carries arcs — a rod lying on a plate with rounded corners — builds; the boolean was refused with `RejectReason::CylinderGateUndecided` whenever that face's outer boundary held an arc, near the cylinder or not.
 - Cutting a box from a body whose bore or groove runs past the box's corner — the box's side tangent to the bore along that line, its other side crossing the bore there — builds where the box spans the body's whole height: the two bodies that meet along the line alone; it was refused with `RejectReason::SelfTouchingResult`. Where the remainder is one body touching itself along the line it is still refused, now as `RejectReason::NonManifoldResultEdge`, the name the same touch already carries when two of the box's walls cross the bore there.
