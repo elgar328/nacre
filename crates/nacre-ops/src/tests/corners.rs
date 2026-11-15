@@ -275,6 +275,69 @@ fn a_reach_holds_the_proven_interval_and_nothing_else_is_finite() {
     }
 }
 
+/// **A vertex's rational reach moves an end `Rat` cannot hold outward, and holds the truth.**
+///
+/// An exact coordinate's reach ends at `±2⁻¹⁰²²` (the floor of the widening), and a coordinate
+/// near `1e-30` ends past `Rat`'s denominators too: each end moves out to `±2⁻⁶⁴` or `0` — all four
+/// ways, by the end's sign and side. An end `Rat` holds is that end, exactly. Too large an end, or a
+/// cache that proves nothing, has no rational box.
+#[test]
+fn a_rational_reach_moves_an_unheld_end_outward() {
+    let tiny = q(1, 1i128 << 64);
+    let zero = Rat::from_int(0);
+    let minus_tiny = zero.checked_sub(tiny).expect("a rational");
+    let realized = |c: [f64; 3]| nacre_topo::PointCache::Realized {
+        coord: Point3::from_array(c),
+        bound: [nacre_exact::Mag::ZERO; 3],
+    };
+    let small = [0.0, 1.0e-30, -1.0e-30];
+    let (lo, hi) = rational_reach(&realized(small)).expect("a finite reach");
+    assert_eq!(
+        (lo, hi),
+        ([minus_tiny, zero, minus_tiny], [tiny, tiny, zero]),
+        "every small end moves outward"
+    );
+    let held = [1.5, -3.0, 0.25];
+    let cache = realized(held);
+    let (lo, hi) = rational_reach(&cache).expect("a finite reach");
+    let (flo, fhi) = cache_reach(&cache);
+    for k in 0..3 {
+        assert_eq!(
+            Some(lo[k]),
+            Rat::try_from_f64(flo[k]),
+            "axis {k}: the low end held"
+        );
+        assert_eq!(
+            Some(hi[k]),
+            Rat::try_from_f64(fhi[k]),
+            "axis {k}: the high end held"
+        );
+    }
+    for c in [small, held] {
+        let (lo, hi) = rational_reach(&realized(c)).expect("a finite reach");
+        // Every end here is an `f64` exactly, so the comparison in `f64` is exact.
+        for k in 0..3 {
+            assert!(
+                lo[k].to_f64() < c[k] && c[k] < hi[k].to_f64(),
+                "axis {k}: the coordinate {} is inside",
+                c[k]
+            );
+        }
+    }
+    assert_eq!(
+        rational_reach(&realized([1.0e300, 0.0, 0.0])),
+        None,
+        "an end past `Rat` has no rational box"
+    );
+    let coord = Point3::from_array(held);
+    for cache in [
+        nacre_topo::PointCache::Ceiling { coord },
+        nacre_topo::PointCache::Unrealized { coord },
+    ] {
+        assert_eq!(rational_reach(&cache), None, "{cache:?} proves no box");
+    }
+}
+
 /// The faces of `solid` whose plane's world name is `coeffs`.
 fn faces_on(m: &Model, solid: Handle<nacre_topo::Solid>, coeffs: &[Rat; 4]) -> Vec<Handle<Face>> {
     let s = m.solid(solid);

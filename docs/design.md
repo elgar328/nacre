@@ -1831,7 +1831,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   원판과 꼭짓점의 포함(`nesting`), 광선(`curved_count`·좌표 도로)이다. 상자는 그런 클래스가 있을 때만 짓는다.
   - `Silence::Beside` — 관통점·호를 그 평면에 대해 세우는 자리가 계수 없이 기록된 쪽을 읽는다(`side_of`, `PierceAt`,
     `rays::silent_table`, `arc_crossings_of` 의 doc).
-  - `Silence::Apart` — 면이 옆면 상자와 떨어지고(`faces_apart`, `cache_reach`) 원통이 온전한 림만 남기면(`only_whole_rims`)
+  - `Silence::Apart` — 면이 옆면 상자와 떨어지고(`faces_apart`) 원통이 온전한 림만 남기면(`only_whole_rims`)
     그 클래스 위에서 원통을 구멍을 메운 / 보스를 걷어낸 단면으로 읽고, 다른 기록이 있어도 선다. 논증·측정과 다른 기록과의
     교선을 묻지 않는 위험은 `Silence::Apart` doc 과 `cylinder_gate` 본문.
   - `Silence::Sectioned` — 평면이 축을 따라 반지름 안이고 면이 떨어지면 단면을 제 배열에서만 참으로 그린다(룰링과 현

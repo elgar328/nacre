@@ -2395,8 +2395,8 @@ fn graze_ruling(
 }
 
 /// **Do the faces on class `c` stand apart from every lateral box?** — every face's edges are
-/// straight (a curved edge bulges past its corners) and the box of its corners' proven reaches
-/// ([`cache_reach`]; a corner whose cache proves no bound makes the box the whole space) lies
+/// straight (a curved edge bulges past its corners) and the box of its corners' proven reaches, in
+/// rationals ([`rational_reach`]; a corner with no rational box leaves the face unproven), lies
 /// strictly beyond each box on some axis. A planar face lies in the hull of its own corners, so
 /// a face apart by its corners' box is apart. `false` when there are no lateral boxes.
 fn faces_apart(
@@ -2418,7 +2418,7 @@ fn faces_apart(
         }
         let Some(fh) = fi.face else { return false };
         let f = model.face(fh);
-        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        let mut reach: Option<([nacre_exact::Rat; 3], [nacre_exact::Rat; 3])> = None;
         for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
             for he in &lp.half_edges {
                 let e = model.edge(he.edge);
@@ -2430,7 +2430,10 @@ fn faces_apart(
                     return false;
                 }
                 for &v in &e.vertices {
-                    let (rl, rh) = cache_reach(model.vertex_cache(v));
+                    let Some((rl, rh)) = rational_reach(model.vertex_cache(v)) else {
+                        return false;
+                    };
+                    let (lo, hi) = reach.get_or_insert((rl, rh));
                     for k in 0..3 {
                         lo[k] = lo[k].min(rl[k]);
                         hi[k] = hi[k].max(rh[k]);
@@ -2438,12 +2441,10 @@ fn faces_apart(
                 }
             }
         }
-        let beyond = |a: f64, b: nacre_exact::Rat, below: bool| {
-            nacre_exact::Rat::try_from_f64(a).is_some_and(|a| if below { a < b } else { a > b })
-        };
-        boxes.iter().all(|[blo, bhi]| {
-            (0..3).any(|k| beyond(hi[k], blo[k], true) || beyond(lo[k], bhi[k], false))
-        })
+        let Some((lo, hi)) = reach else { return false };
+        boxes
+            .iter()
+            .all(|[blo, bhi]| (0..3).any(|k| hi[k] < blo[k] || lo[k] > bhi[k]))
     })
 }
 

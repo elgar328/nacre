@@ -684,6 +684,19 @@ fn nameless_classes_beside_world_cylinders() {
                 Built(1, tangent_common),
             ],
         },
+        // The box of the stepped pin's flush family (the sectioned scoreboard below), moved back and
+        // forth past the cheap road's cost: every corner's cache is `Ceiling`, so no corner has a
+        // rational box and the walls within the radius are not shown apart — refused, where the
+        // same box with its short history builds.
+        Family {
+            name: "a box below the stepped pin with a history past the cheap road's cost",
+            build: |m| {
+                let b = box_turned_about(m, 37, [37, 20], [37.0, 16.5], [-5.0, 0.0]);
+                (stepped_plate_pinned(m), past_the_cost_cap(m, b))
+            },
+            gate: Err(Undecided),
+            want: refused,
+        },
         // Out of scope: the bored plate itself turned, so the cylinder has no world statement.
         Family {
             name: "bored plate turned 37",
@@ -1172,6 +1185,33 @@ fn box_turned_about(
     turn(m, b, Axis::Z, deg, [pivot[0], pivot[1], 0])
 }
 
+/// `s` moved `1/7` along `x` and back, 150 times each — where it was, with a history past the cheap
+/// road's cost cap, so every corner's cache is `Ceiling`.
+fn past_the_cost_cap(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
+    let step = Rat::new(1, 7).expect("1/7");
+    let back = rat(0).checked_sub(step).expect("-1/7");
+    let s = (0..300).fold(s, |s, i| {
+        let d = if i % 2 == 0 { step } else { back };
+        transform(m, s, &Isometry::translation([d, rat(0), rat(0)])).expect("the solid moves")
+    });
+    let shell = m.shell(m.solid(s).outer);
+    for &fh in &shell.faces {
+        let f = m.face(fh);
+        for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+            for he in &lp.half_edges {
+                for &v in &m.edge(he.edge).vertices {
+                    assert!(
+                        matches!(m.vertex_cache(v), nacre_topo::PointCache::Ceiling { .. }),
+                        "past the cost cap every corner is `Ceiling`: {:?}",
+                        m.vertex_cache(v)
+                    );
+                }
+            }
+        }
+    }
+    s
+}
+
 /// The centre of [`box_turned_about`]'s box, for [`turned_square_within`].
 fn turned_about_centre(deg: f64, pivot: [f64; 2], corner: [f64; 2]) -> [f64; 2] {
     let (s, c) = deg.to_radians().sin_cos();
@@ -1239,6 +1279,11 @@ fn ledge_pin_bore(m: &mut Model) -> Handle<Solid> {
 /// - the stepped plate's pin and bore at `(37, 20)` (one rim whole, the other cut by the step's
 ///   wall), the box below the plate turned about the axis's foot: its wall through the axis, 1.5
 ///   from it, 0.5 from it on the other side;
+/// - the stepped pin over the plate lowered by 1, the box `[37,42]×[16.5,21.5]` below it turned about
+///   the axis's foot with its top exactly at `z = 0` — the plate's bottom `z = −1` or, unlowered,
+///   flush on it. Two walls run within the radius (0 and 1.5 from the axis; the others 5 and 3.5) and
+///   cross the pin's circle in `x` and `y`, so only `z` holds them apart, by their top corners'
+///   exact zero — which a corner's rational box reads (`rational_reach`);
 /// - the pin with a hole sunk in its cap, the wall through the axis cutting the hole or passing
 ///   beside it; the pin with a square pocket in its cap or a square boss on it across the wall;
 /// - the ledge plate's pin and the bore through it, the wall through both axes;
@@ -1250,7 +1295,9 @@ fn ledge_pin_bore(m: &mut Model) -> Handle<Solid> {
 ///
 /// Volumes: the stepped plate is `16320`; its bore removes `40π` below `z = 10` and, in the step,
 /// the disk's part `x > 36` (`8π/3 + √3`) over 2; its pin adds `20π` less that same part over 2.
-/// A box below the plate overlaps it by `25 · 2`, or, under the ledge, by its part on `x < 30`.
+/// A box below the plate overlaps it by `25 · 2`, or, under the ledge, by its part on `x < 30`; the
+/// box with its top at `z = 0` overlaps the lowered plate by its part on `x < 40` over 1, and the
+/// unlowered one not at all.
 #[test]
 fn a_plane_along_the_axis_sections_a_cylinder_with_a_whole_rim() {
     let pi = std::f64::consts::PI;
@@ -1268,6 +1315,13 @@ fn a_plane_along_the_axis_sections_a_cylinder_with_a_whole_rim() {
             f64::NEG_INFINITY,
             30.0,
         );
+    let under_lowered = turned_square_within(
+        turned_about_centre(37.0, [37.0, 20.0], [37.0, 16.5]),
+        37.0,
+        0,
+        f64::NEG_INFINITY,
+        40.0,
+    );
     let cubed = 16000.0 - 40.0 * pi + 125.0
         - 5.0 * turned_square_within([10.0, 12.0], 37.0, 1, f64::NEG_INFINITY, 10.0);
     // `(|A|, |B|, |A ∩ B|)` → Fuse, Cut, Common, and the other order's Cut `|B| − |A ∩ B|`.
@@ -1336,6 +1390,36 @@ fn a_plane_along_the_axis_sections_a_cylinder_with_a_whole_rim() {
             },
             Ok((3, 0, 1, 0)),
             three(step_pinned, 125.0, 50.0),
+        ),
+        fam(
+            "a stepped pin over the lowered plate, the box's top at z = 0 under it",
+            |m| {
+                let p = stepped_plate_pinned(m);
+                (
+                    shift(m, p, [0, 0, -1]),
+                    box_turned_about(m, 37, [37, 20], [37.0, 16.5], [-5.0, 0.0]),
+                )
+            },
+            Ok((2, 0, 2, 0)),
+            three(step_pinned, 125.0, under_lowered),
+        ),
+        fam(
+            "a stepped pin, the box's top at z = 0 flush on the plate's bottom",
+            |m| {
+                (
+                    stepped_plate_pinned(m),
+                    box_turned_about(m, 37, [37, 20], [37.0, 16.5], [-5.0, 0.0]),
+                )
+            },
+            Ok((2, 0, 2, 0)),
+            (
+                [
+                    Built(1, step_pinned + 125.0),
+                    Built(1, step_pinned),
+                    Built(0, 0.0),
+                ],
+                Built(1, 125.0),
+            ),
         ),
         fam(
             "a stepped pin with a hole in its cap the wall cuts",

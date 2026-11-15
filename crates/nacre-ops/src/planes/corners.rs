@@ -355,8 +355,8 @@ pub(super) fn world_cylinder(
 pub(crate) type CacheReach = ([f64; 3], [f64; 3]);
 
 /// **Where a vertex's truth can be** — per axis, the interval its cache proves. The self-touch
-/// sieve reads it for seam vertices, the gate for the corners of a face it asks to stand apart,
-/// and the corner reader, in rationals ([`rational_reach`]), for a corner no exact spelling names.
+/// sieve reads it for seam vertices; the gate reads it in rationals ([`rational_reach`]), for the
+/// corners of a face it asks to stand apart and for a corner no exact spelling names.
 ///
 /// A `Realized` cache holds the truth within `coord ± bound`; the radius is widened by a few ulps
 /// of both operands (and the smallest normal), since `coord − bound` computed in `f64` may round

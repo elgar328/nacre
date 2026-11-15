@@ -501,8 +501,9 @@ fn inside(
     //     when asked ([`Said::Declines`]), and from then on its remaining named witnesses are
     //     skipped where they would put the same question to the same road: every one whose name
     //     holds no class the gate passed silent (measured over the suite, the ignored sweep, the
-    //     census and the kit: of 39,040 skips, the 38,992 without a silent class would each have
-    //     declined again, and the 48 with one, which are asked, each answered);
+    //     census and the kit: of 115,152 named witnesses met after a decline, the 115,092 without
+    //     a silent class would each have declined again, and the 60 with one, which are asked, each
+    //     answered);
     //   · answering a plain ring target on names **alone** once it names any probe, which refuses
     //     a ring whose every ray grazed with coordinates still in hand.
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
