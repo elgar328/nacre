@@ -367,6 +367,34 @@ impl HpBounded {
     }
 }
 
+/// `x·y` for two interval vectors at `prec`, with the error its products and sums carry. Either
+/// vector may hold its components or borrow them (`&[&HpBounded; 3]`), so a row read out of a
+/// matrix is not copied.
+pub fn dot3_hp<A, B>(x: &[A; 3], y: &[B; 3], prec: usize) -> HpBounded
+where
+    A: core::borrow::Borrow<HpBounded>,
+    B: core::borrow::Borrow<HpBounded>,
+{
+    let t = |k: usize| x[k].borrow().mul(y[k].borrow(), prec);
+    // From the first term: an exact zero to start from would still charge its sum's rounding.
+    t(0).add(&t(1), prec).add(&t(2), prec)
+}
+
+/// `x × y` for two interval vectors at `prec`, with the error its products and differences carry.
+/// Either vector may hold its components or borrow them, as in [`dot3_hp`].
+pub fn cross3_hp<A, B>(x: &[A; 3], y: &[B; 3], prec: usize) -> [HpBounded; 3]
+where
+    A: core::borrow::Borrow<HpBounded>,
+    B: core::borrow::Borrow<HpBounded>,
+{
+    let c = |i: usize, j: usize| {
+        x[i].borrow()
+            .mul(y[j].borrow(), prec)
+            .sub(&x[j].borrow().mul(y[i].borrow(), prec), prec)
+    };
+    [c(1, 2), c(2, 0), c(0, 1)]
+}
+
 #[cfg(test)]
 #[path = "tests/bounded.rs"]
 mod tests;

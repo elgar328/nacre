@@ -427,14 +427,11 @@ fn sub(a: &V3, b: &V3) -> V3 {
 }
 
 fn dot(a: &V3, b: &V3) -> HpBounded {
-    a[0].mul(&b[0], PREC)
-        .add(&a[1].mul(&b[1], PREC), PREC)
-        .add(&a[2].mul(&b[2], PREC), PREC)
+    nacre_exact::dot3_hp(a, b, PREC)
 }
 
 fn cross(a: &V3, b: &V3) -> V3 {
-    let x = |i: usize, j: usize| a[i].mul(&b[j], PREC).sub(&a[j].mul(&b[i], PREC), PREC);
-    [x(1, 2), x(2, 0), x(0, 1)]
+    nacre_exact::cross3_hp(a, b, PREC)
 }
 
 /// `num / den`, `None` where `den` may be zero.

@@ -1246,13 +1246,11 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
                 .expect("a frame with positive lengths");
             let hp = p.coord_hp(GT);
             // a·x + b·y + c·z + d, realized — its interval must contain zero.
-            let mut e = HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
-            for k in 0..3 {
-                e = e.add(
-                    &hp[k].mul(&HpBounded::of_rat(Rat::from_int(c[k]), GT), GT),
-                    GT,
-                );
-            }
+            let normal = [0, 1, 2].map(|k| HpBounded::of_rat(Rat::from_int(c[k]), GT));
+            let e = nacre_exact::dot3_hp(&hp, &normal, GT).add(
+                &HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO),
+                GT,
+            );
             let mag = bigfloat_upper_f64(&e.value.abs());
             let error = e.error.upper_f64();
             assert!(
@@ -1342,13 +1340,11 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
                 .frame(fr)
                 .expect("a frame with positive lengths");
             let hp = p.coord_hp(GT);
-            let mut e = HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
-            for k in 0..3 {
-                e = e.add(
-                    &hp[k].mul(&HpBounded::of_rat(Rat::from_int(c[k]), GT), GT),
-                    GT,
-                );
-            }
+            let normal = [0, 1, 2].map(|k| HpBounded::of_rat(Rat::from_int(c[k]), GT));
+            let e = nacre_exact::dot3_hp(&hp, &normal, GT).add(
+                &HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO),
+                GT,
+            );
             let mag = bigfloat_upper_f64(&e.value.abs());
             let error = e.error.upper_f64();
             assert!(

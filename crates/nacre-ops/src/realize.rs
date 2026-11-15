@@ -971,14 +971,11 @@ fn line_meets_plane_hp(
     plane: &[HpBounded; 4],
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
-    let dot = |v: &[HpBounded; 3]| {
-        plane[0]
-            .mul(&v[0], bits)
-            .add(&plane[1].mul(&v[1], bits), bits)
-            .add(&plane[2].mul(&v[2], bits), bits)
-    };
+    let [n @ .., c] = plane;
     // `point − s·dir` lies on the plane for `s = (n·point + c) / (n·dir)`.
-    let s = dot(point).add(&plane[3], bits).div(&dot(dir), bits)?;
+    let s = nacre_exact::dot3_hp(n, point, bits)
+        .add(c, bits)
+        .div(&nacre_exact::dot3_hp(n, dir, bits), bits)?;
     Some(core::array::from_fn(|k| {
         point[k].sub(&s.mul(&dir[k], bits), bits)
     }))
@@ -1176,10 +1173,7 @@ fn spanned_normal(
 
 /// `d` scaled to unit length at `bits` — `None` where its squared length is not positive.
 fn unit(d: [HpBounded; 3], bits: usize) -> Option<[HpBounded; 3]> {
-    let nn = d[0]
-        .mul(&d[0], bits)
-        .add(&d[1].mul(&d[1], bits), bits)
-        .add(&d[2].mul(&d[2], bits), bits);
+    let nn = nacre_exact::dot3_hp(&d, &d, bits);
     let inv = nn.inv_sqrt(bits)?;
     Some(core::array::from_fn(|k| d[k].mul(&inv, bits)))
 }
@@ -1447,9 +1441,9 @@ fn line_direction(
     for &bits in budget.rungs() {
         let a = plane_coeffs_hp(model, s[0], bits, memo).ok()?;
         let b = plane_coeffs_hp(model, s[1], bits, memo).ok()?;
-        let x = |i: usize, j: usize| a[i].mul(&b[j], bits).sub(&a[j].mul(&b[i], bits), bits);
+        let ([na @ .., _], [nb @ .., _]) = (&a, &b);
         // A cross whose length is not yet apart from zero at these bits climbs.
-        let Some(u) = unit([x(1, 2), x(2, 0), x(0, 1)], bits) else {
+        let Some(u) = unit(nacre_exact::cross3_hp(na, nb, bits), bits) else {
             continue;
         };
         if let Some((v, _)) = Realization(Arm::Approached(u)).to_f64() {
@@ -1684,20 +1678,16 @@ pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
         }
     };
     let h: [HpBounded; 3] = [exact(half(c[0]))?, exact(half(c[1]))?, exact(half(c[2]))?];
-    let dot = |x: &[HpBounded], y: &[HpBounded]| {
-        x[0].mul(&y[0], bits)
-            .add(&x[1].mul(&y[1], bits), bits)
-            .add(&x[2].mul(&y[2], bits), bits)
-    };
+    let dot = |x: &[HpBounded; 3], y: &[HpBounded; 3]| nacre_exact::dot3_hp(x, y, bits);
+    let [nn @ .., nd] = &n;
     let hh = dot(&h, &h);
-    let r = dot(&n[..3], &ch).add(&n[3], bits);
-    let on_cap = dot(&n[..3], &n[..3])
+    let r = dot(nn, &ch).add(nd, bits);
+    let on_cap = dot(nn, nn)
         .mul(&hh, bits)
         .sub(&r.mul(&r, bits), bits)
         .sign();
     let d: [HpBounded; 3] = core::array::from_fn(|k| ch[k].sub(&o[k], bits));
-    let x = |i: usize, j: usize| d[i].mul(&a[j], bits).sub(&d[j].mul(&a[i], bits), bits);
-    let cross = [x(1, 2), x(2, 0), x(0, 1)];
+    let cross = nacre_exact::cross3_hp(&d, &a, bits);
     let on_axis = dot(&a, &a)
         .mul(&hh, bits)
         .sub(&dot(&cross, &cross), bits)

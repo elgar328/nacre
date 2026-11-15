@@ -355,13 +355,8 @@ pub(super) fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpBounded;
         [neg(&n1), n0.clone(), zero()] // ẑ × n
     };
     let n = [n0, n1, n2];
-    let dot = |a: &[HpBounded; 3], b: &[HpBounded; 3]| {
-        a[0].mul(&b[0], prec)
-            .add(&a[1].mul(&b[1], prec), prec)
-            .add(&a[2].mul(&b[2], prec), prec)
-    };
-    let uu = dot(&u_raw, &u_raw);
-    let nn = dot(&n, &n);
+    let uu = nacre_exact::dot3_hp(&u_raw, &u_raw, prec);
+    let nn = nacre_exact::dot3_hp(&n, &n, prec);
     let iu = uu.inv_sqrt(prec)?;
     let iw = nn.inv_sqrt(prec)?;
     let scale = |v: &[HpBounded; 3], s: &HpBounded| [0, 1, 2].map(|k| v[k].mul(s, prec));
@@ -369,10 +364,7 @@ pub(super) fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpBounded;
     let w = scale(&n, &iw);
     // v̂ = ŵ × û — right-handed by construction, so the node is proper (`det = +1`) and
     // contributes nothing to a chain's mirror parity, like the other two frame nodes.
-    let v = [0, 1, 2].map(|k| {
-        let (i, j) = ((k + 1) % 3, (k + 2) % 3);
-        w[i].mul(&u[j], prec).sub(&w[j].mul(&u[i], prec), prec)
-    });
+    let v = nacre_exact::cross3_hp(&w, &u, prec);
     // Foot of the perpendicular from the world origin, `(−d·n) / (n·n)` — the frozen canonical
     // convention, through the interval division that exists for exactly this quotient.
     let nd = neg(&d);

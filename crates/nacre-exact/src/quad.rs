@@ -1239,35 +1239,23 @@ pub fn plane_plane_cylinder_hp(
     r2: &BigRat,
     prec: usize,
 ) -> Option<LineQuadHp> {
-    let dot = |a: &[HpBounded; 3], b: &[HpBounded; 3]| {
-        a[0].mul(&b[0], prec)
-            .add(&a[1].mul(&b[1], prec), prec)
-            .add(&a[2].mul(&b[2], prec), prec)
-    };
-    let cross = |a: &[HpBounded; 3], b: &[HpBounded; 3]| {
-        [
-            a[1].mul(&b[2], prec).sub(&a[2].mul(&b[1], prec), prec),
-            a[2].mul(&b[0], prec).sub(&a[0].mul(&b[2], prec), prec),
-            a[0].mul(&b[1], prec).sub(&a[1].mul(&b[0], prec), prec),
-        ]
-    };
+    use crate::{cross3_hp, dot3_hp};
     let rat = |r: Rat| HpBounded::of_rat(r, prec);
     let zero = rat(Rat::from_int(0));
-    let n1 = [p1[0].clone(), p1[1].clone(), p1[2].clone()];
-    let n2 = [p2[0].clone(), p2[1].clone(), p2[2].clone()];
-    let l = cross(&n1, &n2);
-    let det = dot(&l, &l);
+    let ([n1 @ .., d1], [n2 @ .., d2]) = (p1, p2);
+    let l = cross3_hp(n1, n2, prec);
+    let det = dot3_hp(&l, &l, prec);
     if det.sign() != Some(true) {
         return None;
     }
-    let rhs = [zero.sub(&p1[3], prec), zero.sub(&p2[3], prec), zero.clone()];
+    let rhs = [zero.sub(d1, prec), zero.sub(d2, prec), zero.clone()];
     let col = |k: usize| [n1[k].clone(), n2[k].clone(), l[k].clone()];
     let mut base = [zero.clone(), zero.clone(), zero.clone()];
     for (k, out) in base.iter_mut().enumerate() {
         // Replace column k by the rhs (columns here are the rows' k-th entries).
         let cols: [[HpBounded; 3]; 3] =
             core::array::from_fn(|j| if j == k { rhs.clone() } else { col(j) });
-        *out = dot(&cols[0], &cross(&cols[1], &cols[2])).div(&det, prec)?;
+        *out = dot3_hp(&cols[0], &cross3_hp(&cols[1], &cols[2], prec), prec).div(&det, prec)?;
     }
     let m = dir.map(rat);
     let o = origin.map(rat);
@@ -1278,8 +1266,16 @@ pub fn plane_plane_cylinder_hp(
         base[1].sub(&o[1], prec),
         base[2].sub(&o[2], prec),
     ];
-    let (mm, ll, lm) = (dot(&m, &m), dot(&l, &l), dot(&l, &m));
-    let (w0m, w0l, w0w0) = (dot(&w0, &m), dot(&w0, &l), dot(&w0, &w0));
+    let (mm, ll, lm) = (
+        dot3_hp(&m, &m, prec),
+        dot3_hp(&l, &l, prec),
+        dot3_hp(&l, &m, prec),
+    );
+    let (w0m, w0l, w0w0) = (
+        dot3_hp(&w0, &m, prec),
+        dot3_hp(&w0, &l, prec),
+        dot3_hp(&w0, &w0, prec),
+    );
     let a = ll.mul(&mm, prec).sub(&lm.mul(&lm, prec), prec);
     let b = rat(Rat::from_int(2)).mul(&w0l.mul(&mm, prec).sub(&w0m.mul(&lm, prec), prec), prec);
     let c = w0w0

@@ -310,10 +310,7 @@ pub fn precision_for(worst: Mag, limit: Mag) -> usize {
 /// has no plane to be a distance from, while one that is merely unresolved is a matter of depth.
 pub(super) fn distance_bound(det_rad: Mag, cross: &[HpBounded; 3], prec: usize) -> Gap {
     // `|cross|² = Σ cross[k]²`, and a lower bound on the norm needs a lower bound on the sum.
-    let mut lo = HpBounded::exact(BigFloat::from_f64(0.0, prec));
-    for c in cross {
-        lo = lo.add(&c.mul(c, prec), prec);
-    }
+    let lo = nacre_exact::dot3_hp(cross, cross, prec);
     // `|cross| ≥ √(value − error)`, and the square root only halves the exponent, so working in
     // exponents avoids needing a high-precision sqrt at all.
     let sq_lo = match denom_lo(&lo) {

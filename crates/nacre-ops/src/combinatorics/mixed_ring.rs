@@ -278,15 +278,8 @@ pub(crate) fn point_in_mixed_ring(
     // A corner with no exact spelling — no exact meet, or checked arithmetic past `Rat` — is read
     // as the judge's box for the point, projected onto the chart's rational axes.
     let prec = jd.standard.prec;
-    let on_axis = |x: &[nacre_exact::HpBounded; 3], e: &[Rat; 3]| -> nacre_exact::HpBounded {
-        let mut v = nacre_exact::HpBounded::of_rat(Rat::from_int(0), prec);
-        for k in 0..3 {
-            v = v.add(
-                &nacre_exact::HpBounded::of_rat(e[k], prec).mul(&x[k], prec),
-                prec,
-            );
-        }
-        v
+    let on_axis = |x: &[nacre_exact::HpBounded; 3], e: &[Rat; 3]| {
+        nacre_exact::dot3_hp(&e.map(|v| nacre_exact::HpBounded::of_rat(v, prec)), x, prec)
     };
     let corner = |nd: NodeId| -> Option<StepCorner> {
         if let Some(c) = exact_corner(nd) {

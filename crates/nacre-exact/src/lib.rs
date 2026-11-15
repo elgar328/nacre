@@ -20,7 +20,7 @@
 pub mod bounded;
 pub mod mag;
 pub mod quad;
-pub use bounded::{Bounded, HpBounded, rat_to_bigfloat};
+pub use bounded::{Bounded, HpBounded, cross3_hp, dot3_hp, rat_to_bigfloat};
 pub use mag::{Mag, bigfloat_upper_f64};
 pub use quad::{
     QuadVal, biquad_sign, cylinder_radial_side, cylinders_clear, cylinders_nested,

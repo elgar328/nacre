@@ -208,9 +208,8 @@ pub fn normals_agree_judge(
     };
     escalate(j, limit, |prec| {
         let (ha, hb) = (plane_hp(a.0, a.1, a.2, prec), plane_hp(b.0, b.1, b.2, prec));
-        let dot = (1..3).fold(ha[0].mul(&hb[0], prec), |acc, k| {
-            acc.add(&ha[k].mul(&hb[k], prec), prec)
-        });
+        let ([na @ .., _], [nb @ .., _]) = (&ha, &hb);
+        let dot = nacre_exact::dot3_hp(na, nb, prec);
         match dot.sign() {
             Some(pos) => Ok(orient_of(pos)),
             None => Err(denom_lo(&dot).err().unwrap_or(Gap::Unresolved { short: 1 })),

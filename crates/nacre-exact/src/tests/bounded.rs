@@ -393,3 +393,70 @@ fn the_abs_bounds_cover_the_radius() {
     assert!(zero.abs_lower_f64().is_none());
     assert!(zero.abs_upper_f64().expect("an upper bound") >= 2f64.powi(-10));
 }
+
+/// Rounded rationals as intervals, and the exact rationals they stand for.
+fn rounded_vectors(prec: usize) -> ([Rat; 3], [Rat; 3], [HpBounded; 3], [HpBounded; 3]) {
+    let r = |n: i128, d: i128| Rat::new(n, d).expect("a nonzero denominator");
+    let (a, b) = ([r(1, 3), r(5, 7), r(-7, 2)], [r(-2, 9), r(11, 13), r(3, 5)]);
+    let hp = |v: [Rat; 3]| v.map(|x| HpBounded::of_rat(x, prec));
+    (a, b, hp(a), hp(b))
+}
+
+/// **The interval dot and cross products hold the exact ones**, and only by their rounding: on
+/// rounded rationals the difference from the exact product's realization straddles zero, and the
+/// radius stays at the precision's scale.
+#[test]
+fn the_interval_dot_and_cross_products_hold_the_exact_ones() {
+    let prec = 256;
+    let (a, b, ah, bh) = rounded_vectors(prec);
+    let holds = |got: &HpBounded, truth: Rat| {
+        assert_eq!(got.sub(&HpBounded::of_rat(truth, prec), prec).sign(), None);
+        assert!(
+            got.error.upper_f64() < 2f64.powi(-200),
+            "radius {:e}",
+            got.error.upper_f64()
+        );
+    };
+    holds(
+        &dot3_hp(&ah, &bh, prec),
+        crate::dot3_rat(&a, &b).expect("fits"),
+    );
+    let cross = crate::cross3_rat(&a, &b).expect("fits");
+    for (got, truth) in cross3_hp(&ah, &bh, prec).iter().zip(cross) {
+        holds(got, truth);
+    }
+}
+
+/// **The two products are spelled one way, bit for bit** — the first term first, summed left to
+/// right, and the cross product's components as `x₁y₂ − x₂y₁`, `x₂y₀ − x₀y₂`, `x₀y₁ − x₁y₀` — and a
+/// borrowed vector reads as an owned one. The callers that took these over from their own spellings
+/// lean on that order: an exact zero to start from, or another association, changes the radius.
+#[test]
+fn the_interval_products_keep_one_order_of_operations() {
+    let prec = 256;
+    let (_, _, x, y) = rounded_vectors(prec);
+    let same = |got: &HpBounded, want: &HpBounded| {
+        assert!(
+            got.value == want.value && got.error == want.error,
+            "{got:?} vs {want:?}"
+        );
+    };
+    let m = |i: usize, j: usize| x[i].mul(&y[j], prec);
+    same(
+        &dot3_hp(&x, &y, prec),
+        &m(0, 0).add(&m(1, 1), prec).add(&m(2, 2), prec),
+    );
+    let unrolled = [
+        m(1, 2).sub(&m(2, 1), prec),
+        m(2, 0).sub(&m(0, 2), prec),
+        m(0, 1).sub(&m(1, 0), prec),
+    ];
+    for (got, want) in cross3_hp(&x, &y, prec).iter().zip(&unrolled) {
+        same(got, want);
+    }
+    let (xr, yr) = (x.each_ref(), y.each_ref());
+    same(&dot3_hp(&xr, &yr, prec), &dot3_hp(&x, &y, prec));
+    for (got, want) in cross3_hp(&xr, &y, prec).iter().zip(&unrolled) {
+        same(got, want);
+    }
+}

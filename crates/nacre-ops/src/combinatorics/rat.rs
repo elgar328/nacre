@@ -403,11 +403,10 @@ pub(crate) fn plane_sign_hp(
     prec: usize,
 ) -> Option<bool> {
     use nacre_exact::HpBounded;
-    let mut v = HpBounded::of_rat(plane[3], prec);
-    for k in 0..3 {
-        v = v.add(&HpBounded::of_rat(plane[k], prec).mul(&x[k], prec), prec);
-    }
-    v.sign()
+    let normal = [0, 1, 2].map(|k| HpBounded::of_rat(plane[k], prec));
+    nacre_exact::dot3_hp(&normal, x, prec)
+        .add(&HpBounded::of_rat(plane[3], prec), prec)
+        .sign()
 }
 
 /// **A node's realized coordinate, whichever kind of name it is** — the `f64` sibling of

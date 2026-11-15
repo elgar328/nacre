@@ -68,16 +68,13 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
             // error interval.
             let vh = match frame.v.and_then(|(v_raw, vv)| Some((v_raw, inv(vv)?))) {
                 Some((v_raw, iv)) => scaled(v_raw, &iv),
-                None => [0, 1, 2].map(|k| {
-                    let (i, j) = ((k + 1) % 3, (k + 2) % 3);
-                    wh[i].mul(&uh[j], prec).sub(&wh[j].mul(&uh[i], prec), prec)
-                }),
+                None => nacre_exact::cross3_hp(&wh, &uh, prec),
             };
             p = [0, 1, 2].map(|k| {
-                HpBounded::of_rat(frame.origin[k], prec)
-                    .add(&p[0].mul(&uh[k], prec), prec)
-                    .add(&p[1].mul(&vh[k], prec), prec)
-                    .add(&p[2].mul(&wh[k], prec), prec)
+                HpBounded::of_rat(frame.origin[k], prec).add(
+                    &nacre_exact::dot3_hp(&p, &[&uh[k], &vh[k], &wh[k]], prec),
+                    prec,
+                )
             });
         }
         // [`MoveNode::Frame`]'s wide twin — same shape, arbitrary-precision inputs.
@@ -106,9 +103,10 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
                 return p; // unreachable — the builder's denominator is n·n > 0
             };
             p = [0, 1, 2].map(|k| {
-                o[k].add(&p[0].mul(&uh[k], prec), prec)
-                    .add(&p[1].mul(&vh[k], prec), prec)
-                    .add(&p[2].mul(&wh[k], prec), prec)
+                o[k].add(
+                    &nacre_exact::dot3_hp(&p, &[&uh[k], &vh[k], &wh[k]], prec),
+                    prec,
+                )
             });
         }
         // The judged frame — the same derivation the f64 rung took, at this precision.
@@ -125,9 +123,10 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
             };
             let [o, u, v, w] = basis;
             p = [0, 1, 2].map(|k| {
-                o[k].add(&p[0].mul(&u[k], prec), prec)
-                    .add(&p[1].mul(&v[k], prec), prec)
-                    .add(&p[2].mul(&w[k], prec), prec)
+                o[k].add(
+                    &nacre_exact::dot3_hp(&p, &[&u[k], &v[k], &w[k]], prec),
+                    prec,
+                )
             });
         }
     }

@@ -56,18 +56,11 @@ pub fn plane_hp(
 ) -> [HpBounded; 4] {
     let (a, b, c) = (p0.coord_hp(prec), p1.coord_hp(prec), p2.coord_hp(prec));
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
-    let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
     let e1 = [sub(&b[0], &a[0]), sub(&b[1], &a[1]), sub(&b[2], &a[2])];
     let e2 = [sub(&c[0], &a[0]), sub(&c[1], &a[1]), sub(&c[2], &a[2])];
-    let n = [
-        mul(&e1[1], &e2[2]).sub(&mul(&e1[2], &e2[1]), prec),
-        mul(&e1[2], &e2[0]).sub(&mul(&e1[0], &e2[2]), prec),
-        mul(&e1[0], &e2[1]).sub(&mul(&e1[1], &e2[0]), prec),
-    ];
+    let n = nacre_exact::cross3_hp(&e1, &e2, prec);
     let d = HpBounded::exact(BigFloat::from_f64(0.0, prec))
-        .sub(&mul(&n[0], &a[0]), prec)
-        .sub(&mul(&n[1], &a[1]), prec)
-        .sub(&mul(&n[2], &a[2]), prec);
+        .sub(&nacre_exact::dot3_hp(&n, &a, prec), prec);
     let [n0, n1, n2] = n; // `d` is already built from them, so the normal moves out rather than copying
     [n0, n1, n2, d]
 }
@@ -342,7 +335,6 @@ fn indirect_hp(
 ) -> (HpBounded, HpBounded, [HpBounded; 3]) {
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
-    let add = |x: &HpBounded, y: &HpBounded| x.add(y, prec);
     let (d, dvec) = cramer_hp(&planes, prec);
     let row1 = [
         sub(&dvec[0], &mul(&d, &s[0])),
@@ -351,15 +343,8 @@ fn indirect_hp(
     ];
     let dq = [sub(&q[0], &s[0]), sub(&q[1], &s[1]), sub(&q[2], &s[2])];
     let dr = [sub(&r[0], &s[0]), sub(&r[1], &s[1]), sub(&r[2], &s[2])];
-    let cross = [
-        sub(&mul(&dq[1], &dr[2]), &mul(&dq[2], &dr[1])),
-        sub(&mul(&dq[2], &dr[0]), &mul(&dq[0], &dr[2])),
-        sub(&mul(&dq[0], &dr[1]), &mul(&dq[1], &dr[0])),
-    ];
-    let m = add(
-        &add(&mul(&row1[0], &cross[0]), &mul(&row1[1], &cross[1])),
-        &mul(&row1[2], &cross[2]),
-    );
+    let cross = nacre_exact::cross3_hp(&dq, &dr, prec);
+    let m = nacre_exact::dot3_hp(&row1, &cross, prec);
     // `cross` rides out with the two determinants rather than the finished gap: forming the gap
     // costs a division and an exponent walk, and the path that decides a sign never needs it.
     (d, m, cross)

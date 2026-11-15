@@ -366,9 +366,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
     ) -> Option<HpBounded> {
         let (x, y) = (a.point_hp_at(self, prec)?, b.point_hp_at(self, prec)?);
         let d = self.stored_cross_hp(p, q, prec);
-        (0..3)
-            .map(|k| x[k].sub(&y[k], prec).mul(&d[k], prec))
-            .reduce(|s, t| s.add(&t, prec))
+        let diff: [HpBounded; 3] = core::array::from_fn(|k| x[k].sub(&y[k], prec));
+        Some(nacre_exact::dot3_hp(&diff, &d, prec))
     }
 
     /// **Which way the line `p ∩ q` runs along the direction `m`** — the sign of
@@ -378,20 +377,15 @@ impl<W: PlaneWitness> Judge<'_, W> {
     pub fn stored_line_along(&self, p: usize, q: usize, m: &[Rat; 3]) -> Option<i8> {
         let prec = self.standard.prec;
         let d = self.stored_cross_hp(p, q, prec);
-        let along = (0..3)
-            .map(|k| d[k].mul(&HpBounded::of_rat(m[k], prec), prec))
-            .reduce(|s, t| s.add(&t, prec))?;
-        sign_i8(&along)
+        let m = m.map(|x| HpBounded::of_rat(x, prec));
+        sign_i8(&nacre_exact::dot3_hp(&d, &m, prec))
     }
 
     /// `n_p × n_q` over the stored facings at `prec` — the stored direction of the line `p ∩ q`.
     fn stored_cross_hp(&self, p: usize, q: usize, prec: usize) -> [HpBounded; 3] {
         let (np, nq) = (self.stored_hp(p, prec), self.stored_hp(q, prec));
-        [
-            np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
-            np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),
-            np[0].mul(&nq[1], prec).sub(&np[1].mul(&nq[0], prec), prec),
-        ]
+        let ([np @ .., _], [nq @ .., _]) = (&np, &nq);
+        nacre_exact::cross3_hp(np, nq, prec)
     }
 
     /// **The order of two coordinates along cylinder `def`'s axis.** Two stated ones compare
@@ -427,12 +421,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
             AxisValue::Stated(q) => nacre_exact::quad_hp(q, prec),
             AxisValue::Point(p) => {
                 let at = self.point_box(p, prec)?;
-                Some(
-                    at[0]
-                        .mul(&m[0], prec)
-                        .add(&at[1].mul(&m[1], prec), prec)
-                        .add(&at[2].mul(&m[2], prec), prec),
-                )
+                Some(nacre_exact::dot3_hp(&at, &m, prec))
             }
         };
         Some(hp(a)?.sub(&hp(b)?, prec))
@@ -491,15 +480,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
     fn cut_value(&self, k: usize, def: &CylinderDef, prec: usize) -> Option<HpBounded> {
         let pl = self.outward_hp(k, prec);
         let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
-        let off = pl[0]
-            .mul(&o[0], prec)
-            .add(&pl[1].mul(&o[1], prec), prec)
-            .add(&pl[2].mul(&o[2], prec), prec)
-            .add(&pl[3], prec);
-        let nn = pl[0]
-            .mul(&pl[0], prec)
-            .add(&pl[1].mul(&pl[1], prec), prec)
-            .add(&pl[2].mul(&pl[2], prec), prec);
+        let [n @ .., d] = &pl;
+        let off = nacre_exact::dot3_hp(n, &o, prec).add(d, prec);
+        let nn = nacre_exact::dot3_hp(n, n, prec);
         let r2 = HpBounded::of_bigint(def.r2().numer(), prec)
             .div(&HpBounded::of_bigint(def.r2().denom(), prec), prec)?;
         Some(off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec))
@@ -525,19 +508,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
         let n = self.canon_hp(wall, prec);
         let m = def.dir().map(|x| HpBounded::of_rat(x, prec));
         let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
-        let c = [
-            m[1].mul(&n[2], prec).sub(&m[2].mul(&n[1], prec), prec),
-            m[2].mul(&n[0], prec).sub(&m[0].mul(&n[2], prec), prec),
-            m[0].mul(&n[1], prec).sub(&m[1].mul(&n[0], prec), prec),
-        ];
+        let [n @ .., _] = &n;
+        let c = nacre_exact::cross3_hp(&m, n, prec);
         let d = [
             at[0].sub(&o[0], prec),
             at[1].sub(&o[1], prec),
             at[2].sub(&o[2], prec),
         ];
-        d[0].mul(&c[0], prec)
-            .add(&d[1].mul(&c[1], prec), prec)
-            .add(&d[2].mul(&c[2], prec), prec)
+        nacre_exact::dot3_hp(&d, &c, prec)
     }
 
     /// **Are two points proved apart?** — some coordinate of their interval boxes separated.
@@ -588,24 +566,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
         let prec = self.standard.prec;
         let hp = |v: &[Rat; 3]| v.map(|x| HpBounded::of_rat(x, prec));
         let (o, m) = (hp(&def.origin()), hp(&def.dir()));
-        let dot = |x: &[HpBounded; 3], y: &[HpBounded; 3]| {
-            x[0].mul(&y[0], prec)
-                .add(&x[1].mul(&y[1], prec), prec)
-                .add(&x[2].mul(&y[2], prec), prec)
-        };
         // The point less the axis origin. Its axis component needs no removing: a turn about the
         // axis, `(x × v) · m`, does not change when `v` gains a multiple of `m`.
         let v: [HpBounded; 3] = std::array::from_fn(|k| b[k].sub(&o[k], prec));
-        let cross = |x: &[HpBounded; 3], y: &[HpBounded; 3]| -> [HpBounded; 3] {
-            [
-                x[1].mul(&y[2], prec).sub(&x[2].mul(&y[1], prec), prec),
-                x[2].mul(&y[0], prec).sub(&x[0].mul(&y[2], prec), prec),
-                x[0].mul(&y[1], prec).sub(&x[1].mul(&y[0], prec), prec),
-            ]
-        };
         // The sign of `(x × y) · m`: `Some(true)` when `y` is counter-clockwise of `x` by less than
         // a half turn, `None` where the box straddles.
-        let turn = |x: &[HpBounded; 3], y: &[HpBounded; 3]| dot(&cross(x, y), &m).sign();
+        let turn = |x: &[HpBounded; 3], y: &[HpBounded; 3]| {
+            nacre_exact::dot3_hp(&nacre_exact::cross3_hp(x, y, prec), &m, prec).sign()
+        };
         arcs.iter().all(|[from, to]| {
             let exact_turn = nacre_exact::cross3_rat(from, to)
                 .and_then(|c| nacre_exact::dot3_rat(&c, &def.dir()));
@@ -671,16 +639,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
             c[1].sub(&a[1], prec),
             c[2].sub(&a[2], prec),
         ];
-        let x = [
-            e1[1].mul(&e2[2], prec).sub(&e1[2].mul(&e2[1], prec), prec),
-            e1[2].mul(&e2[0], prec).sub(&e1[0].mul(&e2[2], prec), prec),
-            e1[0].mul(&e2[1], prec).sub(&e1[1].mul(&e2[0], prec), prec),
-        ];
-        Some(
-            m[0].mul(&x[0], prec)
-                .add(&m[1].mul(&x[1], prec), prec)
-                .add(&m[2].mul(&x[2], prec), prec),
-        )
+        let x = nacre_exact::cross3_hp(&e1, &e2, prec);
+        Some(nacre_exact::dot3_hp(&m, &x, prec))
     }
 }
 
@@ -925,13 +885,8 @@ impl PiercePoint {
     ) -> Option<HpBounded> {
         let at = self.point_hp_at(jd, prec)?;
         let pl = jd.outward_hp(q, prec);
-        Some(
-            pl[0]
-                .mul(&at[0], prec)
-                .add(&pl[1].mul(&at[1], prec), prec)
-                .add(&pl[2].mul(&at[2], prec), prec)
-                .add(&pl[3], prec),
-        )
+        let [n @ .., d] = &pl;
+        Some(nacre_exact::dot3_hp(n, &at, prec).add(d, prec))
     }
 
     /// **This point as an interval** at the operation's precision ([`Self::point_hp_at`]).

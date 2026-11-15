@@ -75,9 +75,5 @@ fn cross_of(
         [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
         [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
     );
-    [
-        u[1].mul(&v[2], prec).sub(&u[2].mul(&v[1], prec), prec),
-        u[2].mul(&v[0], prec).sub(&u[0].mul(&v[2], prec), prec),
-        u[0].mul(&v[1], prec).sub(&u[1].mul(&v[0], prec), prec),
-    ]
+    nacre_exact::cross3_hp(&u, &v, prec)
 }
