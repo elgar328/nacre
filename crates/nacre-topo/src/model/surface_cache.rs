@@ -262,7 +262,7 @@ impl Model {
                 ))
             }
             Surface::Cylinder { .. } => {
-                let def = self.world_cylinder_def_unchecked(h)?;
+                let def = self.world_cylinder_def_unchecked(h).ok()?;
                 let (axis, ref_dir) = nacre_exact::cyl_unit_frame_f64(&def.dir(), &def.ref_dir())?;
                 Cylinder::from_unit_frame(
                     Point3::from_array(rat3(def.origin())),
@@ -278,7 +278,7 @@ impl Model {
     /// The plane's unit normal realized from its world name and the name's sense — `None` exactly
     /// where the plane has no world name.
     fn world_unit_normal_f64(&self, h: Handle<Surface>) -> Option<Vector3> {
-        let name = self.world_plane_name(h)?;
+        let name = self.world_plane_name(h).ok()?;
         let sense = self.world_plane_name_sense(h)?;
         let [a, b, c, _] = name.coeff_ints();
         let toward = if sense.sign() < 0 {
@@ -302,11 +302,11 @@ impl Model {
     ) -> Option<[f64; 3]> {
         let first = match (points, motion) {
             (PlanePoints::Known(pts), None) => pts[0],
-            (PlanePoints::Known(pts), Some(leaf)) => self.chain_point_rat(leaf, pts[0])?,
+            (PlanePoints::Known(pts), Some(leaf)) => self.chain_point_rat(leaf, pts[0]).ok()?,
             (PlanePoints::Through(vs), None) => self.through_points_rat(*vs)?[0],
-            (PlanePoints::Through(vs), Some(leaf)) => {
-                self.chain_point_rat(leaf, self.through_points_rat(*vs)?[0])?
-            }
+            (PlanePoints::Through(vs), Some(leaf)) => self
+                .chain_point_rat(leaf, self.through_points_rat(*vs)?[0])
+                .ok()?,
         };
         Some(first.map(|x| x.to_f64()))
     }
@@ -371,7 +371,7 @@ impl Model {
                 None => &SURFACE_DECLINED_UNNAMED,
                 Some(n) => match (self.surface_motion(h), n.narrow()) {
                     (_, None) => &SURFACE_DECLINED_WIDE,
-                    (Some(leaf), Some(_)) if self.chain_affine(leaf).is_none() => {
+                    (Some(leaf), Some(_)) if self.chain_fold(leaf).is_err() => {
                         &SURFACE_DECLINED_MOTION
                     }
                     _ => &SURFACE_DECLINED_ARITH,

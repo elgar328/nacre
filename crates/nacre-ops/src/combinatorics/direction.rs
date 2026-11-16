@@ -158,7 +158,7 @@ fn arc_at(
         centre,
         axis: a.def.dir(),
         axis_up: crate::planes::plus_t_is_above(
-            jd.planes[p].world.as_ref().ok_or_else(undecided)?,
+            jd.planes[p].world.as_ref().ok().ok_or_else(undecided)?,
             &a.def,
         ),
         ccw: a.ccw,
@@ -674,7 +674,7 @@ fn line_along_ruling(
         // A class with no world statement (a sectioned class here): the same product on the
         // stored facings' intervals, which a line along the axis keeps away from zero. A named
         // pair whose product fails (a wide name, an overflow) is not sent to the intervals.
-        None if jd.planes[p].world.is_none() || jd.planes[carrier].world.is_none() => jd
+        None if jd.planes[p].world.is_err() || jd.planes[carrier].world.is_err() => jd
             .stored_line_along(p, carrier, &r.axis)
             .ok_or_else(|| reject(RejectReason::WitnessNotRational))?,
         None => return Err(reject(RejectReason::WitnessNotRational)),

@@ -70,7 +70,7 @@ fn a_planes_narrow_world_coefficients_fail_by_their_cause() {
         let got = world_narrow(m, h).map(|c| {
             assert_eq!(
                 Some(&c),
-                m.world_plane_name(h).as_ref().and_then(|n| n.narrow()),
+                m.world_plane_name(h).as_ref().ok().and_then(|n| n.narrow()),
                 "{label}: the coefficients are the world name's narrow projection"
             );
         });
@@ -154,7 +154,7 @@ fn a_planes_narrow_world_coefficients_fail_by_their_cause() {
     let h =
         push_plane_through_realized(&mut m, figure, through, Some(nudge), Orientation::Forward).0;
     assert!(
-        m.surface_name(h).is_none() && m.chain_folds(nudge),
+        m.surface_name(h).is_none() && m.chain_dir_rat(nudge, [one, zero, zero]).is_ok(),
         "premise: a moved plane with no name, on a chain that folds"
     );
     read(&m, "moved no name, folded", h, Err(CornerFail::Unstated));
@@ -163,7 +163,8 @@ fn a_planes_narrow_world_coefficients_fail_by_their_cause() {
     let turn = m.push_motion(turn_z(30), None);
     let h = plane(&mut m, flat, flat.map(|p| turned_f64(p, 30.0)), Some(turn));
     assert!(
-        !m.chain_folds(turn) && m.surface_name(h).is_some_and(|n| n.narrow().is_some()),
+        m.chain_point_rat(turn, [one, zero, zero]) == Err(nacre_topo::WorldFail::Unstated)
+            && m.surface_name(h).is_some_and(|n| n.narrow().is_some()),
         "premise: a narrow name on a chain that does not fold"
     );
     read(&m, "unfolded chain", h, Err(CornerFail::Unstated));
@@ -176,7 +177,8 @@ fn a_planes_narrow_world_coefficients_fail_by_their_cause() {
     };
     let h = plane(&mut m, wide, wide.map(moved), Some(slide));
     assert!(
-        m.chain_folds(slide) && m.surface_name(h).is_some_and(|n| n.narrow().is_none()),
+        m.chain_dir_rat(slide, [one, zero, zero]).is_ok()
+            && m.surface_name(h).is_some_and(|n| n.narrow().is_none()),
         "premise: a wide name on a chain that folds"
     );
     read(&m, "moved wide, folded", h, Err(CornerFail::Width));
@@ -212,7 +214,8 @@ fn a_planes_narrow_world_coefficients_fail_by_their_cause() {
         .and_then(|n| n.narrow())
         .expect("premise: a narrow name");
     assert!(
-        m.chain_folds(lift) && m.chain_plane_coeffs(lift, name).is_none(),
+        m.chain_dir_rat(lift, [one, zero, zero]).is_ok()
+            && m.chain_plane_coeffs(lift, name) == Err(nacre_topo::WorldFail::Width),
         "premise: a chain that folds and overflows carrying the name"
     );
     read(&m, "folded overflow", h, Err(CornerFail::Width));
@@ -220,7 +223,8 @@ fn a_planes_narrow_world_coefficients_fail_by_their_cause() {
     // Both causes: a wide name on a chain that does not fold — geometry first.
     let h = plane(&mut m, wide, wide.map(|p| turned_f64(p, 30.0)), Some(turn));
     assert!(
-        !m.chain_folds(turn) && m.surface_name(h).is_some_and(|n| n.narrow().is_none()),
+        m.chain_point_rat(turn, [one, zero, zero]) == Err(nacre_topo::WorldFail::Unstated)
+            && m.surface_name(h).is_some_and(|n| n.narrow().is_none()),
         "premise: a wide name on a chain that does not fold"
     );
     read(&m, "moved wide, unfolded", h, Err(CornerFail::Unstated));

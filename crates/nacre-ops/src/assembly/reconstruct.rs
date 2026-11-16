@@ -384,6 +384,7 @@ pub(crate) fn reconstruct(
             let world = planes[c]
                 .world
                 .as_ref()
+                .ok()
                 .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
             Ok(crate::planes::plus_t_is_above(world, &cyls[k].def) == (planes[c].frame_sign > 0))
         };

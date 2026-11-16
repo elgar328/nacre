@@ -257,18 +257,22 @@ pub(crate) struct WorldName {
 }
 
 impl WorldName {
-    /// The surface's world statement, or `None` where it has none.
+    /// The surface's world statement, or why it has none (the door's own cause,
+    /// [`nacre_topo::Model::world_plane_name`]).
     ///
     /// **The name is never dropped for want of a sense.** Both come from the same truth — the
     /// sense exists wherever the world name does (the name is derived from the plane's points, and
     /// collinear points have no name) — so a missing sense beside a present name is a broken door,
     /// not an input. Dropping the name there would silently move the class merge off its name road.
-    pub(crate) fn of(model: &Model, surf: Handle<Surface>) -> Option<WorldName> {
+    pub(crate) fn of(
+        model: &Model,
+        surf: Handle<Surface>,
+    ) -> Result<WorldName, nacre_topo::WorldFail> {
         let name = model.world_plane_name(surf)?;
         let sense = model
             .world_plane_name_sense(surf)
             .expect("a plane with a world name faces some way in the world");
-        Some(WorldName { name, sense })
+        Ok(WorldName { name, sense })
     }
 }
 
@@ -318,12 +322,12 @@ pub(crate) struct FaceInfo {
     /// mirror in `collect_planes`.
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
     /// The same plane **in the world** — its canonical name there and which way that name faces,
-    /// whatever frame the truth is written in ([`WorldName`]). `None` when no exact world
-    /// statement exists (a turn off the quarters, a frame, a moved wide name, an overflow). The
-    /// class table reads its narrow projection ([`Judge::world_rat`](crate::tolerant::Judge::world_rat)); `base_rat` above
+    /// whatever frame the truth is written in ([`WorldName`]) — or why no exact world statement
+    /// exists ([`nacre_topo::WorldFail`]: the truth puts it off the rationals, or `Rat` cannot hold
+    /// it), so a reader that refuses for its absence refuses by its cause. The class table reads its narrow projection ([`Judge::world_rat`](crate::tolerant::Judge::world_rat)); `base_rat` above
     /// answers the *other* question (the description in the frame the provenance names, which is
     /// what the shared-motion shortcuts cancel).
-    pub(crate) world: Option<WorldName>,
+    pub(crate) world: Result<WorldName, nacre_topo::WorldFail>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
     /// [`WorkingPlane::name_ints`] is folded from, which the judge's name-integer road reads for
     /// the world and for the pre-motion frame alike. `base_rat` above is its narrow projection, kept beside

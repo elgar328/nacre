@@ -407,14 +407,12 @@ fn planes_parallel_is_a_proof_through_one_axis_chains() {
     // Six faces each, two parallel per direction: 36 pairs, 12 of them parallel.
     assert_eq!(ask(z30, moved, &none), (36, 12));
     assert_eq!(ask(z30, z120, &none), (36, 12));
-    let nameless =
-        |a: &WorkingPlane, b: &WorkingPlane| Some(a.world.is_none() || b.world.is_none());
+    let nameless = |a: &WorkingPlane, b: &WorkingPlane| Some(a.world.is_err() || b.world.is_err());
     // The cuboid's six planes against the turned one's two caps, which keep their names.
     assert_eq!(ask(z30, s, &nameless), (12, 4));
     // A named plane beside one turned about the other axis may go either way: a name is no chain.
-    let both_nameless = |a: &WorkingPlane, b: &WorkingPlane| {
-        (a.world.is_none() && b.world.is_none()).then_some(true)
-    };
+    let both_nameless =
+        |a: &WorkingPlane, b: &WorkingPlane| (a.world.is_err() && b.world.is_err()).then_some(true);
     let (answered, _) = ask(z30, x30, &both_nameless);
     assert!(answered > 0, "the named pairs are answered");
 }
@@ -579,7 +577,7 @@ fn a_vertical_edge_holds_x_and_y_across_two_turned_boxes() {
     let cap_b = (na..planes.len())
         .find(|&k| !vertical(k))
         .expect("a cap of the second box");
-    assert!(planes[wa].world.is_none() && planes[wb].world.is_none());
+    assert!(planes[wa].world.is_err() && planes[wb].world.is_err());
     assert_ne!(planes[wa].chain_id, planes[cap_b].chain_id);
     let starved = ProofStandard {
         prec: 8,
@@ -735,7 +733,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
                 nacre_exact::plane_name_exact(tri_pt3[0].base, tri_pt3[1].base, tri_pt3[2].base);
             crate::planes::FaceRow::Plane(FaceInfo {
                 base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
-                world: None,
+                world: Err(nacre_topo::WorldFail::Unstated),
                 name,
                 surf: f.surf,
                 face: f.face,
@@ -1331,7 +1329,7 @@ fn two_caps_described_exactly_are_one_plane() {
         let tri = d.clone().map(|p| Point3::from_array(p.coord_approx()));
         WorkingPlane {
             base_rat: None,
-            world: None,
+            world: Err(nacre_topo::WorldFail::Unstated),
             name_ints: None,
             chain_id: 0,
             surf: faces[ia].surf(),
@@ -2185,7 +2183,7 @@ mod name_integer_road {
                         std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord_approx()));
                     WorkingPlane {
                         base_rat: None,
-                        world: None,
+                        world: Err(nacre_topo::WorldFail::Unstated),
                         name_ints: keep_names
                             .then(|| name_stored_ints(Some(&name), &tri_pt3, *fs))
                             .flatten(),

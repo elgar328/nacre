@@ -189,7 +189,7 @@ fn a_world_named_face_frames_on_the_arbitrary_axis_of_its_outward_normal() {
     for (tag, m, s) in flavours() {
         for (fi, &f) in m.shell(m.solid(s).outer).faces.iter().enumerate() {
             let surface = m.face(f).surface;
-            if m.world_plane_name(surface).is_none() {
+            if m.world_plane_name(surface).is_err() {
                 continue;
             }
             checked += 1;

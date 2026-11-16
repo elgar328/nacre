@@ -331,7 +331,7 @@ fn plane_classes_merge_a_shared_handle_before_judging() {
         crate::planes::FaceRow::Plane(FaceInfo {
             // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
             base_rat: None,
-            world: None,
+            world: Err(nacre_topo::WorldFail::Unstated),
             name: None,
             motion: None,
             surf: shared,

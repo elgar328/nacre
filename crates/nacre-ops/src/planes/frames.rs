@@ -33,7 +33,7 @@ pub(crate) struct WorkingPlane {
     /// description the cylinder roads compare against a world axis — and the same turned to face
     /// the way the plane does
     /// ([`Judge::stored_world_rat`](crate::tolerant::Judge::stored_world_rat)).
-    pub(crate) world: Option<WorldName>,
+    pub(crate) world: Result<WorldName, nacre_topo::WorldFail>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
@@ -129,7 +129,7 @@ pub(crate) fn face_facing(
     if face.surf == root.surf {
         return Ok(face.orient_sign * root.frame_sign);
     }
-    if let (Some(fw), Some(rw)) = (&face.world, &root.world) {
+    if let (Ok(fw), Ok(rw)) = (&face.world, &root.world) {
         if fw.name == rw.name {
             return Ok(face.orient_sign * fw.sense.sign() * rw.sense.sign() * root.frame_sign);
         }

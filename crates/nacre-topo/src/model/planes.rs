@@ -259,9 +259,9 @@ impl Model {
         match motion {
             None => Some(w),
             Some(leaf) => {
-                let fold = self.chain_affine(leaf)?;
+                let fold = self.chain_fold(leaf).ok()?;
                 let det = f64::from(fold.det());
-                Some(fold.dir_f64(w).map(|c| c * det))
+                Some(fold.dir_f64(w)?.map(|c| c * det))
             }
         }
     }
@@ -480,9 +480,9 @@ impl Model {
         // here realizes a coordinate and shifts it.
         let world_road = || -> Option<NamedMeet> {
             let (a, b, c) = (
-                self.world_plane_name(tri[0])?,
-                self.world_plane_name(tri[1])?,
-                self.world_plane_name(tri[2])?,
+                self.world_plane_name(tri[0]).ok()?,
+                self.world_plane_name(tri[1]).ok()?,
+                self.world_plane_name(tri[2]).ok()?,
             );
             Some(named(nacre_exact::three_planes_big([&a, &b, &c]), None))
         };

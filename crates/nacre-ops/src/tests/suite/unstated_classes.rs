@@ -795,7 +795,7 @@ fn the_hinge_is_read_whichever_class_is_numbered_first() {
         let mut m = Model::new();
         let (a, b) = (f.build)(&mut m);
         let setup = plane_index_setup(&m, a, b).expect("the gate passes");
-        let nameless = |c: usize| setup.geom[c].world.is_none();
+        let nameless = |c: usize| setup.geom[c].world.is_err();
         let rows: Vec<bool> = setup
             .cyls
             .iter()

@@ -570,6 +570,6 @@ pub(super) fn axis_above(
     wc: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<bool> {
-    let w = jd.planes[wc].world.as_ref()?;
+    let w = jd.planes[wc].world.as_ref().ok()?;
     Some(w.sense.sign() * nacre_exact::plane_residual_sign(&w.name, def.origin()) > 0)
 }

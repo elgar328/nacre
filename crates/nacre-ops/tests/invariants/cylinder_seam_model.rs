@@ -207,7 +207,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
             matches!(m.edge_curve(eh), Curve::Ellipse(_))
                 && m.edge(eh).surfaces.iter().any(|&h| {
                     matches!(m.surface(h), Surface::Cylinder { .. })
-                        && m.world_cylinder_def(h).is_none()
+                        && m.world_cylinder_def(h).is_err()
                 })
         })
         .count();
@@ -386,7 +386,7 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
                         Surface::Plane { .. } => (s1, s0),
                     };
                     assert!(
-                        m.world_cylinder_def(cyl).is_some(),
+                        m.world_cylinder_def(cyl).is_ok(),
                         "axis {axis:?}: the premise — this cylinder is stated in the world"
                     );
                     let (Some(cc), Some(pc)) = (

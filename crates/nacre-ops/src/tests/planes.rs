@@ -407,7 +407,7 @@ fn a_faces_facing_reads_no_plane_cache() {
         .iter()
         .filter(|&&(i, c)| {
             let f = faces[i].plane();
-            f.surf != planes[c].surf && (f.world.is_none() || planes[c].world.is_none())
+            f.surf != planes[c].surf && (f.world.is_err() || planes[c].world.is_err())
         })
         .count();
     assert!(
@@ -488,7 +488,7 @@ fn a_proved_side_is_the_judges_side() {
             .expect("the cube's plane is a class")
     };
     let nameless: Vec<usize> = (0..setup.geom.len())
-        .filter(|&c| setup.geom[c].world.is_none())
+        .filter(|&c| setup.geom[c].world.is_err())
         .collect();
     assert_eq!(nameless.len(), 4, "the turned box's four walls");
     let mut asked = 0;

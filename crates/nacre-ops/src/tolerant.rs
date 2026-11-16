@@ -24,7 +24,7 @@ impl Witness for WorkingPlane {
         self.base_rat
     }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
-        self.world.as_ref().map(|w| &w.name)
+        self.world.as_ref().ok().map(|w| &w.name)
     }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.tri_pt3
@@ -44,7 +44,7 @@ impl Witness for FaceRow {
         self.plane().base_rat
     }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
-        self.plane().world.as_ref().map(|w| &w.name)
+        self.plane().world.as_ref().ok().map(|w| &w.name)
     }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.plane().tri_pt3
@@ -65,7 +65,7 @@ impl PlaneWitness for WorkingPlane {
         self.name_ints.as_ref()
     }
     fn world_sense(&self) -> Option<i8> {
-        self.world.as_ref().map(|w| w.sense.sign())
+        self.world.as_ref().ok().map(|w| w.sense.sign())
     }
 }
 

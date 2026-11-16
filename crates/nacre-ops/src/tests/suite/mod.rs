@@ -132,7 +132,7 @@ fn plane_through(m: &mut Model, tri: [Point3; 3]) -> WorkingPlane {
         // A hand-built table has no recorded coefficients; the composed-rotation route declines and
         // the fixture takes the escalating path.
         base_rat: None,
-        world: None,
+        world: Err(nacre_topo::WorldFail::Unstated),
         name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
         chain_id: 0,
         surf,

@@ -263,8 +263,8 @@ fn world_placement(
     let (origin, ref_dir) = match model.surface_motion(plane) {
         None => (origin, ref_dir),
         Some(leaf) => (
-            model.chain_point_rat_inverse(leaf, origin)?,
-            model.chain_dir_rat_inverse(leaf, ref_dir)?,
+            model.chain_point_rat_inverse(leaf, origin).ok()?,
+            model.chain_dir_along_inverse(leaf, ref_dir).ok()?,
         ),
     };
     let own = *model.surface_name(plane)?.narrow()?;

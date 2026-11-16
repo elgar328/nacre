@@ -89,10 +89,13 @@ impl Def {
                 let width = || reject(RejectReason::WitnessNotRational);
                 let coeffs = |k: usize| {
                     jd.world_rat(k).ok_or_else(|| {
-                        reject(if planes[k].world.is_some() {
-                            RejectReason::WitnessNotRational
-                        } else {
-                            RejectReason::CylinderGateUndecided
+                        reject(match planes[k].world {
+                            Ok(_) | Err(nacre_topo::WorldFail::Width) => {
+                                RejectReason::WitnessNotRational
+                            }
+                            Err(nacre_topo::WorldFail::Unstated) => {
+                                RejectReason::CylinderGateUndecided
+                            }
                         })
                     })
                 };

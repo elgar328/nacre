@@ -223,8 +223,14 @@ impl Model {
         let own = motion.exact_affine();
         // Root first: the parent's chain is applied, then this node.
         let fold = match parent {
-            None => own,
-            Some(p) => own.and_then(|o| Some(self.chain_affines[p.index() as usize]?.then(&o))),
+            None => own.map(nacre_exact::ChainFold::axis),
+            Some(p) => own.and_then(|o| {
+                Some(
+                    self.chain_affines[p.index() as usize]
+                        .as_ref()?
+                        .then_axis(&o),
+                )
+            }),
         };
         self.chain_affines.push(fold);
         debug_assert_eq!(

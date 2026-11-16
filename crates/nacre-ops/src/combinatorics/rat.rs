@@ -866,8 +866,7 @@ pub(crate) fn height_order_on_generator(
 /// Whether a node is a pierce point one of whose planes has no world statement — the population
 /// the interval readings below are for, and the only one.
 pub(crate) fn names_a_nameless_plane(jd: &Judge<'_, WorkingPlane>, n: NodeId) -> bool {
-    pierce_name(n)
-        .is_some_and(|(planes, _, _)| planes.iter().any(|&c| jd.planes[c].world.is_none()))
+    pierce_name(n).is_some_and(|(planes, _, _)| planes.iter().any(|&c| jd.planes[c].world.is_err()))
 }
 
 /// **Is `n` strictly inside the counter-clockwise arc `lo → hi`**, three points of one circle of

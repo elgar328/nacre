@@ -421,8 +421,8 @@ impl Model {
     /// hands to [`Model::derive_edge_curve`] as [`EdgeGiven::direction`] — and asks this first, so
     /// the one spelling of «the names answer» is here.
     pub fn world_line_direction_f64(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
-        let a = self.world_plane_name(surfaces[0])?;
-        let b = self.world_plane_name(surfaces[1])?;
+        let a = self.world_plane_name(surfaces[0]).ok()?;
+        let b = self.world_plane_name(surfaces[1]).ok()?;
         nacre_exact::meet_direction_f64(&a, &b)
     }
 
@@ -461,8 +461,8 @@ impl Model {
     /// `None` where either carrier has no world statement, the cap's name is `Wide`, or the
     /// arithmetic leaves `i128`.
     fn world_rim_centre_f64(&self, cyl: Handle<Surface>, plane: Handle<Surface>) -> Option<Point3> {
-        let def = self.world_cylinder_def_unchecked(cyl)?;
-        let name = self.world_plane_name(plane)?;
+        let def = self.world_cylinder_def_unchecked(cyl).ok()?;
+        let name = self.world_plane_name(plane).ok()?;
         let c = nacre_exact::axis_plane_meet(name.narrow()?, &def.origin(), &def.dir())?;
         Some(Point3::from_array(c.map(|r| r.to_f64())))
     }

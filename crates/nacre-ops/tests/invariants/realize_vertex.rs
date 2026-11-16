@@ -2270,7 +2270,7 @@ fn the_refine_door_leaves_every_deep_line_and_circle_nearest() {
                         .surface_motion(cyl)
                         .is_some_and(|leaf| m.chain_deeper_than(leaf, CAP));
                     let cap_deep =
-                        m.world_plane_name(cap).is_none() && m.plane_replay_depth(cap, CAP) > CAP;
+                        m.world_plane_name(cap).is_err() && m.plane_replay_depth(cap, CAP) > CAP;
                     c.cap_only += usize::from(cap_deep && !cyl_deep);
                     let a = nacre_ops::audit_rim_centre(m, eh, 512).expect("a readable rim");
                     match (a.centre, a.on_cap, a.on_axis) {

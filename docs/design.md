@@ -161,7 +161,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 | 철자 | 뜻 | 예 |
 |---|---|---|
-| `_rat` | 정확한 `Rat`. 무리수이거나 넘칠 수 있으면 `Option` | `cos_sin_rat`·`sqrt_rat`·`chain_point_rat` |
+| `_rat` | 정확한 `Rat`. 무리수이거나 넘칠 수 있으면 `Option`, 독자가 그 둘을 가르면 `Result` | `cos_sin_rat`·`sqrt_rat`·`chain_point_rat` |
 | `_hp` | 호출자의 `prec` 에서의 `HpBounded` — 값과 건전한 반지름 | `cos_sin_hp`·`inv_sqrt_hp`·`quad_hp`·`coord_hp` |
 | `_iv` | f64 구간 `Bounded` — 값과 증명된 반지름 | `orient3d_iv`·`det3_iv`·`coord_iv` |
 | `_f64` | 참값의 최근접 `f64`(규칙 4), 또는 반올림 없이 정확한 `f64`. `nacre-exact` 의 근사 실현(`cos_sin_f64`·`inv_sqrt_f64`·`sqrt_f64`·`unit_vector_f64`)은 값이 정해질 때까지 사다리(`ladder_f64`)를 오르고, 0 이 아닌 값의 최근접 `f64` 가 정상수가 아니면(정상 범위 밖) `NaN` 이다 — 정확 갈래도 같다(`nearest_normal_f64`). ops 의 `Realization::to_f64` 는 이 규칙 밖이다(정확 갈래는 subnormal 을 통과시키고 근사 갈래는 `+0.0` — 그 doc). 앞의 낱말이 약속을 바꾸면 그 낱말이 말한다 — `upper_f64` 는 그 경계 이상인 `f64` | `cos_sin_f64`·`sqrt_f64`·`unit_vector_f64`·`Rat::to_f64`·`Mag::upper_f64` |
@@ -237,7 +237,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
   `.standing()`·`.to_geom()`), `vertex_cache(v) -> &PointCache`(`Realized | Ceiling | Unrealized`; `.coord()`·`.bound()`).
   조각의 지름길: `surface_cache_standing`·`surface_name`·`vertex_point`·`edge_curve`·`line_direction_cache`.
 - **세계 진술** — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히: `world_plane_name`·`chain_plane_coeffs`·
-  `chain_point_rat`·`chain_dir_rat`.
+  `chain_point_rat`·`chain_dir_rat`. 없으면 원인을 돌려준다(`WorldFail` — 기하가 먼저, 폭은 그다음).
 - **쓰기 문** — `push_*`(곡면은 진실을 진술하며 들어온다 — 그림과 그것이 아는 것을 함께; `push_motion` 은 intern),
   캐시의 둘째 쓰기 문 `refine_vertex_cache`·`refine_surface_cache`(오르기만 한다 — 정점은 `Ceiling` 을 `Realized` 로),
   통째 재생 `rebuild_edge_cache`.
@@ -1180,7 +1180,7 @@ pub struct Model {
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
     given_by_pair: HashMap<[Handle<Surface>; 2], EdgeGiven>, // 담체 쌍 → push 하는 쪽이 실현한 조각
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
-    chain_affines: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
+    chain_affines: Vec<Option<ChainFold>>,       // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 꼴
 
     // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다). 곡면의 표는 하나, 열쇠는 셋
     // (`SurfaceKey::{Name, Through, Cylinder}` — 이름 있는 평면 · 이름 없는 `Through` · 일부러 보수적인 원통).
@@ -1336,7 +1336,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 | 각도·√ 표 | `(Angle, prec)` / `(Rat, prec)` | 프로세스(스레드) | 값이 키의 순수 함수 — `cos 37°`·`1/√(n·n)` 은 어디서나 같다. 정확 반올림이라 실현이 유일하고 tol 도 유일 |
 | 평면 계수 메모 (`PlaneMemo`) | (곡면 핸들, 정밀도) | **연산 하나**(불리언·변환·프리즘) | 모션 이력이 갈린 코너의 도로(seam 표)와 간선의 직선 방향이 담체 평면의 고정밀 계수를 한 번만 실현한다 — 값이 키의 순수 함수라 답을 바꾸지 못한다. 없으면 회전 핀 80 fold 가 1.1 → 1.8 s |
 | 간선의 주어진 조각 (`given_by_pair`) | 담체 쌍 | **모델과 같이** | push 하는 쪽이 실현한 직선 방향·림 중심을 쌍마다 남긴다 — 두 진실의 함수(정확 반올림이라 유일)이고 진실은 append-only 라 낡지 않는다. 불리언은 결과의 간선을 매번 다시 push 하므로(회전 핀 80 fold: 이름 없는 평면이 낀 간선 45,888, 걸음마다 새 쌍은 열 남짓) 없으면 그 fold 가 1.33 → 1.94 s |
-| 사슬 접기 | 모션 핸들 (밀집) | **모델과 같이** | 노드가 태어날 때(`push_motion`) 부모의 접기에 자기 하나를 합성 — 이동·사분각 회전·축 거울은 «부호 있는 축 치환 + 유리수 이동»(`AxisAffine`)으로 닫힌다. `Frame`·사분각 밖 회전이 끼면 `None`. 질의마다 사슬을 걸으면 깊이의 제곱이다 |
+| 사슬 접기 | 모션 핸들 (밀집) | **모델과 같이** | 노드가 태어날 때(`push_motion`) 부모의 접기에 자기 하나를 합성 — 이동·사분각 회전·축 거울은 «부호 있는 축 치환 + 유리수 이동»(`AxisAffine`)으로 닫힌다. `Frame`·사분각 밖 회전이 끼면 `None`. 접기(`ChainFold`)는 진술마다 나르거나 원인(`Carry`)을 댄다 |
 
 여섯은 인덱스 공간이나 수명이 달라 합치지 않는다.
 

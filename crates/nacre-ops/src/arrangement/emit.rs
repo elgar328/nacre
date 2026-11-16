@@ -148,7 +148,7 @@ pub(super) fn emit_faces(
     // rather than a third guess.
     // Arcs are split only on a class with a world statement — `split_circles` reads the class's
     // world coefficients before it cuts a circle (`circle_crossings`) — so every arc below has one.
-    let world = jd.planes[wc].world.as_ref();
+    let world = jd.planes[wc].world.as_ref().ok();
     let arc_labels = edges
         .pieces
         .iter()

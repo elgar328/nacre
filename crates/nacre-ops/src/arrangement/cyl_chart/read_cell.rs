@@ -283,6 +283,7 @@ impl Chart {
             let world = jd.planes[c]
                 .world
                 .as_ref()
+                .ok()
                 .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
             let up = crate::planes::plus_t_is_above(world, def);
             above[e] = if e == 0 { up } else { !up };

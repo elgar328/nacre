@@ -56,7 +56,7 @@ fn circle_spans(
     }
     // The world description — the cylinder's statement is world, and a comparison across two
     // frames is a silently wrong answer, not a slow one.
-    let Some(world) = jd.planes[wc].world.as_ref() else {
+    let Some(world) = jd.planes[wc].world.as_ref().ok() else {
         return Err(DeclineKind::CylSpan);
     };
     let Some(coeffs) = world.name.narrow().copied() else {

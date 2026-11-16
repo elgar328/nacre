@@ -1281,7 +1281,7 @@ fn a_planes_world_name_sense_follows_its_chain() {
 /// **A chain pushed node by node folds to its nodes applied root first** — the one lock on the
 /// order `push_motion` composes in (the census has no chain with two non-identity linear parts).
 /// The oracle is the existing per-motion arithmetic, stepped; a turn off the quarters is in the
-/// mix, and both sides must then answer `None`.
+/// mix, and both sides must then answer no point.
 mod chain_folds {
     use super::*;
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -1358,10 +1358,10 @@ mod chain_folds {
             }
             let leaf = leaf.expect("a nonempty chain");
             let stepped = chain.iter().try_fold(p, |q, &n| step_point(n, q));
-            prop_assert_eq!(m.chain_point_rat(leaf, p), stepped);
+            prop_assert_eq!(m.chain_point_rat(leaf, p).ok(), stepped);
             prop_assume!(c[..3].iter().any(|x| *x != Rat::from_int(0)));
             let stepped_plane = chain.iter().try_fold(c, |q, &n| step_plane(n, q));
-            prop_assert_eq!(m.chain_plane_coeffs(leaf, c), stepped_plane);
+            prop_assert_eq!(m.chain_plane_coeffs(leaf, c).ok(), stepped_plane);
         }
     }
 }

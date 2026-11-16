@@ -155,9 +155,9 @@ impl RatFrame {
         leaf: nacre_store::Handle<MotionNode>,
     ) -> Option<RatFrame> {
         Some(RatFrame {
-            origin: model.chain_point_rat(leaf, self.origin)?,
-            x: model.chain_dir_rat(leaf, self.x)?,
-            y: model.chain_dir_rat(leaf, self.y)?,
+            origin: model.chain_point_rat(leaf, self.origin).ok()?,
+            x: model.chain_dir_rat(leaf, self.x).ok()?,
+            y: model.chain_dir_rat(leaf, self.y).ok()?,
             parity: self.parity * crate::rotated_vertex::motion_parity(model, Some(leaf))?,
         })
     }

@@ -219,6 +219,31 @@ impl Motion {
     }
 }
 
+/// **Why a surface or a point has no exact statement in the world** — what the world-statement
+/// doors ([`Model::world_plane_name`], [`Model::world_cylinder_def`], [`Model::chain_point_rat`]
+/// and their kin) answer instead of one.
+///
+/// Geometry is asked first: a statement the truth does not put on the rationals is `Unstated`
+/// whatever its width.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorldFail {
+    /// The truth states no rational world image: a plane with no name, a chain with no fold (a
+    /// turn off the quarters), or a statement its chain's fold carries off the rationals.
+    Unstated,
+    /// The world image is rational and `Rat` cannot hold it — a moved `Wide` name, or an
+    /// overflow carrying.
+    Width,
+}
+
+impl From<nacre_exact::Carry> for WorldFail {
+    fn from(c: nacre_exact::Carry) -> Self {
+        match c {
+            nacre_exact::Carry::Irrational => WorldFail::Unstated,
+            nacre_exact::Carry::Width => WorldFail::Width,
+        }
+    }
+}
+
 /// Where a sketch frame sits on its plane — the derived convention, or the caller's values.
 /// The dichotomy mirrors `PlanePoints`: state a value when it can
 /// be written, derive when it cannot.
@@ -618,7 +643,7 @@ pub struct Model {
     /// made 2,000 recorded quarter turns cost 6.7 s against 0.20 s, and a 4,200-turn irrational
     /// history 2.14 s against 1.44 s — the questions are asked per plane per transform, so a walk
     /// is quadratic in the history.
-    chain_affines: Vec<Option<nacre_exact::AxisAffine>>,
+    chain_affines: Vec<Option<nacre_exact::ChainFold>>,
     /// **What pushers realized of an edge's truth, by carrier pair** ([`Edge::carrier_pair`]'s
     /// order) — every piece of [`EdgeGiven`] a pusher answered, kept so the next edge on the same
     /// two carriers reads it instead of realizing it again: the direction two planes meet in, the

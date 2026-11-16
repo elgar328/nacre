@@ -1235,7 +1235,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             .iter()
             .enumerate()
             .find_map(|(i, &s)| {
-                let d = m.world_cylinder_def(s)?;
+                let d = m.world_cylinder_def(s).ok()?;
                 (d.dir()[0] == z(0) && d.dir()[1] == z(0)).then_some((i, s, d))
             })
             .expect("the rod's cylinder");
@@ -1349,7 +1349,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
         }
         let mut judged = named.clone();
         if let FaceRow::Plane(fi) = &mut judged[wall] {
-            fi.world = None;
+            fi.world = Err(nacre_topo::WorldFail::Unstated);
         }
         let rows_of = |faces: &[FaceRow]| {
             assert_eq!(face_facing(&jd, faces, wall, c), Ok(facing), "{lo:?}");
@@ -1378,8 +1378,8 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
             root_surf,
             "{lo:?}: one surface with the root"
         );
-        assert!(named[wall].plane().surf != root_surf && named[wall].plane().world.is_some());
-        assert!(judged[wall].plane().surf != root_surf && judged[wall].plane().world.is_none());
+        assert!(named[wall].plane().surf != root_surf && named[wall].plane().world.is_ok());
+        assert!(judged[wall].plane().surf != root_surf && judged[wall].plane().world.is_err());
         for (tier, faces) in [("named", &named), ("judged", &judged)] {
             assert_eq!(
                 format!("{:?}", rows_of(faces)),
@@ -1428,7 +1428,7 @@ fn fillet_against_block(
         .iter()
         .enumerate()
         .find_map(|(i, &s)| {
-            let d = m.world_cylinder_def(s)?;
+            let d = m.world_cylinder_def(s).ok()?;
             (nacre_exact::point_plane_clearance_rat(&coeffs, &d.origin(), d.r2())
                 == nacre_exact::Orient::Zero)
                 .then_some((i, s, d))
@@ -1513,12 +1513,12 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             && let FaceRow::Plane(fi) = &mut faces[wall]
         {
             fi.surf = other;
-            fi.world = None;
+            fi.world = Err(nacre_topo::WorldFail::Unstated);
             let a = fi.tri_pt3[0].clone();
             fi.tri_pt3 = [a.clone(), a.clone(), a];
         }
         if steps >= 4 {
-            geom[c].world = None;
+            geom[c].world = Err(nacre_topo::WorldFail::Unstated);
         }
         if steps >= 5 {
             coeffs = coeffs.map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
@@ -1580,7 +1580,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         .expect("narrow")
         .map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
     let mut geom = setup.geom.clone();
-    geom[c].world = None;
+    geom[c].world = Err(nacre_topo::WorldFail::Unstated);
     let jd = Judge::new(&geom, setup.standard, &setup.notes);
     let got: Vec<_> = tangency_rows(
         &m,
@@ -1741,7 +1741,7 @@ fn rod_against(
         .iter()
         .enumerate()
         .find_map(|(i, &s)| {
-            let d = m.world_cylinder_def(s)?;
+            let d = m.world_cylinder_def(s).ok()?;
             (d.dir()[0] == z(0) && d.dir()[1] == z(0)).then_some((i, s, d))
         })
         .expect("the rod's cylinder");

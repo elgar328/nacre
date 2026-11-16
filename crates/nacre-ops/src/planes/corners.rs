@@ -283,20 +283,17 @@ pub(crate) enum CornerFail {
     Inconsistent,
 }
 
-impl CornerFail {
-    /// Why carrying a statement along `leaf` to the world came back `None` —
-    /// `world_cylinder_def`, `chain_point_rat` and a moved named plane's `world_plane_name` fold
-    /// the chain and then carry, so on a chain that folds the carry failed for width — it
-    /// overflowed `Rat`, or a `Wide` name had no narrow vessel to carry in (`Width`) — and one that
-    /// does not has no world statement (`Unstated`).
-    pub(super) fn of_carry(model: &Model, leaf: Handle<nacre_topo::MotionNode>) -> Self {
-        if model.chain_folds(leaf) {
-            Self::Width
-        } else {
-            Self::Unstated
+/// The cause a world-statement door names, as this road's cause.
+impl From<nacre_topo::WorldFail> for CornerFail {
+    fn from(f: nacre_topo::WorldFail) -> Self {
+        match f {
+            nacre_topo::WorldFail::Unstated => Self::Unstated,
+            nacre_topo::WorldFail::Width => Self::Width,
         }
     }
+}
 
+impl CornerFail {
     /// The name a stated failure refuses under; `None` for [`Self::Shape`], whose name the caller
     /// reads off the boundary.
     pub(super) fn stated_reason(&self) -> Option<RejectReason> {
@@ -317,38 +314,27 @@ impl CornerFail {
 }
 
 /// **A plane's narrow world coefficients, or why it has none** — the narrow projection of
-/// [`nacre_topo::Model::world_plane_name`]. Geometry (`Unstated`) when the plane has no name or
-/// its chain does not fold; width (`Width`) when its name is `Wide` or a chain that folds
-/// overflows carrying it. A `Wide` name on a chain that does not fold is geometry: no width would
-/// give that plane a world statement.
+/// [`nacre_topo::Model::world_plane_name`], whose cause it keeps: geometry (`Unstated`) when the
+/// truth puts the plane off the rationals in the world, width (`Width`) when the world name is
+/// rational and `Rat` cannot hold it — an unmoved `Wide` name here, which the door hands back
+/// verbatim.
 pub(crate) fn world_narrow(
     model: &Model,
     plane: Handle<Surface>,
 ) -> Result<[nacre_exact::Rat; 4], CornerFail> {
-    match model.world_plane_name(plane) {
-        Some(name) => name.narrow().copied().ok_or(CornerFail::Width),
-        // A named plane with no world name is a moved one: unmoved, the name is the world's.
-        None => match (model.surface_name(plane), model.surface_motion(plane)) {
-            (Some(_), Some(leaf)) => Err(CornerFail::of_carry(model, leaf)),
-            _ => Err(CornerFail::Unstated),
-        },
-    }
+    model
+        .world_plane_name(plane)?
+        .narrow()
+        .copied()
+        .ok_or(CornerFail::Width)
 }
 
-/// A cylinder's world statement, or why it has none ([`CornerFail::of_carry`] for its motion — an
-/// unmoved cylinder's statement is its own and never fails).
+/// A cylinder's world statement, or why it has none — the door's own cause.
 pub(super) fn world_cylinder(
     model: &Model,
     cylinder: Handle<Surface>,
 ) -> Result<nacre_topo::CylinderDef, CornerFail> {
-    model
-        .world_cylinder_def(cylinder)
-        .ok_or_else(|| match model.surface(cylinder) {
-            nacre_topo::Surface::Cylinder {
-                motion: Some(leaf), ..
-            } => CornerFail::of_carry(model, *leaf),
-            _ => unreachable!("an unmoved cylinder's world statement is its own"),
-        })
+    Ok(model.world_cylinder_def(cylinder)?)
 }
 
 /// Per axis, the low and high ends of where a vertex's truth can be.
@@ -497,9 +483,7 @@ fn exact_start(model: &Model, vh: Handle<Vertex>) -> Result<Corner, CornerFail> 
         Some((p, None)) => Ok(Corner::Rational(p)),
         Some((p, Some(leaf))) => {
             let q = p.narrow().ok_or(CornerFail::Width)?;
-            let w = model
-                .chain_point_rat(leaf, *q)
-                .ok_or_else(|| CornerFail::of_carry(model, leaf))?;
+            let w = model.chain_point_rat(leaf, *q)?;
             Ok(Corner::Rational(nacre_exact::MeetPoint::Narrow(w)))
         }
         // **A corner a cylinder made has no rational meet — and does not need one.**
@@ -600,9 +584,7 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Result<[nacre_exact::Rat; 
         Some((p, None)) => p.narrow().copied().ok_or(CornerFail::Width),
         Some((p, Some(leaf))) => {
             let q = p.narrow().ok_or(CornerFail::Width)?;
-            model
-                .chain_point_rat(leaf, *q)
-                .ok_or_else(|| CornerFail::of_carry(model, leaf))
+            Ok(model.chain_point_rat(leaf, *q)?)
         }
         None => {
             let nacre_topo::Vertex::Pierce {

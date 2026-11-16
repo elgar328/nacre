@@ -263,8 +263,8 @@ fn circle_centre_truth(
     cyl: Handle<nacre_topo::Surface>,
     cap: Handle<nacre_topo::Surface>,
 ) -> Option<[f64; 3]> {
-    let def = m.world_cylinder_def(cyl)?;
-    let k = *m.world_plane_name(cap)?.narrow()?;
+    let def = m.world_cylinder_def(cyl).ok()?;
+    let k = *m.world_plane_name(cap).ok()?.narrow()?;
     let (o, d) = (def.origin(), def.dir());
     let dot = |v: &[Rat; 3]| -> Option<Rat> {
         k[0].checked_mul(v[0])?
@@ -326,7 +326,7 @@ fn line_audit(m: &Model) -> Vec<String> {
         let want = match (m.surface(s0), m.surface(s1)) {
             (nacre_topo::Surface::Plane { .. }, nacre_topo::Surface::Plane { .. }) => {
                 match (m.world_plane_name(s0), m.world_plane_name(s1)) {
-                    (Some(a), Some(b)) => {
+                    (Ok(a), Ok(b)) => {
                         let (p, q) = (a.coeff_ints(), b.coeff_ints());
                         let cross = [
                             &p[1] * &q[2] - &p[2] * &q[1],

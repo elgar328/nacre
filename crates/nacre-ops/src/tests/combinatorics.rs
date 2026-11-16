@@ -481,14 +481,14 @@ fn nameless_walls_through_a_cylinder() -> (
         let along = [foot[0] - c, foot[1] + s, 3.0];
         (0..setup.geom.len())
             .find(|&wc| {
-                setup.geom[wc].world.is_none() && on(setup, wc, foot) && on(setup, wc, along)
+                setup.geom[wc].world.is_err() && on(setup, wc, foot) && on(setup, wc, along)
             })
             .expect("a wall with no world name")
     };
     let top = move |setup: &crate::arrangement::PlaneSetup| {
         (0..setup.geom.len())
             .find(|&wc| {
-                setup.geom[wc].world.is_some()
+                setup.geom[wc].world.is_ok()
                     && on(setup, wc, [0.0, 0.0, 11.0])
                     && on(setup, wc, [1.0, 2.0, 11.0])
             })

@@ -619,8 +619,8 @@ fn lateral_crossings(
     };
     let along_axis = perpendicular(&v)
         && match jd.planes[wc].world {
-            None => true,
-            Some(_) => jd.world_rat(wc).is_some_and(|w| perpendicular(&w)),
+            Err(_) => true,
+            Ok(_) => jd.world_rat(wc).is_some_and(|w| perpendicular(&w)),
         };
     let undecided = || reject(RejectReason::CylinderGateUndecided);
     let crossing = |root: QuadRoot, at: combinatorics::PiercePoint| {

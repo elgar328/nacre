@@ -28,7 +28,7 @@ pub(crate) fn collect_planes(
                     // it against *world* planes. A row whose statement cannot be carried out to
                     // the world keeps none: the gate then refuses by its own name rather than
                     // measuring across two frames.
-                    let def = model.world_cylinder_def(face.surface);
+                    let def = model.world_cylinder_def(face.surface).ok();
                     out.push(FaceRow::Cylinder(CylFaceInfo {
                         surf: face.surface,
                         face: Some(fh),

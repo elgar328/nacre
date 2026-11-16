@@ -264,9 +264,8 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
   거절하는 자리는 잠기지 않았다 — 표 편집으로는 닿지 않고(끝이 큰 분모인 구간은 증인의 가운데가 먼저 넘친다), 기본값으로 접는
   심기는 조용한 무죄다.
 - topo 의 `EdgeDecline::Unstated`(`plane_cylinder_relation` 의 `None` — 넘침 포함)가 `reconstruct.rs` 에서
-  `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 원인을 묻는 독자가 늘면 세계 서술의 문
-  (`world_cylinder_def`·`chain_point_rat`·`world_plane_name`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로
-  정확히 가른다.
+  `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 세계 서술의 문(`world_cylinder_def`·`chain_point_rat`·`world_plane_name`)은
+  원인을 돌려주지만(`WorldFail`) `plane_cylinder_relation` 은 그것을 `None` 하나로 접는다.
 - 배열의 룰링 분할에서 `lateral_crossings` 의 `plane_plane_cylinder`(checked `i128`)가 넘치면 불리언을
   `WitnessNotRational` 로 거절한다(잰 인구: 스위트·무시 스윕·census·kit 0). 재현한 배치는 이동량을 f64 의 정확한
   이진값(`Rat::try_from_f64(25.7)`, 분모 2⁴⁸)으로 준 것뿐이다 — 구멍 난 판에서 `through_block` 홈을 판 몸을 그렇게
@@ -450,7 +449,7 @@ census 1,170·스윕 12,986 중 0 — 몸체 둘인 결과에서 표가 더 많�
 핸들은 「결과 면이 클래스 대표의 핸들을 물려받는다」). pad·pocket 의 밑캡은 대상 면의 핸들을 그대로 쓰므로 갈리는 것은 윗캡·
 옆벽이고, 윗캡의 세계 방정식 `n·p = n·o + d·|n|` 은 `|n|` 이 유리수일 때만 유리수다.
 
-이름을 넓히는 날 `world_plane_name_sense` 도 함께 넓힌다 — 둘은 같은 `chain_affine` 에서 나오고 `WorldName::of` 가 이름이
+이름을 넓히는 날 `world_plane_name_sense` 도 함께 넓힌다 — 둘은 같은 사슬 접기(`chain_fold`)에서 나오고 `WorldName::of` 가 이름이
 있으면 향도 있다고 `expect` 한다. 거절을 여는 쪽의 인구는 원통이 든다(「세계 진술 없는 클래스가 낀 원통 불리언」의 기하는
 유리수 부류).
 

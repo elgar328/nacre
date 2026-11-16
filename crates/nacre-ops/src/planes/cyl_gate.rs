@@ -109,7 +109,7 @@ pub(crate) fn cylinder_gate(
     // nothing to say on that class, and the class nothing to say about the cylinder; the roads that
     // would ask read the record (`WorkingCyl::records`). The boxes are built only when such a
     // class is present — the common boolean pays nothing.
-    let unstated = geom.iter().any(|wp| wp.world.is_none());
+    let unstated = geom.iter().any(|wp| wp.world.is_err());
     let mut whole_rims = vec![false; cyls.len()];
     if unstated {
         for (cyl, whole) in cyls.iter_mut().zip(&mut whole_rims) {
@@ -282,7 +282,7 @@ pub(crate) fn cylinder_gate(
     }
     debug_assert!(
         cyls.iter().all(|cyl| (0..geom.len())
-            .filter(|&c| geom[c].world.is_none())
+            .filter(|&c| geom[c].world.is_err())
             .all(|c| cyl.is_silent(c))),
         "every nameless class is silent about every cylinder, or the gate refused"
     );
@@ -514,7 +514,7 @@ fn class_meet(
     // translation is *judged* through its chain and still has exact world coefficients, and that
     // is the population the rulings road serves.
     let Some(coeffs) = jd.world_rat(c) else {
-        if wp.world.is_some() {
+        if wp.world.is_ok() {
             return Err(reject(RejectReason::WitnessNotRational));
         }
         let stance = nameless_stance(model, jd, c, cyl);
@@ -1226,6 +1226,7 @@ fn tangency_rows(
     let lens_side = jd.planes[c]
         .world
         .as_ref()
+        .ok()
         .map(|w| nacre_exact::plane_residual_sign(&w.name, o))
         .filter(|&s| s != 0);
     // Built **once**, not once per face (the rule `wall_faces_clear`'s doc gives).
@@ -2345,7 +2346,7 @@ fn line_off_lateral(
     def: &nacre_topo::CylinderDef,
     pieces: &[Footprint],
 ) -> bool {
-    if jd.planes[x].world.is_some() {
+    if jd.planes[x].world.is_ok() {
         let Some(w) = jd.world_rat(x) else {
             return false;
         };

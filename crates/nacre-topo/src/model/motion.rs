@@ -289,20 +289,27 @@ impl Model {
     ///
     /// Unmoved: the name itself, which is already world. Moved by a chain that folds — translations,
     /// quarter turns and axis reflections, [`Model::chain_plane_coeffs`]: that name carried out
-    /// exactly and canonicalized. `None` for anything else — a frame node, a turn off the
+    /// exactly and canonicalized. No name for anything else — a frame node, a turn off the
     /// quarters, a **moved** [`nacre_exact::PlaneName::Wide`] (no narrow vessel for the transport
-    /// to take), or an overflow — and the caller declines rather than guessing. An *unmoved* `Wide` name comes back verbatim: it is already world,
+    /// to take), or an overflow — and the caller declines rather than guessing, by the cause the
+    /// door names ([`WorldFail`]: no name or no fold is `Unstated`, which is asked before a moved
+    /// `Wide` name's `Width`). An *unmoved* `Wide` name comes back verbatim: it is already world,
     /// and refusing it would switch off a capability that is locked elsewhere.
     ///
-    /// **Planes only.** A cylinder has no name ([`Model::surface_name`]), so it answers `None`;
-    /// its own world statement is `nacre-ops`' `world_cylinder_def`.
-    pub fn world_plane_name(&self, surf: Handle<Surface>) -> Option<nacre_exact::PlaneName> {
-        let name = self.surface_name(surf)?;
+    /// **Planes only.** A cylinder has no name ([`Model::surface_name`]), so it answers
+    /// `Unstated`; its own world statement is [`Model::world_cylinder_def`].
+    pub fn world_plane_name(
+        &self,
+        surf: Handle<Surface>,
+    ) -> Result<nacre_exact::PlaneName, WorldFail> {
+        let name = self.surface_name(surf).ok_or(WorldFail::Unstated)?;
         match self.surface_motion(surf) {
-            None => Some(name.clone()),
-            Some(leaf) => Some(nacre_exact::PlaneName::Narrow(
-                self.chain_plane_coeffs(leaf, *name.narrow()?)?,
-            )),
+            None => Ok(name.clone()),
+            Some(leaf) => {
+                let fold = self.chain_fold(leaf)?;
+                let narrow = name.narrow().ok_or(WorldFail::Width)?;
+                Ok(nacre_exact::PlaneName::Narrow(fold.plane_coeffs(*narrow)?))
+            }
         }
     }
 
@@ -335,17 +342,17 @@ impl Model {
     /// reflection reverses the points' turn), the name's normal travels as `M·n`, and
     /// canonicalizing that image may negate it — so the answer is the name's own sense times
     /// `det M` times that canonical sign. Every factor is exact, and every one exists wherever the
-    /// world name does: `None` exactly where [`Model::world_plane_name`] is `None` (for a named
+    /// world name does: `None` exactly where [`Model::world_plane_name`] has no name (for a named
     /// plane), so a caller that holds the world name always holds its sense.
     pub fn world_plane_name_sense(&self, surf: Handle<Surface>) -> Option<Orientation> {
         let own = self.plane_name_sense(surf)?;
         let Some(leaf) = self.surface_motion(surf) else {
             return Some(own);
         };
-        let fold = self.chain_affine(leaf)?;
+        let fold = self.chain_fold(leaf).ok()?;
         let n = self.surface_name(surf)?.narrow()?;
-        let carried = fold.dir_rat([n[0], n[1], n[2]])?;
-        let world = self.world_plane_name(surf)?;
+        let carried = fold.dir_along([n[0], n[1], n[2]]).ok()?;
+        let world = self.world_plane_name(surf).ok()?;
         let world = world.narrow()?;
         let zero = nacre_exact::Rat::from_int(0);
         let k = (0..3).find(|&k| world[k] != zero)?;
@@ -364,11 +371,12 @@ impl Model {
     /// kind.
     ///
     /// Unmoved: the statement itself. Moved by a chain that folds: origin through
-    /// [`Model::chain_point_rat`], axis and seam reference through [`Model::chain_dir_rat`], the
-    /// squared radius unchanged — a folded chain is a signed permutation plus a rational offset,
-    /// so every invariant [`CylinderDef::new`] checks survives it. Anything else (a frame, a turn
-    /// off the quarters, overflow): `None`, and the caller refuses rather than measuring across
-    /// two frames.
+    /// [`Model::chain_point_rat`], axis and seam reference as lines
+    /// ([`nacre_exact::ChainFold::dir_along`] — they are raw directions), the squared radius
+    /// unchanged — a folded chain is a signed permutation plus a rational offset, so every
+    /// invariant [`CylinderDef::new`] checks survives it. Anything else (a frame, a turn off the
+    /// quarters, overflow): the cause ([`WorldFail`]), and the caller refuses rather than
+    /// measuring across two frames.
     ///
     /// **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
     /// *realized* world cylinder, so it is an independent second description of the very thing
@@ -376,7 +384,7 @@ impl Model {
     /// along it — **the same way round**, because a rim circle's edge curve is parameterized about
     /// the cache's axis while the loops that walk it are decided on this statement's — and the
     /// radius must match. A fold in the wrong order disagrees on the origin or the direction.
-    pub fn world_cylinder_def(&self, surf: Handle<Surface>) -> Option<CylinderDef> {
+    pub fn world_cylinder_def(&self, surf: Handle<Surface>) -> Result<CylinderDef, WorldFail> {
         let out = self.world_cylinder_def_unchecked(surf)?;
         debug_assert!(
             {
@@ -393,7 +401,7 @@ impl Model {
             },
             "the world statement and the realized cache describe one cylinder"
         );
-        Some(out)
+        Ok(out)
     }
 
     /// [`Model::world_cylinder_def`] without its postcondition — for the one reader whose job is
@@ -402,92 +410,91 @@ impl Model {
     pub(super) fn world_cylinder_def_unchecked(
         &self,
         surf: Handle<Surface>,
-    ) -> Option<CylinderDef> {
+    ) -> Result<CylinderDef, WorldFail> {
         let Surface::Cylinder { def, motion } = self.surface(surf) else {
             unreachable!("a cylinder surface carries a cylinder truth")
         };
         match motion {
-            None => Some(def.clone()),
-            Some(leaf) => CylinderDef::new(
-                self.chain_point_rat(*leaf, def.origin())?,
-                self.chain_dir_rat(*leaf, def.dir())?,
-                self.chain_dir_rat(*leaf, def.ref_dir())?,
-                def.r2().clone(),
-            ),
+            None => Ok(def.clone()),
+            // The axis and the seam reference are raw directions — where they point, not how long
+            // they are — so they are carried as lines.
+            Some(leaf) => {
+                let fold = self.chain_fold(*leaf)?;
+                CylinderDef::new(
+                    fold.point_rat(def.origin())?,
+                    fold.dir_along(def.dir())?,
+                    fold.dir_along(def.ref_dir())?,
+                    def.r2().clone(),
+                )
+                .ok_or(WorldFail::Width)
+            }
         }
     }
 
-    /// `leaf`'s whole chain, folded ([`Model::chain_affines`]) — read through the store first, so
-    /// a handle from another model dies here as it does at [`Model::motion`].
-    pub(super) fn chain_affine(
+    /// `leaf`'s whole chain, folded — read through the store first, so a handle from another model
+    /// dies here as it does at [`Model::motion`]. `Unstated` where the chain holds a node the
+    /// rationals cannot state (a turn off the quarters, a frame).
+    pub(super) fn chain_fold(
         &self,
         leaf: Handle<MotionNode>,
-    ) -> Option<&nacre_exact::AxisAffine> {
+    ) -> Result<&nacre_exact::ChainFold, WorldFail> {
         let _ = self.motion(leaf);
-        self.chain_affines[leaf.index() as usize].as_ref()
-    }
-
-    /// Whether `leaf`'s whole chain folds to a rational map (translations, quarter turns and axis
-    /// mirrors) — `false` for a frame node or a turn off the quarters. This is the one question
-    /// that tells apart the two ways [`Model::world_cylinder_def`], [`Model::chain_point_rat`] and
-    /// a moved named plane's [`Model::world_plane_name`] answer `None`: a chain that does not fold
-    /// has no world statement to give, and on one that folds the carry failed for width — it
-    /// overflowed `Rat`, or a `Wide` name had no narrow vessel to carry in.
-    pub fn chain_folds(&self, leaf: Handle<MotionNode>) -> bool {
-        self.chain_affine(leaf).is_some()
+        self.chain_affines[leaf.index() as usize]
+            .as_ref()
+            .ok_or(WorldFail::Unstated)
     }
 
     /// **The plane `c`, stated before `leaf`'s chain, restated in the world** — canonicalized, so
-    /// a plane reached by two routes lands on one array. `None` where the chain does not fold (a
-    /// frame, a turn off the quarters) or the arithmetic overflows `i128`.
+    /// a plane reached by two routes lands on one array. [`WorldFail::Unstated`] where the chain
+    /// has no fold or carries the plane off the rationals, `Width` where `i128` overflows.
     pub fn chain_plane_coeffs(
         &self,
         leaf: Handle<MotionNode>,
         c: [nacre_exact::Rat; 4],
-    ) -> Option<[nacre_exact::Rat; 4]> {
-        self.chain_affine(leaf)?.plane_coeffs(c)
+    ) -> Result<[nacre_exact::Rat; 4], WorldFail> {
+        Ok(self.chain_fold(leaf)?.plane_coeffs(c)?)
     }
 
-    /// **The point `p`, stated before `leaf`'s chain, carried to the world** — exactly. `None` as
-    /// [`Model::chain_plane_coeffs`].
+    /// **The point `p`, stated before `leaf`'s chain, carried to the world** — exactly, or why not,
+    /// as [`Model::chain_plane_coeffs`].
     pub fn chain_point_rat(
         &self,
         leaf: Handle<MotionNode>,
         p: [nacre_exact::Rat; 3],
-    ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_affine(leaf)?.point_rat(p)
+    ) -> Result<[nacre_exact::Rat; 3], WorldFail> {
+        Ok(self.chain_fold(leaf)?.point_rat(p)?)
     }
 
-    /// **The direction `d`, stated before `leaf`'s chain, carried to the world** — the linear
-    /// part only, so a chain whose offset overflowed still answers.
+    /// **The vector `d`, stated before `leaf`'s chain, carried to the world** — its length kept,
+    /// for a caller that measures along it; the linear part only, so a chain whose offset
+    /// overflowed still answers.
     pub fn chain_dir_rat(
         &self,
         leaf: Handle<MotionNode>,
         d: [nacre_exact::Rat; 3],
-    ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_affine(leaf)?.dir_rat(d)
+    ) -> Result<[nacre_exact::Rat; 3], WorldFail> {
+        Ok(self.chain_fold(leaf)?.dir_rat(d)?)
     }
 
     /// **The point `p`, stated in the world, carried back to before `leaf`'s chain** — the inverse
-    /// of [`Model::chain_point_rat`]: a folded chain permutes the axes with signs and adds a
-    /// rational offset, so its inverse is exact. `None` where the chain does not fold or the
-    /// arithmetic overflows.
+    /// of [`Model::chain_point_rat`], exact or why not.
     pub fn chain_point_rat_inverse(
         &self,
         leaf: Handle<MotionNode>,
         p: [nacre_exact::Rat; 3],
-    ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_affine(leaf)?.inverse().point_rat(p)
+    ) -> Result<[nacre_exact::Rat; 3], WorldFail> {
+        Ok(self.chain_fold(leaf)?.point_rat_inverse(p)?)
     }
 
-    /// **The direction `d`, stated in the world, carried back to before `leaf`'s chain** — the
-    /// inverse of [`Model::chain_dir_rat`], the linear part only.
-    pub fn chain_dir_rat_inverse(
+    /// **The direction `d`, stated in the world, carried back to before `leaf`'s chain** — some
+    /// positive multiple of it: where it points, for a caller that states a direction by its line
+    /// (a frame's `+u`).
+    pub fn chain_dir_along_inverse(
         &self,
         leaf: Handle<MotionNode>,
         d: [nacre_exact::Rat; 3],
-    ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_affine(leaf)?.inverse().dir_rat(d)
+    ) -> Result<[nacre_exact::Rat; 3], WorldFail> {
+        Ok(self.chain_fold(leaf)?.dir_along_inverse(d)?)
     }
 
     /// **How a plane stands to a cylinder's axis, from their truths** — the relation that decides
@@ -524,7 +531,7 @@ impl Model {
                 return Some(n.relation_to(&axis));
             }
         }
-        if let (Some(name), Some(world)) = (
+        if let (Ok(name), Ok(world)) = (
             self.world_plane_name(plane),
             self.world_cylinder_def_unchecked(cyl),
         ) {
@@ -588,7 +595,10 @@ impl Model {
         if ma == mb {
             return Some(nacre_exact::parallel_rat(&da.dir(), &db.dir()));
         }
-        let (wa, wb) = (self.world_cylinder_def(a)?, self.world_cylinder_def(b)?);
+        let (wa, wb) = (
+            self.world_cylinder_def(a).ok()?,
+            self.world_cylinder_def(b).ok()?,
+        );
         Some(nacre_exact::parallel_rat(&wa.dir(), &wb.dir()))
     }
 

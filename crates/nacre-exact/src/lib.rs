@@ -37,6 +37,7 @@ use std::collections::HashMap;
 mod angle;
 mod axis_affine;
 mod bigkernel;
+mod chain_fold;
 mod cylinder;
 mod frame;
 mod isometry;
@@ -50,6 +51,7 @@ mod winding;
 
 pub use axis_affine::*;
 pub(crate) use bigkernel::*;
+pub use chain_fold::*;
 pub use cylinder::*;
 pub use frame::*;
 pub use isometry::*;

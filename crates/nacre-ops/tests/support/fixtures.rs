@@ -514,7 +514,7 @@ pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3
     let shell = m.solid(solid).outer;
     m.shell(shell).faces.iter().any(|&fh| {
         let f = m.face(fh);
-        if m.world_plane_name(f.surface).as_ref() != Some(&target) {
+        if m.world_plane_name(f.surface).as_ref().ok() != Some(&target) {
             return false;
         }
         let [a, b, c, _] = target.coeff_ints();
@@ -700,7 +700,7 @@ pub fn through_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) 
     let solid = xf(m, solid, Isometry::translation([zero, zero, lift]));
     let top = top_surface(m, solid);
     assert!(
-        m.surface_motion(top).is_some() && m.world_plane_name(top).is_some(),
+        m.surface_motion(top).is_some() && m.world_plane_name(top).is_ok(),
         "the lifted top carries a chain that folds"
     );
     solid
@@ -723,7 +723,7 @@ pub fn through_mirrored_block(m: &mut Model, height: f64, lift: nacre_exact::Rat
     };
     let top = top_surface(m, solid);
     assert!(
-        m.surface_motion(top).is_some() && m.world_plane_name(top).is_some(),
+        m.surface_motion(top).is_some() && m.world_plane_name(top).is_ok(),
         "the mirrored top carries a chain that folds"
     );
     solid

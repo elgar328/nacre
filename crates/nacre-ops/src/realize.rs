@@ -430,7 +430,7 @@ fn read_without_replay(model: &Model, def: &Vertex) -> Result<Realization, Cache
         None => Some(meet.lift()),
         Some(node) => meet
             .narrow()
-            .and_then(|&p| model.chain_point_rat(node, p))
+            .and_then(|&p| model.chain_point_rat(node, p).ok())
             .map(|w| MeetPoint::Narrow(w).lift()),
     };
     let (n, d) = lifted.ok_or(CacheDecline::CostCap)?;
@@ -1832,7 +1832,7 @@ fn seam_point_stated(
     cap: Handle<Surface>,
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
-    let def = model.world_cylinder_def(cyl)?;
+    let def = model.world_cylinder_def(cyl).ok()?;
     let coeffs = crate::planes::world_narrow(model, cap).ok()?;
     let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
     let centre = nacre_exact::axis_plane_meet(&coeffs, &o, &m)?;
@@ -2042,8 +2042,8 @@ fn ruling_point(
     let folded = |p: [nacre_exact::Rat; 3], d: [nacre_exact::Rat; 3]| match chain {
         None => Some((p, d)),
         Some(leaf) => Some((
-            model.chain_point_rat(leaf, p)?,
-            model.chain_dir_rat(leaf, d)?,
+            model.chain_point_rat(leaf, p).ok()?,
+            model.chain_dir_rat(leaf, d).ok()?,
         )),
     };
     if let (Some(cap), Some((foot, dir))) = (
@@ -2157,7 +2157,7 @@ fn pierce_point(
             _ => None,
         }
     };
-    let world = model.world_cylinder_def(cylinder).and_then(|w| {
+    let world = model.world_cylinder_def(cylinder).ok().and_then(|w| {
         let read = planes.map(|h| crate::planes::world_narrow(model, h).ok());
         Some((wall_of(read, w.dir())?, w))
     });
@@ -2223,7 +2223,7 @@ fn build_three_plane(
     // that is exactly `0` (its interval straddles it at every rung), and read from the fold it is
     // the integer `0`. Where the fold does not answer (a frame, a turn off the quarters, an offset
     // past `Rat`) the replay does.
-    if let Some(world) = model.chain_point_rat(node, base) {
+    if let Ok(world) = model.chain_point_rat(node, base) {
         let (n, d) = MeetPoint::Narrow(world).lift();
         return Ok(Realization(Arm::Exact(n, d)));
     }
@@ -2549,7 +2549,7 @@ mod tests {
                 unreachable!()
             };
             assert!(
-                motion.is_some() && m.world_cylinder_def(lateral).is_none(),
+                motion.is_some() && m.world_cylinder_def(lateral).is_err(),
                 "{axis:?}"
             );
             let hp = world_cylinder_hp(&m, &def, motion, 512).expect("the chain");
@@ -2654,7 +2654,7 @@ mod tests {
                     unreachable!()
                 };
                 assert!(
-                    m.world_cylinder_def(cyl).is_some(),
+                    m.world_cylinder_def(cyl).is_ok(),
                     "{axis:?}: a stated cylinder"
                 );
                 let stated = seam_point_stated(&m, cyl, cap, 512).expect("the stated road");
@@ -2748,7 +2748,7 @@ mod tests {
                     unreachable!()
                 };
                 assert!(
-                    m.world_cylinder_def(cyl).is_none(),
+                    m.world_cylinder_def(cyl).is_err(),
                     "{what}: no world statement"
                 );
                 let PointCache::Realized { coord, .. } = m.vertex_cache(vh) else {
