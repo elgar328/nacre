@@ -10,6 +10,8 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `exact::ChainFold` is a motion chain folded into one map — the exact nodes' axis map after an optional frame part — that carries a point, a vector, a direction as a line, a plane or a cylinder to its image (a plane as its name and the way that name faces), or says why there is none (`exact::Carry`: `Irrational` before `Width`). `exact::plane_frame_placed` derives the frame a frame node states, and `topo::FramePlacement::frame_on` unpacks a placement into it.
+- `topo::Model::frame_fold` is the fold a frame node on a plane would have, without pushing one; `topo::Model::chain_through_frame` says whether a chain holds a frame node, whether or not it folds; `topo::Model::chain_dir_along` carries a direction to the world as a line.
 - `exact::dot3_hp` and `exact::cross3_hp` are the dot and cross products of two interval vectors, with the error their arithmetic carries; either vector may hold its components or borrow them.
 - `exact::CylinderDef` is a cylinder's exact statement — origin, axis, seam direction and squared radius — where `topo::CylinderDef` names the same type.
 - `exact::quad::QuadRoot` names which crossing of a plane pair's meet line with a cylinder a point is (`Lo`, `Hi`, or the one point of a tangency, `Double`), and `exact::quad::ruling_side_signed` says which of a wall's two rulings a point of a cylinder lies on.

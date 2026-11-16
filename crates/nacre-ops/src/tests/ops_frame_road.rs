@@ -122,7 +122,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
 /// `inv_sqrt_rat` returns exactly one" holds only for axes that are *already* unit, not for every
 /// rational axis.
 ///
-/// [`RatFrame::of_plane_frame`] asks in `Rat` and never realizes — the same rule
+/// [`RatFrame::of_fold`] asks in `Rat` and never realizes — the same rule
 /// `plane_frame_named` already states for `v̂`, one level up.
 #[test]
 fn the_two_roads_take_the_same_road() {

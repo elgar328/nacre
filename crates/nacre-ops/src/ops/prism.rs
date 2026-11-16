@@ -2,32 +2,21 @@ use super::*;
 /// **The frame's world basis in exact rationals, when it has one** — the one gate that decides
 /// whether a sketch is written in world coordinates or inside a motion node.
 ///
-/// The frame's own basis comes from its plane's name ([`RatFrame::of_plane_frame`] on the chain's
-/// narrow `Frame` head — `None` when an axis needs an irrational scale); a plane with a motion of
-/// its own then carries it through that motion's fold ([`RatFrame::carried`] — translations,
-/// quarter turns and axis reflections keep it rational; a turn off the quarters, or a frame that
-/// carries the axes off the rationals, declines). A wide or judged head declines too. The answer is asked of the
-/// truth, never of a realization lifted back: a realized axis that needs normalizing comes back
-/// `0.6000000000000001` and would read as irrational.
+/// Asked of the fold a frame node on this placement would have ([`Model::frame_fold`] — the
+/// frame its plane's name states, carried by the plane's own chain), never of a realization lifted
+/// back: [`RatFrame::of_fold`] reads the origin and both axes off it exactly or declines. A plane
+/// with no narrow name, a frame that needs an irrational scale for an axis, or a chain that carries
+/// the basis off the rationals declines.
 ///
 /// Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
 ///
-/// [`RatFrame::of_plane_frame`]: crate::construct::RatFrame::of_plane_frame
-/// [`RatFrame::carried`]: crate::construct::RatFrame::carried
+/// [`RatFrame::of_fold`]: crate::construct::RatFrame::of_fold
 pub(super) fn exact_frame(
     model: &Model,
     frame: &SketchFrame,
 ) -> Option<crate::construct::RatFrame> {
-    let chain =
-        crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
-    let [nacre_judge::MoveNode::Frame { frame: pf }, ..] = chain.as_slice() else {
-        return None;
-    };
-    let own = crate::construct::RatFrame::of_plane_frame(pf)?;
-    match model.surface_motion(frame.plane()) {
-        None => Some(own),
-        Some(leaf) => own.carried(model, leaf),
-    }
+    let fold = model.frame_fold(frame.plane(), *frame.placement(), frame.flip())?;
+    crate::construct::RatFrame::of_fold(&fold)
 }
 
 /// The builder's exact winding needs quarter-turn arcs (`Ring2d::winding_sign`); an arc of any

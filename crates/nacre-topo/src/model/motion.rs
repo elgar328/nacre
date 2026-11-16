@@ -450,24 +450,23 @@ impl Model {
             .ok_or(WorldFail::Unstated)
     }
 
-    /// **What a frame node's own step folds to** — the frame it states ([`FramePlacement::frame_on`],
-    /// the one the judge replays), carried by its plane's own chain: coordinates read in that frame,
-    /// carried to the world. `None` for any other motion, a plane with no narrow name, a frame the
-    /// narrow derivation cannot state, or a plane chain the frame does not compose with
-    /// ([`nacre_exact::ChainFold::then`]) — every statement on such a chain is then `Unstated`.
+    /// **What a frame node stating `placement` on `plane` (turned by `flip`) folds to**, without
+    /// pushing one — the frame it states ([`FramePlacement::frame_on`], the one the judge replays),
+    /// carried by the plane's own chain: coordinates read in that frame, carried to the world.
+    /// `None` for a plane with no narrow name, a frame the narrow derivation cannot state, or a
+    /// plane chain the frame does not compose with ([`nacre_exact::ChainFold::then`]) — every
+    /// statement on such a chain is then `Unstated`.
     ///
-    /// Folded once, as the node is born: the plane exists before any node names it, and its name
-    /// is read now. A name planted on the plane later (`plant_surface_name`, a test door) leaves
-    /// this fold describing the plane as it was.
-    pub(super) fn frame_fold(&self, motion: Motion) -> Option<nacre_exact::ChainFold> {
-        let Motion::Frame {
-            plane,
-            placement,
-            flip,
-        } = motion
-        else {
-            return None;
-        };
+    /// [`Model::push_motion`] folds a frame node by it once, as the node is born; a producer asks it
+    /// to learn whether a frame's basis is rational in the world before deciding to push a node at
+    /// all. The plane's name is read now: a name planted on the plane later (`plant_surface_name`,
+    /// a test door) leaves a born node's fold describing the plane as it was.
+    pub fn frame_fold(
+        &self,
+        plane: Handle<Surface>,
+        placement: FramePlacement,
+        flip: bool,
+    ) -> Option<nacre_exact::ChainFold> {
         let name = self.surface_name(plane)?.narrow()?;
         let raw = nacre_exact::ChainFold::frame(&placement.frame_on(*name, flip)?);
         match self.surface_motion(plane) {

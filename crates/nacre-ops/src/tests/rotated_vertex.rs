@@ -706,8 +706,9 @@ fn a_frame_on_a_framed_wall_folds_through_the_walls_chain() {
             None,
         );
         assert!(
-            m.chain_through_frame(leaf),
-            "flip {flip}: its chain carries a frame node"
+            m.frame_fold(wall, FramePlacement::Canonical, flip)
+                .is_some(),
+            "flip {flip}: the two frames compose"
         );
         let carried = fold_inside_replay(&m, leaf, &format!("the framed wall, flip {flip}"));
         assert!(

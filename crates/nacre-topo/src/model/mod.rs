@@ -227,7 +227,15 @@ impl Model {
                 .fold
                 .as_ref()
                 .map(|f| f.then_axis(&o)),
-            (None, _) => self.frame_fold(motion).and_then(|own| match parent {
+            (None, _) => match motion {
+                Motion::Frame {
+                    plane,
+                    placement,
+                    flip,
+                } => self.frame_fold(plane, placement, flip),
+                _ => None,
+            }
+            .and_then(|own| match parent {
                 None => Some(own),
                 Some(p) => self.chain_affines[p.index() as usize]
                     .fold

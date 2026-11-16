@@ -21,8 +21,8 @@
 //! axes are irrational, and lifting their decimals would give vectors that are no
 //! longer unit, so `normal·dist` would come out the wrong *length* — a worse error
 //! than the one being fixed. So the frame's basis is asked in rationals, of the truth
-//! ([`RatFrame::of_plane_frame`], carried through a folding motion by
-//! [`RatFrame::carried`]), and a frame without one declines rather than approximating —
+//! ([`RatFrame::of_fold`] — what the frame node's fold carries to the world), and a frame without
+//! one declines rather than approximating —
 //! the sketch is then written inside the frame, behind a motion node. Every function here
 //! returns `Option` for that reason, and for i128 overflow, which is the same answer for
 //! the same reason.
@@ -38,7 +38,7 @@ use nacre_topo::{Model, MotionNode};
 
 /// A sketch frame whose origin and axes are exact rationals, with the axes proved
 /// orthonormal. The fields are private, so a frame comes only from a door that proves it
-/// ([`RatFrame::of_plane_frame`], [`RatFrame::identity`], [`RatFrame::carried`]).
+/// ([`RatFrame::of_fold`], [`RatFrame::identity`]).
 ///
 /// **A frame carried through a reflection is left-handed**, and `parity` says so: the motion
 /// carries each axis as `L(·)`, and `L(u) × L(v) = det L · L(w)`. The frame's `ŵ` — the way a
@@ -117,48 +117,28 @@ impl SketchPlane {
 }
 
 impl RatFrame {
-    /// **A frame's basis asked in rationals, never realized** — whether the plane's own frame has
-    /// rational orthonormal axes, and which.
+    /// **A frame's basis asked in rationals, never realized** — the origin and `û`, `v̂` a frame
+    /// node's fold carries to the world ([`Model::frame_fold`]), each exactly or not at all; the
+    /// fold's handedness is the parity.
     ///
     /// **Realizing the axes first and lifting them back does not answer it.** Measured
     /// (`ops::prism::frame_road`): `reduce_direction` turns a `(0.6, 0.8, 0)` axis into the
-    /// primitive `(3, 4, 0)` with `uu = 25`, and a realization multiplies by a *numerically*
+    /// primitive `(3, 4, 0)` with `|u|² = 25`, and a realization multiplies by a *numerically*
     /// computed `1/5`, landing on `0.6000000000000001`. `Rat::from_decimal` lifts that,
     /// orthonormality fails, and a plane that is perfectly rational takes the frame-node road — a
-    /// different arena, not an ulp. Here `inv_sqrt_rat` answers in `Rat`: `Some` exactly when the
-    /// axis lands on a rational, which is the whole question.
+    /// different arena, not an ulp. The fold answers in `Rat`: an axis carried as a vector (its
+    /// length kept) is rational exactly when it lands on a rational, which is the whole question.
     ///
-    /// It is the same rule [`nacre_exact::plane_frame_named`] states for `v̂`, applied one level
-    /// up: `v_raw` is carried exactly for this reason, so use it rather than crossing `ŵ × û`.
-    ///
-    /// `None` when either axis needs an irrational scale, when `v_raw` overflowed at construction
-    /// (`PlaneFrame::v` is `None`), or on `i128` overflow — all of which mean the same thing here:
-    /// this frame has no exact rational basis, so the sketch is written in the frame instead.
-    pub(crate) fn of_plane_frame(pf: &nacre_exact::PlaneFrame) -> Option<RatFrame> {
-        let (v_raw, vv) = pf.v.as_ref()?;
-        Some(RatFrame {
-            origin: pf.origin,
-            x: scale(&pf.u_raw, nacre_exact::inv_sqrt_rat(pf.uu)?)?,
-            y: scale(v_raw, nacre_exact::inv_sqrt_rat(*vv)?)?,
-            parity: 1,
-        })
-    }
-
-    /// **This frame, stated before `leaf`'s chain, carried to the world** — exactly, through the
-    /// chain's fold ([`Model::chain_point_rat`], [`Model::chain_dir_rat`] — the axes as vectors,
-    /// their lengths kept, so they stay orthonormal). `None` where the fold carries the origin or
-    /// an axis off the rationals or past `Rat` — that frame has no rational world basis, and the
+    /// `None` when the fold carries the origin or an axis off the rationals or past `Rat` — all of
+    /// which mean the same thing here: this frame has no exact rational basis in the world, so the
     /// sketch is written in the frame instead.
-    pub(crate) fn carried(
-        &self,
-        model: &Model,
-        leaf: nacre_store::Handle<MotionNode>,
-    ) -> Option<RatFrame> {
+    pub(crate) fn of_fold(fold: &nacre_exact::ChainFold) -> Option<RatFrame> {
+        let (zero, one) = (Rat::from_int(0), Rat::from_int(1));
         Some(RatFrame {
-            origin: model.chain_point_rat(leaf, self.origin).ok()?,
-            x: model.chain_dir_rat(leaf, self.x).ok()?,
-            y: model.chain_dir_rat(leaf, self.y).ok()?,
-            parity: self.parity * crate::rotated_vertex::motion_parity(model, Some(leaf))?,
+            origin: fold.point_rat([zero; 3]).ok()?,
+            x: fold.dir_rat([one, zero, zero]).ok()?,
+            y: fold.dir_rat([zero, one, zero]).ok()?,
+            parity: fold.det(),
         })
     }
 
