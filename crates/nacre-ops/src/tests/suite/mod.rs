@@ -1168,6 +1168,7 @@ mod parallel;
 mod pierce_corners;
 mod plane_sense;
 mod rotation;
+mod shared_cylinder;
 mod sketch_models;
 mod unstated_classes;
 mod user_models;
