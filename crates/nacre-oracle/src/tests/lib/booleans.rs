@@ -1,4 +1,4 @@
-//! Booleans against OCCT: coplanar contact, shared planes, tunnels.
+//! Booleans against OCCT: coplanar contact, shared planes, tunnels, one cylinder under two solids.
 
 use super::*;
 
@@ -452,4 +452,273 @@ fn a_line_contact_on_a_lateral_matches_occt() {
         &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]],
     );
     fuse_matches_occt(&mut m, cyl, prism, 2);
+}
+
+// ─── One cylinder surface under two solids ───────────────────────────────────────────────────
+
+/// A profile swept `dist` from the world `z = 0` plane. Every profile below is drawn on the unit
+/// circle about the origin, so every prism states that one cylinder and two operands' side faces
+/// lie on one surface.
+fn sweep_z(m: &mut Model, rings: Vec<nacre_ops::Ring2d>, dist: f64) -> Handle<Solid> {
+    let profile = nacre_ops::from_paths(rings).unwrap().remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist,
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    solid
+}
+
+fn unit_circle() -> nacre_ops::Ring2d {
+    nacre_ops::Ring2d::circle(nacre_math::Point2::from_array([0.0, 0.0]), 1.0).unwrap()
+}
+
+/// The part of the unit disk an arc of `turns` quarter turns from `start` to `end` cuts off,
+/// closed by the chord from `end` back to `start`.
+fn disk_piece(start: [i128; 2], turns: i32, end: [i128; 2]) -> nacre_ops::Ring2d {
+    use nacre_exact::Rat;
+    use nacre_math::Point2;
+    let (arc, _) = nacre_ops::arc_turns(
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([start[0] as f64, start[1] as f64]),
+        turns,
+    )
+    .unwrap();
+    let rat = |p: [i128; 2]| p.map(Rat::from_int);
+    nacre_ops::Ring2d::new(
+        vec![rat(end), rat(start)],
+        vec![nacre_ops::Edge2d::Line, arc],
+    )
+    .unwrap()
+}
+
+/// The unit disk's half on `y ≥ 0` (`turns = 2` from `(1, 0)`) or on `y ≤ 0` (from `(−1, 0)`),
+/// closed by the diameter.
+fn half_disk(upper: bool) -> nacre_ops::Ring2d {
+    let s = if upper { 1 } else { -1 };
+    disk_piece([s, 0], 2, [-s, 0])
+}
+
+/// Every boolean of `build`'s two solids against OCCT on the same inputs: Fuse, both Cuts and
+/// Common, the volume and area summed over the bodies, and nacre's body count (`bodies`, in that
+/// order — OCCT reports no count). An empty result is empty in both: OCCT's boolean leaves no
+/// shape ([`OracleError::GeometryFailed`]) while it reads each operand on its own, which tells the
+/// empty result apart from an operand it could not read; any other OCCT failure fails the test.
+fn all_booleans_match_occt(
+    build: fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+    bodies: [usize; 4],
+) {
+    for ((kind, occt_kind, swap), want) in [
+        (BoolKind::Fuse, OcctBool::Fuse, false),
+        (BoolKind::Cut, OcctBool::Cut, false),
+        (BoolKind::Cut, OcctBool::Cut, true),
+        (BoolKind::Common, OcctBool::Common, false),
+    ]
+    .into_iter()
+    .zip(bodies)
+    {
+        let mut m = Model::new();
+        let (a, b) = build(&mut m);
+        let (a, b) = if swap { (b, a) } else { (a, b) };
+        let occt = occt_boolean_of(&m, occt_kind, a, b);
+        let reads = |h: Handle<Solid>| {
+            let step = nacre_step::to_step_solids(&m, &[h], "oracle").unwrap();
+            occt_props(&step).is_ok()
+        };
+        let operands_read = reads(a) && reads(b);
+        let solids = boolean(&mut m, kind, a, b).unwrap();
+        assert_eq!(solids.len(), want, "{kind:?} swap {swap}: nacre's bodies");
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| mass_props(&m, s).unwrap().volume)
+            .sum();
+        let area: f64 = solids
+            .iter()
+            .map(|&s| mass_props(&m, s).unwrap().area)
+            .sum();
+        match occt {
+            Ok(o) => {
+                assert!(
+                    approx(vol, o.volume),
+                    "{kind:?} swap {swap}: volume {vol} vs occt {}",
+                    o.volume
+                );
+                assert!(
+                    approx(area, o.area),
+                    "{kind:?} swap {swap}: area {area} vs occt {}",
+                    o.area
+                );
+            }
+            Err(OracleError::GeometryFailed) => {
+                assert!(
+                    operands_read,
+                    "{kind:?} swap {swap}: OCCT reads both operands"
+                );
+                assert!(
+                    solids.is_empty(),
+                    "{kind:?} swap {swap}: occt left no shape, nacre {vol}"
+                );
+            }
+            Err(e) => panic!("{kind:?} swap {swap}: occt {e:?}"),
+        }
+    }
+}
+
+/// **Two identical circle prisms** — one cylinder, both solids' side faces on all of it.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn identical_circle_prisms_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            (
+                sweep_z(m, vec![unit_circle()], 2.0),
+                sweep_z(m, vec![unit_circle()], 2.0),
+            )
+        },
+        [1, 0, 0, 1],
+    );
+}
+
+/// **One circle swept up and down** — the two side faces meet at the shared rim.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_circle_swept_both_ways_matches_occt() {
+    all_booleans_match_occt(
+        |m| {
+            (
+                sweep_z(m, vec![unit_circle()], 2.0),
+                sweep_z(m, vec![unit_circle()], -2.0),
+            )
+        },
+        [1, 1, 1, 0],
+    );
+}
+
+/// **A bored plate and the bore's pin** — one surface, material on opposite sides.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_bored_plate_and_its_pin_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let plate = nacre_ops::fixtures::cuboid(m, [-2.0, -2.0, 0.0], [2.0, 2.0, 2.0]);
+            let tool = sweep_z(m, vec![unit_circle()], 2.0);
+            let bored = boolean(m, BoolKind::Cut, plate, tool).unwrap()[0];
+            (bored, sweep_z(m, vec![unit_circle()], 2.0))
+        },
+        [1, 1, 1, 0],
+    );
+}
+
+/// **A short half disk (`h = 2`) and a tall whole one (`h = 3`)** — the half's flat runs through
+/// the axis, a ruling station on the shared cylinder, and the two statements of each ruling end at
+/// different heights.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_short_half_disk_and_a_tall_whole_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            (
+                sweep_z(m, vec![half_disk(true)], 2.0),
+                sweep_z(m, vec![unit_circle()], 3.0),
+            )
+        },
+        [1, 0, 1, 1],
+    );
+}
+
+/// **A plate notched by the upper half disk and the lower half pin** — the shared side face keeps
+/// material outside on one side of the rulings and inside on the other; the Fuse is two bodies
+/// touching along those rulings.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_notched_plate_and_the_half_pin_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let block = nacre_ops::fixtures::cuboid(m, [-2.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
+            let notch = sweep_z(m, vec![half_disk(true)], 2.0);
+            let notched = boolean(m, BoolKind::Cut, block, notch).unwrap()[0];
+            (notched, sweep_z(m, vec![half_disk(false)], 2.0))
+        },
+        [2, 1, 1, 0],
+    );
+}
+
+/// **Two chord segments of the disk meeting on one ruling** — beyond `x + y = 1` and beyond
+/// `x − y = 1`; each lateral ends on the ruling `(1, 0)` from its own side. The Fuse is two bodies
+/// touching along that ruling.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn two_chord_segments_on_one_ruling_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            (
+                sweep_z(m, vec![disk_piece([1, 0], 1, [0, 1])], 2.0),
+                sweep_z(m, vec![disk_piece([0, -1], 1, [1, 0])], 2.0),
+            )
+        },
+        [2, 1, 1, 0],
+    );
+}
+
+/// **A bored block above the bore's pin** — the block on `z ∈ [2, 4]`, the pin on `z ∈ [0, 2]`: the
+/// shared side face keeps material outside above the rim at `z = 2` and inside below it, and the
+/// Fuse is two bodies touching on that circle.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_bored_block_above_its_pin_matches_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let block = nacre_ops::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
+            let tool = sweep_z(m, vec![unit_circle()], 4.0);
+            let bored = boolean(m, BoolKind::Cut, block, tool).unwrap()[0];
+            (bored, sweep_z(m, vec![unit_circle()], 2.0))
+        },
+        [2, 1, 1, 0],
+    );
+}
+
+/// `solid` with everything outside `z ∈ [lo, hi]` cut away by boxes wider than the unit disk — the
+/// cut keeps the side face's cylinder.
+fn trimmed_z(m: &mut Model, solid: Handle<Solid>, lo: f64, hi: f64) -> Handle<Solid> {
+    let below = nacre_ops::fixtures::cuboid(m, [-2.0, -2.0, lo - 2.0], [2.0, 2.0, lo]);
+    let solid = boolean(m, BoolKind::Cut, solid, below).unwrap()[0];
+    let above = nacre_ops::fixtures::cuboid(m, [-2.0, -2.0, hi], [2.0, 2.0, hi + 2.0]);
+    boolean(m, BoolKind::Cut, solid, above).unwrap()[0]
+}
+
+/// **Two upper half disks on `z ∈ [0, 2]` and `[1, 3]`** — the two statements of each ruling of the
+/// diameter overlap on `[1, 2]`, and are cut at each other's ends before they fold.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn two_half_disks_overlapping_in_height_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let low = sweep_z(m, vec![half_disk(true)], 2.0);
+            let high = sweep_z(m, vec![half_disk(true)], 3.0);
+            (low, trimmed_z(m, high, 1.0, 3.0))
+        },
+        [1, 1, 1, 1],
+    );
+}
+
+/// **An upper half disk on `z ∈ [0, 3]` around one on `[1, 2]`** — one statement of each ruling lies
+/// inside the other with both its ends inside; the first less the second is two bodies.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_half_disk_around_a_shorter_one_matches_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let tall = sweep_z(m, vec![half_disk(true)], 3.0);
+            let inner = sweep_z(m, vec![half_disk(true)], 3.0);
+            (tall, trimmed_z(m, inner, 1.0, 2.0))
+        },
+        [1, 2, 0, 1],
+    );
 }

@@ -50,8 +50,9 @@ pub struct Fault {
 pub enum OracleError {
     /// `tools/occt-helper` was not found or is not executable.
     HelperMissing,
-    /// The helper read no shape from the STEP (missing file, empty, non-solid) —
-    /// helper exit 1.
+    /// The helper read no shape from a STEP (missing file, empty, non-solid), or a boolean left
+    /// no shape — helper exit 1. Which of the two is the caller's to tell: an operand OCCT reads
+    /// on its own ([`occt_props`]) was read.
     GeometryFailed,
     /// DRAWEXE crashed on the input, or did not take the helper's reader settings — helper
     /// exit 2. Carries stderr for triage.
