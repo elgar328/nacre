@@ -608,7 +608,6 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             &curved,
             faces_tab,
             plane_ix,
-            *n_a,
         )
         .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
@@ -716,7 +715,6 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             &curved,
             faces_tab,
             plane_ix,
-            *n_a,
         )
         .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
@@ -863,7 +861,6 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             &curved,
             faces_tab,
             plane_ix,
-            *n_a,
         )
         .expect("the result's faces");
         let seam = crate::arrangement::seam_table(
@@ -1297,7 +1294,6 @@ fn the_grouping_joins_across_a_cut_rim() {
             &curved,
             faces_tab,
             plane_ix,
-            *n_a,
         )
         .expect("the result's faces");
         let seam = crate::arrangement::seam_table(

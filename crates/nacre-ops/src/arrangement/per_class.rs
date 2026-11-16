@@ -636,8 +636,8 @@ pub(super) fn split_class_edges(
     // two lateral **faces** share a point — exactly what [`crate::planes::lateral_faces_clear`]
     // is written to deny ("the two classes share no face — the proposition the arrangement
     // needs"). A pair not shown to clear is `CylinderPairContact`, raised before any
-    // arrangement runs. That covers pairs from **different** solids; the pair loop skips
-    // same-solid pairs on purpose. But a same-solid pair cannot be built either: two cylinder
+    // arrangement runs. That covers faces of **different** solids; the pair rule does not ask two
+    // faces of one solid on purpose. But a same-solid pair cannot be built either: two cylinder
     // faces whose axes are *not* parallel need two extrude directions, hence a boolean, and
     // at that boolean they are on opposite sides and meet the very gate above. (Two arcs of one
     // sketch do make one body whose cylinders meet — with **parallel** axes, which never put a

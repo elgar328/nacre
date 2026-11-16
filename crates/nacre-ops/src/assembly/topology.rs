@@ -130,22 +130,30 @@ pub(crate) fn check_result_topology(
     None
 }
 
-/// Connected components of the reconstructed faces, joined **only across a manifold contact** — a
-/// ring edge that exactly two of them use. Returns a component label per face (dense `0..n` in
-/// order of first appearance, for replay determinism) and the component count.
+/// Connected components of the reconstructed faces, joined **only where two of them bound one
+/// material across a boundary** — a ring edge that exactly two of them use, or a whole rim where a
+/// face meets the next one round the rim on its material side. Returns a component label per face
+/// (dense `0..n` in order of first appearance, for replay determinism) and the component count.
 ///
 /// **Touching is not joining.** Two bodies that meet along a line share that line's nodes but
 /// no *manifold* edge — four faces use the contact line, not two — so they land in two components
 /// and come back as the two bodies they are, not as one pinched pseudo-solid. Where a body touches
 /// **itself** the material still runs around the contact, every edge of that path is used twice,
-/// and the component stays one: the guard fires exactly where no pair of solids exists.
+/// and the component stays one: the guard fires exactly where no pair of solids exists. A face
+/// whose every boundary is such a contact line has no other way to its body, so it lands in a
+/// component of its own; the grouping then decides it by containment, or abstains and the
+/// edge-use guard names the line (`NonManifoldResultEdge`).
 ///
 /// This is the 3D reading of a rule the assembly stage already applies one dimension down:
 /// [`unify_coplanar_faces`] splits a coplanar group "into **edge-connected components**, because
 /// faces that merely lie on the same plane without touching must each survive on their own".
 ///
 /// An enclosed void is its own component — its boundary shares no edge with the outer.
-pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
+pub(super) fn face_components(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[LocalFace],
+) -> (Vec<usize>, usize) {
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     // Which faces use each ring edge. A count other than two is not a contact between neighbours:
     // one is a dangling edge and more is a pinch, and both are the edge-use guard's to name.
@@ -157,30 +165,52 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
             }
         }
     }
-    // **The second joining rule**: a cap face and the lateral that meets it on a whole rim
-    // share **no node at all** — a circle has none — so the node rule above would leave a drilled
-    // box's wall in its own component and send the result down the cavity/containment branch.
-    // They do share the rim, keyed exactly as `reconstruct` keys it.
+    for us in users.values() {
+        if let [a, b] = us[..] {
+            let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
+            parent[ra] = rb;
+        }
+    }
+    // **The second joining rule: a whole rim.** A cap face and the lateral that meets it on a
+    // whole rim share **no node at all** — a circle has none — so the node rule above would leave
+    // a drilled box's wall in its own component and send the result down the cavity/containment
+    // branch. They do share the rim, keyed exactly as `reconstruct` keys it.
     //
-    // The condition is the node rule's, deliberately: join only where **exactly two** faces use
-    // the rim. More than two is a contact, not a join, and the closed-shell guard is what names
-    // it.
-    let mut rim_users: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+    // Round the rim, in the cross-section through the axis, the faces that can meet it stand in
+    // one fixed order: the cap inside the circle, the lateral above the plane, the cap outside,
+    // the lateral below ([`RimSpoke`]). **A face is joined with the next face round the rim on
+    // its material side** — the two bound the same material there. Two faces are each other's
+    // next face whichever way round, so a rim two faces use always joins them (a drilled box, a
+    // blind bore's floor, a boss on a plate); four faces — two bodies meeting on the circle, a pin
+    // under the bore of a block it touches — alternate material and empty round it and join in
+    // the two pairs that bound each body.
+    let mut rim_users: HashMap<(usize, usize), Vec<(usize, RimSpoke)>> = HashMap::new();
     for (i, lf) in faces.iter().enumerate() {
-        for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+        let bounds = std::iter::once((&lf.outer, true)).chain(lf.inner.iter().map(|b| (b, false)));
+        for (b, outer) in bounds {
             match (b, lf.surf) {
                 (Bound::Circle { cyl }, ClassIx::Plane(c)) => {
-                    rim_users.entry((*cyl, c)).or_default().push(i)
+                    let spoke = if outer {
+                        RimSpoke::CapInside
+                    } else {
+                        RimSpoke::CapOutside
+                    };
+                    rim_users.entry((*cyl, c)).or_default().push((i, spoke));
                 }
-                (Bound::Rim { plane, .. }, ClassIx::Cyl(k)) => {
-                    rim_users.entry((k, *plane)).or_default().push(i)
+                (Bound::Rim { plane, ccw }, ClassIx::Cyl(k)) => {
+                    let spoke = if *ccw {
+                        RimSpoke::LateralAbove
+                    } else {
+                        RimSpoke::LateralBelow
+                    };
+                    rim_users.entry((k, *plane)).or_default().push((i, spoke));
                 }
                 _ => {}
             }
         }
     }
-    for us in users.values().chain(rim_users.values()) {
-        if let [a, b] = us[..] {
+    for (&(k, c), us) in &rim_users {
+        for (a, b) in rim_pairs(jd, cyls, faces, k, c, us) {
             let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
             parent[ra] = rb;
         }
@@ -196,4 +226,90 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
         n = n.max(l + 1);
     }
     (labels, n)
+}
+
+/// **Where a face meets a whole rim, round it** — the four directions, in the cross-section
+/// through the axis, a face can leave the rim along: the cap inside the circle, the lateral above
+/// the plane, the cap outside it, the lateral below. In that cyclic order whatever the plane's tilt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RimSpoke {
+    CapInside = 0,
+    LateralAbove = 1,
+    CapOutside = 2,
+    LateralBelow = 3,
+}
+
+impl RimSpoke {
+    fn at(i: usize) -> Self {
+        [
+            RimSpoke::CapInside,
+            RimSpoke::LateralAbove,
+            RimSpoke::CapOutside,
+            RimSpoke::LateralBelow,
+        ][i % 4]
+    }
+}
+
+/// **The faces that join across the whole rim of cylinder class `k` on plane class `c`** — each
+/// face with the next face round the rim on its material side, where the two point at each other
+/// ([`face_components`]' second rule). `users` are the faces meeting the rim and where; each face's
+/// material side is read off its truth:
+///
+/// - a cap's material lies below the plane along the axis exactly when its outward normal points up
+///   the axis — the class's frame facing up it ([`crate::planes::frame_faces_up_the_axis`]) and the
+///   face not flipped, or the frame facing down and the face flipped;
+/// - a lateral's lies inside the cylinder exactly when it is not flipped (its outward normal looks
+///   away from the axis).
+///
+/// A face whose side cannot be read (a class with no world statement — the gate keeps such a
+/// class off a cylinder's circles), two faces at one spoke, or a next face that points elsewhere
+/// joins nothing: the faces stay apart and the shell guard names what that leaves.
+fn rim_pairs(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[LocalFace],
+    k: usize,
+    c: usize,
+    users: &[(usize, RimSpoke)],
+) -> Vec<(usize, usize)> {
+    let mut at: [Option<usize>; 4] = [None; 4];
+    for &(i, spoke) in users {
+        if at[spoke as usize].replace(i).is_some() {
+            return Vec::new();
+        }
+    }
+    // The step round the rim, `+1` or `−1` in `RimSpoke` order, toward the face's material.
+    let toward = |i: usize, spoke: RimSpoke| -> Option<usize> {
+        let flip = faces[i].flip;
+        let forward = match spoke {
+            RimSpoke::CapInside | RimSpoke::CapOutside => {
+                let up = crate::planes::frame_faces_up_the_axis(&jd.planes[c], &cyls[k].def)?;
+                // Material above the plane is toward `LateralAbove`: `+1` from inside, `−1` from
+                // outside.
+                let above = up == flip;
+                above == (spoke == RimSpoke::CapInside)
+            }
+            RimSpoke::LateralAbove | RimSpoke::LateralBelow => {
+                // Material inside is toward `CapInside`: `−1` from above, `+1` from below.
+                let inside = !flip;
+                inside == (spoke == RimSpoke::LateralBelow)
+            }
+        };
+        let step = if forward { 1 } else { 3 };
+        (1..4)
+            .map(|n| RimSpoke::at(spoke as usize + n * step))
+            .find_map(|s| at[s as usize])
+    };
+    let mut out = Vec::new();
+    for &(i, spoke) in users {
+        let Some(j) = toward(i, spoke) else { continue };
+        let back = users
+            .iter()
+            .find(|&&(x, _)| x == j)
+            .and_then(|&(x, s)| toward(x, s));
+        if i < j && back == Some(i) {
+            out.push((i, j));
+        }
+    }
+    out
 }

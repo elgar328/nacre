@@ -1,14 +1,14 @@
 use super::*;
 /// **The lateral faces of every cylinder class, emitted from the chart** — the regions road
 /// ([`regions::walk`]). Per class: the chart, its cells, each cell read off the
-/// neighbouring classes ([`Chart::read_cell`]), then the walk. What is refused here by name:
-/// a class with no row or rows of both solids (`CylinderStagesDisagree`), a θ order that cannot
-/// be formed, and a **present cell whose chamber could not be read** — two speaking sides
-/// disagreed (`LabelConflict`) or no side spoke (`CylinderStagesDisagree`); the walk names its
-/// own.
+/// neighbouring classes ([`Chart::read_cell`]), then the walk. A class may carry the lateral faces
+/// of one operand or of both — the reading is the same. What is refused here by name: a class with
+/// no row (`CylinderStagesDisagree`), a θ order that cannot be formed, and a **present cell whose
+/// chamber could not be read** — two speaking sides disagreed (`LabelConflict`) or no side spoke
+/// (`CylinderStagesDisagree`); the walk names its own.
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
-/// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
+/// `draft::keep` on them, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
 /// split's (`Curved::split_rims` — the result's one cleaning pass drops a node from the cap and
 /// the lateral together, `whole_result_faces`), and the winding is the cycle's arc units
 /// (`regions`).
@@ -22,13 +22,9 @@ pub(crate) fn emit_lateral(
     let mut out: Vec<LocalFace> = Vec::new();
     for k in 0..cyls.len() {
         let def = &cyls[k].def;
-        // One class is one solid's surface (`cyl_rows` refuses a class with no row; two solids
-        // share no handles) — stated as the refusal `cyl_rows` names for the wiring failure.
-        let mut sides = rows.iter().filter(|r| r.class == k).map(|r| r.side);
-        let Some(side) = sides.next() else {
-            return Err(reject(RejectReason::CylinderStagesDisagree));
-        };
-        if sides.any(|s| s != side) {
+        // A class carries a row (`cyl_rows` refuses a class with none) — stated as the refusal
+        // `cyl_rows` names for the wiring failure.
+        if !rows.iter().any(|r| r.class == k) {
             return Err(reject(RejectReason::CylinderStagesDisagree));
         }
         // An order of the events or the lines that cannot be formed names its own cause
@@ -37,7 +33,7 @@ pub(crate) fn emit_lateral(
         let cells = chart.cells();
         let reads: Vec<CellRead<'_>> = cells
             .iter()
-            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved))
+            .map(|c| chart.read_cell(jd, k, def, kind, c, curved))
             .collect::<Result<_, _>>()?;
         // A present cell whose chamber could not be read, named by why (`CellRead::unread`).
         if let Some(r) = reads.iter().find(|r| r.present && r.emit.is_none()) {
@@ -46,7 +42,7 @@ pub(crate) fn emit_lateral(
                     .expect("a cell with no chamber says why it has none"),
             ));
         }
-        let walked = regions::walk(jd, k, def, kind, side, &chart, &cells, &reads, curved)?;
+        let walked = regions::walk(jd, k, def, kind, &chart, &cells, &reads, curved)?;
         out.extend(walked.faces);
     }
     Ok(out)

@@ -574,7 +574,7 @@ pub(crate) fn boolean(
         // here on there is one face list — the grouping, the closed-shell guard and the assembly
         // all read it.
         let (faces, rims) =
-            whole_result_faces(kind, &jd, &cyls, faces, &curved, &faces_tab, &plane_ix, n_a)?;
+            whole_result_faces(kind, &jd, &cyls, faces, &curved, &faces_tab, &plane_ix)?;
         let seam = seam_table(model, &faces, &cyls, &jd, &mut memo)?;
 
         timed!(

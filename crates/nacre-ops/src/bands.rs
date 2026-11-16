@@ -14,9 +14,10 @@
 //! be. The gate admits only ⊥ cuts, ∥ walls whose **faces** stand clear of the lateral surface,
 //! and oblique planes, and for ⊥ cuts and ∥ walls those facts give the **uniform-slab theorem**:
 //!
-//! > Between two consecutive ⊥ cuts, the other operand's boundary does not meet the open
-//! > cylinder slab at all — the ⊥ faces are the cuts themselves, and every ∥ wall **face** misses
-//! > the lateral. So membership in the other operand is **uniform** over that slab, and one witness
+//! > Between two consecutive ⊥ cuts, no boundary but the cylinder's own lateral faces meets the
+//! > open cylinder slab — the ⊥ faces are the cuts themselves, and every ∥ wall **face** misses
+//! > the lateral. So each operand's membership is **uniform** over that slab on each side of the
+//! > cylinder, flipping across it only where that operand has a lateral face, and one witness
 //! > decides the whole band.
 //!
 //! An oblique plane the gate passes touches no circle of a lateral's boundary, and where its faces
@@ -49,7 +50,6 @@
 use crate::BoolKind;
 #[cfg(test)]
 use crate::draft::{Bound, LocalFace};
-use crate::planes::SolidSide;
 use crate::planes::{ClassIx, FaceRow};
 use crate::{BoolError, RejectReason, reject};
 use nacre_exact::Rat;
@@ -74,30 +74,22 @@ pub(crate) struct CylRow {
     pub(crate) class: usize,
     /// How far this face reaches along the axis (its footprint's span) — the rows' order.
     pub(crate) reach: [Rat; 2],
-    /// Which operand this face belongs to.
-    pub(crate) side: SolidSide,
 }
 
 /// One row per lateral **face**, ordered by `(class, lowest reach)`.
 ///
 /// That order is the replay contract stated at the row level, and the chart's emitter keeps it
-/// (classes ascending, then lines ascending). A class's faces have disjoint reaches, so sorting by
-/// `(class, reach[0])` keeps each class's bands in ascending `t`; with one face per class it *is*
-/// class-index order.
+/// (classes ascending, then lines ascending). One solid's faces on a class have disjoint reaches,
+/// so sorting by `(class, reach[0])` keeps each solid's bands in ascending `t`; with one face per
+/// class it *is* class-index order.
 ///
-/// **That disjointness holds where every lateral face that reaches here is a
-/// band** — two whole rims and holes. The tracer states a panel and a chain rim too
-/// (`arrangement::lateral_shape`), so two faces of one class *can* share a `t`; the tie then
-/// falls to the stable sort's face order — still deterministic, and the corpus carries one
-/// lateral per class (the cleaning pass merged the pieces one operation earlier). Named here so
-/// the day it is exercised is a thing a reader can check, not a surprise.
+/// **Two faces of one class can share a `t`**: the two operands' faces on one stated cylinder
+/// (two identical prisms), and one solid's where a lateral face is not a band — the tracer states
+/// a panel and a chain rim too (`arrangement::lateral_shape`). The tie falls to the stable sort's
+/// face order — still deterministic.
 ///
 /// A face whose reach cannot be stated declines by name (`DeclineKind::CylSpan`).
-pub(crate) fn cyl_rows(
-    faces: &[FaceRow],
-    plane_ix: &[ClassIx],
-    n_a: usize,
-) -> Result<Vec<CylRow>, BoolError> {
+pub(crate) fn cyl_rows(faces: &[FaceRow], plane_ix: &[ClassIx]) -> Result<Vec<CylRow>, BoolError> {
     let mut out: Vec<CylRow> = Vec::new();
     let mut n_class = 0usize;
     for (i, row) in faces.iter().enumerate() {
@@ -119,11 +111,7 @@ pub(crate) fn cyl_rows(
                 face: cf.face,
             }));
         }
-        out.push(CylRow {
-            class: k,
-            reach,
-            side: if i < n_a { SolidSide::A } else { SolidSide::B },
-        });
+        out.push(CylRow { class: k, reach });
     }
     out.sort_by(|a, b| (a.class, a.reach[0]).cmp(&(b.class, b.reach[0])));
     // A class exists because a face made it, so a class with no row is the class table and the

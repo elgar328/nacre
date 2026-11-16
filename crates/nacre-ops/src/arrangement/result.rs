@@ -320,7 +320,6 @@ pub(crate) fn whole_result_faces(
     curved: &Curved,
     faces_tab: &[FaceRow],
     plane_ix: &[ClassIx],
-    n_a: usize,
 ) -> Result<(Vec<LocalFace>, HeldRims), BoolError> {
     // Merge coplanar, same-normal faces that share a full edge (e.g. the split side walls a fused
     // coincident interface leaves) so the result is a minimal, chainable solid — a second boolean
@@ -330,7 +329,7 @@ pub(crate) fn whole_result_faces(
         crate::assembly::unify_coplanar_faces(faces, jd, cyls)
     )?;
     if !cyls.is_empty() {
-        let rows = crate::bands::cyl_rows(faces_tab, plane_ix, n_a)?;
+        let rows = crate::bands::cyl_rows(faces_tab, plane_ix)?;
         // **The lateral faces come from the chart**: every cylinder class's cells, read off the
         // plane arrangement's own labels and emitted as `LocalFace`s, the type the plane side
         // emits.
@@ -406,7 +405,9 @@ pub(super) fn class_skeleton(
         edge_mask(&s.merged)?;
     }
     let circles = merge_circles(&tr.circles, local)?;
-    let rulings = merge_rulings(&tr.rulings, local);
+    let rulings =
+        cut_rulings_at_their_ends(jd, cyls, wc, ruling_pieces(&tr.rulings, local), local)?;
+    let rulings = merge_rulings(rulings);
     let rulings = cut_rulings_along_segments(jd, cyls, wc, &split, rulings, local)?;
     Ok((split, circles, rulings))
 }

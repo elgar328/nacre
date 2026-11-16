@@ -61,7 +61,8 @@ struct Piece {
 }
 
 /// The faces of class `k`, each with the cells it covers, and every cell's neighbours (the
-/// adjacency the components were joined on — read back by the census).
+/// adjacency the components were joined on — across a wall that is not a slit, between cells
+/// that keep the same side of the lateral — read back by the census).
 pub(crate) struct Walked {
     pub(crate) faces: Vec<LocalFace>,
     /// Read by the census only — an instrument's fields, stated per build rather than
@@ -142,7 +143,6 @@ pub(crate) fn walk(
     k: usize,
     def: &nacre_topo::CylinderDef,
     kind: crate::BoolKind,
-    side: crate::planes::SolidSide,
     chart: &Chart,
     cells: &[Cell],
     reads: &[CellRead<'_>],
@@ -172,16 +172,23 @@ pub(crate) fn walk(
     // ([`Chart::slit_at`]): on the lateral's material side, the result has nothing between two of
     // the half-faces round the line, so what is kept on the two sides meets on the line alone. The
     // lateral is cut there — no adjacency across, and a boundary on both sides even within one
-    // component — so the line becomes an edge the other solid's two faces use too, and the
+    // component — so the line becomes an edge the walls' faces round it use too, and the
     // assembly sees the touch: four uses of one edge in one solid, or two solids apart. Run
     // through as one face, the lateral hides it under a shell every count calls closed.
     let slits: Vec<bool> = (0..chart.theta.len())
-        .map(|j| chart.slit_at(jd, j, side, kind).map_err(reject))
+        .map(|j| chart.slit_at(jd, j, kind).map_err(reject))
         .collect::<Result<_, BoolError>>()?;
     let slit = |j: usize| slits.get(j).copied().unwrap_or(false);
 
     // ── 2. Emitted cells and their components (4-adjacency, θ-periodic). ──
     let emitted: Vec<bool> = reads.iter().map(|r| r.emit == Some(true)).collect();
+    // **One lateral face has one orientation.** A cell's material lies inside the cylinder where
+    // its inside chamber is kept, and the face then looks away from the axis. A class carrying
+    // both operands' faces can keep the inside on one side of a line and the outside on the other
+    // (a notch's lateral beside the other solid's pin): the cells either side are two faces, and the
+    // line between them is the boundary of both — as a coplanar class's cells of different `flip`
+    // are different faces.
+    let inside_kept: Vec<Option<bool>> = reads.iter().map(|r| r.inside_kept).collect();
     // A station with a wall that draws no piece is the lateral's own edge (`ChordSays::NoPiece`),
     // and `slit_at` reads it as one the lateral does not cross. Cells kept on both its sides in one
     // gap would be the lateral crossing it after all — the premise broken, refused rather
@@ -229,6 +236,7 @@ pub(crate) fn walk(
                     out.push(by_gap[g2][c.slab]);
                 }
             }
+            out.retain(|&y| inside_kept[y] == inside_kept[ci]);
             out
         })
         .collect();
@@ -612,10 +620,7 @@ pub(crate) fn walk(
             }
             bounds.push((Bound::Ring(Ring::new(nodes, walls)), w));
         }
-        let (own, other) = reads[members[0]]
-            .chamber
-            .expect("an emitted cell has a chamber");
-        let flip = !super::read_cell::keep_for(kind, side, own, other);
+        let flip = !inside_kept[members[0]].expect("an emitted cell has a chamber");
         // **The outer bound: the lower rim of a face that wraps, or the lowest-bottom cycle of
         // one that does not.** A connected region of the band has either no wrapping boundary or
         // exactly one of each sense — a second lower rim would cut the region in two — so

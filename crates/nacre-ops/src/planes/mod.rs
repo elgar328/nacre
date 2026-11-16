@@ -521,12 +521,13 @@ pub(crate) struct WorkingCyl {
     /// solves a seam vertex's figure on it), while every decision reads `def`. Not a cache of the
     /// model: it lives for one operation, like `WitnessPoint::coord_iv`.
     pub(crate) realized: nacre_geom::Cylinder,
-    /// Which operand states this class. The pair loop asks only pairs of **different**
-    /// owners: two classes of one valid solid keep their faces apart by construction, and the
-    /// arrangement has no cylinder–cylinder road that would need the proof. One surface stated by
-    /// both solids — the coincident pair by another spelling — never reaches this table: the class
-    /// loop refuses it by name before pushing.
-    pub(crate) owner: SolidSide,
+    /// Whose lateral faces the class carries: `Some(side)` when every one is that operand's, `None`
+    /// when both operands have one on this stated cylinder — the cylinder's twin of a coplanar
+    /// class ([`class_owners`]). It answers only «could a face here meet a face of the other
+    /// solid»: the pair loop skips two classes that carry one and the same solid's faces alone, and
+    /// a tangent class is a contact candidate when it carries a face of a solid other than the
+    /// owner. Every answer that needs a solid reads it off the face — the face table's row.
+    pub(crate) owner: Option<SolidSide>,
     /// **The lines of two plane classes that lie on this cylinder's lateral face** — the gate's
     /// record ([`SharedRuling`]), carried with the class like `owner` so every road that holds
     /// the table reads it rather than deciding it again.
@@ -591,13 +592,14 @@ pub(crate) enum Silence {
     /// The class's plane may cut the cylinder but is not shown to run along its axis within the
     /// radius (it is oblique to the axis, or the intervals and the reading before its turn cannot
     /// part it from the radius), every face on it stands apart from every lateral face's box, and
-    /// the cylinder leaves only whole rims. On that class the cylinder's solid is sectioned as if
-    /// the bore were filled or the boss removed. That reading and the true one differ only inside
-    /// the lateral boxes, which hold the bore or the boss, and everything the class's faces put on
-    /// an arrangement lies outside them — so the cylinder may carry other records as well, a
-    /// sectioned class among them. A pierce point or an arc another record puts on the cylinder has no
-    /// recorded side of this class: a road that asks one reads it on the interval road
-    /// ([`crate::combinatorics::PiercePoint`]), as it does of a [`Silence::Sectioned`] class.
+    /// the cylinder leaves only whole rims. On that class each solid with a lateral face here is
+    /// sectioned as if the bore were filled or the boss removed. That reading and the true one
+    /// differ only inside the lateral boxes, which hold the bore or the boss, and everything the
+    /// class's faces put on an arrangement lies outside them — so the cylinder may carry other
+    /// records as well, a sectioned class among them. A pierce point or an arc another record puts
+    /// on the cylinder has no recorded side of this class: a road that asks one reads it on the
+    /// interval road ([`crate::combinatorics::PiercePoint`]), as it does of a
+    /// [`Silence::Sectioned`] class.
     ///
     /// Measured over the suite and the kit: of the sites that read such a point on the interval
     /// road, the two asking a pierce point's side (`PierceAt::side`, the pierce arm of

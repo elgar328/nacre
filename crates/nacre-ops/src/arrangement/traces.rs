@@ -149,7 +149,7 @@ pub(super) fn merge_circles(
     aliases: &Aliases,
 ) -> Result<Vec<MergedCircle>, BoolError> {
     // The merge layer is where names become canonical — `merge_coincident` for a
-    // segment's ends, here for an extent's, `merge_rulings` for a ruling's — so everything after
+    // segment's ends, here for an extent's, `ruling_pieces` for a ruling's — so everything after
     // it (splits, the walk, the chart, assembly) sees one name per point.
     let canon = |e: [NodeId; 2]| [aliases.canon_point(e[0]), aliases.canon_point(e[1])];
     let mut out: Vec<MergedCircle> = Vec::new();
@@ -195,53 +195,47 @@ pub(crate) struct RulingTrace {
     pub orient: i8,
 }
 
-/// Group the class's ruling traces into [`MergedRuling`]s — the ruling twin of
-/// [`merge_circles`]: dedupe identical rulings (two operands stating one), collect their
-/// contributions, def from the class table. Deterministic order: `(cyl, side descending, extent)` —
-/// a fixed rule, ascending cyl with the `+1` ruling first.
-///
-/// **The extent is part of the key, and leaving it out is a silent duplicate waiting for a
-/// population.** The fold below is *adjacency*-based: it merges a trace into the previous one when
-/// the two name the same edge. While each `(cyl, side)` carries exactly one trace per operand, the
-/// sort puts those two side by side and the fold works. The moment one ruling comes in **pieces** —
-/// a lateral face with a hole grazes part of its own ruling instead of crossing it — a stable sort
-/// on `(cyl, side)` alone leaves operand A's pieces before operand B's, so the two statements of one
-/// piece are **not adjacent** and each becomes its own `MergedRuling`: one edge appearing twice,
-/// with half its contributions each. Sorting by the extent too puts identical pieces together
-/// whatever order the tracer emitted them in.
-///
-/// Measured over the suite: **no `(cyl, side)` group carries more than one trace today**, so the
-/// fold below never actually fires. Both facts are written for
-/// a population that does not exist yet — a cylinder belongs to one operand, so two statements
-/// of one ruling need a shape nothing builds.
-pub(super) fn merge_rulings(rulings: &[RulingTrace], aliases: &Aliases) -> Vec<MergedRuling> {
-    let mut out: Vec<MergedRuling> = Vec::new();
-    // Canonical ends (see `merge_circles`) — the key below is by name.
-    let mut sorted: Vec<(&RulingTrace, [NodeId; 2])> = rulings
+/// **Each ruling trace as a piece of its own** — one contribution, its ends canonical (see
+/// [`merge_circles`]: the merge layer is where names become canonical). Two statements of one
+/// ruling stay two pieces here; the arrangement cuts them at each other's ends
+/// (`crossings::cut_rulings_at_their_ends`) and [`merge_rulings`] folds what then coincides.
+pub(super) fn ruling_pieces(rulings: &[RulingTrace], aliases: &Aliases) -> Vec<MergedRuling> {
+    rulings
         .iter()
-        .map(|r| {
-            (
-                r,
-                [aliases.canon_point(r.end[0]), aliases.canon_point(r.end[1])],
-            )
-        })
-        .collect();
-    sorted.sort_by_key(|(r, end)| (r.cyl, -r.side, *end));
-    for (r, end) in sorted {
-        if let Some(last) = out.last_mut() {
-            if last.cyl == r.cyl && last.side == r.side && last.end == end {
-                last.merged.push((r.solid, r.kind));
-                continue;
-            }
-        }
-        out.push(MergedRuling {
+        .map(|r| MergedRuling {
             cyl: r.cyl,
             side: r.side,
-            end,
+            end: [aliases.canon_point(r.end[0]), aliases.canon_point(r.end[1])],
             merged: vec![(r.solid, r.kind)],
             #[cfg(test)]
             orient: r.orient,
-        });
+        })
+        .collect()
+}
+
+/// **Fold the ruling pieces that name one edge** — the ruling twin of [`merge_circles`]: pieces
+/// with the same `(cyl, side, end)` become one, their contributions collected. Deterministic
+/// order: `(cyl, side descending, end)` — a fixed rule, ascending cyl with the `+1` ruling first.
+///
+/// The pieces come in already cut at each other's ends (`crossings::cut_rulings_at_their_ends`),
+/// so two statements of one stretch of the line — two operands whose lateral faces lie on one
+/// cylinder, at different heights — have equal ends wherever they overlap. **The extent is part of
+/// the key**: the fold is adjacency-based, and a sort on `(cyl, side)` alone would leave one
+/// operand's pieces before the other's, so the two statements of one piece would not be adjacent
+/// and each would become its own `MergedRuling` — one edge appearing twice.
+pub(super) fn merge_rulings(mut pieces: Vec<MergedRuling>) -> Vec<MergedRuling> {
+    pieces.sort_by_key(|r| (r.cyl, -r.side, r.end));
+    let mut out: Vec<MergedRuling> = Vec::new();
+    for r in pieces {
+        if let Some(last) = out.last_mut()
+            && last.cyl == r.cyl
+            && last.side == r.side
+            && last.end == r.end
+        {
+            last.merged.extend(r.merged);
+            continue;
+        }
+        out.push(r);
     }
     out
 }

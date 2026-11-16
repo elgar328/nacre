@@ -58,7 +58,7 @@ fn bands(
         &trace_in,
     )
     .expect("the drill population traces");
-    let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("cylinder rows");
+    let rows = cyl_rows(faces_tab, plane_ix).expect("cylinder rows");
     let out = crate::arrangement::cyl_chart::emit_lateral(kind, &jd, cyls, &curved, &rows)
         .expect("the lateral faces emit");
     // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own

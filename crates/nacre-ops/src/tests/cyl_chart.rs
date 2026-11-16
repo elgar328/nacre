@@ -468,3 +468,34 @@ fn face_spans_reads_the_trace_not_the_label() {
         })
     ));
 }
+
+/// **A tangent wall ends on a side of the line when one solid's faces cover that side and not the
+/// other** (`spokes`). One solid on both sides runs through — no spoke; `A` ending on `+τ` and `B`
+/// on `−τ` are two spokes, which the union of their halves would read as a face running through;
+/// a solid's side reaching over part of the piece is the stages disagreeing.
+#[test]
+fn a_tangent_wall_ends_on_the_line_per_solid() {
+    let q = |n: i128| nacre_exact::QuadVal::from_rat(Rat::from_int(n));
+    let whole = || vec![[q(0), q(2)]];
+    let (lo, hi) = (q(0), q(2));
+    let read = |halves: &[[Vec<[nacre_exact::QuadVal; 2]>; 2]]| {
+        super::spokes(halves, &lo, &hi).expect("decided")
+    };
+    assert_eq!(read(&[[whole(), vec![]]]), [true, false], "one solid, +τ");
+    assert_eq!(
+        read(&[[whole(), whole()]]),
+        [false, false],
+        "one solid through"
+    );
+    assert_eq!(
+        read(&[[whole(), vec![]], [vec![], whole()]]),
+        [true, true],
+        "two solids, one side each"
+    );
+    assert_eq!(
+        read(&[[whole(), whole()], [whole(), vec![]]]),
+        [true, false],
+        "one solid through, the other ending"
+    );
+    assert!(super::spokes(&[[vec![[q(0), q(1)]], vec![]]], &lo, &hi).is_err());
+}

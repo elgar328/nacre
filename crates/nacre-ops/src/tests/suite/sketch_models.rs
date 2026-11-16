@@ -284,60 +284,6 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     mesh_covers_faces("an annulus", &m, &[solid]);
 }
 
-/// **One cylinder surface under two solids is refused, not asserted.** Cylinders intern by their
-/// exact statement, so two identical circle prisms — on a seeded world frame or on a stated datum —
-/// share one lateral surface handle, which the chart reads as one solid's. Without the gate the
-/// fuse would reach the chart census's "one cylinder class carries rows of both solids" assertion
-/// (measured); the gate refuses the coaxial pair by name.
-#[test]
-fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
-    let refused = |r: Result<Vec<Handle<Solid>>, BoolError>| {
-        assert!(
-            matches!(
-                r,
-                Err(BoolError::Rejected {
-                    reason: RejectReason::CylinderPairContact,
-                    ..
-                })
-            ),
-            "{r:?}"
-        );
-    };
-    // Two circle prisms.
-    let mut m = Model::new();
-    let extrude = |m: &mut Model| {
-        let frame = SketchFrame::world(m, Axis::Z);
-        let OpOutput::Extrude { solid, .. } = apply(
-            m,
-            &Operation::Extrude {
-                frame,
-                profile: circle_profile([0.0, 0.0], 1.0),
-                dist: 2.0,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        solid
-    };
-    let (s1, s2) = (extrude(&mut m), extrude(&mut m));
-    refused(crate::boolean(&mut m, BoolKind::Fuse, s1, s2));
-    // Two circles on a stated datum plane — the same hazard on the other frame road.
-    let mut m = Model::new();
-    let on_datum = |m: &mut Model| {
-        crate::fixtures::cylinder(
-            m,
-            Point3::origin(),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            1.0,
-            2.0,
-        )
-        .solid
-    };
-    let (s1, s2) = (on_datum(&mut m), on_datum(&mut m));
-    refused(crate::boolean(&mut m, BoolKind::Cut, s1, s2));
-}
-
 /// **A circle on a slanted wall's frame** — a measurement, locked at what it found. The prism alone
 /// is a valid solid: the arc wall's f64 cache is realized through the motion frame the way its
 /// vertices are, and the disk cap's winding check realizes the plane's truth points the same way (a

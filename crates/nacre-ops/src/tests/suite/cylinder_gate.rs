@@ -736,10 +736,11 @@ fn a_lateral_cut_at_both_rims_is_an_operand_like_any_other() {
 }
 
 /// **The record of a tangent wall's line carries where that wall's faces lie on each side of it**
-/// (`SharedRuling::tangent_halves`, in the lateral's `+τ`, `−τ` order). `A` is the notched block
-/// (its notch's lateral through the ruling `(1, 0)`, `τ = +y` there), `B` a prism with its wall
-/// `x = 1` tangent to the notch along that line and a face on the plane `y = 0`, which holds the
-/// line and cuts the notch — the pair the record is written for. Over the lateral's span `z ∈ [0, 2]`:
+/// (`SharedRuling::tangent_halves`, per wall solid, in the lateral's `+τ`, `−τ` order). `A` is the
+/// notched block (its notch's lateral through the ruling `(1, 0)`, `τ = +y` there), `B` a prism
+/// with its wall `x = 1` tangent to the notch along that line and a face on the plane `y = 0`,
+/// which holds the line and cuts the notch — the pair the record is written for. Over the lateral's
+/// span `z ∈ [0, 2]`:
 ///
 /// - a box above the line (`y ∈ [0, 2]`) puts `x = 1` on the `+τ` side only — a face ending on the
 ///   line, the whole span; below it (`y ∈ [−2, 0]`), on the `−τ` side only — the sign of `±w → ±τ`;
@@ -771,7 +772,8 @@ fn a_tangent_walls_record_says_which_side_of_the_line_its_faces_lie_on() {
             1,
             "one tangent wall, one holder: {records:?}"
         );
-        records[0]
+        assert_eq!(records[0].len(), 1, "one wall solid: {records:?}");
+        records[0][0]
             .iter()
             .map(|side| {
                 side.iter()

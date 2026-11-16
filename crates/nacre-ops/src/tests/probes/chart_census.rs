@@ -57,11 +57,6 @@ pub(crate) fn census(
                 "a face bounded by a circle of this cylinder is on no line: cyl {k}, class {c}"
             );
         }
-        let side = mine.first().map(|r| r.side);
-        assert!(
-            mine.iter().all(|r| Some(r.side) == side),
-            "one cylinder class carries rows of both solids: cyl {k}"
-        );
 
         // **Every vertical line carries an answer.** A ruling without
         // one is a chart that can state where a wall crosses but not what changes across it — and
@@ -143,16 +138,17 @@ pub(crate) fn census(
 
         // ── The cells, read off the horizontal lines. ──
         //
-        // `cyl_rows` refuses a class with no row before this census runs, so a class here always
-        // has a side; stated as a check rather than an `unwrap` so the message names the class.
-        let Some(side) = side else {
-            panic!("a cylinder class reached the chart with no row: cyl {k}");
-        };
+        // `cyl_rows` refuses a class with no row before this census runs; stated as a check so
+        // the message names the class.
+        assert!(
+            !mine.is_empty(),
+            "a cylinder class reached the chart with no row: cyl {k}"
+        );
         // A cell the reader refuses is a refusal of the whole class (the emitter's `?`); the
         // chart is still recorded, with the comparison empty and the refusal counted.
         let reads: Vec<CellRead<'_>> = match cells
             .iter()
-            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved))
+            .map(|c| chart.read_cell(jd, k, def, kind, c, curved))
             .collect::<Result<Vec<_>, BoolError>>()
         {
             Ok(v) => v,
@@ -178,7 +174,7 @@ pub(crate) fn census(
         // and two adjacent emitted cells lie in one face. A refusal here is the emitter's, made
         // on the same input.
         {
-            match regions::walk(jd, k, def, kind, side, &chart, &cells, &reads, curved) {
+            match regions::walk(jd, k, def, kind, &chart, &cells, &reads, curved) {
                 Ok(w) => {
                     let mut owner: Vec<Option<usize>> = vec![None; cells.len()];
                     for (f, cs) in w.cells_of.iter().enumerate() {
@@ -288,31 +284,36 @@ pub(crate) fn census(
             if r.present && r.ends.iter().any(|e| matches!(e, End::NoCircle)) {
                 nocircle_present += 1;
             }
-            // The one-mark contract on rim reads:
-            // every cut end read carries at most one lateral mark of its own solid, and none only
-            // where the cell is absent (`Seated` is a
+            // The one-mark contract on rim reads, per solid:
+            // every cut end read carries at most one lateral mark of each solid, and none of
+            // either only where the cell is absent (`Seated` is a
             // planar face's word — `face_spans` skips it for the same reason). Counted here, not
             // in `read_cell`, so the emitter's read and the census's read are not counted twice.
             for e in &r.ends {
                 let End::Arc(arc) = e else { continue };
-                let lateral = arc
-                    .marks
-                    .iter()
-                    .filter(|(s, kd)| {
-                        *s == side && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
-                    })
-                    .count();
+                let lateral = |solid: crate::planes::SolidSide| {
+                    arc.marks
+                        .iter()
+                        .filter(|(s, kd)| {
+                            *s == solid && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
+                        })
+                        .count()
+                };
+                let marks = [
+                    lateral(crate::planes::SolidSide::A),
+                    lateral(crate::planes::SolidSide::B),
+                ];
                 // **Not «exactly one»:** a ⊥ cap through a wall boss's notch cuts the circle
                 // *inside the lateral's hole*, and the arc there carries **no** mark — the face is
-                // absent along it, and the cell reads absent. So the contract is «at most one, and
-                // none exactly where the cell is not there».
+                // absent along it, and the cell reads absent. So the contract is «at most one of
+                // each solid, and none of either exactly where the cell is not there».
                 assert!(
-                    lateral <= 1,
-                    "a cut end read carries {lateral} lateral marks of its own solid: {arc:?}"
+                    marks.iter().all(|&n| n <= 1),
+                    "a cut end read carries {marks:?} lateral marks of the two solids: {arc:?}"
                 );
                 assert!(
-                    lateral == 1 || !r.present,
-                    "a cut end read with no lateral mark of its own solid reads present: {arc:?}"
+                    marks.contains(&1) || !r.present,
+                    "a cut end read with no lateral mark reads present: {arc:?}"
                 );
             }
             // Both ends cut is exactly the panel road's population, where today `face_spans`

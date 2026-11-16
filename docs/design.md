@@ -1091,10 +1091,8 @@ pub enum SurfaceKey {
 술어가 물을 때마다 답한다(규칙 6). **원통에 정준 이름을 주지 않는 것은 «없어서»가 아니라 «결정»이다** —
 원통에 4계수형이 없는 것은 사실이지만 지키는 것은 정책이다: 누군가 원통의 정준형을 만들어 합치기
 시작하면 기하가 같은 원통이 **조용히 합쳐지고 seam 이 갈라진다.** 새 곡면 종류(구·원뿔)도 «합칠
-것인가»를 먼저 정하고 나서야 이름을 얻는다. 이 결정이 막는 행은 없다 — 한 원통면을 두 솔리드가 공유하는
-배치는 진술이 같아 한 핸들이어도 차트의 전제(«원통 클래스는 한 솔리드의 곡면»)로 거절되므로, 두 핸들로 갈라 둔
-값은 거절의 자리만 바꾼다(인구는 todo 「한 원통면을 두 솔리드가 공유한다」). 방향은 todo 「곡면 둘 이상이 만나는
-점과 seam 담체」가 든다.
+것인가»를 먼저 정하고 나서야 이름을 얻는다. 이 결정이 막는 것은 같은 원통을 두 핸들로 진술한 배치다
+(`CylinderPairContact` — todo 「한 원통면을 두 솔리드가 공유한다」).
 
 ### 열쇠는 진실이 고른다
 
@@ -1378,7 +1376,7 @@ pub(crate) struct WorkingCyl {
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
     pub(crate) realized: nacre_geom::Cylinder,        // 모델의 캐시가 아니다 — 연산 하나를 산다
-    pub(crate) owner: SolidSide,                      // 쌍 루프는 주인이 다른 쌍만 묻는다
+    pub(crate) owner: Option<SolidSide>,              // 옆면을 가진 솔리드 — 둘 다면 None(평면의 class_owners 와 같은 어휘)
     pub(crate) shared: Vec<SharedRuling>,             // 옆면 위에 놓인 두 클래스의 교선 — 게이트의 기록
     pub(crate) records: Vec<(usize, CylRecord)>,      // 게이트가 배열에 넘기는 클래스별 기록 — 절단(`Cuts`), 비스듬한 단면(`Sections`), 접함(`Touches`), 또는 이름 없는 클래스의 말 없음(쪽, 면이 떨어짐, 단면, 스침)
     pub(crate) boxes: Vec<[[Rat; 3]; 2]>,             // 옆면마다 호를 아는 상자 — 이름 없는 클래스가 있을 때만
@@ -1791,7 +1789,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 방출된 원 경계와 옆면 자신의 rim 이고, 조립이 rim 표로 캡과 밴드를 한 엣지에 잇는다(`assembly::reconstruct`).
 
 - **소속은 재지 않고 배열에게 묻는다.** 밴드는 원판 셀의 네 비트를 한 철자로 읽고, 차트의 셀은 그 끝과 벽이 모두 일치할
-  때만 챔버를 가진다 — `read_cell::read_bits`·`CellRead::chamber` 의 doc. 광선이 아닌 까닭: 평면 엔진은 「이 경계 조각이
+  때만 챔버를 가진다 — `read_cell::read_bits`·`CellRead::inside_kept` 의 doc. 광선이 아닌 까닭: 평면 엔진은 「이 경계 조각이
   남나」를 **라벨**(`emit_faces`)로, 「이 성분이 재료인가, 어느 성분 안에 드나」를 **광선**(`point_in_component`)으로 답하고,
   밴드는 앞의 물음이다 — 좌표 도로 `point_in_faces_rat` 는 이 경계를 뒤집지 않는다. 라벨이 원통을 양쪽 피연산자에 세우는
   까닭은 `read_bits` doc, 「z-범위 판정」의 반례(L-노치)는 `bands` 모듈 doc.
@@ -1799,7 +1797,8 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   루프와 밴드의 rim 이 같은 엣지 핸들이어야 닫힌-셸 가드가 사용 횟수 2 를 본다(`reconstruct` 의 rim 표 주석).
 - **조립의 rim 기계**(통째 원마다 `OnSeam` 정점과 자기루프 rim, seam 간선 없음, 잘린 원은 노드 사이의 호이고 그 담체는
   `Wall::Arc` 의 `plane`)는 `reconstruct` 의 rim 표 주석과 `Wall::Arc` doc. 성분 결합에는 **둘째 규칙**이 붙는다 — 캡과
-  밴드는 Node 를 하나도 공유하지 않으므로 **rim 키**로 잇는다.
+  밴드는 Node 를 하나도 공유하지 않으므로 **rim 키**로 잇되, 한 면은 rim 둘레에서 **재료 쪽으로 다음 면**과 잇는다(두 몸체가
+  한 원에서 만나 네 면이 쓰는 rim 은 몸체마다 둘씩 — `assembly::topology` 의 `rim_pairs`).
 - **감김은 규칙으로 유도한다** — `reconstruct` 의 «Which way a rim circle is walked» 주석; 잠금은 부피의 부호(뚫린 상자가
   `8 − πr²h`, `src/tests/bands/slab_bands.rs` 의 winding lock).
 - **딱지는 «소속»을 말하지 «존재»를 말하지 않는다.** 구멍 난 옆면이 피연산자로 돌아오면 rim 의 두 섹터가 글자 그대로 같은
@@ -1807,8 +1806,8 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   doc).
   차트의 셀이 소속(`read_bits`)과 존재(`face_spans`)를 **나란히** 묻는다.
 - **`face_spans` 의 진리표**(`Seated` 건너뛰기 포함)는 그 doc 이다. `Seated` 건너뛰기는 방어가 아니라 작동 중인 경로다 —
-  한 호가 옆면 자국과 평면 면의 `Seated` rim 을 함께 들고 오는 인구가 실재한다. 자국 수의 계약 «제 솔리드의 옆면 자국은
-  많아야 하나, 없으면 셀도 없다»는 차트 census(`src/tests/probes/chart_census.rs`)가 단언하고, 둘 이상인 호와 자국 없는
+  한 호가 옆면 자국과 평면 면의 `Seated` rim 을 함께 들고 오는 인구가 실재한다. 자국 수의 계약 «솔리드마다 옆면 자국은
+  많아야 하나, 어느 솔리드의 자국도 없으면 셀도 없다»는 차트 census(`src/tests/probes/chart_census.rs`)가 단언하고, 둘 이상인 호와 자국 없는
   호의 답은 단위 시험(`face_spans_reads_the_trace_not_the_label`)이 손으로 쓴 자국으로 진술한다.
 
 ### 인구 게이트 (`planes::cylinder_gate`)
@@ -1855,7 +1854,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   `stated_by`)은 `SharedRuling` doc.
 - **게이트가 물어야 하는 명제는 «두 클래스가 «면»을 공유하는가»다** — 무한 곡면의 거리가 아니다(「점의 이름」의 첫 원리).
   곡면 거리로 못 비킨 쌍은 옆면이 자신을 대변하고(도달 범위 `lateral_reach` — 수직은 그 일반식의 한 경우이지 분기가
-  아니다), 같은 솔리드 안의 쌍은 묻지 않는다. 원통 쌍의 차례(`r₁+r₂`, `same_surface`, 중첩, 면 물음, 남으면
+  아니다), 한 솔리드의 두 면은 묻지 않는다. 원통 쌍의 차례(`r₁+r₂`, `same_surface`, 중첩, 면 물음, 남으면
   `CylinderPairContact`)는 `cylinder_gate` doc.
 - **«두 조각이 점을 공유하지 않는가»는 물음 하나이고 함수 하나다**(`pieces_clear` — 조각, 증인 셋, 엄격 포함은 그 doc).
   묻는 쪽은 쌍 규칙(면 쌍마다), 배열의 간선 그물(`CircleCrossesRuling`), 그리고 원통 위의 선을 읽는 쪽(룰링 분할의 원통
@@ -1883,10 +1882,8 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   온전한 원은 시작 = 끝), 회전각은 커널이 모르는 말이며 끝점 표현이 더 넓다. 옆면의 향과 시계 방향 호의 저장(`[A, B]`
   반시계 규약)은 `ops::prism` 의 `along`·`push_walls` 주석.
 - **구간 돌출은 «스케치가 여기서 시작한다»다** — `[lo, hi]` 를 한 번 쓸고 프레임의 원점을 구간의 시작에 둔다(kit `build.rs`
-  의 `Dist::Both`): 두 번 쓸어 fuse 하면 한 곡면이 축의 부호만 다른 두 진술이 되어 거절되고, 쓸고 옮기면 결과에 모션이
-  남는다. 계약은 `lo < hi` 만 요구한다. 커널 쪽 「축 부호만 다른 쌍둥이」 정준화는 **짓지 않는다** — 그 인구는 위 규칙이
-  없애고, 진술을 합쳐도 「한 곡면을 두 피연산자가 소유」로 옮겨 앉을 뿐이다(차트가 「원통 클래스는 한 솔리드의 곡면」을
-  전제로 선다 — 그 전제를 바꾸는 것은 **별개 능력**).
+  의 `Dist::Both`): 불리언도, 쓸고 옮기면 남을 모션도 없다. 계약은 `lo < hi` 만 요구한다. 평면을 뒤집어 재진술해 쓴 쌍둥이(두
+  핸들)는 todo 「한 원통면을 두 솔리드가 공유한다」.
 - **원 셀은 «클래스가 축에 수직일 때만» 원이다** — 이름은 `class_carries_circle` 하나이고, 원을 읽는 소비자 목록과 비스듬한
   호를 그 도로들 안에 묶는 게이트의 논증(앉은 원 생산자의 더 강한 근거 포함)은 그 doc. 비스듬한 클래스의 자취는
   **단면**(타원)이고 게이트가 `CylRecord::Sections` 로 기록한 쌍에만 선다. 이 쓰임이 서는 까닭은 **평면 단면이 모두 θ 의
@@ -1998,13 +1995,15 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 세로선(`ThetaSeg`)으로, 클래스의 자취를 선으로 얹는다(`cyl_chart` 의 모듈 doc).
 
 - **할선 룰링 하나는 정거장 하나이고, 그 별은 그 선에 간선을 가진 반쪽 면 전부다** — 할선 벽들의 현과 그 선에서 끝나는
-  다른 솔리드의 접선 벽 반쪽(`Station`·`Chart::slit_at`). 선을 품는 평면은 할선이거나 접선뿐이다. 공유 룰링은 할선
+  접선 벽 가운데 그 자리 옆면과 솔리드가 다른 것의 반쪽 — 끝나는지는 솔리드마다 읽는다(`Station`·`Chart::slit_at`). 선을 품는 평면은 할선이거나 접선뿐이다. 공유 룰링은 할선
   벽들에 면이 없는 높이에서도 차트의 정거장이다 — 차트는 곡면 전체에 선을 깔고 칸을 분류하며(Requicha 의 분류,
   Mäntylä 의 이웃), 그 선에서 옆면이 끝나는지는 기록이 아니라 이 분류가 정한다.
 - **옆면 위의 곡선은 룰링이거나 θ 의 그래프다** — 높이 순서 `quad::section_height_order`(래퍼
   `combinatorics::line_order`·`ChartPoint::order`), θ 순서 `circular_order_about_seam`(두 점을 같은 원 위에서 받지 않으므로 다른 벽의 룰링도,
   위치가 무리수(`√(r²−d²)`)인 오프셋 벽(`0 < d < r`)의 룰링도 같은 산술로 비교한다), 코너의 각
   순서 `departure_key`. 비스듬한 단면 선을 따라 끝나는 칸은 결과에 타원 간선을 남긴다(「원·호·조각」).
+- **한 룰링의 진술들은 서로의 끝에서 잘린 뒤 같은 조각끼리 접힌다**(`cut_rulings_at_their_ends`, `merge_rulings`) — 두
+  피연산자가 한 룰링을 다른 높이로 진술해도 겹치는 구간은 한 간선이다.
 - 룰링의 끝은 언제나 선 위이고(`ThetaSeg::on`), 셀은 slab × 틈이다. 룰링 구간은 `rulings_on_class` 가 정하고 차트는
   다시 계산하지 않는다. 이름은 `Chart::ruling_name` 한 번, 동일성은 `ruling_side`(`RulingCarrier::side`)다.
 - **접선 룰링은 `side = 0` 이라는 «이름»이다**(`QuadRoot::Double`) — 따라오는 것: `tangent_codirected_turn`,
@@ -2016,6 +2015,10 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 옆면을 낸다(`emit_lateral`). 결과 전체 위의 정리 한 번(`arrangement::whole_result_faces`)이 옆면과 이웃 면의 점을
 함께 지우고, 조립은 정리 뒤의 림(`HeldRims`)만 읽는다.
 
+- **칸은 동일평면 클래스의 규칙으로 읽는다** — 한 원통 클래스는 한 피연산자나 두 피연산자의 옆면을 싣고, 안쪽 챔버
+  `(inA, inB)` 와 솔리드마다의 존재에서 바깥(그 칸에 옆면을 가진 솔리드의 소속을 뒤집은 것)을 얻어 `keep(안) ≠ keep(밖)`
+  인 칸이 면이다 — `emit_faces` 와 한 규칙(`Chart::read_cell`). **한 옆면은 한 향이다**: 걸음은 안쪽을 남기는지가 같은 칸만
+  잇는다(`regions::walk`).
 - **«같은 엔진»은 같은 «단계»이지 같은 «코드»가 아니다**(`regions` doc; DCEL 이식은 「가지 말 것」). **정점은 이웃
   클래스가 가진 곳에만** 선다 — 직진하는 정거장에 정점을 만들면 벽 면의 간선 하나에 옆면 간선 둘이 대응해 용접이
   깨진다. 꺾이지 않는 점은 `whole_result_faces` 가 옆면까지 모든 링에서 함께 지우고, 조립은 그 뒤의 림을

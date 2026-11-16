@@ -128,14 +128,15 @@ pub(crate) fn pinch(
 /// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
 ///   and a wall it touches from outside (the truth table in `bands`). The lens is then the
 ///   cylinder's operand's material alone and the far side the wall's alone — two different solids
-///   (the gate keeps no row of a solid tangent to itself, `tangency_rows`' `retain`). An operand is
-///   one lump (a solid is one outer shell and its cavities, and a boolean hands back one solid per
-///   material component), so the union is one body or two, and the lumps are in one body exactly
-///   when the result is **one** body: two is the valid pair touching along the line; one is the two
-///   lumps joined elsewhere — a boss standing in a notch, tangent to the notch's wall and
+///   (the gate writes no row pairing a solid's wall with its own lateral, `tangency_rows`). An
+///   operand is one lump (a solid is one outer shell and its cavities, and a boolean hands back one
+///   solid per material component), so the union is one body or two, and the lumps are in one body
+///   exactly when the result is **one** body: two is the valid pair touching along the line; one is
+///   the two lumps joined elsewhere — a boss standing in a notch, tangent to the notch's wall and
 ///   overlapping the block beside it — whose boundary touches itself, which nothing else in the
-///   kernel sees. (Bodies are face components joined across edges two faces use — where that
-///   differs from the material, at an edge four faces use, another guard refuses first.)
+///   kernel sees. (Bodies are face components joined across edges two faces use, and round a
+///   whole rim each face with the next on its material side — where that differs from the
+///   material, at a straight edge four faces use, another guard refuses first.)
 ///
 /// **The shape is the whole verdict — no body is asked which classes it holds.** A row states a
 /// real contact: the gate writes one only for a wall face that touches the line where the lateral

@@ -283,8 +283,9 @@ fn every_error_type_is_a_std_error() {
     is_error::<nacre::geom::mixed::Undecidable>();
 }
 
-fn disk(m: &mut Model) -> Handle<Solid> {
-    let circle = Ring2d::circle(Point2::from_array([0.0, 0.0]), 1.0).unwrap();
+/// A unit disk about `(x, 0)`, extruded 1.
+fn disk(m: &mut Model, x: f64) -> Handle<Solid> {
+    let circle = Ring2d::circle(Point2::from_array([x, 0.0]), 1.0).unwrap();
     extrude(m, from_paths(vec![circle]).unwrap().remove(0), 1.0)
 }
 
@@ -295,9 +296,9 @@ fn disk(m: &mut Model) -> Handle<Solid> {
 fn errors_from_the_doors_say_one_line_and_chain_their_cause() {
     use std::error::Error;
 
-    // Two identical cylinders share one lateral surface — a boolean the kernel refuses by name.
+    // Two cylinders whose lateral faces cross — a boolean the kernel refuses by name.
     let mut m = Model::new();
-    let (a, b) = (disk(&mut m), disk(&mut m));
+    let (a, b) = (disk(&mut m, 0.0), disk(&mut m, 0.6));
     let refused = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
     let BoolError::Rejected { reason, .. } = refused else {
         panic!("{refused:?}")
@@ -312,7 +313,7 @@ fn errors_from_the_doors_say_one_line_and_chain_their_cause() {
         "{line}"
     );
 
-    let (c, d) = (disk(&mut m), disk(&mut m));
+    let (c, d) = (disk(&mut m, 0.0), disk(&mut m, 0.6));
     let wrapped = apply(
         &mut m,
         &Operation::Boolean {
@@ -377,7 +378,7 @@ fn question_mark_carries_kernel_errors_into_a_box() {
     );
 
     fn fused(m: &mut Model) -> Result<(), Box<dyn std::error::Error>> {
-        let (a, b) = (disk(m), disk(m));
+        let (a, b) = (disk(m, 0.0), disk(m, 0.6));
         boolean(m, BoolKind::Fuse, a, b)?;
         Ok(())
     }

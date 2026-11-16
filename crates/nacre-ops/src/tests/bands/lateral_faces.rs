@@ -111,7 +111,7 @@ fn cyl_rows_gives_one_row_per_lateral_face() {
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
     let lid = add_lid(&mut m);
     let setup = plane_index_setup(&m, s, lid).unwrap();
-    let rows = cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).expect("rows");
+    let rows = cyl_rows(&setup.planes, &setup.plane_ix).expect("rows");
     let spans: Vec<[f64; 2]> = rows
         .iter()
         .map(|r| [r.reach[0].to_f64(), r.reach[1].to_f64()])
@@ -137,7 +137,7 @@ fn a_cylinder_class_no_face_row_names_is_a_defect() {
             *ix = ClassIx::Cyl(1);
         }
     }
-    let got = cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).err();
+    let got = cyl_rows(&setup.planes, &setup.plane_ix).err();
     assert!(
         matches!(
             got,

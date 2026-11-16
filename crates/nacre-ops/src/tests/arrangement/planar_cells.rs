@@ -704,7 +704,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
                     surf: scratch.push_cylinder_unregistered(figure, d.clone(), None),
                     def: d.clone(),
                     realized: figure,
-                    owner: SolidSide::A,
+                    owner: Some(SolidSide::A),
                     shared: Vec::new(),
                     grazed: Vec::new(),
                     records: Vec::new(),

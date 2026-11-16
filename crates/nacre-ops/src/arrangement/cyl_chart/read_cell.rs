@@ -50,42 +50,45 @@ fn agreement<T: PartialEq>(readings: impl IntoIterator<Item = T>) -> Agreement<T
 impl End<'_> {
     /// **What this end says about the cell's chamber**, or `None` when it says nothing. The read
     /// is [`read_bits`], the one spelling.
-    fn chamber(&self, side: SolidSide, above: bool) -> Option<(bool, bool)> {
+    fn chamber(&self, above: bool) -> Option<(bool, bool)> {
         match self {
-            End::Disk(d) => Some(read_bits(&d.label, side, above)),
-            End::Arc(a) => Some(read_bits(&a.label, side, above)),
+            End::Disk(d) => Some(read_bits(&d.label, above)),
+            End::Arc(a) => Some(read_bits(&a.label, above)),
             End::Uncovered | End::NoCircle => None,
         }
     }
 }
 
 /// One cell, read.
-/// `ends` is the census's reader; production reads `chamber`,
+/// `ends` is the census's reader; production reads `inside_kept`,
 /// `present`, `emit` and `unread` (the emitter) and pays for the rest only as a copy.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
     pub(crate) ends: [End<'a>; 2],
-    /// `(in_own, in_other)` on the cylinder's inside, agreed by every side that could speak — the
-    /// two ends' rims and the two walls' rulings. `None` when no side could, or when two sides
-    /// disagreed.
-    pub(crate) chamber: Option<(bool, bool)>,
-    /// Why `chamber` is empty, as the refusal a present cell gets: two sides contradicting each
-    /// other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking over
-    /// a present cell is the stages disagreeing. `None` when there is a chamber.
+    /// Whether the boolean keeps the cell's chamber on the cylinder's inside — `(in_a, in_b)`
+    /// there, agreed by every side that could speak (the two ends' rims and the two walls'
+    /// rulings), under `draft::keep`. Kept, the material lies inside and a face here looks away
+    /// from the axis. `None` when no side could speak, or when two sides disagreed.
+    pub(crate) inside_kept: Option<bool>,
+    /// Why `inside_kept` is empty, as the refusal a present cell gets: two sides contradicting
+    /// each other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking
+    /// over a present cell is the stages disagreeing. `None` when there is a chamber.
     pub(crate) unread: Option<RejectReason>,
-    /// Is this lateral face here at all — the existence question, answered by the trace's marks on
-    /// the lines at the cell's ends ([`face_spans`]).
+    /// Is a lateral face of either operand here at all — the existence question, answered per
+    /// solid by the trace's marks on the lines at the cell's ends ([`face_spans`]).
     pub(crate) present: bool,
-    /// Would the cell be a result face: present, with a chamber, and `keep` differing across the
-    /// wall. `None` when the chamber is unknown.
+    /// Would the cell be a result face: present, with a chamber, and `keep` differing between the
+    /// cylinder's inside and outside — the outside being the inside with each solid that has a
+    /// lateral face here flipped. `None` when the chamber is unknown.
     pub(crate) emit: Option<bool>,
 }
 
 impl Chart {
     /// **Whether the lateral ends at station `i` on both sides** — where the material the lateral
     /// bounds does not run round the line: a sector between two neighbouring spokes of the line's
-    /// star — the secant walls' chords ([`Station::chords`]) and the other solid's tangent wall
-    /// where it ends on the line ([`Station::tangent`]) — **on the lateral's material side**, is not
+    /// star — the secant walls' chords ([`Station::chords`]) and the tangent walls of a solid other
+    /// than the lateral's where they end on the line ([`Station::tangent`]) — **on the lateral's
+    /// material side**, is not
     /// in the result. All kept, the material runs across the line and so does the lateral; one not
     /// kept, what lies on the two sides meets on the line alone. `false` for a tangent ruling
     /// (`side == 0`, whose `station` is `None` — no chord runs through it), for a station one chord
@@ -96,15 +99,17 @@ impl Chart {
     /// `regions::walk`).
     ///
     /// **A tangent wall ending on the line** lies outside the cylinder, along `±τ`: between the
-    /// lateral's half on that side, which bends to the axis, and every chord's outer half. Where the
-    /// lateral keeps the outside, it splits the sector beside the lateral into the lateral's own
-    /// (kept, as below) and the one next to the nearest outer half, which that chord's outside cell
-    /// states — the last chord's on its `τ` side beside `+τ`, the first chord's on the other side
-    /// beside `−τ`. A notched block less a box whose corner stands on the notch's lateral, one side
-    /// tangent there and one across it, is two bodies meeting on that line only where this sector
-    /// is read; and where the box also reaches past the block over a plane through the line — a
-    /// second chord, with no face there, outside the box's corner — only the chord next to the
-    /// tangent half reads the box's own sector (`edge_on_a_ruling`).
+    /// lateral's half on that side, which bends to the axis, and every chord's outer half. Where
+    /// the lateral keeps the outside, it splits the sector beside the lateral into the lateral's
+    /// own (kept, as below) and the one next to the nearest outer half, which that chord's outside
+    /// cell states — the last chord's on its `τ` side beside `+τ`, the first chord's on the other
+    /// side beside `−τ`. The two sides are read apart, so both can carry a half — two solids'
+    /// tangent walls each ending on the line from its own side ([`Station::tangent`]). A notched
+    /// block less a box whose corner stands on the notch's lateral, one side tangent there and one
+    /// across it, is two bodies meeting on that line only where this sector is read; and where the
+    /// box also reaches past the block over a plane through the line — a second chord, with no face
+    /// there, outside the box's corner — only the chord next to the tangent half reads the box's
+    /// own sector (`edge_on_a_ruling`).
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
@@ -113,11 +118,10 @@ impl Chart {
     /// is the one the first chord's inside cell answers beside `+θ`: kept, the lateral bounds
     /// material inside; not, outside. That reading only has to be true where the answer is used —
     /// the walk cuts a lateral at a slit only between two cells it emits, and an emitted `+θ` cell
-    /// keeps one side of the lateral and not the other. One boolean keeps a lateral's material on
-    /// one side all round a line: `keep` is monotone in each operand, and an operand, being a
-    /// manifold, has its own material on one side of the cylinder on both sides of the line
-    /// (measured: no station with its two cells emitted keeps different sides, in the suite or the
-    /// census).
+    /// keeps one side of the lateral and not the other. The two cells the answer is read between
+    /// keep the **same** side: the walk joins emitted cells only where their material sides agree
+    /// (`regions::walk` — one lateral face has one orientation), so at a station where the kept
+    /// side flips the two cells are two faces whatever this answers, and the answer goes unused.
     ///
     /// Both halves carry an answer (`edge_on_a_ruling`): the inside chamber read where the
     /// material is outside cuts the lateral of a box less the wedge fused on a rim, across the
@@ -140,7 +144,6 @@ impl Chart {
         &self,
         jd: &Judge<'_, WorkingPlane>,
         i: usize,
-        side: SolidSide,
         kind: BoolKind,
     ) -> Result<bool, RejectReason> {
         let stages = RejectReason::CylinderStagesDisagree;
@@ -163,17 +166,17 @@ impl Chart {
             let near = crate::arrangement::plus_theta_is_above(jd, c.wall, c.side).ok_or(stages)?;
             walls.push((label.ok_or(stages)?, outer, near));
         }
-        let keeps = |b: (bool, bool)| keep_for(kind, side, b.0, b.1);
-        let inside = keeps(read_bits(&walls[0].0, side, walls[0].2));
+        let keeps = |b: (bool, bool)| crate::draft::keep(kind, b.0, b.1);
+        let inside = keeps(read_bits(&walls[0].0, walls[0].2));
         let mut between: Vec<bool> = Vec::with_capacity(walls.len());
         for pair in walls.windows(2) {
             let ((l0, o0, n0), (l1, o1, n1)) = (pair[0], pair[1]);
             let (a, b) = if inside {
-                (read_bits(&l0, side, !n0), read_bits(&l1, side, n1))
+                (read_bits(&l0, !n0), read_bits(&l1, n1))
             } else {
                 (
-                    read_bits(&o0.ok_or(stages)?, side, n0),
-                    read_bits(&o1.ok_or(stages)?, side, !n1),
+                    read_bits(&o0.ok_or(stages)?, n0),
+                    read_bits(&o1.ok_or(stages)?, !n1),
                 )
             };
             if a != b {
@@ -203,11 +206,7 @@ impl Chart {
             let tangent = |at: usize| n + 1 + at;
             let outside = |w: usize, toward_tau: bool| -> Result<bool, RejectReason> {
                 let (_, o, near) = walls[w];
-                Ok(keeps(read_bits(
-                    &o.ok_or(stages)?,
-                    side,
-                    near == toward_tau,
-                )))
+                Ok(keeps(read_bits(&o.ok_or(stages)?, near == toward_tau)))
             };
             if st.tangent[0] {
                 star.push((tangent(0), outside(n - 1, true)?));
@@ -271,7 +270,6 @@ impl Chart {
         k: usize,
         def: &nacre_topo::CylinderDef,
         kind: BoolKind,
-        side: SolidSide,
         cell: &Cell,
         curved: &'a Curved,
     ) -> Result<CellRead<'a>, BoolError> {
@@ -352,7 +350,7 @@ impl Chart {
             // The slab leaves its first event counter-clockwise and arrives at its second, so the
             // two walls are read from opposite sides of their own rulings.
             let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
-            Some(read_bits(&l, side, above))
+            Some(read_bits(&l, above))
         };
         // A cell whose two walls are **one** ruling (a circle opened at a single point) lies
         // on both sides of that wall, so the vertical line says nothing about it — the two
@@ -369,7 +367,7 @@ impl Chart {
         };
         let (chamber, disagree) = match agreement(
             (0..2)
-                .filter_map(|e| ends[e].chamber(side, above[e]))
+                .filter_map(|e| ends[e].chamber(above[e]))
                 .chain(walls.into_iter().flatten()),
         ) {
             Agreement::One(b) => (Some(b), false),
@@ -384,49 +382,56 @@ impl Chart {
             (None, false) => Some(RejectReason::CylinderStagesDisagree),
         };
 
-        // ── Existence: what the trace left on the lines at the cell's two ends. ──
-        // A line carries this solid's lateral marks over the cell's slab — an arc's when its circle
+        // ── Existence: what the trace left on the lines at the cell's two ends, per solid. ──
+        // A line carries each solid's lateral marks over the cell's slab — an arc's when its circle
         // is cut, the whole circle's when it is not — and `face_spans` reads them: through the
         // plane, on the side a rim bounds, or not here at all. `face_spans` refuses by name (two
-        // of this solid's faces disagreeing on one line), and two ends disagreeing with each other
+        // of one solid's faces disagreeing on one line), and two ends disagreeing with each other
         // is `CylinderFaceUndecided`: a slab exists over its whole height or not at all, and
         // picking an end to believe is the guess this kernel does not make.
-        let mut by_marks: Option<bool> = None;
-        for e in 0..2 {
-            let marks: &[(SolidSide, SegKind)] = match &ends[e] {
-                End::Arc(arc) => &arc.marks,
-                End::Disk(disk) => &disk.marks,
-                End::Uncovered | End::NoCircle => continue,
-            };
-            let v = face_spans(marks, side, above[e])?;
-            if by_marks.replace(v).is_some_and(|p| p != v) {
-                return Err(reject(RejectReason::CylinderFaceUndecided));
-            }
-        }
-        // An uncovered rim piece decides existence outright: the face's own rim does not run along
-        // this slab at that line, so the face is not over this cell. A cell neither end speaks for
-        // — both lines a cut rim with no arc kept — has no trace to read, and a face is never read
-        // off nothing: the stages disagree.
+        //
+        // An uncovered rim piece decides existence outright: no face's rim runs along this slab at
+        // that line, so no face is over this cell. A cell neither end speaks for — both lines a cut
+        // rim with no arc kept — has no trace to read, and a face is never read off nothing: the
+        // stages disagree.
         let uncovered = ends.iter().any(|e| matches!(e, End::Uncovered));
-        let present = match by_marks {
-            _ if uncovered => false,
-            Some(v) => v,
-            None => return Err(reject(RejectReason::CylinderStagesDisagree)),
-        };
+        let mut here = [false; 2];
+        for (h, solid) in here.iter_mut().zip([SolidSide::A, SolidSide::B]) {
+            let mut by_marks: Option<bool> = None;
+            for e in 0..2 {
+                let marks: &[(SolidSide, SegKind)] = match &ends[e] {
+                    End::Arc(arc) => &arc.marks,
+                    End::Disk(disk) => &disk.marks,
+                    End::Uncovered | End::NoCircle => continue,
+                };
+                let v = face_spans(marks, solid, above[e])?;
+                if by_marks.replace(v).is_some_and(|p| p != v) {
+                    return Err(reject(RejectReason::CylinderFaceUndecided));
+                }
+            }
+            *h = match by_marks {
+                _ if uncovered => false,
+                Some(v) => v,
+                None => return Err(reject(RejectReason::CylinderStagesDisagree)),
+            };
+        }
+        let present = here[0] || here[1];
 
-        // A cell the face is not in emits nothing, chamber or no chamber — a cell outside every
-        // span has no circle at either end and no question to answer.
+        // A cell no face is in emits nothing, chamber or no chamber — a cell outside every span
+        // has no circle at either end and no question to answer. Otherwise the cell is a result
+        // face where `keep` differs across the cylinder: the outside chamber is the inside one with
+        // the membership of every solid whose lateral face is here flipped — the coplanar class's
+        // rule (`emit_faces`), on the cylinder.
         let emit = if !present {
             Some(false)
         } else {
-            chamber.map(|(own, other)| {
-                let keep = |in_own: bool| keep_for(kind, side, in_own, other);
-                keep(own) != keep(!own)
+            chamber.map(|(a, b)| {
+                crate::draft::keep(kind, a, b) != crate::draft::keep(kind, a ^ here[0], b ^ here[1])
             })
         };
         Ok(CellRead {
             ends,
-            chamber,
+            inside_kept: chamber.map(|(a, b)| crate::draft::keep(kind, a, b)),
             unread,
             present,
             emit,
@@ -434,8 +439,8 @@ impl Chart {
     }
 }
 
-/// **Does this solid's lateral face reach into the interval, at this end line?** — the *existence*
-/// question, which no label answers.
+/// **Does a lateral face of solid `side` reach into the interval, at this end line?** — the
+/// *existence* question, which no label answers.
 ///
 /// A label states where material is. It is written about a **cell**, and it stays the same whether
 /// the cylinder's own face bounds that cell or some other face does. That is enough while a
@@ -496,14 +501,16 @@ pub(crate) fn face_spans(
     Ok(answer.unwrap_or(false))
 }
 
-/// The one spelling of "which two bits of a label are this cell's chamber": the row's own
-/// solid's bit and the counterpart's, on the side of the plane the cell occupies. Read for a disk
-/// end and an arc end alike (`Chart::read_cell`), so the two cannot drift.
+/// The one spelling of "which two bits of a label are this cell's chamber": both solids' bits,
+/// `(in_a, in_b)`, on the side of the plane the cell occupies. Read for a disk end, an arc end and a
+/// ruling's chords alike (`Chart::read_cell`, `Chart::slit_at`), so they cannot drift.
 ///
 /// **The chamber is read off the arrangement, not measured.** The plane arrangement already
 /// makes a **disk cell** for every circle a cylinder leaves on a class, and `label_cells` writes
 /// four bits on it: which solid's material lies immediately above and below that plane *inside the
-/// circle*. That is the band's chamber, stated by the engine that decided it.
+/// circle*. That is the band's chamber, stated by the engine that decided it, in the order the
+/// engine wrote it — a cylinder class carries the lateral faces of one operand or of both, and the
+/// order of the bits does not depend on which.
 ///
 /// A witness ray (`point_in_faces_rat`) — a rational point on the axis, cast through the
 /// counterpart's faces, counting crossings — would give the same answers, but it answers a **3D
@@ -511,20 +518,8 @@ pub(crate) fn face_spans(
 /// same shape as "does this face survive": two chambers either side of a boundary. Reading the
 /// label needs no coordinates, no ray direction, no abstention retry, and has no width ceiling, and
 /// it is why a cylinder may stand on either side of the boolean.
-pub(crate) fn read_bits(l: &Label, side: SolidSide, band_is_above: bool) -> (bool, bool) {
-    let (cyl_bit, other_bit) = match side {
-        SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
-        SolidSide::B => (2usize, 0usize),
-    };
+pub(crate) fn read_bits(l: &Label, band_is_above: bool) -> (bool, bool) {
+    // [A above, A below, B above, B below]
     let i = usize::from(!band_is_above);
-    (l[cyl_bit + i], l[other_bit + i])
-}
-
-/// The one spelling of the band's keep decision — the wall is a boundary face of its own solid,
-/// so that solid's membership flips across it while the counterpart's does not.
-pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bool {
-    match side {
-        SolidSide::A => crate::draft::keep(kind, in_own, in_other),
-        SolidSide::B => crate::draft::keep(kind, in_other, in_own),
-    }
+    (l[i], l[2 + i])
 }

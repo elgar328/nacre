@@ -124,7 +124,11 @@ pub enum RejectReason {
     /// two uses each and there is nothing here to count. What is left is the case where the
     /// material **runs around** the contact: cut the pinch and one piece remains, so no pair of
     /// solids exists to hand back and the reject is `Impossible`. A square block with two square
-    /// voids meeting along a line is the smallest example.
+    /// voids meeting along a line is the smallest example. One shape of two bodies lands here too:
+    /// a face whose **every** edge is a contact line four faces use — a square pin under the
+    /// square bore of a block it touches, the pin's top — has no edge to its own body, the
+    /// grouping cannot place it, and the line's four uses are counted in one solid. Two bodies
+    /// are the answer there; the faces of a contact line are not yet paired round it.
     ///
     /// Two sampled boxes sharing exactly an edge are **not** this: those are answers.
     NonManifoldResultEdge,
@@ -437,11 +441,14 @@ pub enum RejectReason {
     /// names** — two cylinders that do not meet on a line or a circle the truth states and the
     /// cache cannot build. A backstop.
     EdgeCurveUnderived,
-    /// Two cylinder classes **of different operands may share a face**: one surface stated by
-    /// both (one handle with rows of both solids, or one surface under two handles — a
-    /// `translate`d twin), or two cylinders whose side faces could not be proved apart — neither
-    /// apart along a direction the pair states nor one lying inside the other cylinder. Where the
-    /// faces do meet, their intersection is a quartic curve, which the kernel does not build.
+    /// Two cylinders **may share a face across the operands**: one surface stated twice — the same
+    /// axis line and radius written with another origin on the line, another axis sign or seam
+    /// direction, or carried by another motion — or two cylinders whose side faces could not be
+    /// proved apart — neither apart along a direction the pair states nor one lying inside the
+    /// other cylinder. Where the faces do meet, their intersection is a quartic curve, which the
+    /// kernel does not build. One cylinder stated once is one surface, whichever operands have side
+    /// faces on it — two identical circle prisms, a circle swept both ways, a pin in its own bore —
+    /// and builds.
     ///
     /// What clears a pair: axes further apart than the two radii (skew or parallel — a drill
     /// crossing a bore with room to spare passes); for parallel axes, one cylinder strictly inside
@@ -449,8 +456,8 @@ pub enum RejectReason {
     /// and a second stud across it have crossing axes, though no face of one reaches the other; a
     /// filleted plate and a drill laid across it are apart along the rulings' cross product; a pin
     /// nested crosswise inside a larger cylinder is apart along no direction at all, its face lying
-    /// inside the other cylinder. Pairs within one solid (a plate's two fillets, a slot's two half
-    /// cylinders) are not asked.
+    /// inside the other cylinder. Two faces of one solid (a plate's two fillets, a slot's two half
+    /// cylinders) are not asked against each other.
     ///
     /// Also raised where the arrangement proves two names to be one point that stands on two
     /// cylinders' surfaces: a point's names are its surfaces', so that point is where the two
@@ -801,8 +808,8 @@ pub enum RejectReason {
     /// not welded into the seam table, a cylinder's rim on a class, an edge's incidence record: a
     /// reconstruction dropped it.
     MissingSeam,
-    // The stages: the class table and the face rows (a cylinder or plane class no face row names,
-    // or rows of both solids on one cylinder class), the split and the chart (a rim station the run
+    // The stages: the class table and the face rows (a cylinder or plane class no face row
+    // names), the split and the chart (a rim station the run
     // cannot place, a ruling the wall's pieces do not tile, a cycle whose pieces do not chain or
     // whose arc units are not whole turns), the chart and the assembly (a cut circle spelled
     // whole), the cleaning pass and the assembly (a whole circle spelled for the other face kind —

@@ -26,6 +26,19 @@ pub(crate) fn plus_t_is_above(world: &WorldName, def: &nacre_topo::CylinderDef) 
     (along == nacre_exact::Orient::Positive) == (world.sense == nacre_topo::Orientation::Forward)
 }
 
+/// **Does the frame of `plane` face up the axis of `def`?** — [`plus_t_is_above`] turned by the
+/// class's `frame_sign`: the way a face on the class looks before its own `flip`, against the way
+/// the axis runs. A whole circle on the class is walked forward exactly when this holds (the axis's
+/// CCW parametrization about a face looking up it), and a cap face's material lies below the plane
+/// along the axis exactly when this differs from its `flip`. `None` for a class with no world
+/// statement.
+pub(crate) fn frame_faces_up_the_axis(
+    plane: &WorkingPlane,
+    def: &nacre_topo::CylinderDef,
+) -> Option<bool> {
+    Some(plus_t_is_above(plane.world.as_ref().ok()?, def) == (plane.frame_sign > 0))
+}
+
 /// **Where a plane meets a cylinder's axis, as the axis parameter `t`** —
 /// [`nacre_exact::axis_param_of_plane`] read on the statement's own origin and direction, so the
 /// formula has one spelling for every reader; the readers that want the point itself (a rim's

@@ -1009,7 +1009,7 @@ pub(super) fn cut_rulings_along_segments(
         return Ok(rulings);
     }
     let ends = ruling_ends(jd, cyls, &rulings, &undecided)?;
-    let mut cuts: Vec<Vec<NodeId>> = vec![Vec::new(); rulings.len()];
+    let mut points = Vec::new();
     for sg in segs {
         let Some(l) = combinatorics::line_along(&shared, sg.wall).map_err(reject)? else {
             continue;
@@ -1017,30 +1017,101 @@ pub(super) fn cut_rulings_along_segments(
         if !rulings.iter().any(|r| r.cyl == l.cyl && r.side == l.side) {
             continue;
         }
-        let def = &cyls[l.cyl].def;
         for &n in &sg.end {
             let c = AxisCoord::of(jd, cyls, l.cyl, n).ok_or_else(undecided)?;
-            let places = place_on_rulings(jd, def, &c, l.cyl, l.side, &rulings, &ends)
-                .ok_or_else(undecided)?;
-            // Strictly inside cuts. On an end there is nothing to cut: the two names there are one
-            // point — the axis coordinates are exact where they meet — recorded for the next round
-            // ([`Aliases::record_same_point`]).
-            for (ri, place) in places {
-                match place {
-                    OnRuling::Inside => cuts[ri].push(aliases.canon_point(n)),
-                    OnRuling::End(e) => {
-                        let end = rulings[ri].end[e];
-                        if !aliases.one_point(n, end) {
-                            aliases
-                                .record_same_point(jd, cyls, n, end)
-                                .map_err(reject)?;
-                        }
+            points.push(PointOnLine {
+                node: n,
+                at: c,
+                cyl: l.cyl,
+                side: l.side,
+            });
+        }
+    }
+    cut_at_points(jd, cyls, &rulings, &ends, &points, &undecided, aliases)
+}
+
+/// **The statements of one ruling, cut at each other's ends** — [`cut_rulings`] with the vertices
+/// the pieces themselves know. A line is cut at every vertex on it, and a piece's end is one: where
+/// the two operands' lateral faces on one cylinder hold one ruling over different heights, each
+/// statement is cut where the other ends, so the stretch they share is one piece in both and
+/// [`merge_rulings`] folds it. Asked only where one `(cyl, side)` carries more than one piece; an
+/// end on another piece's end cuts nothing and, under another name, is recorded as one point
+/// ([`cut_at_points`]).
+pub(super) fn cut_rulings_at_their_ends(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    rulings: Vec<MergedRuling>,
+    aliases: &mut Aliases,
+) -> Result<Vec<MergedRuling>, BoolError> {
+    let shares_a_line = rulings.iter().enumerate().any(|(i, r)| {
+        rulings[i + 1..]
+            .iter()
+            .any(|q| q.cyl == r.cyl && q.side == r.side)
+    });
+    if !shares_a_line {
+        return Ok(rulings);
+    }
+    let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
+    let ends = ruling_ends(jd, cyls, &rulings, &undecided)?;
+    let points: Vec<PointOnLine> = rulings
+        .iter()
+        .zip(&ends)
+        .flat_map(|(r, at)| {
+            r.end.iter().zip(at).map(|(&node, at)| PointOnLine {
+                node,
+                at: at.clone(),
+                cyl: r.cyl,
+                side: r.side,
+            })
+        })
+        .collect();
+    cut_at_points(jd, cyls, &rulings, &ends, &points, &undecided, aliases)
+}
+
+/// A named point on the line of ruling `side` of cylinder `cyl`, at axis coordinate `at`.
+struct PointOnLine {
+    node: NodeId,
+    at: AxisCoord,
+    cyl: usize,
+    side: i8,
+}
+
+/// **The ruling pieces cut at the points on their lines** — the one rule both ruling cuts read
+/// ([`cut_rulings_along_segments`], [`cut_rulings_at_their_ends`]). Each point is placed on the
+/// pieces of its line ([`place_on_rulings`]): strictly inside cuts the piece there; on an end there
+/// is nothing to cut — the two names there are one point (the axis coordinates are exact where
+/// they meet), recorded for the next round ([`Aliases::record_same_point`]). A piece's own end
+/// lands on itself under one name and records nothing.
+fn cut_at_points(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    rulings: &[MergedRuling],
+    ends: &[[AxisCoord; 2]],
+    points: &[PointOnLine],
+    undecided: &impl Fn() -> BoolError,
+    aliases: &mut Aliases,
+) -> Result<Vec<MergedRuling>, BoolError> {
+    let mut cuts: Vec<Vec<NodeId>> = vec![Vec::new(); rulings.len()];
+    for p in points {
+        let def = &cyls[p.cyl].def;
+        let places =
+            place_on_rulings(jd, def, &p.at, p.cyl, p.side, rulings, ends).ok_or_else(undecided)?;
+        for (ri, place) in places {
+            match place {
+                OnRuling::Inside => cuts[ri].push(aliases.canon_point(p.node)),
+                OnRuling::End(e) => {
+                    let end = rulings[ri].end[e];
+                    if !aliases.one_point(p.node, end) {
+                        aliases
+                            .record_same_point(jd, cyls, p.node, end)
+                            .map_err(reject)?;
                     }
                 }
             }
         }
     }
-    cut_rulings(jd, cyls, &rulings, &ends, cuts, &undecided, aliases)
+    cut_rulings(jd, cyls, rulings, ends, cuts, undecided, aliases)
 }
 
 /// Where a point lies on one ruling piece it touches.

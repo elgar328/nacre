@@ -129,9 +129,9 @@ pub(crate) struct ThetaSeg {
     /// **The half-faces with an edge on this very ruling** — every secant wall through it, in chord
     /// order (the line secant classes share on the cylinder, [`crate::planes::SharedRuling`], is one
     /// station, and the chamber beside the lateral on each side of it is closed by a different one
-    /// of their planes — [`Station::chords`]), and the other solid's tangent wall where it ends on
-    /// the line ([`Station::tangent`]). `None` for a tangent ruling (`side == 0`): no chord runs
-    /// through it.
+    /// of their planes — [`Station::chords`]), and a tangent wall where it ends on the line
+    /// against a lateral face of the other solid ([`Station::tangent`]). `None` for a tangent
+    /// ruling (`side == 0`): no chord runs through it.
     pub(crate) station: Option<Station>,
 }
 
@@ -151,14 +151,17 @@ pub(crate) struct Station {
     /// chords. Every chamber between chords `k` and `k + 1` lies on chord `k`'s far side from `τ`
     /// and on chord `k + 1`'s near side; its outer opposite the other way round.
     pub(crate) chords: Vec<Chord>,
-    /// **Whether the other solid's tangent wall ends on the line on its `+τ` side, and on its `−τ`
-    /// side** — over the station's axis interval, a face of that wall on that side of the line and
-    /// none on the other ([`crate::planes::SharedRuling::tangent_halves`]): the line is the face's
-    /// edge, and the face a spoke of the line's star. Outside the cylinder it leaves along `±τ`, past
-    /// the lateral's half on that side (the lateral bends to the axis) and before every chord's outer
-    /// half, so it closes the sector beside the lateral there. A wall on both sides runs through the
-    /// line — a contact, which divides nothing; the gate states it, the operation judges it
-    /// (`planes::TangentReading::through`).
+    /// **Whether a tangent wall ends on the line on its `+τ` side, and on its `−τ` side** — over
+    /// the station's axis interval, one solid's faces of that wall on that side of the line and
+    /// none on the other, where a lateral face of a solid other than that wall face's lies on the
+    /// line ([`crate::planes::SharedRuling::tangent_halves`], read off the gate's tangency rows per
+    /// wall solid — a wall tangent to its own solid's lateral is that solid's smooth edge;
+    /// [`spokes`]): the line is the face's edge, and the face a spoke of the line's star. Outside
+    /// the cylinder it leaves along `±τ`, past the lateral's half on that side (the lateral bends
+    /// to the axis) and before every chord's outer half, so it closes the sector beside the lateral
+    /// there. One solid's wall on both sides runs through the line — a contact, which divides
+    /// nothing; the gate states it, the operation judges it (`planes::TangentReading::through`).
+    /// Both entries are set where each of the two solids' walls ends on one side.
     pub(crate) tangent: [bool; 2],
 }
 
@@ -367,12 +370,12 @@ impl Chart {
 /// that gap is simply a cell that keeps nothing — the argument the plane side already makes for its
 /// unbounded cells.
 ///
-/// The cylinder class itself is one solid's surface, not both operands': `planes` interns
-/// cylinders by `Handle<Surface>` (planes by geometry), and two solids share no handles. That is
-/// sound here only because a **coincident pair is refused** — one handle carrying rows of both
-/// solids, or one surface stated under two handles (`same_surface`), both `CylinderPairContact` at
-/// the gate. What does see both
-/// operands is what the chart is made *of*: the plane classes, which are interned geometrically.
+/// A cylinder class is one stated cylinder — `planes` interns cylinders by `Handle<Surface>`
+/// (planes by geometry) — and it carries the lateral faces of one operand or of both: the plane
+/// classes the chart is made *of* see both operands, and so does every cell's reading
+/// ([`Chart::read_cell`] — the chamber in the arrangement's `(A, B)` order, existence per solid).
+/// One surface stated under two handles (`same_surface`) is two classes, which the gate refuses as
+/// `CylinderPairContact`.
 pub(crate) fn chart_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
@@ -638,8 +641,8 @@ fn events_of(
 /// the plane vocabulary there ([`ChordSays::NoPiece`]); one overlapping it without matching cuts
 /// the line elsewhere than this class does, which is the stages disagreeing. The walls are then put
 /// in chord order ([`Station::chords`]). Every secant piece is a station, its own wall its only
-/// chord where no partner shares the line; and on every station the other solid's tangent wall is
-/// read off the gate's record of the line with it ([`tangent_ends`]).
+/// chord where no partner shares the line; and on every station a tangent wall of a solid other
+/// than the lateral face's is read off the gate's record of the line with it ([`tangent_ends`]).
 ///
 /// The piece kept for the station is the one of the **smallest** class among those folded, so the
 /// station's name ([`Chart::ruling_name`]) does not depend on the order the pieces arrive in.
@@ -820,11 +823,11 @@ fn stations_of_lines(
 }
 
 /// **[`Station::tangent`] of the piece of `wall`'s ruling `side` between the nodes `end`** — read
-/// off the gate's record of the line with the other solid's tangent wall
-/// ([`crate::planes::SharedRuling::tangent_halves`]): on each side of the line, does that wall have a
-/// face over the whole piece, and none on the other side. A face side over part of the piece is
-/// the stages disagreeing — the piece ends at every vertex on its line, and a face's end on the
-/// line is one (`CylinderStagesDisagree`).
+/// off the gate's record of the line with a tangent wall
+/// ([`crate::planes::SharedRuling::tangent_halves`], one entry per solid with wall faces there):
+/// on each side of the line, does **some one solid's** wall have a face over the whole piece and
+/// none on the other side ([`spokes`]). A face side over part of the piece is the stages
+/// disagreeing — the piece ends at every vertex on its line, and a face's end on the line is one.
 fn tangent_ends(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
@@ -854,13 +857,34 @@ fn tangent_ends(
         if hi.cmp_value(&lo).ok_or_else(undecided)? == Ordering::Less {
             (lo, hi) = (hi, lo);
         }
+        for (o, c) in out.iter_mut().zip(spokes(halves, &lo, &hi)?) {
+            *o |= c;
+        }
+    }
+    Ok(out)
+}
+
+/// **Which sides of the line a tangent wall ends on over the piece `[lo, hi]`** — the rule of
+/// [`tangent_ends`], over the record's halves (one entry per wall solid). Each solid's faces are
+/// read on their own: one solid covering both sides runs through the line, which divides nothing,
+/// while one solid ending on `+τ` and the other on `−τ` are two spokes — a union of the two would
+/// read them as one face running through. A face side over part of the piece is the stages
+/// disagreeing (`CylinderStagesDisagree`); `WitnessNotRational` where an end could not be compared.
+fn spokes(
+    halves: &[[Vec<[nacre_exact::QuadVal; 2]>; 2]],
+    lo: &nacre_exact::QuadVal,
+    hi: &nacre_exact::QuadVal,
+) -> Result<[bool; 2], BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    let mut out = [false; 2];
+    for solid in halves {
         let mut covered = [false; 2];
-        for (on, pieces) in covered.iter_mut().zip(halves) {
+        for (on, pieces) in covered.iter_mut().zip(solid) {
             for p in pieces {
-                let starts_by = p[0].cmp_value(&lo).ok_or_else(undecided)? != Ordering::Greater;
-                let ends_after = p[1].cmp_value(&hi).ok_or_else(undecided)? != Ordering::Less;
-                let apart = p[1].cmp_value(&lo).ok_or_else(undecided)? != Ordering::Greater
-                    || p[0].cmp_value(&hi).ok_or_else(undecided)? != Ordering::Less;
+                let starts_by = p[0].cmp_value(lo).ok_or_else(undecided)? != Ordering::Greater;
+                let ends_after = p[1].cmp_value(hi).ok_or_else(undecided)? != Ordering::Less;
+                let apart = p[1].cmp_value(lo).ok_or_else(undecided)? != Ordering::Greater
+                    || p[0].cmp_value(hi).ok_or_else(undecided)? != Ordering::Less;
                 if starts_by && ends_after {
                     *on = true;
                 } else if !apart {
@@ -869,7 +893,9 @@ fn tangent_ends(
             }
         }
         if covered[0] != covered[1] {
-            out = covered;
+            for (o, c) in out.iter_mut().zip(covered) {
+                *o |= c;
+            }
         }
     }
     Ok(out)

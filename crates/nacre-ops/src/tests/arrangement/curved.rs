@@ -149,7 +149,7 @@ fn armed_boss_at(
             surf,
             def: def.clone(),
             realized: *cache,
-            owner: crate::planes::SolidSide::A,
+            owner: Some(crate::planes::SolidSide::A),
             shared: Vec::new(),
             grazed: Vec::new(),
             records: Vec::new(),
@@ -707,7 +707,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
         surf,
         def: def.clone(),
         realized: *realized,
-        owner: crate::planes::SolidSide::A,
+        owner: Some(crate::planes::SolidSide::A),
         shared: Vec::new(),
         grazed: Vec::new(),
         records: Vec::new(),
@@ -835,7 +835,7 @@ fn a_lateral_face_is_asked_for_points_and_edges_as_a_plane_face_is() {
         surf,
         def: def.clone(),
         realized: *realized,
-        owner: crate::planes::SolidSide::A,
+        owner: Some(crate::planes::SolidSide::A),
         shared: Vec::new(),
         grazed: Vec::new(),
         records: Vec::new(),
@@ -1302,7 +1302,7 @@ fn armed_curved(
         split_rims: cut_rims,
         rulings,
     };
-    let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
+    let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix).unwrap();
     (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi])
 }
 
@@ -1512,7 +1512,6 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         &curved,
         &setup.planes,
         &setup.plane_ix,
-        setup.n_a,
     )
     .unwrap();
     let mut memo = crate::realize::PlaneMemo::default();
@@ -2947,7 +2946,7 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
         surf,
         def,
         realized: *realized,
-        owner: crate::planes::SolidSide::A,
+        owner: Some(crate::planes::SolidSide::A),
         shared: Vec::new(),
         grazed: Vec::new(),
         records: Vec::new(),
@@ -3069,7 +3068,7 @@ fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
         surf,
         def: def.clone(),
         realized: *realized,
-        owner: crate::planes::SolidSide::A,
+        owner: Some(crate::planes::SolidSide::A),
         shared: Vec::new(),
         grazed: Vec::new(),
         records: Vec::new(),
@@ -3287,7 +3286,7 @@ fn a_restatement_reads_a_cutting_plane_with_no_world_statement() {
         surf,
         def: def.clone(),
         realized: *realized,
-        owner: crate::planes::SolidSide::A,
+        owner: Some(crate::planes::SolidSide::A),
         shared: Vec::new(),
         grazed: Vec::new(),
         records: Vec::new(),

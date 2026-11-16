@@ -148,7 +148,6 @@ pub(super) fn emit_faces(
     // rather than a third guess.
     // Arcs are split only on a class with a world statement — `split_circles` reads the class's
     // world coefficients before it cuts a circle (`circle_crossings`) — so every arc below has one.
-    let world = jd.planes[wc].world.as_ref().ok();
     let arc_labels = edges
         .pieces
         .iter()
@@ -158,14 +157,12 @@ pub(super) fn emit_faces(
                 return None;
             };
             let def = &edges.cyls[cyl].def;
-            // `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
-            // here would be that function's second spelling.
-            let axis_up = crate::planes::plus_t_is_above(
-                world.expect("an arc is split only on a class with a world statement"),
-                def,
-            );
+            // `frame_faces_up_the_axis` and nothing spelled beside it: an inline
+            // `normal().dot(axis)` here would be that function's second spelling.
+            let up = crate::planes::frame_faces_up_the_axis(&jd.planes[wc], def)
+                .expect("an arc is split only on a class with a world statement");
             let even = 2 * i;
-            let he = even + usize::from(axis_up != (jd.planes[wc].frame_sign > 0));
+            let he = even + usize::from(!up);
             #[cfg(test)]
             disk_side_probe::record(
                 cells

@@ -373,7 +373,7 @@ fn the_tangent_wall_states_itself_exactly() {
         &coeffs,
         &def,
         surf,
-        SolidSide::B, // the cylinder is the second operand; the wall face is the cube's
+        Some(SolidSide::B), // the cylinder is the second operand; the wall face is the cube's
         &jd,
     );
     assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
@@ -1281,7 +1281,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             &coeffs,
             &def,
             surf,
-            rod_side,
+            Some(rod_side),
             &jd,
         );
         assert_eq!(rows.len(), 1, "{order}: {rows:?}");
@@ -1363,7 +1363,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
                 &coeffs,
                 &def,
                 surf,
-                SolidSide::A,
+                Some(SolidSide::A),
                 &jd,
             )
         };
@@ -1534,7 +1534,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             &coeffs,
             dir,
             surf,
-            SolidSide::A,
+            Some(SolidSide::A),
             &jd,
         )
         .into_iter()
@@ -1592,7 +1592,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         &coeffs,
         &def,
         surf,
-        SolidSide::A,
+        Some(SolidSide::A),
         &jd,
     )
     .into_iter()
@@ -1661,7 +1661,16 @@ fn a_shared_line_gathers_its_rows_halves() {
         })
         .collect();
     let records = |rows: &[Tangency]| {
-        shared_rulings(&setup.planes, &jd, &setup.cyls, &meets, rows).map(|out| {
+        shared_rulings(
+            &setup.planes,
+            &setup.plane_ix,
+            setup.n_a,
+            &jd,
+            &setup.cyls,
+            &meets,
+            rows,
+        )
+        .map(|out| {
             out.into_iter()
                 .filter(|(i, _)| *i == ci)
                 .map(|(_, sr)| sr)
@@ -1697,7 +1706,24 @@ fn a_shared_line_gathers_its_rows_halves() {
             .map(|piece| piece.map(|v| v.as_rat().expect("a rational end")))
             .collect()
     };
-    assert_eq!(rat(&halves[0]), vec![[z(0), z(2)]]);
+    assert_eq!(halves.len(), 1, "one wall solid: {halves:?}");
+    assert_eq!(rat(&halves[0][0]), vec![[z(0), z(2)]]);
+    // Rows of two wall solids are gathered apart — `A` on the `+τ` side, `B` on the `−τ` side
+    // stay two solids' halves, where their union would read one face on both sides.
+    let mut rows = vec![row.clone(), row.clone()];
+    rows[0].wall_solid = SolidSide::A;
+    rows[0].cyl_solid = SolidSide::B;
+    rows[1].wall_solid = SolidSide::B;
+    rows[1].cyl_solid = SolidSide::A;
+    rows[0].reading.halves = [vec![[z(0), z(2)].map(q)], vec![]];
+    rows[1].reading.halves = [vec![], vec![[z(0), z(2)].map(q)]];
+    let apart = records(&rows).expect("rational");
+    let halves = apart[0].tangent_halves.as_ref().expect("a tangent partner");
+    assert_eq!(halves.len(), 2, "two wall solids: {halves:?}");
+    assert_eq!(rat(&halves[0][0]), vec![[z(0), z(2)]], "A, +τ");
+    assert!(halves[0][1].is_empty(), "A, −τ");
+    assert!(halves[1][0].is_empty(), "B, +τ");
+    assert_eq!(rat(&halves[1][1]), vec![[z(0), z(2)]], "B, −τ");
     let p = (1i128 << 64) + 1;
     assert!(
         two_rows(
@@ -1884,7 +1910,7 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         &coeffs,
         &def,
         surf,
-        SolidSide::A,
+        Some(SolidSide::A),
         &jd,
     );
     assert_eq!(rows.len(), 2, "one row per slab face: {rows:?}");
