@@ -386,10 +386,10 @@ pub(crate) fn frame_chain(
     // `canonical_plane_coeffs` forces the first nonzero component positive, because its question
     // is *"are these the same plane"* — where direction is noise. A frame's `ŵ` **is** a
     // direction, so the node carries the sense in `flip`, and both roads below spend it on the
-    // coefficients before anything else is derived ([`narrow_frame`]).
+    // coefficients before anything else is derived ([`nacre_exact::plane_frame_placed`]).
     let narrow_road = || -> Option<MoveNode> {
         Some(MoveNode::Frame {
-            frame: narrow_frame(*name.narrow()?, placement, flip)?,
+            frame: placement.frame_on(*name.narrow()?, flip)?,
         })
     };
     // **The wide road** — the same convention through arbitrary precision, where nothing
@@ -417,64 +417,6 @@ pub(crate) fn frame_chain(
         | nacre_topo::Surface::Cylinder { motion: None, .. } => {}
     }
     Some(chain)
-}
-
-/// **The narrow road's frame of a plane named `c`** — the one spelling of it, so [`frame_chain`]
-/// and a caller asking which placement is the normal form cannot derive two different frames.
-///
-/// `flip` is spent on the coefficients **first**, and a `Canonical` placement is derived from
-/// the result: `+u` is the arbitrary axis of the frame's own `ŵ`, so a flip turns `û` with `ŵ`
-/// and leaves `v̂` — a half-turn about `v̂`, and on a wall "up" stays up. That is the one
-/// convention all three roads can spell: the judged road ([`nacre_judge::FrameThrough`]) proves
-/// no coefficient's sign — a component whose true value is zero is proved zero only when its
-/// realization happens to be exact — so a `+u` tied to the canonical name's sign (first nonzero
-/// component positive) has no spelling there. A `Named` placement states `+u`, so there the flip
-/// leaves `û` and turns `v̂` with `ŵ`.
-///
-/// A `Named` `ref_dir` need not lie in the plane — [`crate::SketchFrame::named`] accepts any
-/// direction not parallel to the normal, and its in-plane part names `+u` — while
-/// [`nacre_exact::plane_frame_named`] takes `ref_dir` as `û` unprojected. So it is projected here,
-/// exactly (`(n·n)·r − (r·n)·n`, the wide road's own formula), and only when it is off the plane:
-/// an in-plane statement keeps its letters, and an overflowing projection is `None`, which hands
-/// the frame to the wide road. Unprojected, an off-plane `ref_dir` built a frame whose `û` left the
-/// plane — a square extruded on `z = 0` with `ref_dir = (1, 1, 0.5)` came out a different solid
-/// that `validate` passed, and with `(1, 0, 3)` one it rejected face by face.
-pub(crate) fn narrow_frame(
-    c: [Rat; 4],
-    placement: &nacre_topo::FramePlacement,
-    flip: bool,
-) -> Option<nacre_exact::PlaneFrame> {
-    let zero = Rat::from_int(0);
-    let c = if flip {
-        let mut neg = [zero; 4];
-        for (k, x) in neg.iter_mut().enumerate() {
-            *x = zero.checked_sub(c[k])?;
-        }
-        neg
-    } else {
-        c
-    };
-    let (origin, ref_dir) = match placement {
-        nacre_topo::FramePlacement::Named { origin, ref_dir } => {
-            let n = [c[0], c[1], c[2]];
-            let rn = nacre_exact::dot3_rat(ref_dir, &n)?;
-            let ref_dir = if rn == zero {
-                *ref_dir
-            } else {
-                let nn = nacre_exact::dot3_rat(&n, &n)?;
-                let mut u = [zero; 3];
-                for (k, x) in u.iter_mut().enumerate() {
-                    *x = nn
-                        .checked_mul(ref_dir[k])?
-                        .checked_sub(rn.checked_mul(n[k])?)?;
-                }
-                u
-            };
-            (*origin, ref_dir)
-        }
-        nacre_topo::FramePlacement::Canonical => nacre_exact::plane_frame_default(c)?,
-    };
-    nacre_exact::plane_frame_named(c, origin, ref_dir)
 }
 
 /// **Which way a plane's frame `ŵ` runs against the plane's facing, in the plane's own frame** —

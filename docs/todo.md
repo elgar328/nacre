@@ -495,7 +495,7 @@ census 를 재고 움직인다. 인구(문에 들어온 이름 없는 `Through` 
 
 ### `Named` 배치는 진술한 `ref_dir` 를 그대로 노드 열쇠에 싣는다
 
-`SketchFrame::named` 는 법선과 평행하지 않은 어떤 `ref_dir` 도 받고, 그 평면 안 부분이 `+u` 를 정한다(`narrow_frame`·
+`SketchFrame::named` 는 법선과 평행하지 않은 어떤 `ref_dir` 도 받고, 그 평면 안 부분이 `+u` 를 정한다(`plane_frame_placed`·
 `WideFrame::named` 가 사영하고 원시형으로 줄인다). 그런데 배치는 호출자의 값을 그대로 들고(`a_named_frame_rejects_each_bad_claim_by_name`
 이 잠근다) `Motion::Frame` 의 열쇠 `(plane, placement, flip)` 가 그 값을 비교하므로, 같은 프레임의 두 철자(`z = 0` 위 `(1,1,0)`·
 `(2,2,0)`·`(1,1,0.5)`)는 노드 도로(`exact_frame` 이 기저를 유리수로 못 드는 프레임)에서 두 노드가 되고 그 위 extrude 캡은 한

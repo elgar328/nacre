@@ -241,6 +241,19 @@ pub enum FramePlacement {
     Named { origin: [Rat; 3], ref_dir: [Rat; 3] },
 }
 
+impl FramePlacement {
+    /// **The frame this placement puts on a plane named `c`**, its sense turned by `flip` —
+    /// [`nacre_exact::plane_frame_placed`] with this placement's stated values, so every reader of
+    /// a frame node derives one frame.
+    pub fn frame_on(&self, c: [Rat; 4], flip: bool) -> Option<nacre_exact::PlaneFrame> {
+        let named = match *self {
+            FramePlacement::Named { origin, ref_dir } => Some((origin, ref_dir)),
+            FramePlacement::Canonical => None,
+        };
+        nacre_exact::plane_frame_placed(c, named, flip)
+    }
+}
+
 /// A node in the motion-history forest: one [`Motion`] applied to a solid, with a
 /// parent link so several points can share a history's tail.
 ///

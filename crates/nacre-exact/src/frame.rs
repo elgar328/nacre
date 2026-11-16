@@ -32,6 +32,65 @@ pub fn plane_frame(coeffs: [Rat; 4]) -> Option<PlaneFrame> {
     plane_frame_named(coeffs, origin, ref_dir)
 }
 
+/// **The frame of a plane named `c` that a frame node states** — the one spelling of it, so the
+/// realization a judge replays, the fold a motion chain keeps, and a caller asking which placement
+/// is the normal form cannot derive two different frames. `named` is the node's stated origin and
+/// `+u`; `None` is the derived convention ([`plane_frame_default`]).
+///
+/// `flip` is spent on the coefficients **first**, and a derived placement is read from the
+/// result: `+u` is the arbitrary axis of the frame's own `ŵ`, so a flip turns `û` with `ŵ` and
+/// leaves `v̂` — a half-turn about `v̂`, and on a wall "up" stays up. That is the one convention
+/// every road can spell: the judged road proves no coefficient's sign — a component whose true
+/// value is zero is proved zero only when its realization happens to be exact — so a `+u` tied to
+/// the canonical name's sign (first nonzero component positive) has no spelling there. A named
+/// placement states `+u`, so there the flip leaves `û` and turns `v̂` with `ŵ`.
+///
+/// A named `ref_dir` need not lie in the plane — any direction not parallel to the normal names
+/// `+u` by its in-plane part — while [`plane_frame_named`] takes `ref_dir` as `û` unprojected. So
+/// it is projected here, exactly (`(n·n)·r − (r·n)·n`, the wide road's own formula), and only when
+/// it is off the plane: an in-plane statement keeps its letters, and an overflowing projection is
+/// `None`, which hands the frame to the wide road. Unprojected, an off-plane `ref_dir` builds a
+/// frame whose `û` leaves the plane — a square extruded on `z = 0` with `ref_dir = (1, 1, 0.5)`
+/// comes out a different solid that `validate` passes, and with `(1, 0, 3)` one it rejects face by
+/// face.
+pub fn plane_frame_placed(
+    c: [Rat; 4],
+    named: Option<([Rat; 3], [Rat; 3])>,
+    flip: bool,
+) -> Option<PlaneFrame> {
+    let zero = Rat::from_int(0);
+    let c = if flip {
+        let mut neg = [zero; 4];
+        for (k, x) in neg.iter_mut().enumerate() {
+            *x = zero.checked_sub(c[k])?;
+        }
+        neg
+    } else {
+        c
+    };
+    let (origin, ref_dir) = match named {
+        Some((origin, ref_dir)) => {
+            let n = [c[0], c[1], c[2]];
+            let rn = dot3_rat(&ref_dir, &n)?;
+            let ref_dir = if rn == zero {
+                ref_dir
+            } else {
+                let nn = dot3_rat(&n, &n)?;
+                let mut u = [zero; 3];
+                for (k, x) in u.iter_mut().enumerate() {
+                    *x = nn
+                        .checked_mul(ref_dir[k])?
+                        .checked_sub(rn.checked_mul(n[k])?)?;
+                }
+                u
+            };
+            (origin, ref_dir)
+        }
+        None => plane_frame_default(c)?,
+    };
+    plane_frame_named(c, origin, ref_dir)
+}
+
 /// **Where a plane's frame sits when nobody names it** — `(origin, ref_dir)`.
 ///
 /// The origin is the world origin projected onto the plane and `ref_dir` is `ẑ × n`

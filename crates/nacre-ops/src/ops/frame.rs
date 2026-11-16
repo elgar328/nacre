@@ -7,7 +7,7 @@ use super::*;
 /// **Only the frame comes back — deliberately.** A caller that needs the axes asks
 /// [`crate::rotated_vertex::frame_world_basis`] *with this flip*, so the geometry of `flip` is
 /// written in exactly one place. A flip turns a `Canonical` frame about `v̂` and a `Named` one
-/// about `û` ([`crate::rotated_vertex::narrow_frame`]), so combining an unflipped basis with
+/// about `û` ([`nacre_exact::plane_frame_placed`]), so combining an unflipped basis with
 /// `flip` **by hand** by any one rule is wrong on one of the two (measured when a report
 /// half-turned about `v̂` and the realization about `û`: a footprint centred on the face through
 /// the reported coordinates landed outside it — the pad missed its face — on 2 of 6 faces of a
@@ -240,7 +240,7 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
 /// placement speaks in the coordinates the plane's points are written in, so a moved plane takes
 /// them carried back through its chain; the chain folds, so that is exact. Where the result is
 /// the frame the plane's own name derives under the same `flip`, it is `Canonical` — asked of
-/// [`crate::rotated_vertex::narrow_frame`], the derivation the frame will actually take, so the
+/// [`nacre_topo::FramePlacement::frame_on`], the derivation the frame will actually take, so the
 /// normal form cannot name a `Canonical` that realizes elsewhere.
 fn world_placement(
     model: &Model,
@@ -270,8 +270,8 @@ fn world_placement(
     let own = *model.surface_name(plane)?.narrow()?;
     let flip = flip_toward(model, plane, outward)?;
     let named = nacre_topo::FramePlacement::Named { origin, ref_dir };
-    let canonical = crate::rotated_vertex::narrow_frame(own, &named, flip)?
-        == crate::rotated_vertex::narrow_frame(own, &nacre_topo::FramePlacement::Canonical, flip)?;
+    let canonical =
+        named.frame_on(own, flip)? == nacre_topo::FramePlacement::Canonical.frame_on(own, flip)?;
     Some(if canonical {
         nacre_topo::FramePlacement::Canonical
     } else {
