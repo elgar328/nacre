@@ -565,3 +565,223 @@ fn every_road_frames_a_flipped_plane_alike() {
         wrong.join("\n")
     );
 }
+
+/// Every probe `m` carries along `leaf` to a rational lies inside the replay of `leaf`'s chain at
+/// 256 bits — points, vectors, and planes `p·x = 1` (two of their points replayed onto them).
+/// Returns how many carries answered.
+fn fold_inside_replay(m: &Model, leaf: Handle<nacre_topo::MotionNode>, what: &str) -> usize {
+    let r = |n: i128, d: i128| R::new(n, d).expect("a rational");
+    let prec = 256;
+    let holds = |hp: &nacre_exact::HpBounded, x: R| {
+        hp.sub(&nacre_exact::HpBounded::of_rat(x, prec), prec)
+            .sign()
+            .is_none()
+    };
+    let chain = motion_chain(m, leaf).expect("the chain");
+    let at = |p: [R; 3]| {
+        replay(WitnessPoint::at(p), &chain)
+            .expect("the chain replays")
+            .coord_hp(prec)
+    };
+    let probes: [[R; 3]; 6] = [
+        [r(0, 1), r(0, 1), r(0, 1)],
+        [r(0, 1), r(0, 1), r(5, 2)],
+        [r(1, 1), r(0, 1), r(0, 1)],
+        [r(0, 1), r(-3, 4), r(0, 1)],
+        [r(2, 1), r(-1, 1), r(3, 1)],
+        [r(0, 1), r(7, 3), r(-2, 1)],
+    ];
+    let mut carried = 0;
+    for p in probes {
+        if let Ok(w) = m.chain_point_rat(leaf, p) {
+            carried += 1;
+            let hp = at(p);
+            assert!(
+                (0..3).all(|k| holds(&hp[k], w[k])),
+                "{what}: the point {p:?}"
+            );
+        }
+        if p == probes[0] {
+            continue;
+        }
+        let (base, tip) = (at(probes[0]), at(p));
+        if let Ok(w) = m.chain_dir_rat(leaf, p) {
+            carried += 1;
+            assert!(
+                (0..3).all(|k| holds(&tip[k].sub(&base[k], prec), w[k])),
+                "{what}: the vector {p:?}"
+            );
+        }
+        if let Ok(w) = m.chain_plane_coeffs(leaf, [p[0], p[1], p[2], r(-1, 1)]) {
+            carried += 1;
+            // Two points of `p·x = 1` in the frame — its foot and a step across `p` — replayed.
+            let pp = nacre_exact::dot3_rat(&p, &p).expect("small");
+            let inv = R::new(pp.denom(), pp.numer()).expect("nonzero");
+            let foot = p.map(|c| c.checked_mul(inv).expect("small"));
+            let k = (0..3).find(|&k| p[k] != r(0, 1)).expect("a normal");
+            let mut e1 = [r(0, 1); 3];
+            e1[(k + 1) % 3] = p[k];
+            e1[k] = r(0, 1).checked_sub(p[(k + 1) % 3]).expect("small");
+            let step: [R; 3] = core::array::from_fn(|i| foot[i].checked_add(e1[i]).expect("small"));
+            for q in [foot, step] {
+                let hp = at(q);
+                let mut s = nacre_exact::HpBounded::of_rat(w[3], prec);
+                for i in 0..3 {
+                    s = s.add(
+                        &hp[i].mul(&nacre_exact::HpBounded::of_rat(w[i], prec), prec),
+                        prec,
+                    );
+                }
+                assert!(s.sign().is_none(), "{what}: the plane {p:?}·x = 1");
+            }
+        }
+    }
+    carried
+}
+
+/// **A frame on a wall that stands behind a frame folds through the wall's chain.** A block on
+/// the `(2, 3, 6)` datum (its `+u` along `(−3, 2, 0)`, `|u| = √13`), and a frame node on its wall
+/// `u = 0`: that wall's own frame is axis-aligned in the datum's, so the two compose — the new
+/// frame, then the wall's chain — and the fold agrees with the replay, which runs them in that
+/// order. Its `v̂` is the datum's `ŵ` (length `7`), so statements along it come out rational.
+#[test]
+fn a_frame_on_a_framed_wall_folds_through_the_walls_chain() {
+    use nacre_topo::{FramePlacement, Motion};
+    let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: crate::DatumDef::Stated(crate::SketchPlane::from_axes(
+                Point3::from_array([1.0, 2.0, 3.0]),
+                nacre_math::Vector3::from_array([-3.0, 2.0, 0.0]),
+                nacre_math::Vector3::from_array([-12.0, -18.0, 13.0]),
+            )),
+        },
+    ) else {
+        panic!("the datum")
+    };
+    let Ok(OpOutput::Extrude { solid, .. }) = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: crate::Profile2d::polygon(vec![
+                p(0.0, -2.0),
+                p(2.0, -2.0),
+                p(2.0, 2.0),
+                p(0.0, 2.0),
+            ])
+            .expect("a rectangle"),
+            dist: 4.0,
+        },
+    ) else {
+        panic!("the block")
+    };
+    let zero = R::from_int(0);
+    let wall = m
+        .shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .map(|&f| m.face(f).surface)
+        .find(|&h| {
+            m.surface_name(h)
+                .and_then(|n| n.narrow())
+                .is_some_and(|n| n[1] == zero && n[2] == zero && n[3] == zero)
+        })
+        .expect("the wall u = 0");
+    let base = m
+        .surface_motion(wall)
+        .expect("premise: the wall stands behind the datum's frame");
+    assert!(
+        m.chain_through_frame(base),
+        "premise: its chain carries a frame"
+    );
+    for flip in [false, true] {
+        let leaf = m.push_motion(
+            Motion::Frame {
+                plane: wall,
+                placement: FramePlacement::Canonical,
+                flip,
+            },
+            None,
+        );
+        assert!(
+            m.chain_through_frame(leaf),
+            "flip {flip}: its chain carries a frame node"
+        );
+        let carried = fold_inside_replay(&m, leaf, &format!("the framed wall, flip {flip}"));
+        assert!(
+            carried > 0,
+            "flip {flip}: the fold carries the statements along ŵ"
+        );
+    }
+}
+
+/// **A frame node's fold carries what the judge's replay carries.** Datums with normals of
+/// rational length (`(2,3,6)`, `(4,4,7)`, `(1,2,2)`) and of irrational length (`(1,1,1)`,
+/// `(1,2,3)`), each under the derived placement and a named one, either way round, a translation
+/// after some of them: [`fold_inside_replay`]. A rational-length frame must carry something — its
+/// statements along `ŵ` — so the check is not vacuous. The fold's «irrational» answers are the
+/// scoreboard's (`frame_chains`).
+#[test]
+fn a_frame_nodes_fold_agrees_with_its_replay() {
+    use nacre_topo::{FramePlacement, Motion};
+    let r = |n: i128, d: i128| R::new(n, d).expect("a rational");
+    let normals: [[f64; 3]; 5] = [
+        [2.0, 3.0, 6.0],
+        [4.0, 4.0, 7.0],
+        [1.0, 2.0, 2.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 2.0, 3.0],
+    ];
+    for n in normals {
+        let rational_length = n.iter().map(|c| c * c).sum::<f64>().sqrt().fract() == 0.0;
+        for named in [false, true] {
+            for flip in [false, true] {
+                for shifted in [false, true] {
+                    let mut m = Model::new();
+                    let sp = crate::SketchPlane::from_origin_normal(
+                        Point3::from_array([1.0, -2.0, 0.5]),
+                        nacre_math::Vector3::from_array(n),
+                    )
+                    .expect("a normal");
+                    let Ok(OpOutput::DatumPlane { plane, frame }) = apply(
+                        &mut m,
+                        &Operation::DatumPlane {
+                            def: crate::DatumDef::Stated(sp),
+                        },
+                    ) else {
+                        panic!("the datum")
+                    };
+                    let placement = if named {
+                        *frame.placement()
+                    } else {
+                        FramePlacement::Canonical
+                    };
+                    let mut leaf = m.push_motion(
+                        Motion::Frame {
+                            plane,
+                            placement,
+                            flip,
+                        },
+                        None,
+                    );
+                    if shifted {
+                        leaf = m.push_motion(
+                            Motion::Translate {
+                                offset: [r(3, 2), r(-1, 3), r(2, 1)],
+                            },
+                            Some(leaf),
+                        );
+                    }
+                    let what = format!("{n:?} named {named} flip {flip} shifted {shifted}");
+                    let carried = fold_inside_replay(&m, leaf, &what);
+                    assert!(
+                        !rational_length || carried > 0,
+                        "{what}: a rational-length frame carries nothing"
+                    );
+                }
+            }
+        }
+    }
+}

@@ -49,10 +49,10 @@ pub fn plane_frame(coeffs: [Rat; 4]) -> Option<PlaneFrame> {
 /// `+u` by its in-plane part — while [`plane_frame_named`] takes `ref_dir` as `û` unprojected. So
 /// it is projected here, exactly (`(n·n)·r − (r·n)·n`, the wide road's own formula), and only when
 /// it is off the plane: an in-plane statement keeps its letters, and an overflowing projection is
-/// `None`, which hands the frame to the wide road. Unprojected, an off-plane `ref_dir` builds a
-/// frame whose `û` leaves the plane — a square extruded on `z = 0` with `ref_dir = (1, 1, 0.5)`
-/// comes out a different solid that `validate` passes, and with `(1, 0, 3)` one it rejects face by
-/// face.
+/// `None` — the realization then hands the frame to the wide road, and a frame node stating it
+/// has no fold. Unprojected, an off-plane `ref_dir` builds a frame whose `û` leaves the plane — a
+/// square extruded on `z = 0` with `ref_dir = (1, 1, 0.5)` comes out a different solid that
+/// `validate` passes, and with `(1, 0, 3)` one it rejects face by face.
 pub fn plane_frame_placed(
     c: [Rat; 4],
     named: Option<([Rat; 3], [Rat; 3])>,

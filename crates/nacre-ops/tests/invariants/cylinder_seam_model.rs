@@ -168,6 +168,27 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
         1.25,
         2.5,
     );
+    // The same cylinder turned off the quarters has no world statement: the circle sits on its
+    // frame's origin, so unturned its statement is rational in the world, and a turn of 37° is not.
+    let unstated_cylinder = cylinder(
+        &mut m,
+        Point3::from_array([-8.0, 6.0, 0.0]),
+        Vector3::from_array([0.3, -0.4, 1.0]),
+        1.25,
+        2.5,
+    );
+    nacre_ops::apply(
+        &mut m,
+        &nacre_ops::Operation::Transform {
+            solid: unstated_cylinder.solid,
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+                axis: nacre_exact::Axis::Z,
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn");
     let boxed = nacre_ops::fixtures::cuboid(&mut m, [-6.0, -6.0, 0.0], [-4.0, -5.0, 3.0]);
     nacre_ops::apply(
         &mut m,

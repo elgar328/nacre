@@ -171,16 +171,25 @@ fn plane_name_from_lifted(
     pts: [([num_bigint::BigInt; 3], num_bigint::BigInt); 3],
 ) -> Option<PlaneName> {
     use num_bigint::BigInt;
-    use num_integer::Integer;
-    use num_traits::{ToPrimitive, Zero};
 
     let n = lifted_normal(&pts)?; // `None`: collinear
     let [(pa, da), _, _] = pts;
     let dot: BigInt = (0..3).map(|i| &n[i] * &pa[i]).sum();
-    let mut num = [&n[0] * &da, &n[1] * &da, &n[2] * &da, -dot];
+    canonical_name_ints([&n[0] * &da, &n[1] * &da, &n[2] * &da, -dot]).map(|(name, _)| name)
+}
 
-    // Divide out the content and fix the sign of the first nonzero — `canonical_plane_coeffs`'
-    // steps ② and ③; ① is already done, since these are integers.
+/// **The canonical name of the plane `num·(x, 1) = 0`, integer coefficients at any width**, and
+/// whether canonicalizing turned the vector (`−1`) or kept it (`+1`) — the sign a reader that
+/// carried a plane needs to tell which way its name faces. `None` for the zero vector.
+///
+/// `canonical_plane_coeffs`' steps ② and ③ (① is done: these are integers), and the normalization
+/// invariant: narrow whenever the canonical answer fits `i128`, `Wide` only when it does not — so
+/// equal planes are structurally equal whichever route derived them.
+pub(crate) fn canonical_name_ints(mut num: [num_bigint::BigInt; 4]) -> Option<(PlaneName, i8)> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    use num_traits::{ToPrimitive, Zero};
+
     let g = num.iter().fold(BigInt::zero(), |g, x| g.gcd(x));
     if g.is_zero() {
         return None; // the zero vector is not a plane
@@ -188,7 +197,7 @@ fn plane_name_from_lifted(
     for x in &mut num {
         *x /= &g;
     }
-    if num
+    let sign = if num
         .iter()
         .find(|x| !x.is_zero())
         .is_some_and(|x| *x < BigInt::zero())
@@ -196,19 +205,18 @@ fn plane_name_from_lifted(
         for x in &mut num {
             *x = -&*x;
         }
-    }
-
-    // The normalization invariant lives here: narrow whenever the canonical answer fits
-    // `i128`, `Wide` only when it does not — so equal planes are structurally equal whichever
-    // route derived them.
+        -1
+    } else {
+        1
+    };
     let mut out = [Rat::from_int(0); 4];
     for (o, x) in out.iter_mut().zip(&num) {
         match x.to_i128() {
             Some(v) => *o = Rat::from_int(v),
-            None => return Some(PlaneName::Wide(num)),
+            None => return Some((PlaneName::Wide(num), sign)),
         }
     }
-    Some(PlaneName::Narrow(out))
+    Some((PlaneName::Narrow(out), sign))
 }
 
 /// **The canonical name of the plane through three meeting points, at whatever width the points

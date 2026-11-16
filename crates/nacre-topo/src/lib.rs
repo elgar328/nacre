@@ -229,9 +229,14 @@ impl Motion {
 pub enum WorldFail {
     /// The truth states no rational world image: a plane with no name, a chain with no fold (a
     /// turn off the quarters), or a statement its chain's fold carries off the rationals.
+    ///
+    /// A frame node gets no fold where its plane's name is `Wide` or the narrow frame overflows
+    /// (`Model::frame_fold`), so its statements are `Unstated` there whatever their width — a
+    /// width this enum does not tell apart from geometry.
     Unstated,
-    /// The world image is rational and `Rat` cannot hold it — a moved `Wide` name, or an
-    /// overflow carrying.
+    /// The world image is rational and `Rat` cannot hold it — an overflow carrying, or an offset
+    /// whose value an overflow composing the chain lost; and a moved `Wide` name whose image is
+    /// rational, narrow or not ([`Model::world_plane_name`]).
     Width,
 }
 
@@ -376,15 +381,15 @@ pub struct SurfaceDeriveCounts {
     /// this is deliberately not a link: a public field's doc cannot point inside the crate).
     pub derived: u64,
     /// Pushes where it declined — no world name (no name, a moved `Wide` name, a motion chain that
-    /// does not fold — a frame, a turn off the quarters — or an overflow in the carry) or a moved
-    /// cylinder. **This is the population that must reach zero (or be justified) before `figure`
+    /// does not carry it to the rationals — a turn off the quarters, a frame along an irrational
+    /// axis length — or an overflow in the carry) or a moved cylinder. **This is the population that must reach zero (or be justified) before `figure`
     /// can leave the push doors' signatures.**
     pub declined: u64,
     /// `declined`, split by cause. The split is what says *which* work removing the parameter
     /// needs, and the causes are not interchangeable: an unnamed plane is a fixture door, a moved
-    /// `Wide` name wants a carry wider than `Rat`, a motion that still declines holds a frame or
-    /// a turn off the quarters (no rational map exists — the rest fold, `Model::chain_plane_coeffs`),
-    /// and arithmetic is an `i128` ceiling.
+    /// `Wide` name wants a carry wider than `Rat`, a motion that still declines carries the plane
+    /// off the rationals (a turn off the quarters, a frame along an irrational axis length —
+    /// `Model::chain_plane_coeffs` says `Unstated`), and arithmetic is an `i128` ceiling.
     pub declined_unnamed: u64,
     /// See [`SurfaceDeriveCounts::declined_unnamed`].
     pub declined_wide: u64,
@@ -580,6 +585,13 @@ pub enum PlanePoints {
 
 pub use nacre_exact::CylinderDef;
 
+/// A motion node's chain as [`Model::push_motion`] reads it at birth — see `Model::chain_affines`.
+#[derive(Clone, Debug)]
+struct ChainSlot {
+    fold: Option<nacre_exact::ChainFold>,
+    through_frame: bool,
+}
+
 /// The truth and what derives from it: exact geometry and topology stores, each surface's, edge's
 /// and vertex's realization and the interning tables. No mesh, no operation log.
 #[derive(Debug)]
@@ -632,18 +644,20 @@ pub struct Model {
     motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
     /// **Each motion node's whole chain, folded** — index-parallel to `motions`, filled by
     /// [`Model::push_motion`] as the node is born (its parent's fold, then its own), so asking a
-    /// chain what it amounts to costs one read at any depth. `None` where the chain holds a node
-    /// the rationals cannot state (a frame, a turn off the quarters), and for every child after.
+    /// chain what it amounts to costs one read at any depth. The fold is `None` where the chain
+    /// holds a turn off the quarters, a frame with no fold of its own ([`Model::frame_fold`]), or a
+    /// frame the fold's form cannot compose with what carries it ([`nacre_exact::ChainFold::then`]),
+    /// and for every child after; beside it, whether the chain holds a frame node at all
+    /// ([`Model::chain_through_frame`]), which a missing fold does not say.
     ///
     /// A cache: derived from the nodes, never an interning key, and no node is made or merged for
-    /// it. Read through [`Model::chain_plane_coeffs`], [`Model::chain_point_rat`] and
-    /// [`Model::chain_dir_rat`].
+    /// it. Read through `Model::chain_fold`.
     ///
     /// **Folded once, not walked per question** (measured): walking the chain at every question
     /// made 2,000 recorded quarter turns cost 6.7 s against 0.20 s, and a 4,200-turn irrational
     /// history 2.14 s against 1.44 s — the questions are asked per plane per transform, so a walk
     /// is quadratic in the history.
-    chain_affines: Vec<Option<nacre_exact::ChainFold>>,
+    chain_affines: Vec<ChainSlot>,
     /// **What pushers realized of an edge's truth, by carrier pair** ([`Edge::carrier_pair`]'s
     /// order) — every piece of [`EdgeGiven`] a pusher answered, kept so the next edge on the same
     /// two carriers reads it instead of realizing it again: the direction two planes meet in, the
@@ -796,7 +810,8 @@ pub struct EdgeCache {
 /// and only where this crate's own roads do not answer.
 ///
 /// The curve's values are a function of the carriers' truths, and some of those truths are
-/// carried by a motion chain that does not fold (a turn off the quarters, a frame): reaching them
+/// carried by a motion chain that does not carry them to the rationals (a turn off the quarters, a
+/// frame along an irrational axis length): reaching them
 /// means replaying the chain at a precision, which is `nacre-ops`' work, not this crate's. So the
 /// one who can realizes the value when asked — the plane cache's own arrangement (`push_plane`'s
 /// `figure`, realized by the ops funnel). The derivation decides everything it can decide

@@ -145,10 +145,10 @@ impl RatFrame {
     }
 
     /// **This frame, stated before `leaf`'s chain, carried to the world** — exactly, through the
-    /// chain's fold ([`Model::chain_point_rat`], [`Model::chain_dir_rat`]): a signed permutation
-    /// and a rational offset keep the axes rational and orthonormal. `None` where the chain does
-    /// not fold (a frame node, a turn off the quarters, overflow) — that frame has no rational
-    /// world basis, and the sketch is written in the frame instead.
+    /// chain's fold ([`Model::chain_point_rat`], [`Model::chain_dir_rat`] — the axes as vectors,
+    /// their lengths kept, so they stay orthonormal). `None` where the fold carries the origin or
+    /// an axis off the rationals or past `Rat` — that frame has no rational world basis, and the
+    /// sketch is written in the frame instead.
     pub(crate) fn carried(
         &self,
         model: &Model,

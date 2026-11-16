@@ -188,16 +188,17 @@ pub(super) fn frame_basis(
 /// stored.** Whether a moved plane carries its motion as a node or had it carried into its points
 /// is the transform's choice of what it can state exactly, so a rule that read the
 /// representation would sketch two identical faces in two frames.
-/// - A plane whose world equation the model states ([`Model::world_plane_name`] — unmoved, or
-///   moved by a chain that folds) takes the **arbitrary-axis frame of its outward normal in the
-///   world** (`frame_axes`' rule, stated exactly by [`nacre_exact::plane_frame_default`]): the
+/// - A plane whose world equation the model states ([`Model::world_plane_name`]) and whose chain
+///   carries no frame ([`Model::chain_through_frame`]) takes the **arbitrary-axis frame of its
+///   outward normal in the world** (`frame_axes`' rule, stated exactly by [`nacre_exact::plane_frame_default`]): the
 ///   world origin's projection, `+u = ẑ × n` (`ŷ × n` when `n` is vertical). It is spelled as a
-///   placement of the plane's own statement, carried back through the chain — which folds, so
-///   exactly — and as `Canonical` wherever that is the same frame (the normal form). Through a
+///   placement of the plane's own statement, carried back through the chain — exact nodes alone,
+///   so exactly — and as `Canonical` wherever that is the same frame (the normal form). Through a
 ///   reflection the carried frame is left-handed: `û` is the world's, `v̂` its reverse, `ŵ`
 ///   still outward.
-/// - Any other plane (a frame node or a turn off the quarters in its chain, a wide name, no name)
-///   takes its own `Canonical` frame, carried out by its chain.
+/// - Any other plane (a frame in its chain — whether or not its world equation is stated —, a
+///   turn off the quarters, a wide name, no name) takes its own `Canonical` frame, carried out by
+///   its chain.
 ///
 /// Errors: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when the plane has no
 /// frame at all (no name, and no judged frame).
@@ -232,13 +233,22 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
 
 /// **The placement that puts a face's sketch in the arbitrary-axis frame of its outward normal
 /// in the world**, written in the plane's own statement — `None` when the model does not state the
-/// plane's world equation (a chain that does not fold, a wide name) or the arithmetic overflows.
+/// plane's world equation (a chain with no fold, a wide name), when the plane is carried through
+/// a frame ([`Model::chain_through_frame`]), or when the arithmetic overflows.
+///
+/// **A plane carried through a frame keeps that frame's convention, world name or not.** Its world
+/// placement, carried back into the frame its points are written in, is rational only where the
+/// frame's axis lengths allow — the far cap of a pad on a datum with a rational normal length takes
+/// it when the datum stands at the world origin and not when it stands elsewhere — so the frame a
+/// face would get would turn on where the datum happens to stand. The criterion is therefore how
+/// the plane is stored, which is not where it is; giving every face with a world name its world
+/// frame needs a placement stated from the world name itself (todo).
 ///
 /// The world equation, turned to face the face's outward, gives the frame's origin and `+u` in
 /// the world ([`nacre_exact::plane_frame_default`] — the origin is the world origin's projection,
 /// a property of the plane, so two faces of one plane agree about where `(0, 0)` is). A
 /// placement speaks in the coordinates the plane's points are written in, so a moved plane takes
-/// them carried back through its chain; the chain folds, so that is exact. Where the result is
+/// them carried back through its chain; the chain is exact nodes alone, so that is exact. Where the result is
 /// the frame the plane's own name derives under the same `flip`, it is `Canonical` — asked of
 /// [`nacre_topo::FramePlacement::frame_on`], the derivation the frame will actually take, so the
 /// normal form cannot name a `Canonical` that realizes elsewhere.
@@ -247,6 +257,11 @@ fn world_placement(
     plane: Handle<Surface>,
     outward: Orientation,
 ) -> Option<nacre_topo::FramePlacement> {
+    if let Some(leaf) = model.surface_motion(plane) {
+        if model.chain_through_frame(leaf) {
+            return None;
+        }
+    }
     let world = crate::planes::world_narrow(model, plane).ok()?;
     let zero = Rat::from_int(0);
     let world = if model.world_plane_name_sense(plane)?.sign() * outward.sign() > 0 {

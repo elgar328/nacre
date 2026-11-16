@@ -62,14 +62,17 @@ impl From<Rat> for BigRat {
 /// [`sqrt_rat`] for a wide radicand: the root, when it is rational **and** fits `Rat` —
 /// which every stated radius does, its square being what widened.
 pub fn sqrt_rat_big(v: &BigRat) -> Option<Rat> {
-    let (rn, rd) = exact_root(v)?;
+    let (rn, rd) = exact_root(&v.0)?;
     BigRat(Ratio::new_raw(rn, rd)).narrow()
 }
 
 /// The exact root of a non-negative wide rational, as `(numerator, denominator)` at any width —
 /// `None` when it is irrational (a fraction in lowest terms is a square exactly when both of its
 /// parts are) or `v < 0`.
-fn exact_root(v: &BigRat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+pub(crate) fn exact_root(
+    v: &Ratio<num_bigint::BigInt>,
+) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+    use num_traits::Signed;
     if v.is_negative() {
         return None;
     }
@@ -284,7 +287,7 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if v.is_negative() {
         return None;
     }
-    if let Some((rn, rd)) = exact_root(v) {
+    if let Some((rn, rd)) = exact_root(&v.0) {
         return Some(nearest_normal_f64(&rn, &rd));
     }
     let cap = separation_cap(v.numer().bits().max(v.denom().bits()));

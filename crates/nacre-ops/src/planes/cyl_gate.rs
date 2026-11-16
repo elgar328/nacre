@@ -49,11 +49,11 @@ pub(crate) fn cylinder_gate(
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         // **The world statement or nothing.** A moved cylinder's def is written before its
-        // motion, and every test below compares it against world planes. A chain that folds
-        // carries it out exactly (`Model::world_cylinder_def` — the same door the face rows
-        // take); a frame node or a turn off the quarters has no world description here and is
+        // motion, and every test below compares it against world planes. The chain's fold
+        // carries it out exactly where it can (`Model::world_cylinder_def` — the same door the
+        // face rows take); one it carries off the rationals has no world description here and is
         // refused rather than measured across two frames, and an overflow carrying it is refused
-        // for its width ([`world_cylinder`] tells the two apart).
+        // for its width (the door names which).
         let def = world_cylinder(model, surf).map_err(|e| {
             reject(
                 e.stated_reason()

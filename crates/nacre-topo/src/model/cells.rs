@@ -366,8 +366,9 @@ impl Model {
                 };
                 let axis = c.axis();
                 // The centre — where the axis meets the plane — is the truth's where the truth is
-                // stated in the world. A cylinder on a chain that does not fold (a frame node, a
-                // turn off the quarters) has no rational centre here — its chain needs replaying,
+                // stated in the world. A cylinder its chain does not carry to the rationals (a turn
+                // off the quarters, a frame along an irrational axis length) has no rational centre
+                // here — its chain needs replaying,
                 // which this crate cannot do — so the pusher is asked; only where nobody answers
                 // does the caches' meet stand.
                 let given_centre = || {

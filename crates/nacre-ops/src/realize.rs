@@ -619,8 +619,8 @@ fn point_cache_accel<E>(
 ///
 /// The push door derives a plane's cache itself wherever the plane has a world name (unmoved, or
 /// carried by a chain that folds) and its truth places its first point. What it cannot name is a
-/// plane under a turn off the quarters or a frame, and there `figure` — the construction's own
-/// `f64` — stands. So the figure is pushed as **not yet asked** ([`CacheStanding::Unrealized`]),
+/// plane with no world name — under a turn off the quarters, or carried by a frame off the
+/// rationals — and there `figure` — the construction's own `f64` — stands. So the figure is pushed as **not yet asked** ([`CacheStanding::Unrealized`]),
 /// and whatever the door did not derive is realized from the pushed truth and raised
 /// ([`raise_surface_cache`]) — the door decides what it can first, so «the truth answers here» is
 /// spelled in `nacre-topo` alone. Each half on its own ([`plane_realization`]):
@@ -685,8 +685,9 @@ pub(crate) fn push_plane_through_realized(
 /// the cylinder twin of [`push_plane_realized`], and the road every constructed cylinder takes.
 ///
 /// The push door derives a cylinder's cache itself wherever the cylinder is stated in the world
-/// (unmoved, or carried by a chain that folds). What it cannot state is a cylinder under a turn
-/// off the quarters or a frame; that cache is realized from the chain ([`world_cylinder_hp`]): the
+/// (unmoved, or carried by a chain that folds). What it cannot state is a cylinder with no world
+/// statement — under a turn off the quarters, or carried by a frame off the rationals; that cache
+/// is realized from the chain ([`world_cylinder_hp`]): the
 /// origin, the unit axis and the unit `ref_dir` replayed at 128 or 256 bits and each rounded once;
 /// the radius is the statement's (the chain is an isometry). The same guard as the plane's: a chain
 /// deeper than [`CHEAP_REPLAY_COST_CAP`] keeps `figure`, as does one the two rungs leave undecided,
@@ -1808,9 +1809,9 @@ fn build(
 /// unique point, exactly designated"*; this realizes that designation instead of reading the cache.
 ///
 /// Two roads, one point: where the cylinder and its cap are stated in the world the rim's centre
-/// is rational and only `r/|e₁|` is not ([`seam_point_stated`]); where either is carried by a chain
-/// that does not fold — a cylinder turned off the quarters, a circle extruded on a frame node —
-/// the seam's line is replayed and met with the cap in the world ([`seam_point_met`]).
+/// is rational and only `r/|e₁|` is not ([`seam_point_stated`]); where either has no world
+/// statement — a cylinder turned off the quarters, a circle off a frame's origin — the seam's line
+/// is replayed and met with the cap in the world ([`seam_point_met`]).
 fn seam_point(
     model: &Model,
     cyl: Handle<Surface>,
@@ -2043,7 +2044,8 @@ fn ruling_point(
         None => Some((p, d)),
         Some(leaf) => Some((
             model.chain_point_rat(leaf, p).ok()?,
-            model.chain_dir_rat(leaf, d).ok()?,
+            // The ruling's meet with the cap does not change with the length of its direction.
+            model.chain_dir_along(leaf, d).ok()?,
         )),
     };
     if let (Some(cap), Some((foot, dir))) = (
@@ -2216,13 +2218,12 @@ fn build_three_plane(
     let Some(&base) = meet.narrow() else {
         return build_meet(model, def, bits, acc.planes.as_deref_mut());
     };
-    // **A chain that folds is read, not replayed.** Translations, quarter turns and axis
-    // reflections compose to a signed axis permutation plus a rational offset, folded once per node
+    // **A point its chain's fold carries is read, not replayed.** The fold is made once per node
     // as it is born (`Model::chain_point_rat`), so the meet carried through it is an exact rational
     // — the same point the replay approaches, stated outright. A replay cannot decide a coordinate
     // that is exactly `0` (its interval straddles it at every rung), and read from the fold it is
-    // the integer `0`. Where the fold does not answer (a frame, a turn off the quarters, an offset
-    // past `Rat`) the replay does.
+    // the integer `0`. Where the fold does not answer (a turn off the quarters, a frame along an
+    // irrational axis length, an offset past `Rat`) the replay does.
     if let Ok(world) = model.chain_point_rat(node, base) {
         let (n, d) = MeetPoint::Narrow(world).lift();
         return Ok(Realization(Arm::Exact(n, d)));
@@ -2707,9 +2708,16 @@ mod tests {
                 })
             })
         };
-        let on_the_tilted_rim: Check = Box::new(|p| {
+        // The tilted circle is drawn off its frame's origin, at `0.5·û`: on the origin the
+        // cylinder's world statement is rational (its axis runs along `ŵ`, its seam along `û`), and
+        // `0.5·û` is not — no tilted axis here has a rational length.
+        let tilted = nacre_math::Vector3::from_array([1.0, 1.0, 1.0]);
+        let tilted_plane = crate::SketchPlane::from_origin_normal(base, tilted).expect("a normal");
+        let centre = base + tilted_plane.x_axis * 0.5;
+        let on_the_tilted_rim: Check = Box::new(move |p| {
             let k = 1.0 / 3f64.sqrt();
-            let v = [p[0] - 1.0, p[1] - 2.0, p[2] - 0.5];
+            let c = centre.as_array();
+            let v = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
             let h = (v[0] + v[1] + v[2]) * k;
             let radial = (v.iter().map(|c| c * c).sum::<f64>() - h * h).sqrt();
             (radial - 1.5).abs() < 1e-12 && (h.abs() < 1e-12 || (h - 2.0).abs() < 1e-12)
@@ -2724,9 +2732,27 @@ mod tests {
             },
             {
                 let mut m = Model::new();
-                let tilted = nacre_math::Vector3::from_array([1.0, 1.0, 1.0]);
-                let c = crate::fixtures::cylinder(&mut m, base, tilted, 1.5, 2.0);
-                ("on a frame node", m, c.solid, on_the_tilted_rim)
+                let Ok(crate::OpOutput::DatumPlane { frame, .. }) = crate::apply(
+                    &mut m,
+                    &crate::Operation::DatumPlane {
+                        def: crate::DatumDef::Stated(tilted_plane),
+                    },
+                ) else {
+                    panic!("the tilted datum")
+                };
+                let ring = crate::Ring2d::circle(nacre_math::Point2::from_array([0.5, 0.0]), 1.5)
+                    .expect("a circle");
+                let Ok(crate::OpOutput::Extrude { solid, .. }) = crate::apply(
+                    &mut m,
+                    &crate::Operation::Extrude {
+                        frame,
+                        profile: crate::Profile2d::from_normalized_rings(ring, vec![]),
+                        dist: 2.0,
+                    },
+                ) else {
+                    panic!("the tilted cylinder")
+                };
+                ("on a frame node", m, solid, on_the_tilted_rim)
             },
             {
                 let mut m = Model::new();

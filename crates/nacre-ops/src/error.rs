@@ -471,7 +471,8 @@ pub enum RejectReason {
     // `Self::CylinderStagesDisagree`.
     //
     // The placements are a class with no world name (a rotated one) the gate could not prove clear
-    // of the cylinder, a cylinder on a chain that does not fold (its def is pre-motion), and a
+    // of the cylinder, a cylinder its chain does not carry to the rationals (its def is
+    // pre-motion), and a
     // tangent line where the gate could not read whether both solids run through it
     // (`planes::TangentReading::through` — none in the suite, the ignored sweep, the census or
     // kit).

@@ -78,7 +78,8 @@ impl Model {
     /// follows it (truth → cache, the allowed direction). Returns whether it turned anything.
     ///
     /// For a plane whose normal the door **did not** derive — one with no world name (a
-    /// mixed-frame `Through`, a chain that does not fold), whose cache is the one its pusher brought.
+    /// mixed-frame `Through`, a chain that does not carry it to the rationals), whose cache is the
+    /// one its pusher brought.
     /// A plane with a world name has nothing to turn: its normal is the name's times the name's
     /// sense ([`Model::derive_surface_cache`]), which is the truth's direction by construction.
     /// Here the `f64` cross of the plane's points, carried to the world where this crate can
@@ -153,7 +154,8 @@ impl Model {
     /// **The cache is the truth's realization wherever the truth is stated in the world** — the
     /// statement's origin, unit axis, unit `ref_dir` and radius, each correctly rounded
     /// ([`Model::derive_surface_cache`]); the producer's `figure` stands where the derivation
-    /// declines (a chain that does not fold — `nacre-ops` realizes those from the chain). `derive`
+    /// declines (a chain that does not carry it to the rationals — `nacre-ops` realizes those from
+    /// the chain). `derive`
     /// is `false` only on the test door that plants a cache the truth contradicts.
     ///
     /// **The producer's cache is still checked, before it is replaced.** It is the one value the
@@ -236,7 +238,8 @@ impl Model {
     /// one handle, one truth.
     ///
     /// `None` — the caller keeps the cache it has — for a plane with no world name: an unnamed
-    /// one, a chain that does not fold, a moved `Wide` name, or an overflow in the carry.
+    /// one, a chain that does not carry it to the rationals, a moved `Wide` name, or an overflow in
+    /// the carry.
     ///
     /// **One door still bypasses this entirely** — `Model::push_plane_unregistered`, which
     /// skips the name and therefore the derivation. It is the only remaining way for a surface's
@@ -369,11 +372,9 @@ impl Model {
             Surface::Cylinder { .. } => &SURFACE_DECLINED_CYLINDER,
             Surface::Plane { .. } => match self.surface_name(h) {
                 None => &SURFACE_DECLINED_UNNAMED,
-                Some(n) => match (self.surface_motion(h), n.narrow()) {
-                    (_, None) => &SURFACE_DECLINED_WIDE,
-                    (Some(leaf), Some(_)) if self.chain_fold(leaf).is_err() => {
-                        &SURFACE_DECLINED_MOTION
-                    }
+                Some(n) => match (n.narrow(), self.world_plane_name(h)) {
+                    (None, _) => &SURFACE_DECLINED_WIDE,
+                    (Some(_), Err(WorldFail::Unstated)) => &SURFACE_DECLINED_MOTION,
                     _ => &SURFACE_DECLINED_ARITH,
                 },
             },

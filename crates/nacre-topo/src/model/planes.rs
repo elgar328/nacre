@@ -7,8 +7,8 @@ impl Model {
     /// written before (`None` = the world), with the producer's own `f64` figure (`figure`) for the
     /// cache. The truth is not optional: there is no point-less plane.
     ///
-    /// **`figure` stands only where the plane has no world name** (a chain that does not fold,
-    /// a mixed-frame `Through`) — everywhere else the cache is the truth's realization
+    /// **`figure` stands only where the plane has no world name** (a chain that does not carry it
+    /// to the rationals, a mixed-frame `Through`) — everywhere else the cache is the truth's realization
     /// (`derive_surface_cache`), and the figure handed in is dropped.
     ///
     /// **The points are the only thing a producer states.** The canonical name
@@ -234,8 +234,8 @@ impl Model {
     /// below that compare it with a cache (two normals of one plane, so the sign of their dot is
     /// not a rounding question).
     ///
-    /// `None` where this crate cannot carry the points to the world: a chain that does not fold
-    /// (a frame, a turn off the quarters — their realization lives in `nacre-ops`), or a
+    /// `None` where this crate cannot carry the points to the world: a chain through a frame or a
+    /// turn off the quarters (their realization lives in `nacre-ops`), or a
     /// `Through` statement under any motion (its vertices' caches are world points only when
     /// nothing moved the plane after them). Through a folded chain the points' cross travels as
     /// `det M · M·n` — the linear part carries it, and a reflection, carrying points, reverses

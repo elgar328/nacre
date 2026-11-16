@@ -120,6 +120,29 @@ impl AxisAffine {
         })
     }
 
+    /// [`AxisAffine::dir_rat`] at any width — a signed permutation, so it cannot fail.
+    pub(crate) fn dir_q(
+        &self,
+        d: &[num_rational::Ratio<num_bigint::BigInt>; 3],
+    ) -> [num_rational::Ratio<num_bigint::BigInt>; 3] {
+        use num_traits::Zero;
+        core::array::from_fn(|i| {
+            self.m[i]
+                .iter()
+                .zip(d)
+                .fold(num_rational::Ratio::zero(), |acc, (e, x)| match e {
+                    0 => acc,
+                    1 => acc + x,
+                    _ => acc - x,
+                })
+        })
+    }
+
+    /// The offset at any width — `None` where composing it overflowed `Rat` and its value is lost.
+    pub(crate) fn offset_q(&self) -> Option<[num_rational::Ratio<num_bigint::BigInt>; 3]> {
+        self.t.map(|t| t.map(|r| BigRat::from_rat(r).0))
+    }
+
     /// The map applied to a point: `M·p + t`.
     pub fn point_rat(&self, p: [Rat; 3]) -> Option<[Rat; 3]> {
         let q = self.dir_rat(p)?;

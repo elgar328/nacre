@@ -220,19 +220,27 @@ impl Model {
         }
         let h = self.motions.push(node);
         self.motion_ids.insert(node, h);
-        let own = motion.exact_affine();
         // Root first: the parent's chain is applied, then this node.
-        let fold = match parent {
-            None => own.map(nacre_exact::ChainFold::axis),
-            Some(p) => own.and_then(|o| {
-                Some(
-                    self.chain_affines[p.index() as usize]
-                        .as_ref()?
-                        .then_axis(&o),
-                )
+        let fold = match (motion.exact_affine(), parent) {
+            (Some(o), None) => Some(nacre_exact::ChainFold::axis(o)),
+            (Some(o), Some(p)) => self.chain_affines[p.index() as usize]
+                .fold
+                .as_ref()
+                .map(|f| f.then_axis(&o)),
+            (None, _) => self.frame_fold(motion).and_then(|own| match parent {
+                None => Some(own),
+                Some(p) => self.chain_affines[p.index() as usize]
+                    .fold
+                    .as_ref()?
+                    .then(&own),
             }),
         };
-        self.chain_affines.push(fold);
+        let through_frame = matches!(motion, Motion::Frame { .. })
+            || parent.is_some_and(|p| self.chain_affines[p.index() as usize].through_frame);
+        self.chain_affines.push(crate::ChainSlot {
+            fold,
+            through_frame,
+        });
         debug_assert_eq!(
             self.chain_affines.len(),
             self.motions.len(),

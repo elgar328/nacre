@@ -5,8 +5,8 @@ use super::*;
 /// The frame's own basis comes from its plane's name ([`RatFrame::of_plane_frame`] on the chain's
 /// narrow `Frame` head — `None` when an axis needs an irrational scale); a plane with a motion of
 /// its own then carries it through that motion's fold ([`RatFrame::carried`] — translations,
-/// quarter turns and axis reflections keep it rational; a frame node or a turn off the quarters
-/// does not fold, and declines). A wide or judged head declines too. The answer is asked of the
+/// quarter turns and axis reflections keep it rational; a turn off the quarters, or a frame that
+/// carries the axes off the rationals, declines). A wide or judged head declines too. The answer is asked of the
 /// truth, never of a realization lifted back: a realized axis that needs normalizing comes back
 /// `0.6000000000000001` and would read as irrational.
 ///
