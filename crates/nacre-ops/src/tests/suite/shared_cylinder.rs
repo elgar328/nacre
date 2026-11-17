@@ -432,8 +432,9 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[plate], &[7]),
             none(),
         ],
-        // The pin's circle also touches the plate's top wall, at `(3, 2)`: the plate less the pin
-        // thins to nothing along that line.
+        // The pin's circle is also tangent to the plate's top wall, at `(3, 2)`: the plate less the
+        // pin is two lumps meeting only along that line, refused as one body touching itself (todo
+        // 「접선에서만 만나는 덩이」).
         "a filleted plate and its fillet's pin" => [
             counted(&[plate + PI], &[8]),
             refused(RejectReason::SelfTouchingResult),
