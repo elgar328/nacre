@@ -1653,7 +1653,7 @@ fn a_shared_line_gathers_its_rows_halves() {
                     _ if k == holders[0] => ClassMeet::Cuts,
                     _ if k == t => ClassMeet::Tangent {
                         holders: holders.clone(),
-                        other_owner: true,
+                        crosses: true,
                     },
                     _ => ClassMeet::Across,
                 })

@@ -501,14 +501,20 @@ pub(crate) fn class_presence(
     out
 }
 
+/// **The solids whose faces a face of a class can meet across the operands** — for a class whose
+/// faces are of the solids `x` marks ([`class_presence`]), the other solid of each: `B` where `x`
+/// holds `A`'s face, `A` where it holds `B`'s.
+pub(crate) fn other_solids(x: [bool; 2]) -> [bool; 2] {
+    [x[1], x[0]]
+}
+
 /// **Can a face of one class and a face of another be of different solids?** — the classes'
-/// presence bits ([`class_presence`]) crossed: one carries `A`'s face and the other `B`'s. Two
+/// presence bits ([`class_presence`]) crossed: `y` marks a solid in [`other_solids`] of `x`. Two
 /// faces of one valid solid meet only along their edges, so this is the pairs a contact between
-/// the operands can be in: the pair rule asks cylinder classes it holds for, a tangent plane class
-/// is a contact candidate for a cylinder it holds for, and a tangency row pairs a wall face with
-/// a lateral face it holds for (each face's own solid, `SolidSide::bit`).
+/// the operands can be in — a single face asks it with its own solid's bit (`SolidSide::bit`).
 pub(crate) fn across(x: [bool; 2], y: [bool; 2]) -> bool {
-    (x[0] && y[1]) || (x[1] && y[0])
+    let o = other_solids(x);
+    (o[0] && y[0]) || (o[1] && y[1])
 }
 
 /// Whose faces each plane class carries: `Some(side)` when every face in the class is that

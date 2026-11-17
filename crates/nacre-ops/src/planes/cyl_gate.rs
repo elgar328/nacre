@@ -147,7 +147,7 @@ pub(crate) fn cylinder_gate(
         meets.push(row);
     }
     // The classes whose answer about cylinder `ci` is `want`, and the tangent ones carrying a face
-    // of a solid other than one with a lateral face here (`ClassMeet::Tangent`'s `other_owner`),
+    // of a solid other than one with a lateral face here (`ClassMeet::Tangent`'s `crosses`),
     // whether or not its faces wrote rows.
     let meeting = |ci: usize, want: ClassMeet| {
         meets[ci]
@@ -160,15 +160,7 @@ pub(crate) fn cylinder_gate(
         meets[ci]
             .iter()
             .enumerate()
-            .filter(|(_, meet)| {
-                matches!(
-                    meet,
-                    ClassMeet::Tangent {
-                        other_owner: true,
-                        ..
-                    }
-                )
-            })
+            .filter(|(_, meet)| matches!(meet, ClassMeet::Tangent { crosses: true, .. }))
             .map(|(c, _)| c)
     };
 
@@ -423,14 +415,11 @@ enum ClassMeet {
     /// The plane runs within the radius and cuts a lateral face: two rulings, drawn on the class.
     Cuts,
     /// The plane stands exactly `r` from the axis: one grazing line. `holders` are the classes
-    /// holding that line ([`classes_holding_the_line`]); `other_owner` says the class carries a
+    /// holding that line ([`classes_holding_the_line`]); `crosses` says the class carries a
     /// face of a solid other than one with a lateral face on the cylinder ([`across`]) —
     /// such a tangent class is half of [`SharedRuling`]'s population, and a record the sectioned
     /// settlement weighs.
-    Tangent {
-        holders: Vec<usize>,
-        other_owner: bool,
-    },
+    Tangent { holders: Vec<usize>, crosses: bool },
     /// A class with no world statement, silent about the cylinder. `Sectioned` is a candidate
     /// until [`cylinder_gate`] settles it.
     Silent(Silence),
@@ -699,13 +688,7 @@ fn class_meet(
             }
         }
         return Ok(match holders {
-            Some((holders, other_owner)) => (
-                ClassMeet::Tangent {
-                    holders,
-                    other_owner,
-                },
-                rows,
-            ),
+            Some((holders, crosses)) => (ClassMeet::Tangent { holders, crosses }, rows),
             None => (ClassMeet::Clear, Vec::new()),
         });
     }
@@ -728,7 +711,7 @@ fn class_meet(
 /// The population is the pairs [`class_meet`] already answered against the cylinder: a class that
 /// cuts it ([`ClassMeet::Cuts`] — two rulings) with another that cuts it, or with a **tangent**
 /// class that carries a face of a solid other than one with a lateral face on the cylinder
-/// ([`ClassMeet::Tangent`]'s `other_owner`). A wall face tangent to its own solid's lateral is that
+/// ([`ClassMeet::Tangent`]'s `crosses`). A wall face tangent to its own solid's lateral is that
 /// solid's smooth edge — a fillet — and says nothing here: a valid solid's faces do not meet. So
 /// the halves the record carries are the [`Tangency`] rows', which pair a wall face with a lateral
 /// face of the other solid only. And a class with no world statement that
@@ -890,7 +873,7 @@ fn shared_rulings(
         for (t, meet) in meets[ci].iter().enumerate() {
             let ClassMeet::Tangent {
                 holders,
-                other_owner: true,
+                crosses: true,
             } = meet
             else {
                 continue;
@@ -900,26 +883,15 @@ fn shared_rulings(
             // The line must lie on a lateral face **of a solid other than a wall face's** of this
             // class: a wall tangent to its own solid's lateral is that solid's smooth edge and pairs
             // with nothing.
-            let against: Vec<&CylFaceInfo> = faces
-                .iter()
-                .enumerate()
-                .filter_map(|(i, row)| match row {
-                    FaceRow::Cylinder(cf)
-                        if cf.surf == cyl.surf
-                            && across(plane_solids[t], SolidSide::of_row(i, n_a).bit()) =>
-                    {
-                        Some(cf)
-                    }
-                    _ => None,
-                })
-                .collect();
-            if against.is_empty()
-                || !ruling_on_a_face(
-                    &cyl.def,
-                    &pieces_of(footprints_of(against.into_iter())),
-                    &foot,
-                )?
-            {
+            let Some(against) = pieces_of_rows(lateral_rows_of(
+                faces,
+                n_a,
+                cyl.surf,
+                other_solids(plane_solids[t]),
+            )) else {
+                continue;
+            };
+            if !ruling_on_a_face(&cyl.def, &against, &foot)? {
                 continue;
             }
             // Every row of this class on this cylinder — one per wall face and lateral face that
@@ -1267,27 +1239,22 @@ fn tangency_rows(
     // The lateral faces of this cylinder (`LateralOnLine`), read once per pair: where each lies
     // on the tangent line depends on the line and the lateral, not on the wall face. A cover that could not be read keeps the face's bounding
     // rectangle.
-    let laterals: Vec<LateralOnLine<'_>> = faces
-        .iter()
-        .enumerate()
-        .filter_map(|(i, row)| match row {
-            FaceRow::Cylinder(cf) if cf.surf == surf => {
-                let cover = base
-                    .as_ref()
-                    .zip(cf.face)
-                    .and_then(|(b, fh)| lateral_cover_on_ruling(model, model.face(fh), def, b));
-                let stretches = match &cover {
-                    Some(c) => Some(c.clone()),
-                    None => cf.stretch.map(|sp| vec![sp]),
-                };
-                Some(LateralOnLine {
-                    ix: i,
-                    cf,
-                    cover,
-                    stretches,
-                })
+    let laterals: Vec<LateralOnLine<'_>> = lateral_rows(faces, surf)
+        .map(|(i, cf)| {
+            let cover = base
+                .as_ref()
+                .zip(cf.face)
+                .and_then(|(b, fh)| lateral_cover_on_ruling(model, model.face(fh), def, b));
+            let stretches = match &cover {
+                Some(c) => Some(c.clone()),
+                None => cf.stretch.map(|sp| vec![sp]),
+            };
+            LateralOnLine {
+                ix: i,
+                cf,
+                cover,
+                stretches,
             }
-            _ => None,
         })
         .collect();
     // **Where a row's cylinder solid runs through the line** — that solid's lateral faces on this
@@ -1299,11 +1266,7 @@ fn tangency_rows(
     let read_lateral_through = |solid: SolidSide| -> Result<Pieces, RejectReason> {
         let b = base.as_ref().ok_or(RejectReason::WitnessNotRational)?;
         let mut sides: [Pieces; 2] = [Vec::new(), Vec::new()];
-        for (i, row) in faces.iter().enumerate() {
-            let FaceRow::Cylinder(cf) = row else { continue };
-            if cf.surf != surf || side_of(i) != solid {
-                continue;
-            }
+        for cf in lateral_rows_of(faces, n_a, surf, solid.bit()) {
             let fh = cf.face.ok_or(RejectReason::CylinderGateUndecided)?;
             let read = lateral_sides_on_ruling(model, model.face(fh), def, b)?;
             for (to, from) in sides.iter_mut().zip(read) {
@@ -2197,12 +2160,8 @@ fn lateral_stretches(
     faces: &[FaceRow],
     surf: Handle<Surface>,
 ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
-    faces
-        .iter()
-        .filter_map(|row| match row {
-            FaceRow::Cylinder(cf) if cf.surf == surf => Some(cf.stretch),
-            _ => None,
-        })
+    lateral_rows(faces, surf)
+        .map(|(_, cf)| cf.stretch)
         .collect()
 }
 
@@ -2210,13 +2169,45 @@ fn lateral_stretches(
 /// angular extent alongside: empty if any face's span could not be stated, else one
 /// footprint per face.
 fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
-    footprints_of(faces.iter().filter_map(|row| match row {
-        // Matched by **handle**, not by geometry: two operands may state the same cylinder
-        // twice, and each statement gets its own rows, its own bands clipped to its own spans,
-        // and its own turn through the gate's cylinder loop.
-        FaceRow::Cylinder(cf) if cf.surf == surf => Some(cf),
-        _ => None,
-    }))
+    footprints_of(lateral_rows(faces, surf).map(|(_, cf)| cf))
+}
+
+/// **A cylinder class's lateral faces** — the face table's rows on `surf`, each with its row index.
+/// Matched by **handle**, not by geometry: two operands may state the same cylinder twice, and each
+/// statement gets its own rows, its own bands clipped to its own spans, and its own turn through
+/// the gate's cylinder loop.
+fn lateral_rows(
+    faces: &[FaceRow],
+    surf: Handle<Surface>,
+) -> impl Iterator<Item = (usize, &CylFaceInfo)> {
+    faces
+        .iter()
+        .enumerate()
+        .filter_map(move |(i, row)| match row {
+            FaceRow::Cylinder(cf) if cf.surf == surf => Some((i, cf)),
+            _ => None,
+        })
+}
+
+/// [`lateral_rows`] of the operands `solids` marks (`[A, B]`, [`class_presence`]'s order).
+fn lateral_rows_of(
+    faces: &[FaceRow],
+    n_a: usize,
+    surf: Handle<Surface>,
+    solids: [bool; 2],
+) -> impl Iterator<Item = &CylFaceInfo> {
+    lateral_rows(faces, surf)
+        .filter(move |&(i, _)| solids[SolidSide::of_row(i, n_a).ix()])
+        .map(|(_, cf)| cf)
+}
+
+/// **Some lateral faces as the pieces a clearance asks about** — `None` where there are none, else
+/// [`pieces_of`] their footprints: a face with no stated span leaves one unbounded piece, so «none
+/// here» and «not listable» stay two answers.
+fn pieces_of_rows<'a>(cfs: impl Iterator<Item = &'a CylFaceInfo>) -> Option<Vec<Footprint>> {
+    let mut cfs = cfs.peekable();
+    cfs.peek()?;
+    Some(pieces_of(footprints_of(cfs)))
 }
 
 /// [`lateral_footprints`]' rule over the lateral faces given.
@@ -2280,11 +2271,7 @@ fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> b
             .collect::<Vec<_>>()
     };
     let mut rims = Vec::new();
-    for row in faces {
-        let FaceRow::Cylinder(cf) = row else { continue };
-        if cf.surf != surf {
-            continue;
-        }
+    for (_, cf) in lateral_rows(faces, surf) {
         let Some(fh) = cf.face else { return false };
         for lp in loops(model.face(fh)) {
             if !whole(&lp) {
@@ -2741,11 +2728,7 @@ fn oblique_section_meet(
         return None;
     }
     let mut sectioned = false;
-    for row in faces {
-        let FaceRow::Cylinder(cf) = row else { continue };
-        if cf.surf != cyl.surf {
-            continue;
-        }
+    for (_, cf) in lateral_rows(faces, cyl.surf) {
         let boundary = lateral_boundary_sections(model, model.face(cf.face?), &cyl.def)?;
         match boundary_stand(&cyl.def, &boundary, coeffs)? {
             BoundaryStand::Touch => return None,
@@ -2771,16 +2754,12 @@ fn touches_a_boundary(
     cyl: &WorkingCyl,
     coeffs: &[nacre_exact::Rat; 4],
 ) -> bool {
-    faces.iter().any(|row| {
-        let FaceRow::Cylinder(cf) = row else {
-            return false;
-        };
-        cf.surf == cyl.surf
-            && cf.face.is_some_and(|f| {
-                lateral_boundary_sections(model, model.face(f), &cyl.def)
-                    .and_then(|b| boundary_stand(&cyl.def, &b, coeffs))
-                    == Some(BoundaryStand::Touch)
-            })
+    lateral_rows(faces, cyl.surf).any(|(_, cf)| {
+        cf.face.is_some_and(|f| {
+            lateral_boundary_sections(model, model.face(f), &cyl.def)
+                .and_then(|b| boundary_stand(&cyl.def, &b, coeffs))
+                == Some(BoundaryStand::Touch)
+        })
     })
 }
 
@@ -2823,20 +2802,7 @@ fn lateral_faces_clear(faces: &[FaceRow], n_a: usize, a: &WorkingCyl, b: &Workin
     // One solid's lateral faces on a class, as the pieces a clearance asks about — none where the
     // solid has no face there.
     let of = |surf: Handle<Surface>, side: SolidSide| {
-        let mut cfs = faces
-            .iter()
-            .enumerate()
-            .filter(|&(i, _)| SolidSide::of_row(i, n_a) == side)
-            .filter_map(|(_, row)| match row {
-                FaceRow::Cylinder(cf) if cf.surf == surf => Some(cf),
-                _ => None,
-            })
-            .peekable();
-        if cfs.peek().is_none() {
-            Vec::new()
-        } else {
-            pieces_of(footprints_of(cfs))
-        }
+        pieces_of_rows(lateral_rows_of(faces, n_a, surf, side.bit())).unwrap_or_default()
     };
     [(SolidSide::A, SolidSide::B), (SolidSide::B, SolidSide::A)]
         .into_iter()
@@ -2856,7 +2822,8 @@ fn lateral_faces_clear(faces: &[FaceRow], n_a: usize, a: &WorkingCyl, b: &Workin
 /// [`lateral_footprints`] and keep that. Built where it is asked, not with the class — the gate's
 /// own footprints are lazy for the reason [`wall_faces_clear`] gives.
 pub(crate) fn lateral_pieces(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
-    pieces_of(lateral_footprints(faces, surf))
+    pieces_of_rows(lateral_rows(faces, surf).map(|(_, cf)| cf))
+        .unwrap_or_else(|| pieces_of(Vec::new()))
 }
 
 /// [`lateral_pieces`]' rule over footprints [`footprints_of`] read off some lateral faces.

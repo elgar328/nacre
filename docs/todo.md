@@ -64,8 +64,9 @@
 판정하고(축 방향 무시) 다른 진술의 seam 을 딱지 경계로 읽지 않으며 매개변수 차를 수치 이동으로 맞추지 않는다
 (`IntAna_QuadQuadGeo`, `FillSameDomainFaces`). 차트의 읽기는 이미 두 피연산자의 것이므로 묶기만 하면 census 3 이 열리는지가
 첫 계측이다. 한 핸들 쪽에서 재지 않은 것: 세계 이름 없는 클래스나 비스듬한 클래스가 공유 클래스에 닿는 배치 —
-`Silence::Apart` 의 읽기, `only_whole_rims`, 비스듬한 단면(`oblique_section_meet`)은 핸들로 모은 옆면 전부를 읽는다. 행이 물지 않는 규칙 둘: 쌍 규칙의 솔리드 거르기(`lateral_faces_clear` — kit 의
-필렛 둘이 공유 클래스로 닿지만 떨어져 있어 꺼도 초록)와 접선 공유 선의 좁힘(`shared_rulings`).
+`Silence::Apart` 의 읽기, `only_whole_rims`, 비스듬한 단면(`oblique_section_meet`)은 핸들로 모은 옆면 전부를 읽는다. 행이 물지 않는 규칙 셋: 쌍 규칙의 솔리드 거르기(`lateral_faces_clear` — kit 의
+필렛 둘이 공유 클래스로 닿지만 떨어져 있어 꺼도 초록), 접선 공유 선의 좁힘(`shared_rulings`), 접선 행이 옆면을 그 행의
+솔리드 것만 읽기(`tangency_rows` — 벽 쪽의 솔리드 거르기와 함께 꺼야 빨개진다).
 
 ### 곡면 둘 이상이 만나는 점과 seam 담체
 
