@@ -120,15 +120,16 @@ fn wants(name: &str) -> [Want; 4] {
     let none = || counted(&[], &[]);
     match name {
         // The Fuse is the two bodies touching on the bore's outline — refused, todo
-        // 「곧은 모서리·호에서만 만나는 면」.
+        // 「곧은 모서리에서만 만나는 면」.
         "a square pin under its bore" => [
             refused(RejectReason::NonManifoldResultEdge),
             counted(&[24.0], &[10]),
             counted(&[8.0], &[6]),
             none(),
         ],
+        // Two bodies: the pin's four faces, the bored block's eight.
         "a half-disk pin under its bore" => [
-            refused(RejectReason::OpenResultShell),
+            counted(&[PI, 32.0 - PI], &[4, 8]),
             counted(&[32.0 - PI], &[8]),
             counted(&[PI], &[4]),
             none(),

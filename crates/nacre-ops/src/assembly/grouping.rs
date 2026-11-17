@@ -85,7 +85,7 @@ pub(super) fn group_faces(
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Grouping, BoolError> {
-    let (labels, n) = face_components(jd, cyls, faces);
+    let (labels, n) = face_components(jd, cyls, faces)?;
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
         by_comp_lf[labels[i]].push(lf);

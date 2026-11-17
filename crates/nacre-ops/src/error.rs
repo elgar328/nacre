@@ -128,7 +128,7 @@ pub enum RejectReason {
     /// a face whose **every** edge is a contact line four faces use — a square pin under the
     /// square bore of a block it touches, the pin's top — has no edge to its own body, the
     /// grouping cannot place it, and the line's four uses are counted in one solid. Two bodies
-    /// are the answer there; the faces of a contact line are not yet paired round it.
+    /// are the answer there; the faces round a straight contact line are not yet paired.
     ///
     /// Two sampled boxes sharing exactly an edge are **not** this: those are answers.
     NonManifoldResultEdge,
@@ -217,6 +217,8 @@ pub enum RejectReason {
     // ordering feeds `next`, so a guess there is a wrong face, silently.
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
+    /// The same is said of two result faces leaving one curve of the result along one direction:
+    /// the component join reads its pairs off that curve's cyclic order.
     ///
     /// A line and an arc **tangent** at the vertex are not this when the arc leaves the other way
     /// (a fillet's smooth corner is a half turn, read by geometry). What is this: the same way —
@@ -260,7 +262,9 @@ pub enum RejectReason {
     UnreachedCell,
     // On a plane class the flip relation does not hold across the whole complex; on a cylinder's
     // chart, where a cell's chamber is read off its four sides rather than propagated, two sides
-    // that speak say different things (`cyl_chart::emit_lateral`).
+    // that speak say different things (`cyl_chart::emit_lateral`). Round a curve of the result,
+    // two neighbouring faces whose material sides do not alternate say it of the faces' flips
+    // (`assembly::face_components`).
     /// Labels reached a cell two ways and disagreed. The labels are the arrangement's own writing.
     LabelConflict,
     // A consumer must not read "no segments" as "the plane misses the solid".

@@ -75,6 +75,17 @@ pub(crate) struct WorkingPlane {
 }
 
 impl WorkingPlane {
+    /// **Why a reader that needs this class's exact world statement has none** — the cause as a
+    /// refusal: a statement `Rat` cannot hold is width (`WitnessNotRational`), a truth that states
+    /// no rational world image is geometry (`CylinderGateUndecided`). A `Wide` name has a world
+    /// statement but no narrow projection, so it is width too.
+    pub(crate) fn world_absent(&self) -> RejectReason {
+        match self.world {
+            Ok(_) | Err(nacre_topo::WorldFail::Width) => RejectReason::WitnessNotRational,
+            Err(nacre_topo::WorldFail::Unstated) => RejectReason::CylinderGateUndecided,
+        }
+    }
+
     /// **The side of this class every point of `q` provably lies on**, strictly — `None` when a
     /// point is on the plane or not proved off it, when the points straddle it, and for an empty
     /// `q`. A signed distance to a plane is affine, so all of `q` on one side puts its whole convex

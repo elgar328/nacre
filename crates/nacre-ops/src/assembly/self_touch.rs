@@ -131,9 +131,9 @@ pub(crate) fn pinch(
 ///   exactly when the result is **one** body: two is the valid pair touching along the line; one is
 ///   the two lumps joined elsewhere — a boss standing in a notch, tangent to the notch's wall and
 ///   overlapping the block beside it — whose boundary touches itself, which nothing else in the
-///   kernel sees. (Bodies are face components joined across edges two faces use, and round a
-///   whole rim each face with the next on its material side — where that differs from the
-///   material, at a straight edge or a cut arc four faces use, another guard refuses first.)
+///   kernel sees. (Bodies are face components, each face joined round its boundary curves with
+///   the next face on its material side — at a straight edge more faces use, where that join is
+///   not read yet, another guard refuses first.)
 ///
 /// **The shape is the whole verdict — no body is asked which classes it holds.** A row states a
 /// real contact: the gate writes one only for a wall face that touches the line where the lateral

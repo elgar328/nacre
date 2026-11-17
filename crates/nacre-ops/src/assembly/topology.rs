@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 /// The first topological defect in a boolean's output, checked **per solid** so one bad piece is
 /// never masked by another (a sum-of-all Euler parity misses two odd-χ solids; a global count
 /// misses much), or `None` if every result solid is a valid closed 2-manifold. In one pass per
@@ -147,21 +148,25 @@ pub(crate) fn check_result_topology(
     None
 }
 
-/// Connected components of the reconstructed faces, joined **only where two of them bound one
-/// material across a boundary** — a ring edge that exactly two of them use, or a whole rim where a
-/// face meets the next one round the rim on its material side. Returns a component label per face
-/// (dense `0..n` in order of first appearance, for replay determinism) and the component count.
+/// Connected components of the reconstructed faces, joined **where two of them bound one material
+/// across a boundary curve**: round each curve, a face joins the next face round on its material
+/// side — the two faces bounding one kept sector of the curve's star
+/// ([`LineStar::bounding_pairs`](crate::draft::LineStar::bounding_pairs)). Returns a component label
+/// per face (dense `0..n` in order of first appearance, for replay determinism) and the component
+/// count.
 ///
-/// **Touching is not joining.** Two bodies that meet along a line share that line's nodes but
-/// no *manifold* edge — four faces use the contact line, not two — so they land in two components
-/// and come back as the two bodies they are, not as one pinched pseudo-solid. Where a body touches
-/// **itself** the material still runs around the contact, every edge of that path is used twice,
-/// and the component stays one: the guard fires exactly where no pair of solids exists. A face
-/// whose every boundary is such a contact line has no other way to its body, so it lands in a
-/// component of its own. Where the grouping places it by containment, one closed boundary comes
-/// out split between two shells and the shell guard refuses it (`OpenResultShell` — a D pin under
-/// its D bore); where the grouping abstains, the edge-use guard names the line
-/// (`NonManifoldResultEdge` — a square pin under its square bore).
+/// **A curve two faces use joins them without reading anything** — two spokes have one cyclic
+/// order, and each is the other's next face either way round. That is nearly every curve. Where
+/// more faces use one, the curve's kind supplies the spokes' order and each face's material side,
+/// and the one rule pairs them: [`circle_star`] for a whole rim or a cut arc. A star that cannot be
+/// read is refused by its cause, never left unjoined — an unjoined face is what turns two bodies
+/// into a false `NonManifoldResultEdge`.
+///
+/// **Touching is not joining.** Two bodies that meet along a line or a circle share it — four
+/// faces use it, two of each — and each face's next on its material side is its own body's, so
+/// they land in two components and come back as the two bodies they are, not as one pinched
+/// pseudo-solid. Where a body touches **itself** the material still runs around the contact, and
+/// the component stays one: the guard fires exactly where no pair of solids exists.
 ///
 /// This is the 3D reading of a rule the assembly stage already applies one dimension down:
 /// [`unify_coplanar_faces`] splits a coplanar group "into **edge-connected components**, because
@@ -172,38 +177,26 @@ pub(super) fn face_components(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     faces: &[LocalFace],
-) -> (Vec<usize>, usize) {
+) -> Result<(Vec<usize>, usize), BoolError> {
     let mut parent: Vec<usize> = (0..faces.len()).collect();
-    // Which faces use each ring edge. A count other than two is not a contact between neighbours:
-    // one is a dangling edge and more is a pinch, and both are the edge-use guard's to name.
-    let mut users: HashMap<NodeEdge, Vec<usize>> = HashMap::new();
+    // The faces round each ring edge, with where each meets it. One use is a dangling edge — the
+    // edge-use guard's to name. Both tables are walked in key order, so a refusal names the same
+    // curve run after run.
+    let mut users: BTreeMap<NodeEdge, Vec<(usize, Wall)>> = BTreeMap::new();
     for (i, lf) in faces.iter().enumerate() {
         for ring in rings_of(lf) {
             for t in 0..ring.len() {
-                users.entry(NodeEdge::of(ring, t)).or_default().push(i);
+                users
+                    .entry(NodeEdge::of(ring, t))
+                    .or_default()
+                    .push((i, ring.walls[t]));
             }
         }
     }
-    for us in users.values() {
-        if let [a, b] = us[..] {
-            let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
-            parent[ra] = rb;
-        }
-    }
-    // **The second joining rule: a whole rim.** A cap face and the lateral that meets it on a
-    // whole rim share **no node at all** — a circle has none — so the node rule above would leave
-    // a drilled box's wall in its own component and send the result down the cavity/containment
-    // branch. They do share the rim, keyed exactly as `reconstruct` keys it.
-    //
-    // Round the rim, in the cross-section through the axis, the faces that can meet it stand in
-    // one fixed order: the cap inside the circle, the lateral above the plane, the cap outside,
-    // the lateral below ([`RimSpoke`]). **A face is joined with the next face round the rim on
-    // its material side** — the two bound the same material there. Two faces are each other's
-    // next face whichever way round, so a rim two faces use always joins them (a drilled box, a
-    // blind bore's floor, a boss on a plate); four faces — two bodies meeting on the circle, a pin
-    // under the bore of a block it touches — alternate material and empty round it and join in
-    // the two pairs that bound each body.
-    let mut rim_users: HashMap<(usize, usize), Vec<(usize, RimSpoke)>> = HashMap::new();
+    // **A whole rim** has no node at all — a circle has none — so a cap face and the lateral that
+    // meet on it are keyed by the rim, exactly as `reconstruct` keys it, and where each meets it is
+    // read off the kind of bound.
+    let mut rims: BTreeMap<(usize, usize), Vec<(usize, RimSpoke)>> = BTreeMap::new();
     for (i, lf) in faces.iter().enumerate() {
         let bounds = std::iter::once((&lf.outer, true)).chain(lf.inner.iter().map(|b| (b, false)));
         for (b, outer) in bounds {
@@ -214,7 +207,7 @@ pub(super) fn face_components(
                     } else {
                         RimSpoke::CapOutside
                     };
-                    rim_users.entry((*cyl, c)).or_default().push((i, spoke));
+                    rims.entry((*cyl, c)).or_default().push((i, spoke));
                 }
                 (Bound::Rim { plane, ccw }, ClassIx::Cyl(k)) => {
                     let spoke = if *ccw {
@@ -222,16 +215,42 @@ pub(super) fn face_components(
                     } else {
                         RimSpoke::LateralBelow
                     };
-                    rim_users.entry((k, *plane)).or_default().push((i, spoke));
+                    rims.entry((k, *plane)).or_default().push((i, spoke));
                 }
                 _ => {}
             }
         }
     }
-    for (&(k, c), us) in &rim_users {
-        for (a, b) in rim_pairs(jd, cyls, faces, k, c, us) {
-            let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
-            parent[ra] = rb;
+    let mut join = |a: usize, b: usize| {
+        let (ra, rb) = (uf_find(&mut parent, a), uf_find(&mut parent, b));
+        parent[ra] = rb;
+    };
+    for (key, us) in &users {
+        match (us.len(), key) {
+            (0 | 1, _) => {}
+            (2, _) => join(us[0].0, us[1].0),
+            (_, NodeEdge::Arc { cyl, plane, .. }) => {
+                let spokes = us
+                    .iter()
+                    .map(|&(i, wall)| Ok((i, arc_spoke(jd, cyls, faces, i, wall, *cyl)?)))
+                    .collect::<Result<Vec<_>, BoolError>>()?;
+                for (a, b) in circle_star(jd, cyls, faces, *cyl, *plane, &spokes)? {
+                    join(a, b);
+                }
+            }
+            // A straight edge more faces use: not paired yet.
+            (_, NodeEdge::Line(_)) => {}
+        }
+    }
+    for (&(k, c), us) in &rims {
+        match us.len() {
+            0 | 1 => {}
+            2 => join(us[0].0, us[1].0),
+            _ => {
+                for (a, b) in circle_star(jd, cyls, faces, k, c, us)? {
+                    join(a, b);
+                }
+            }
         }
     }
     let mut label: HashMap<usize, usize> = HashMap::new();
@@ -244,12 +263,14 @@ pub(super) fn face_components(
         labels.push(l);
         n = n.max(l + 1);
     }
-    (labels, n)
+    Ok((labels, n))
 }
 
-/// **Where a face meets a whole rim, round it** — the four directions, in the cross-section
-/// through the axis, a face can leave the rim along: the cap inside the circle, the lateral above
-/// the plane, the cap outside it, the lateral below. In that cyclic order whatever the plane's tilt.
+/// **Where a face meets a circle, round it** — the four directions, in the cross-section through
+/// the axis, a face can leave a cylinder's circle on a plane along: the cap inside the circle, the
+/// lateral above the plane, the cap outside it, the lateral below. In that cyclic order whatever
+/// the plane's tilt, and these are all there are — a circle lies on its plane and its cylinder
+/// alone (an arc's key names both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RimSpoke {
     CapInside = 0,
@@ -259,20 +280,55 @@ enum RimSpoke {
 }
 
 impl RimSpoke {
-    fn at(i: usize) -> Self {
-        [
-            RimSpoke::CapInside,
-            RimSpoke::LateralAbove,
-            RimSpoke::CapOutside,
-            RimSpoke::LateralBelow,
-        ][i % 4]
-    }
+    /// The four, in their cyclic order.
+    const ROUND: [RimSpoke; 4] = [
+        RimSpoke::CapInside,
+        RimSpoke::LateralAbove,
+        RimSpoke::CapOutside,
+        RimSpoke::LateralBelow,
+    ];
 }
 
-/// **The faces that join across the whole rim of cylinder class `k` on plane class `c`** — each
-/// face with the next face round the rim on its material side, where the two point at each other
-/// ([`face_components`]' second rule). `users` are the faces meeting the rim and where; each face's
-/// material side is read off its truth:
+/// **Where face `i` meets the cut arc of cylinder class `k` it walks along `wall`** — the arc's
+/// travel against the face's frame says which side of it the face lies on, the way a whole circle's
+/// bound kind does. Its ring keeps the face on its left about the frame's normal before `flip`
+/// (`arrangement::emit`), so travelling counter-clockwise about the axis a lateral lies above the
+/// arc (the convention `Bound::Rim` states), and a cap lies inside it exactly when its frame faces
+/// up the axis (the even half-edge borders the disk exactly then — `emit_faces`' arc labels).
+///
+/// A lateral on the arc is one of cylinder `k`'s, the cylinder the arc's key names: an arc on two
+/// cylinders' laterals is a contact the gate refuses (`CylinderPairContact`), so another reads as
+/// the stages disagreeing.
+fn arc_spoke(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[LocalFace],
+    i: usize,
+    wall: Wall,
+    k: usize,
+) -> Result<RimSpoke, BoolError> {
+    let Wall::Arc { ccw, plane, .. } = wall else {
+        return Err(reject(RejectReason::CylinderStagesDisagree));
+    };
+    Ok(match faces[i].surf {
+        ClassIx::Cyl(c) if c != k => return Err(reject(RejectReason::CylinderStagesDisagree)),
+        ClassIx::Cyl(_) if ccw => RimSpoke::LateralAbove,
+        ClassIx::Cyl(_) => RimSpoke::LateralBelow,
+        ClassIx::Plane(_) => {
+            let up = crate::planes::frame_faces_up_the_axis(&jd.planes[plane], &cyls[k].def)
+                .ok_or_else(|| reject(jd.planes[plane].world_absent()))?;
+            if up == ccw {
+                RimSpoke::CapInside
+            } else {
+                RimSpoke::CapOutside
+            }
+        }
+    })
+}
+
+/// **The faces that bound one kept sector round the circle of cylinder class `k` on plane class
+/// `c`** — `users` are the faces meeting it and where. Each face's material side is read off its
+/// truth:
 ///
 /// - a cap's material lies below the plane along the axis exactly when its outward normal points up
 ///   the axis — the class's frame facing up it ([`crate::planes::frame_faces_up_the_axis`]) and the
@@ -280,55 +336,51 @@ impl RimSpoke {
 /// - a lateral's lies inside the cylinder exactly when it is not flipped (its outward normal looks
 ///   away from the axis).
 ///
-/// A face whose side cannot be read (a class with no world statement — the gate keeps such a
-/// class off a cylinder's circles), two faces at one spoke, or a next face that points elsewhere
-/// joins nothing: the faces stay apart and the shell guard names what that leaves.
-fn rim_pairs(
+/// Two faces leaving along one direction have no order (`UnorderedEdges`); a class whose facing
+/// cannot be read (by the cause of its missing world statement,
+/// [`crate::planes::WorkingPlane::world_absent`], as `reconstruct` reads the same facing — the gate
+/// keeps a class with no world statement off a cylinder's circles) and neighbours whose sides
+/// disagree (`LabelConflict`) are refused.
+fn circle_star(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     faces: &[LocalFace],
     k: usize,
     c: usize,
     users: &[(usize, RimSpoke)],
-) -> Vec<(usize, usize)> {
+) -> Result<Vec<(usize, usize)>, BoolError> {
     let mut at: [Option<usize>; 4] = [None; 4];
     for &(i, spoke) in users {
         if at[spoke as usize].replace(i).is_some() {
-            return Vec::new();
+            return Err(reject(RejectReason::UnorderedEdges));
         }
     }
-    // The step round the rim, `+1` or `−1` in `RimSpoke` order, toward the face's material.
-    let toward = |i: usize, spoke: RimSpoke| -> Option<usize> {
+    // Whether the face's material lies the next spoke on in `RimSpoke` order.
+    let forward = |i: usize, spoke: RimSpoke| -> Result<bool, BoolError> {
         let flip = faces[i].flip;
-        let forward = match spoke {
+        Ok(match spoke {
             RimSpoke::CapInside | RimSpoke::CapOutside => {
-                let up = crate::planes::frame_faces_up_the_axis(&jd.planes[c], &cyls[k].def)?;
-                // Material above the plane is toward `LateralAbove`: `+1` from inside, `−1` from
+                let up = crate::planes::frame_faces_up_the_axis(&jd.planes[c], &cyls[k].def)
+                    .ok_or_else(|| reject(jd.planes[c].world_absent()))?;
+                // Material above the plane is toward `LateralAbove`: on from inside, back from
                 // outside.
                 let above = up == flip;
                 above == (spoke == RimSpoke::CapInside)
             }
             RimSpoke::LateralAbove | RimSpoke::LateralBelow => {
-                // Material inside is toward `CapInside`: `−1` from above, `+1` from below.
+                // Material inside is toward `CapInside`: back from above, on from below.
                 let inside = !flip;
                 inside == (spoke == RimSpoke::LateralBelow)
             }
-        };
-        let step = if forward { 1 } else { 3 };
-        (1..4)
-            .map(|n| RimSpoke::at(spoke as usize + n * step))
-            .find_map(|s| at[s as usize])
+        })
     };
-    let mut out = Vec::new();
-    for &(i, spoke) in users {
-        let Some(j) = toward(i, spoke) else { continue };
-        let back = users
-            .iter()
-            .find(|&&(x, _)| x == j)
-            .and_then(|&(x, s)| toward(x, s));
-        if i < j && back == Some(i) {
-            out.push((i, j));
+    let mut star = Vec::with_capacity(users.len());
+    for (spoke, slot) in RimSpoke::ROUND.into_iter().zip(at) {
+        if let Some(i) = slot {
+            star.push((i, forward(i, spoke)?));
         }
     }
-    out
+    crate::draft::LineStar::new(star)
+        .bounding_pairs()
+        .ok_or_else(|| reject(RejectReason::LabelConflict))
 }

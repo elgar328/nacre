@@ -312,15 +312,14 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 
 답은 초록이지만 전제나 뒤처리가 흔들리는 자리 — 결과를 어떻게 바꾸는지를 먼저 잰다.
 
-### 곧은 모서리·호에서만 만나는 면 — 두 몸체가 답인데
+### 곧은 모서리에서만 만나는 면 — 두 몸체가 답인데
 
-성분 결합(`assembly::topology::face_components`)은 노드 모서리(곧은 선·호)를 두 면이 쓸 때만 잇는다. 모든 모서리가 네 면이 쓰는
-접촉선인 면은 제 몸체로 가는 길이 없다: 네모 구멍 블록 아래 네모 핀(Fuse)은 `NonManifoldResultEdge`, D 구멍 아래 D 핀(한
-원통 핸들)은 한 셸이 둘로 갈려 `OpenResultShell`. 인구 0(홀로 남는 면 — 스위트·census·kit). 규칙은 통째 림의 것(둘레에서 재료 쪽 다음 면)이고, 여는 꼴은
-묶기를 한 함수로 두는 것이다 — 모서리를 떠나는 면을 둘레 순서의 살로 받아 재료 부채 하나를 사이에 둔 이웃 살 둘을 잇는다
-(`draft::LineStar` 의 살·부채, OCCT `GetFaceOff`). 모서리 종류마다 다른 것은 살의 순서를 대는 쪽뿐이다: 통째 림은
-`rim_pairs` 의 고정된 네 칸(`RimSpoke`)이 따로 철자하고, 호와 두 평면의 곧은 모서리는 림처럼 네 살이되 호의 캡은 칸을 루프
-종류(바깥·안)로 정하지 못하며, 셋 이상의 평면이 만나는 곧은 모서리는 각의 순서가 필요하다.
+성분 결합(`assembly::topology::face_components`)은 둘레에서 재료 쪽 다음 면과 잇는 한 규칙(`draft::LineStar::bounding_pairs`)을
+원 위의 모서리(통째 림·자른 호)에서만 읽는다 — 셋 이상의 면이 쓰는 곧은 모서리는 잇지 않는다. 그래서 모든 모서리가 그런 접촉선인
+면은 제 몸체로 가는 길이 없다: 네모 구멍 블록 아래 네모 핀(Fuse)은 `NonManifoldResultEdge`, 윗면에 홈이 난 네모 핀은
+`StraightAngle`, 창에 평평한 면을 끼운 반원기둥은 `NonManifoldResultEdge`(점수판 `src/tests/suite/contact_faces.rs`). 인구는 그
+점수판 밖 0(스위트·무시 스윕·census·kit). 곧은 모서리의 살 순서는 평면들만이면 그 선을 가로지르는 평면 위의 각 순서
+(`combinatorics::angular_order`), 룰링이면 차트의 현 순서(`cyl_chart` 의 `chord_before`)가 답한다.
 
 ### 접선에서만 만나는 덩이 — 두 몸체가 답인데
 

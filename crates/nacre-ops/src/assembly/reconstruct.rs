@@ -380,8 +380,9 @@ pub(crate) fn reconstruct(
         // ([`crate::planes::plus_t_is_above`]) is the frame, exactly — read off the truth, where
         // the `f64` plane and axis caches are two rounded images of it.
         let axis_up = |k: usize| -> Result<bool, BoolError> {
-            crate::planes::frame_faces_up_the_axis(&planes[lf.surf.plane()], &cyls[k].def)
-                .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+            let plane = &planes[lf.surf.plane()];
+            crate::planes::frame_faces_up_the_axis(plane, &cyls[k].def)
+                .ok_or_else(|| reject(plane.world_absent()))
         };
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {

@@ -51,7 +51,7 @@ pub(crate) use topology::*;
 /// a box's floor cuts. Without the plane the two are one key with four users. A key of the pair
 /// alone folds a straight edge onto an arc between the same two nodes, and the self-touch verdict,
 /// which asks straight edges only, skips both — 4,580 straight edges over the workspace suite.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum NodeEdge {
     Line((NodeId, NodeId)),
     Arc {

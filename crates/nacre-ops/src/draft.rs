@@ -88,16 +88,8 @@ impl Def {
             } => {
                 let width = || reject(RejectReason::WitnessNotRational);
                 let coeffs = |k: usize| {
-                    jd.world_rat(k).ok_or_else(|| {
-                        reject(match planes[k].world {
-                            Ok(_) | Err(nacre_topo::WorldFail::Width) => {
-                                RejectReason::WitnessNotRational
-                            }
-                            Err(nacre_topo::WorldFail::Unstated) => {
-                                RejectReason::CylinderGateUndecided
-                            }
-                        })
-                    })
+                    jd.world_rat(k)
+                        .ok_or_else(|| reject(planes[k].world_absent()))
                 };
                 let def = &cyls[cyl].def;
                 let (o, m) = (def.origin(), def.dir());
@@ -376,6 +368,9 @@ pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
 ///   from one half to the other. A face with one spoke — the line is its edge — ends there.
 /// - **The kept material meets itself only along the line when its sectors fall into two runs or
 ///   more** ([`Self::kept_runs`]).
+/// - **Two result faces belong to one body across the line when they bound one kept sector**
+///   ([`Self::bounding_pairs`]) — the component join's rule, at a straight edge and round a
+///   circle alike (`assembly::face_components`).
 ///
 /// Spokes are counted counter-clockwise from any one of them; `kept[i]` is the sector
 /// counter-clockwise after spoke `i`.
@@ -476,6 +471,25 @@ impl LineStar {
                 None
             }
         }
+    }
+
+    /// **The faces that bound each kept sector, in pairs** — where every spoke is a face of the
+    /// result, each kept sector lies between two neighbouring spokes and those two faces bound the
+    /// one material there: the face whose material lies counter-clockwise after it, and the next
+    /// one round, whose material lies clockwise before it. Kept and dropped sectors then alternate
+    /// round the curve, because a result face has material on exactly one side; `None` where two
+    /// neighbouring spokes say otherwise.
+    pub(crate) fn bounding_pairs(&self) -> Option<Vec<(usize, usize)>> {
+        let n = self.kept.len();
+        if (0..n).any(|i| self.kept[i] == self.kept[(i + 1) % n]) {
+            return None;
+        }
+        Some(
+            (0..n)
+                .filter(|&i| self.kept[i])
+                .map(|i| (self.faces[i], self.faces[(i + 1) % n]))
+                .collect(),
+        )
     }
 
     /// How many runs the kept sectors fall into round the line — `0` with none kept, `1` with all.
