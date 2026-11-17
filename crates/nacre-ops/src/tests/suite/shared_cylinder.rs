@@ -22,33 +22,10 @@
 //! the axis's sign, the seam direction, the origin on the line or a motion turning it about its
 //! axis told apart. A motion that folds back to no motion at all is one statement, and one class.
 
+use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
 
 type Build = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
-
-/// The four booleans each family is run as.
-#[derive(Clone, Copy, Debug)]
-enum Op {
-    Fuse,
-    /// The first operand minus the second.
-    CutAb,
-    /// The second operand minus the first.
-    CutBa,
-    Common,
-}
-
-const OPS: [Op; 4] = [Op::Fuse, Op::CutAb, Op::CutBa, Op::Common];
-
-fn run(m: &mut Model, op: Op, a: Handle<Solid>, b: Handle<Solid>) -> BoolResult {
-    match op {
-        Op::Fuse => crate::boolean(m, BoolKind::Fuse, a, b),
-        Op::CutAb => crate::boolean(m, BoolKind::Cut, a, b),
-        Op::CutBa => crate::boolean(m, BoolKind::Cut, b, a),
-        Op::Common => crate::boolean(m, BoolKind::Common, a, b),
-    }
-}
-
-type BoolResult = Result<Vec<Handle<Solid>>, BoolError>;
 
 fn p(x: f64, y: f64) -> nacre_math::Point2 {
     nacre_math::Point2::from_array([x, y])
@@ -320,33 +297,6 @@ fn each_familys_operands_share_one_cylinder_handle() {
     }
 }
 
-/// What a family's boolean comes out as: the volume of each output solid, ascending (none for an
-/// empty result), and the solid's face count — or the refusal of a result that touches itself.
-struct Want {
-    volumes: Vec<f64>,
-    /// Each body's face count, the bodies in the order of `volumes`.
-    faces: Vec<usize>,
-    refused: Option<RejectReason>,
-}
-
-/// The bodies' volumes and, body by body in the same order, their face counts.
-fn counted(volumes: &[f64], faces: &[usize]) -> Want {
-    assert_eq!(volumes.len(), faces.len(), "one face count per body");
-    Want {
-        volumes: volumes.to_vec(),
-        faces: faces.to_vec(),
-        refused: None,
-    }
-}
-
-fn refused(reason: RejectReason) -> Want {
-    Want {
-        volumes: Vec::new(),
-        faces: Vec::new(),
-        refused: Some(reason),
-    }
-}
-
 const PI: f64 = std::f64::consts::PI;
 
 /// A unit disk's segment cut off by a chord a quarter turn long, swept 2: `(π/4 − 1/2)·2`.
@@ -464,41 +414,6 @@ fn wants(name: &str) -> [Want; 4] {
         ],
         other => panic!("no answers stated for {other}"),
     }
-}
-
-fn face_count(m: &Model, s: Handle<Solid>) -> usize {
-    m.shell(m.solid(s).outer).faces.len()
-}
-
-/// **`got` is `want`** — the refusal it names, or a valid model whose output solids have the
-/// volumes and, body by body, the face counts stated, and whose mesh covers their faces.
-fn check(label: &str, m: &Model, got: BoolResult, want: &Want) {
-    if let Some(reason) = want.refused {
-        assert!(
-            matches!(&got, Err(BoolError::Rejected { reason: r, .. }) if *r == reason),
-            "{label}: {got:?}"
-        );
-        return;
-    }
-    let got = got.unwrap_or_else(|e| panic!("{label}: {e:?}"));
-    let bad = nacre_validate::validate(m);
-    assert!(bad.is_empty(), "{label}: {bad:?}");
-    let mut bodies: Vec<(f64, usize)> = got
-        .iter()
-        .map(|&s| {
-            let v = nacre_props::mass_props(m, s).expect("props").volume;
-            (v, face_count(m, s))
-        })
-        .collect();
-    bodies.sort_by(|x, y| x.0.total_cmp(&y.0));
-    let volumes: Vec<f64> = bodies.iter().map(|b| b.0).collect();
-    assert_eq!(volumes.len(), want.volumes.len(), "{label}: {volumes:?}");
-    for (v, w) in volumes.iter().zip(&want.volumes) {
-        assert!((v - w).abs() < 1e-9, "{label}: {volumes:?}");
-    }
-    let faces: Vec<usize> = bodies.iter().map(|b| b.1).collect();
-    assert_eq!(faces, want.faces, "{label}");
-    mesh_covers_faces(label, m, &got);
 }
 
 /// **A cylinder two solids share is one class read for both.** Every family, as each of the four
@@ -678,43 +593,5 @@ fn a_motion_folded_back_states_the_cylinder_once() {
             let got = run(&mut m, op, a, b);
             check(&format!("{name} {op:?}"), &m, got, &want);
         }
-    }
-}
-
-/// **A face whose every edge is a contact line four faces use is refused by name** — the pin under
-/// a block's bore, touching it on the bore's rim only, when that rim is cut into edges: the pin's
-/// top has no edge to its own body, so the components cannot place it. Two bodies would be the
-/// answer. A D pin under its D bore (one cylinder handle) leaves one shell split in two —
-/// `OpenResultShell`, the closure each result shell is held to; a square pin under its square bore
-/// leaves the contact lines used four times in one solid — `NonManifoldResultEdge`.
-#[test]
-fn a_face_that_meets_its_body_only_on_contact_lines_is_refused() {
-    let d = |m: &mut Model| {
-        let block = crate::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
-        let tool = sweep(m, upper_half(), 4.0);
-        let bored = crate::boolean(m, BoolKind::Cut, block, tool).expect("the bore")[0];
-        (bored, sweep(m, upper_half(), 2.0))
-    };
-    let square = |m: &mut Model| {
-        let block = crate::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
-        let tool = crate::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 1.0, 4.0]);
-        let bored = crate::boolean(m, BoolKind::Cut, block, tool).expect("the bore")[0];
-        (
-            bored,
-            crate::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 1.0, 2.0]),
-        )
-    };
-    let cases: [(&str, Build, RejectReason); 2] = [
-        ("a D pin", d, RejectReason::OpenResultShell),
-        ("a square pin", square, RejectReason::NonManifoldResultEdge),
-    ];
-    for (name, build, want) in cases {
-        let mut m = Model::new();
-        let (a, b) = build(&mut m);
-        let got = run(&mut m, Op::Fuse, a, b);
-        assert!(
-            matches!(&got, Err(BoolError::Rejected { reason, .. }) if *reason == want),
-            "{name}: {got:?}"
-        );
     }
 }
