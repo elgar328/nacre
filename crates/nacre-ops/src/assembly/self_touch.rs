@@ -53,15 +53,12 @@ pub(crate) enum Pinch {
 pub(crate) fn pinch(
     kind: BoolKind,
     wall_solid: crate::planes::SolidSide,
+    cyl_solid: crate::planes::SolidSide,
     lens_in_wall_solid: bool,
     cyl_orient: i8,
 ) -> Option<Pinch> {
     use crate::draft::{LineStar, Spoke};
     use crate::planes::SolidSide;
-    let cyl_solid = match wall_solid {
-        SolidSide::A => SolidSide::B,
-        SolidSide::B => SolidSide::A,
-    };
     // Counter-clockwise from the wall's half on one side, the lens side up: the lateral leaves
     // along the wall's own half-planes and bends to its axis, so each of its halves lies just
     // inside the wall's on that side — `W2` between them, `L` between the lateral's two halves,
@@ -90,7 +87,7 @@ pub(crate) fn pinch(
         },
     ];
     let star = LineStar::from_spokes(kind, &spokes)
-        .expect("a wall and a lateral each bring two halves with opposite material sides");
+        .expect("a row pairs two solids, each bringing two halves with opposite material sides");
     if star.kept_runs() < 2 {
         return None;
     }
@@ -165,6 +162,7 @@ pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), B
         let Some(shape) = pinch(
             tg.kind,
             t.wall_solid,
+            t.cyl_solid,
             t.reading.lens_in_wall_solid,
             t.cyl_orient,
         ) else {

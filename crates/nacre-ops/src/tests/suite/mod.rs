@@ -471,7 +471,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
                 surf,
                 def,
                 realized: *cache,
-                owner: Some(crate::planes::SolidSide::A),
+                solids: [true, false],
                 shared: Vec::new(),
                 grazed: Vec::new(),
                 records: Vec::new(),

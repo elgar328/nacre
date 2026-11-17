@@ -1030,9 +1030,9 @@ fn the_pinch_formula_is_a_truth_table() {
             .into_iter()
             .enumerate()
         {
-            for (side, want) in [(A, on_a[i]), (B, on_b[i])] {
+            for (side, cyl_side, want) in [(A, B, on_a[i]), (B, A, on_b[i])] {
                 assert_eq!(
-                    pinch(kind, side, lens, orient),
+                    pinch(kind, side, cyl_side, lens, orient),
                     want,
                     "wall on {side:?}, lens {lens}, orient {orient}, {kind:?}"
                 );

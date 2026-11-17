@@ -45,9 +45,19 @@ pub(crate) fn cylinder_gate(
     use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
+    // Which operands have faces in each class, plane and cylinder alike — what «can a face here
+    // meet a face of the other solid» is asked of (`across`).
+    let plane_solids = class_presence(plane_ix, n_a, geom.len(), |ci| match ci {
+        ClassIx::Plane(c) => Some(c),
+        ClassIx::Cyl(_) => None,
+    });
+    let cyl_solids = class_presence(plane_ix, n_a, cyl_surfs.len(), |ci| match ci {
+        ClassIx::Cyl(k) => Some(k),
+        ClassIx::Plane(_) => None,
+    });
     let mut tangencies: Vec<RowDraft> = Vec::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
-    for &surf in cyl_surfs {
+    for (k, &surf) in cyl_surfs.iter().enumerate() {
         // **The world statement or nothing.** A moved cylinder's def is written before its
         // motion, and every test below compares it against world planes. The chain's fold
         // carries it out exactly where it can (`Model::world_cylinder_def` — the same door the
@@ -65,25 +75,19 @@ pub(crate) fn cylinder_gate(
         };
         // **Whose lateral faces the class carries.** Cylinders intern by their exact statement, so
         // two operands whose laterals lie on one stated cylinder arrive as one class carrying rows
-        // of both — the cylinder's twin of a coplanar class (`class_owners`), and `None` says so.
-        // Every question below that needs a solid reads it off the face it asks about.
-        let owned = |rows: &[FaceRow]| {
-            rows.iter()
-                .any(|r| matches!(r, FaceRow::Cylinder(cf) if cf.surf == surf))
-        };
-        let owner = match (owned(&faces[..n_a]), owned(&faces[n_a..])) {
-            (true, true) => None,
-            (true, false) => Some(SolidSide::A),
-            (false, true) => Some(SolidSide::B),
-            // A class is named by some face row; a table with none is the class table and the
-            // face rows disagreeing.
-            (false, false) => return Err(reject(RejectReason::CylinderStagesDisagree)),
-        };
+        // of both — the cylinder's twin of a coplanar class. Every question below that needs a
+        // solid reads it off the face it asks about.
+        let solids = cyl_solids[k];
+        // A class is named by some face row; a table with none is the class table and the face
+        // rows disagreeing.
+        if solids == [false, false] {
+            return Err(reject(RejectReason::CylinderStagesDisagree));
+        }
         cyls.push(WorkingCyl {
             surf,
             def,
             realized: *cache,
-            owner,
+            solids,
             shared: Vec::new(),
             grazed: Vec::new(),
             records: Vec::new(),
@@ -123,6 +127,7 @@ pub(crate) fn cylinder_gate(
         model,
         faces,
         plane_ix,
+        plane_solids: &plane_solids,
         n_a,
         jd,
         whole_rims: &whole_rims,
@@ -327,7 +332,7 @@ pub(crate) fn cylinder_gate(
     let mut cyl_pairs: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     for (i, a) in cyls.iter().enumerate() {
         for (j, b) in cyls.iter().enumerate().skip(i + 1) {
-            if a.owner.is_some() && a.owner == b.owner {
+            if !across(a.solids, b.solids) {
                 continue;
             }
             let clear = match nacre_exact::cylinders_clear(
@@ -383,7 +388,7 @@ pub(crate) fn cylinder_gate(
         .into_iter()
         .map(RowDraft::stated)
         .collect::<Result<Vec<_>, _>>()?;
-    for (ci, sr) in shared_rulings(faces, plane_ix, n_a, jd, &cyls, &meets, &tangencies)
+    for (ci, sr) in shared_rulings(faces, &plane_solids, n_a, jd, &cyls, &meets, &tangencies)
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
         .into_iter()
         .chain(hinged)
@@ -419,7 +424,7 @@ enum ClassMeet {
     Cuts,
     /// The plane stands exactly `r` from the axis: one grazing line. `holders` are the classes
     /// holding that line ([`classes_holding_the_line`]); `other_owner` says the class carries a
-    /// face of a solid other than one with a lateral face on the cylinder ([`WorkingCyl::owner`]) —
+    /// face of a solid other than one with a lateral face on the cylinder ([`across`]) —
     /// such a tangent class is half of [`SharedRuling`]'s population, and a record the sectioned
     /// settlement weighs.
     Tangent {
@@ -446,6 +451,8 @@ struct PairCx<'a, 'j> {
     model: &'a Model,
     faces: &'a [FaceRow],
     plane_ix: &'a [ClassIx],
+    /// Which operands have faces in each plane class ([`class_presence`]).
+    plane_solids: &'a [[bool; 2]],
     n_a: usize,
     jd: &'a Judge<'j, WorkingPlane>,
     whole_rims: &'a [bool],
@@ -497,6 +504,7 @@ fn class_meet(
         model,
         faces,
         plane_ix,
+        plane_solids,
         n_a,
         jd,
         whole_rims,
@@ -609,13 +617,7 @@ fn class_meet(
             let Some(h) = classes_holding_the_line(jd, c, &coeffs, &cyl.def) else {
                 return Err(reject(RejectReason::WitnessNotRational));
             };
-            let other_owner = faces.iter().enumerate().any(|(i, row)| {
-                let side = if i < n_a { SolidSide::A } else { SolidSide::B };
-                matches!(row, FaceRow::Plane(_))
-                    && plane_ix[i] == ClassIx::Plane(c)
-                    && cyl.owner != Some(side)
-            });
-            Some((h, other_owner))
+            Some((h, across(plane_solids[c], cyl.solids)))
         } else {
             None
         };
@@ -670,8 +672,8 @@ fn class_meet(
                 // read is refused by the gate before anything reads it ([`RowDraft`]).
                 if clearance == Orient::Zero {
                     rows = tangency_rows(
-                        model, faces, plane_ix, n_a, c, ci, &coeffs, &cyl.def, cyl.surf, cyl.owner,
-                        jd,
+                        model, faces, plane_ix, n_a, c, ci, &coeffs, &cyl.def, cyl.surf,
+                        cyl.solids, jd,
                     );
                 } else {
                     return Ok((ClassMeet::Cuts, Vec::new()));
@@ -846,7 +848,7 @@ fn classes_holding_the_line(
 /// population. `None` is arithmetic that could not answer.
 fn shared_rulings(
     faces: &[FaceRow],
-    plane_ix: &[ClassIx],
+    plane_solids: &[[bool; 2]],
     n_a: usize,
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
@@ -898,24 +900,13 @@ fn shared_rulings(
             // The line must lie on a lateral face **of a solid other than a wall face's** of this
             // class: a wall tangent to its own solid's lateral is that solid's smooth edge and pairs
             // with nothing.
-            let side = |i: usize| if i < n_a { SolidSide::A } else { SolidSide::B };
-            let walls_of = |s: SolidSide| {
-                faces.iter().enumerate().any(|(i, row)| {
-                    matches!(row, FaceRow::Plane(_))
-                        && plane_ix[i] == ClassIx::Plane(t)
-                        && side(i) == s
-                })
-            };
             let against: Vec<&CylFaceInfo> = faces
                 .iter()
                 .enumerate()
                 .filter_map(|(i, row)| match row {
                     FaceRow::Cylinder(cf)
                         if cf.surf == cyl.surf
-                            && walls_of(match side(i) {
-                                SolidSide::A => SolidSide::B,
-                                SolidSide::B => SolidSide::A,
-                            }) =>
+                            && across(plane_solids[t], SolidSide::of_row(i, n_a).bit()) =>
                     {
                         Some(cf)
                     }
@@ -945,7 +936,7 @@ fn shared_rulings(
                             .iter()
                             .filter(|row| row.wall == t && row.cyl == ci)
                         {
-                            let to = acc[usize::from(row.wall_solid == SolidSide::B)]
+                            let to = acc[row.wall_solid.ix()]
                                 .get_or_insert_with(|| [Vec::new(), Vec::new()]);
                             for (to, from) in to.iter_mut().zip(&row.reading.halves) {
                                 to.extend(from.iter().copied());
@@ -1249,13 +1240,11 @@ fn tangency_rows(
     coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
     surf: Handle<Surface>,
-    owner: Option<SolidSide>,
+    cyl_solids: [bool; 2],
     jd: &Judge<'_, WorkingPlane>,
 ) -> Vec<RowDraft> {
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let side_of = |i: usize| {
-        if i < n_a { SolidSide::A } else { SolidSide::B }
-    };
+    let side_of = |i: usize| SolidSide::of_row(i, n_a);
     // The tangency line's base point: the foot of the perpendicular from the axis origin to the
     // wall, the plane's meet with the line along its normal — **rational**, because nothing in
     // `o − ((n·o + d)/(n·n))·n` leaves the field. The line itself is that point plus `t·m`.
@@ -1330,8 +1319,8 @@ fn tangency_rows(
     // **Every wall face's footprint reading, once** — read by the face's own row (`unread` below)
     // and, for a sibling, by `read_wall_sides`, so a face that could not be read is refused by
     // **one** refusal whichever row reaches it first. Indexed by face row; `Some` exactly on the
-    // faces the row loop below walks — the class's wall faces of a solid that has no lateral face
-    // here, or of either where both have.
+    // faces the row loop below walks — the class's wall faces that can meet a lateral face of
+    // another solid here (`across`).
     let footprint: Vec<Option<Result<bool, BoolError>>> = faces
         .iter()
         .enumerate()
@@ -1345,7 +1334,7 @@ fn tangency_rows(
             // anyway (the face ends on the line, so no piece runs through), but a row it could not
             // decide would refuse the boolean by a name that is about nothing. So a wall face is
             // read only where the cylinder carries a lateral face of the other solid.
-            if kj != c || owner == Some(side_of(j)) {
+            if kj != c || !across(side_of(j).bit(), cyl_solids) {
                 return None;
             }
             let fh = fj.face.expect("collect_planes yields real faces");
@@ -1474,7 +1463,7 @@ fn tangency_rows(
             // material would have to be the two wedges alone or the lens and the far side alone —
             // and both of those *are* the pinch. Such an operand is invalid before any boolean
             // runs, so skipping the pair discards no information about a valid input.
-            if side_of(fi_ix) == side_of(*cy_ix) {
+            if !across(side_of(fi_ix).bit(), side_of(*cy_ix).bit()) {
                 continue;
             }
             // The line must lie on this lateral **face** (`Tangency`'s doc): read off the
@@ -1545,7 +1534,7 @@ fn tangency_rows(
             // sides of it on the cylinder. One result, its first cause the wall's sides: the
             // stretches through the line rest on them. `Err` where a face could not be read.
             let cyl_solid = side_of(*cy_ix);
-            let lateral_through = lateral_through[usize::from(cyl_solid == SolidSide::B)]
+            let lateral_through = lateral_through[cyl_solid.ix()]
                 .get_or_insert_with(|| read_lateral_through(cyl_solid));
             let wall_sides = wall_sides_of[li]
                 .get_or_insert_with(|| read_wall_sides(stretches, side_of(fi_ix)))
@@ -2837,7 +2826,7 @@ fn lateral_faces_clear(faces: &[FaceRow], n_a: usize, a: &WorkingCyl, b: &Workin
         let mut cfs = faces
             .iter()
             .enumerate()
-            .filter(|&(i, _)| (i < n_a) == (side == SolidSide::A))
+            .filter(|&(i, _)| SolidSide::of_row(i, n_a) == side)
             .filter_map(|(_, row)| match row {
                 FaceRow::Cylinder(cf) if cf.surf == surf => Some(cf),
                 _ => None,

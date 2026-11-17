@@ -373,7 +373,7 @@ fn the_tangent_wall_states_itself_exactly() {
         &coeffs,
         &def,
         surf,
-        Some(SolidSide::B), // the cylinder is the second operand; the wall face is the cube's
+        SolidSide::B.bit(), // the cylinder is the second operand; the wall face is the cube's
         &jd,
     );
     assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
@@ -1281,7 +1281,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             &coeffs,
             &def,
             surf,
-            Some(rod_side),
+            rod_side.bit(),
             &jd,
         );
         assert_eq!(rows.len(), 1, "{order}: {rows:?}");
@@ -1363,7 +1363,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
                 &coeffs,
                 &def,
                 surf,
-                Some(SolidSide::A),
+                SolidSide::A.bit(),
                 &jd,
             )
         };
@@ -1534,7 +1534,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             &coeffs,
             dir,
             surf,
-            Some(SolidSide::A),
+            SolidSide::A.bit(),
             &jd,
         )
         .into_iter()
@@ -1592,7 +1592,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         &coeffs,
         &def,
         surf,
-        Some(SolidSide::A),
+        SolidSide::A.bit(),
         &jd,
     )
     .into_iter()
@@ -1663,7 +1663,15 @@ fn a_shared_line_gathers_its_rows_halves() {
     let records = |rows: &[Tangency]| {
         shared_rulings(
             &setup.planes,
-            &setup.plane_ix,
+            &class_presence(
+                &setup.plane_ix,
+                setup.n_a,
+                setup.geom.len(),
+                |ci| match ci {
+                    ClassIx::Plane(c) => Some(c),
+                    ClassIx::Cyl(_) => None,
+                },
+            ),
             setup.n_a,
             &jd,
             &setup.cyls,
@@ -1910,7 +1918,7 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         &coeffs,
         &def,
         surf,
-        Some(SolidSide::A),
+        SolidSide::A.bit(),
         &jd,
     );
     assert_eq!(rows.len(), 2, "one row per slab face: {rows:?}");

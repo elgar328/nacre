@@ -544,7 +544,7 @@ fn vertex_names(
                 surf,
                 def,
                 realized: *cache,
-                owner: Some(crate::planes::SolidSide::A),
+                solids: [true, false],
                 shared: Vec::new(),
                 grazed: Vec::new(),
                 records: Vec::new(),

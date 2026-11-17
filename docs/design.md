@@ -1376,7 +1376,7 @@ pub(crate) struct WorkingCyl {
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
     pub(crate) realized: nacre_geom::Cylinder,        // 모델의 캐시가 아니다 — 연산 하나를 산다
-    pub(crate) owner: Option<SolidSide>,              // 옆면을 가진 솔리드 — 둘 다면 None(평면의 class_owners 와 같은 어휘)
+    pub(crate) solids: [bool; 2],                     // 옆면을 가진 솔리드 [A, B] — class_presence, 건너는가는 across
     pub(crate) shared: Vec<SharedRuling>,             // 옆면 위에 놓인 두 클래스의 교선 — 게이트의 기록
     pub(crate) records: Vec<(usize, CylRecord)>,      // 게이트가 배열에 넘기는 클래스별 기록 — 절단(`Cuts`), 비스듬한 단면(`Sections`), 접함(`Touches`), 또는 이름 없는 클래스의 말 없음(쪽, 면이 떨어짐, 단면, 스침)
     pub(crate) boxes: Vec<[[Rat; 3]; 2]>,             // 옆면마다 호를 아는 상자 — 이름 없는 클래스가 있을 때만

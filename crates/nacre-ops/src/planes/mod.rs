@@ -460,6 +460,57 @@ pub(crate) enum SolidSide {
     B,
 }
 
+impl SolidSide {
+    /// The operand face row `i` belongs to: the face table lists `A`'s `n_a` rows first, then
+    /// `B`'s.
+    pub(crate) fn of_row(i: usize, n_a: usize) -> Self {
+        if i < n_a { SolidSide::A } else { SolidSide::B }
+    }
+
+    /// This side's place in a per-solid pair — `A` first.
+    pub(crate) fn ix(self) -> usize {
+        match self {
+            SolidSide::A => 0,
+            SolidSide::B => 1,
+        }
+    }
+
+    /// This side alone, as the presence bits a class carries ([`class_presence`]).
+    pub(crate) fn bit(self) -> [bool; 2] {
+        let mut out = [false; 2];
+        out[self.ix()] = true;
+        out
+    }
+}
+
+/// **Which operands have a face in each class** — `[A, B]` per class of the index space `index`
+/// picks out of the face table's classes (the plane classes, or the cylinder classes). A class
+/// with no face row reads `[false, false]`.
+pub(crate) fn class_presence(
+    plane_ix: &[ClassIx],
+    n_a: usize,
+    n_class: usize,
+    index: impl Fn(ClassIx) -> Option<usize>,
+) -> Vec<[bool; 2]> {
+    let mut out = vec![[false; 2]; n_class];
+    for (fi, &ci) in plane_ix.iter().enumerate() {
+        if let Some(c) = index(ci) {
+            out[c][SolidSide::of_row(fi, n_a).ix()] = true;
+        }
+    }
+    out
+}
+
+/// **Can a face of one class and a face of another be of different solids?** — the classes'
+/// presence bits ([`class_presence`]) crossed: one carries `A`'s face and the other `B`'s. Two
+/// faces of one valid solid meet only along their edges, so this is the pairs a contact between
+/// the operands can be in: the pair rule asks cylinder classes it holds for, a tangent plane class
+/// is a contact candidate for a cylinder it holds for, and a tangency row pairs a wall face with
+/// a lateral face it holds for (each face's own solid, `SolidSide::bit`).
+pub(crate) fn across(x: [bool; 2], y: [bool; 2]) -> bool {
+    (x[0] && y[1]) || (x[1] && y[0])
+}
+
 /// Whose faces each plane class carries: `Some(side)` when every face in the class is that
 /// operand's, `None` when both operands have one there.
 ///
@@ -470,20 +521,21 @@ pub(crate) fn class_owners(
     n_a: usize,
     n_class: usize,
 ) -> Vec<Option<SolidSide>> {
-    let mut out: Vec<Option<SolidSide>> = vec![None; n_class];
-    let mut seen = vec![false; n_class];
-    for (fi, &ci) in plane_ix.iter().enumerate() {
-        // Cylinder classes get their own owner table with the cylinder class table.
-        let ClassIx::Plane(c) = ci else { continue };
-        let side = if fi < n_a { SolidSide::A } else { SolidSide::B };
-        if !seen[c] {
-            seen[c] = true;
-            out[c] = Some(side);
-        } else if out[c] != Some(side) {
-            out[c] = None;
+    class_presence(plane_ix, n_a, n_class, |ci| match ci {
+        ClassIx::Plane(c) => Some(c),
+        ClassIx::Cyl(_) => None,
+    })
+    .into_iter()
+    .map(|present| {
+        // `dense_planes` numbers a plane class from a face row, so every class has one.
+        debug_assert_ne!(present, [false, false], "a plane class with no face row");
+        match present {
+            [true, false] => Some(SolidSide::A),
+            [false, true] => Some(SolidSide::B),
+            _ => None,
         }
-    }
-    out
+    })
+    .collect()
 }
 
 /// A face's class in the arrangement — **which index space the face's surface lives in**.
@@ -521,15 +573,13 @@ pub(crate) struct WorkingCyl {
     /// solves a seam vertex's figure on it), while every decision reads `def`. Not a cache of the
     /// model: it lives for one operation, like `WitnessPoint::coord_iv`.
     pub(crate) realized: nacre_geom::Cylinder,
-    /// Whose lateral faces the class carries: `Some(side)` when every one is that operand's, `None`
-    /// when both operands have one on this stated cylinder — the cylinder's twin of a coplanar
-    /// class ([`class_owners`]). It answers only «could a face here meet a face of the other
-    /// solid»: the pair loop skips two classes that carry one and the same solid's faces alone, and
-    /// a tangent class is a contact candidate when it carries a face of a solid other than the
-    /// owner. Every answer that needs a solid reads it off the face — the face table's row.
-    pub(crate) owner: Option<SolidSide>,
+    /// Which operands have a lateral face on this stated cylinder, `[A, B]` ([`class_presence`]) —
+    /// both where two operands state one cylinder, the cylinder's twin of a coplanar class. It
+    /// answers only whether a face here can meet a face of another solid ([`across`]); every answer
+    /// that needs a face's solid reads it off the face — the face table's row.
+    pub(crate) solids: [bool; 2],
     /// **The lines of two plane classes that lie on this cylinder's lateral face** — the gate's
-    /// record ([`SharedRuling`]), carried with the class like `owner` so every road that holds
+    /// record ([`SharedRuling`]), carried with the class like `solids` so every road that holds
     /// the table reads it rather than deciding it again.
     pub(crate) shared: Vec<SharedRuling>,
     /// **The lines a sectioned class shares with a class grazing this cylinder** — the gate's
