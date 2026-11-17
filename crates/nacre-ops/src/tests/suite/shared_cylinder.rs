@@ -679,3 +679,41 @@ fn a_motion_folded_back_states_the_cylinder_once() {
         }
     }
 }
+
+/// **A face whose every edge is a contact line four faces use is refused by name** — the pin under
+/// a block's bore, touching it on the bore's rim only, when that rim is cut into edges: the pin's
+/// top has no edge to its own body, so the components cannot place it. Two bodies would be the
+/// answer. A D pin under its D bore (one cylinder handle) leaves one shell split in two —
+/// `OpenResultShell`, the closure each result shell is held to; a square pin under its square bore
+/// leaves the contact lines used four times in one solid — `NonManifoldResultEdge`.
+#[test]
+fn a_face_that_meets_its_body_only_on_contact_lines_is_refused() {
+    let d = |m: &mut Model| {
+        let block = crate::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
+        let tool = sweep(m, upper_half(), 4.0);
+        let bored = crate::boolean(m, BoolKind::Cut, block, tool).expect("the bore")[0];
+        (bored, sweep(m, upper_half(), 2.0))
+    };
+    let square = |m: &mut Model| {
+        let block = crate::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
+        let tool = crate::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 1.0, 4.0]);
+        let bored = crate::boolean(m, BoolKind::Cut, block, tool).expect("the bore")[0];
+        (
+            bored,
+            crate::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 1.0, 2.0]),
+        )
+    };
+    let cases: [(&str, Build, RejectReason); 2] = [
+        ("a D pin", d, RejectReason::OpenResultShell),
+        ("a square pin", square, RejectReason::NonManifoldResultEdge),
+    ];
+    for (name, build, want) in cases {
+        let mut m = Model::new();
+        let (a, b) = build(&mut m);
+        let got = run(&mut m, Op::Fuse, a, b);
+        assert!(
+            matches!(&got, Err(BoolError::Rejected { reason, .. }) if *reason == want),
+            "{name}: {got:?}"
+        );
+    }
+}

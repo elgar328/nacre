@@ -96,6 +96,16 @@ pub enum Violation {
         faces: [Handle<Face>; 2],
     },
 
+    /// An edge whose uses lie in **two shells** of one solid. A shell is one closed boundary,
+    /// so each of its edges is used twice within it; an edge shared across shells means one
+    /// closed boundary was split between them (each piece open, though the solid's edge counts
+    /// are whole). `shells` are the first two the edge was found in, in the solid's order (outer
+    /// first, then the cavities).
+    EdgeAcrossShells {
+        edge: Handle<Edge>,
+        shells: [Handle<Shell>; 2],
+    },
+
     /// A vertex whose surface link is not a single circle — a non-manifold "pinch" where two or
     /// more face-fans meet at one point (two solids touching only at a corner), even though every
     /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`], which reads a face's loops:
@@ -311,6 +321,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     check_surface_keys(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
+    check_shell_closure(model, &mut out);
     check_shell_orientation(model, &mut out);
     check_face_orientation(model, &reach, &mut out);
     check_cylinder_truth(model, &reach, &mut out);
@@ -742,6 +753,44 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
     faces.sort_unstable_by_key(|h| h.index());
     for vertex in nacre_topo::nonmanifold_vertices(m, faces) {
         out.push(Violation::NonManifoldVertex { vertex });
+    }
+}
+
+/// Each edge a live solid uses lies in one of its shells — a shell is one closed boundary
+/// ([`Violation::EdgeAcrossShells`]). A face listed in two shells counts in the first, as the
+/// reachability walk counts it once. Runs after the reference-integrity short-circuit, so every
+/// dereferenced handle is in bounds.
+fn check_shell_closure(m: &Model, out: &mut Vec<Violation>) {
+    for &sh in m.live_solids() {
+        if sh.index() as usize >= m.solid_count() {
+            continue;
+        }
+        let solid = m.solid(sh);
+        let mut seen_faces: std::collections::HashSet<Handle<Face>> =
+            std::collections::HashSet::new();
+        let mut edge_shell: std::collections::HashMap<Handle<Edge>, Handle<Shell>> =
+            std::collections::HashMap::new();
+        let mut across: Vec<(Handle<Edge>, [Handle<Shell>; 2])> = Vec::new();
+        for shell in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
+            for &fh in &m.shell(shell).faces {
+                if !seen_faces.insert(fh) {
+                    continue;
+                }
+                let face = m.face(fh);
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        let first = *edge_shell.entry(he.edge).or_insert(shell);
+                        if first != shell && !across.iter().any(|(e, _)| *e == he.edge) {
+                            across.push((he.edge, [first, shell]));
+                        }
+                    }
+                }
+            }
+        }
+        across.sort_by_key(|(e, _)| e.index());
+        for (edge, shells) in across {
+            out.push(Violation::EdgeAcrossShells { edge, shells });
+        }
     }
 }
 

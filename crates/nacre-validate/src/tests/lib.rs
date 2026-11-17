@@ -1464,3 +1464,29 @@ proptest! {
         prop_assert!(validate(&m).is_empty());
     }
 }
+
+#[test]
+fn a_boundary_split_between_two_shells_is_flagged() {
+    // A cube whose faces are listed as two shells — one face alone and the other five: the solid
+    // still uses every edge twice, but the lone face's four edges cross the two shells.
+    let mut m = Model::new();
+    let c = nacre_ops::fixtures::cuboid(&mut m, [0.0; 3], [2.0, 2.0, 2.0]);
+    let faces = m.shell(m.solid(c).outer).faces.clone();
+    let alone = m.push_shell(Shell {
+        faces: vec![faces[0]],
+    });
+    let rest = m.push_shell(Shell {
+        faces: faces[1..].to_vec(),
+    });
+    let s = m.push_solid(Solid {
+        outer: rest,
+        cavities: vec![alone],
+    });
+    m.restore_live(vec![s]);
+    let v = validate(&m);
+    let across: Vec<_> = v
+        .iter()
+        .filter(|x| matches!(x, Violation::EdgeAcrossShells { .. }))
+        .collect();
+    assert_eq!(across.len(), 4, "{v:?}");
+}

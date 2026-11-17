@@ -4,6 +4,9 @@ use super::*;
 /// misses much), or `None` if every result solid is a valid closed 2-manifold. In one pass per
 /// solid it builds each edge's using faces (`edge_uses`), the vertex set and the `V/E/F/L/S` counts,
 /// then, most-specific first:
+///  0. an edge whose uses lie in **two shells** — a shell is one closed boundary, so one split
+///     between two shells leaves each open though the solid's edge counts are whole and its Euler
+///     count reads the extra shell as genus ([`RejectReason::OpenResultShell`]);
 ///  1. a **non-manifold vertex** (pinch) — [`nacre_topo::nonmanifold_vertices`]; sound for any
 ///     number of pinches (unlike Euler parity, which a second pinch flips back to even);
 ///  2. an edge stated on **one plane twice** — an interior boundary the coplanar merge had to
@@ -26,6 +29,8 @@ pub(crate) fn check_result_topology(
         let mut edge_uses: HashMap<Handle<Edge>, Vec<Handle<Face>>> = HashMap::new();
         let mut vertices: HashSet<Handle<Vertex>> = HashSet::new();
         let mut inner_loops: i64 = 0;
+        let mut edge_shell: HashMap<Handle<Edge>, Handle<Shell>> = HashMap::new();
+        let mut across: Vec<Handle<Edge>> = Vec::new();
         for &shell_h in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
             if !shells.insert(shell_h) {
                 continue;
@@ -40,9 +45,21 @@ pub(crate) fn check_result_topology(
                     for he in &lp.half_edges {
                         edge_uses.entry(he.edge).or_default().push(fh);
                         vertices.extend(model.edge(he.edge).vertices);
+                        if *edge_shell.entry(he.edge).or_insert(shell_h) != shell_h {
+                            across.push(he.edge);
+                        }
                     }
                 }
             }
+        }
+        // **Each shell closes on its own.** Witness: the smallest such edge's first vertex, for
+        // replay determinism.
+        if let Some(&eh) = across.iter().min() {
+            let [va, _] = model.edge(eh).vertices;
+            return Some((
+                RejectReason::OpenResultShell,
+                Some(crate::RejectWhere::Point(model.vertex_point(va))),
+            ));
         }
         // The returned list is sorted by handle index, so the first entry is a deterministic
         // witness (one of possibly several pinch vertices).
@@ -141,8 +158,10 @@ pub(crate) fn check_result_topology(
 /// **itself** the material still runs around the contact, every edge of that path is used twice,
 /// and the component stays one: the guard fires exactly where no pair of solids exists. A face
 /// whose every boundary is such a contact line has no other way to its body, so it lands in a
-/// component of its own; the grouping then decides it by containment, or abstains and the
-/// edge-use guard names the line (`NonManifoldResultEdge`).
+/// component of its own. Where the grouping places it by containment, one closed boundary comes
+/// out split between two shells and the shell guard refuses it (`OpenResultShell` — a D pin under
+/// its D bore); where the grouping abstains, the edge-use guard names the line
+/// (`NonManifoldResultEdge` — a square pin under its square bore).
 ///
 /// This is the 3D reading of a rule the assembly stage already applies one dimension down:
 /// [`unify_coplanar_faces`] splits a coplanar group "into **edge-connected components**, because

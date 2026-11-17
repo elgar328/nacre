@@ -170,9 +170,10 @@ pub enum RejectReason {
     /// nudge would be guessing at it, and [`crate::BoolReport`] already writes the rule this
     /// follows: *a diagnosis, not a prompt*.
     SelfTouchingResult,
-    /// The assembled boundary leaves an edge used **once** — a dangling edge, so the face set is
-    /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:
-    /// the assembly dropped a face, which is ours to fix.
+    /// The assembled boundary leaves a shell not closed: an edge used **once** — a dangling edge,
+    /// the assembly dropped a face — or an edge whose two uses fall in **two shells** of one
+    /// solid, one closed boundary split between them. Unlike [`Self::NonManifoldResultEdge`] this
+    /// says nothing bad about the input: it is ours to fix.
     OpenResultShell,
     // The assembly stated one surface pair and the faces kept another. A shipped check, because ops
     // cannot lean on `validate` and a release build would otherwise return that solid. No boolean
