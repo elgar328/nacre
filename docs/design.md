@@ -1682,9 +1682,9 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 
 `+1` 셀은 두 챔버(W 의 위·아래)가 `keep` 아래에서 갈릴 때 결과의 면이고, `flip = keep_above == (frame_sign > 0)` 하나가 어느 쪽이
 재료인지를 나른다(`emit_faces` doc). 접촉면의 Requicha 식 표(연산 × 상대 법선)는 이 한 규칙의 귀결이다. 한 선 둘레에서 면이
-그 선을 지나 이어지나, 재료가 그 선에서만 만나나도 이 술어만 읽는다(`draft::LineStar` — 칼날·차트 정거장·접선 판정이 묻는다). 볼록성 항이 없어 비볼록·다중루프를 half-space 가정 없이 `point_in_ring` parity 로 정확히 처리한다.
+그 선을 지나 이어지나, 재료가 그 선에서만 만나나도 이 술어만 읽는다(`draft::LineStar` — 칼날·차트 정거장·접선 판정·성분 결합이 묻는다). 볼록성 항이 없어 비볼록·다중루프를 half-space 가정 없이 `point_in_ring` parity 로 정확히 처리한다.
 
-- **동일평면 병합은 필수 청소다** — 두 면만 쓰는 간선에서 잇고(`face_components` 와 한 규칙), 내부를 지우고 바깥을 꿰매지
+- **동일평면 병합은 필수 청소다** — 두 면만 쓰는 간선에서 잇고(지우는 간선이라 다른 면이 쓰면 남는다), 내부를 지우고 바깥을 꿰매지
   않으며, 꼬집힌 점에서는 배열의 셀 걷기와 같은 순환 순서(`dir_at`·`angular_order`)로 나가고, 못 하면 그룹을 그대로 내보내 기권한다. 기권이 안전한 까닭(«정돈일 뿐»이 아니라 «패스가
   없던 자리»)과 그 뒤 전역 판정이 모양을 이름 대는 것은 `unify_coplanar_faces`·`merge_component` 의 doc. 평각 정점은 옆면이 붙은
   뒤 결과 전체에서 한 번 녹인다 — `dissolve_straight_angles`·`whole_result_faces` 의 doc.
@@ -1986,7 +1986,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   **오라클 없는 부호는 만들지 않는다** — 부정 대조가 전부 초록인 채로 실제로 틀린 부호가 가능하다.
 - **호의 교차 수는 호 자신에게 묻는다**(`ring_against_plane` 의 `crossings`; 평면 면의 도로들은 `ClassLine` 을 거쳐
   `arc_crossings`). «간선이 그 위인가»는 도로마다 다르다 — 평면 면에선 직선, 옆면에선 클래스에 따라 원이나 룰링(`on_meet`).
-- `UnorderedEdges` 가 뜨면 케이스를 열지 않고 상류(`merge_coincident`/`Aliases`)를 본다.
+- 배열 꼭짓점의 `UnorderedEdges` 는 케이스를 열지 않고 상류(`merge_coincident`/`Aliases`)를 본다.
 
 ### 룰링
 

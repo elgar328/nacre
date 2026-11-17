@@ -163,7 +163,7 @@ impl Chart {
             let ChordSays::Piece { label, outer } = c.says else {
                 unreachable!("a station with a wall that draws no piece returned above");
             };
-            let near = crate::arrangement::plus_theta_is_above(jd, c.wall, c.side).ok_or(stages)?;
+            let near = crate::planes::plus_theta_is_above(jd, c.wall, c.side).ok_or(stages)?;
             walls.push((label.ok_or(stages)?, outer, near));
         }
         let keeps = |b: (bool, bool)| crate::draft::keep(kind, b.0, b.1);
@@ -349,7 +349,7 @@ impl Chart {
             };
             // The slab leaves its first event counter-clockwise and arrives at its second, so the
             // two walls are read from opposite sides of their own rulings.
-            let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
+            let above = crate::planes::plus_theta_is_above(jd, wall, sd)? == starts_here;
             Some(read_bits(&l, above))
         };
         // A cell whose two walls are **one** ruling (a circle opened at a single point) lies

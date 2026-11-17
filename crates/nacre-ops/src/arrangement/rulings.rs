@@ -530,7 +530,7 @@ pub(crate) fn node_ruling_side(
 /// The side, `body_above`, is the caller's: on a secant ruling the face leaves the line along
 /// `±θ` and crosses `wc` there (first order — `body_side`); on a tangent one it leaves along `wc`
 /// itself and bends to the axis on both sides of the line, so its side is the axis side
-/// ([`axis_above`] — second order, a boss's and a bore's alike).
+/// ([`crate::planes::axis_above`] — second order, a boss's and a bore's alike).
 ///
 /// The two orders are the ladder CGAL's conic arrangement climbs to order two curves that touch:
 /// by the first derivative, then the second.
@@ -560,16 +560,4 @@ fn lateral_half_of_plane_pair_lines(
         });
     }
     Ok(())
-}
-
-/// Whether the axis of the cylinder `def` lies above class `wc` in the label frame (`wc`'s stored
-/// normal) — the one side a lateral tangent to `wc` lies on, the cylinder bending to its axis on
-/// both sides of the tangent line. `None` where the class has no world statement.
-pub(super) fn axis_above(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    def: &nacre_topo::CylinderDef,
-) -> Option<bool> {
-    let w = jd.planes[wc].world.as_ref().ok()?;
-    Some(w.sense.sign() * nacre_exact::plane_residual_sign(&w.name, def.origin()) > 0)
 }

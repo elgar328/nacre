@@ -312,15 +312,6 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 
 답은 초록이지만 전제나 뒤처리가 흔들리는 자리 — 결과를 어떻게 바꾸는지를 먼저 잰다.
 
-### 곧은 모서리에서만 만나는 면 — 두 몸체가 답인데
-
-성분 결합(`assembly::topology::face_components`)은 둘레에서 재료 쪽 다음 면과 잇는 한 규칙(`draft::LineStar::bounding_pairs`)을
-원 위의 모서리(통째 림·자른 호)에서만 읽는다 — 셋 이상의 면이 쓰는 곧은 모서리는 잇지 않는다. 그래서 모든 모서리가 그런 접촉선인
-면은 제 몸체로 가는 길이 없다: 네모 구멍 블록 아래 네모 핀(Fuse)은 `NonManifoldResultEdge`, 윗면에 홈이 난 네모 핀은
-`StraightAngle`, 창에 평평한 면을 끼운 반원기둥은 `NonManifoldResultEdge`(점수판 `src/tests/suite/contact_faces.rs`). 인구는 그
-점수판 밖 0(스위트·무시 스윕·census·kit). 곧은 모서리의 살 순서는 평면들만이면 그 선을 가로지르는 평면 위의 각 순서
-(`combinatorics::angular_order`), 룰링이면 차트의 현 순서(`cyl_chart` 의 `chord_before`)가 답한다.
-
 ### 접선에서만 만나는 덩이 — 두 몸체가 답인데
 
 구멍이 벽 둘에 안에서 접해 재료가 접선에서만 만나는 덩이 여럿으로 갈리면 커널은 `SelfTouchingResult`(`Impossible`)로
@@ -329,7 +320,7 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 (`Pinch::Wedges`)를 늘 한 몸체로 읽기 때문이다 — 접선은 면을 가르지 않아 그 선을 관통하는 벽 면이 쐐기 둘을 한 성분으로
 묶는다(그 함수의 doc). 쐐기가 다른 곳에서도 이어진 것은 진짜 자기접촉이라 거절이 맞다: 판의 윗벽 하나에만 접한 구멍,
 census 의 `rul tangent cut`·`arcprofile bored common`(재료가 구멍을 돌아 이어진다). 인구: 위 둘, census 0(그 거절 둘은 앞의 진짜
-자기접촉), 스위트·kit 은 재지 않았다. 앞 항목과 같은 «선으로만 닿는 두 몸체»이되 그 선이 모서리가 아니다. design 「가지 말 것」의
+자기접촉), 스위트·kit 은 재지 않았다. 모서리에서 닿는 두 몸체는 둘레에서 재료 쪽 다음 면과 잇는 규칙(`assembly::face_components`)으로 갈리지만, 접선은 모서리가 아니다. design 「가지 말 것」의
 «접선 접촉에서 집힌 면을 b-rep 에서 쪼개기»는 유효한 한 덩이의 집힌 면이라 이것과 다르다. 여는 길은 정하지 않았다.
 
 ### 거절의 이름이 기하보다 폭을 먼저 묻는 자리
@@ -341,6 +332,7 @@ census 의 `rul tangent cut`·`arcprofile bored common`(재료가 구멍을 돌�
 - 여러 진술을 읽는 거절(`pierce_on`: 원통 → 평면 둘, `disk_of`: 평면 → 원통, `draft` 의 관통: 평면 둘)은 `?` 로 첫 실패의
   이름을 낸다 — 한 진술이 `Width`, 다른 진술이 `Unstated` 면 읽는 순서가 이름을 정한다. 한 진술 안에서는 기하가 먼저다
   (`ChainFold::plane_name`·`ChainFold::cylinder`).
+- `planes::chord_before` 는 좁은 세계 계수가 없으면 원인(`WorkingPlane::world_absent`)을 가리지 않고 `WitnessNotRational`.
 
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
@@ -371,8 +363,17 @@ doc). 그래서 스크립트의 모든 중간값이 끝까지 살아 있고, 살
   도로(`rulings::cycle_on_wall`)는 룰링마다 `crossing_on_ruling` + `theta_place` 표(끝의 근은 같은 점으로 기록)로 묻는다 — 밑
   술어는 같고 출력의 꼴이 다르다. 한 함수로 합칠지는 재지 않았다. 합쳐도 열리는 칸은 없다(이름 없는 클래스의 남은 `Ruling` 3 은
   두 쪽 모두 같은 술어에서 멈춘다).
+- **룰링 둘레의 살 순서**를 성분 결합(`RulingSlot`)과 차트 정거장(`Chart::slit_at`)이 따로 적는다 — 반지름 방향이 넘칠 때의
+  이름도 갈린다(`WitnessNotRational`·`CylinderGateUndecided`).
+- `planes::frame_faces_up_the_axis` 를 `direction::arc_side` 가 `axis_up · frame_sign` 으로 손 철자한다.
 
 ## 보류 — 인구가 생기면
+
+### 둘레 순서를 못 읽는 접촉선 — 인구가 생기면
+
+셋 이상의 면이 쓰는 곧은 모서리의 순서(`assembly::topology` 의 `line_star`)는 원인의 이름으로 거절하는 자리가 둘이다: 룰링 위
+평면 클래스에 세계 진술이 없으면(접평면의 반쪽과 그 클래스의 쪽이 계수를 읽는다) `CylinderGateUndecided`, 평면만 지나는 선을
+가로지르는 클래스가 표에 없으면 `UnorderedEdges`. 인구: 곧은 별 501(스위트·무시 스윕·census·kit) 가운데 0.
 
 ### reuse 의 꼭짓점 이름은 판정 없이 세 평면을 받는다 — 인구가 생기면
 

@@ -124,11 +124,7 @@ pub enum RejectReason {
     /// two uses each and there is nothing here to count. What is left is the case where the
     /// material **runs around** the contact: cut the pinch and one piece remains, so no pair of
     /// solids exists to hand back and the reject is `Impossible`. A square block with two square
-    /// voids meeting along a line is the smallest example. One shape of two bodies lands here too:
-    /// a face whose **every** edge is a contact line four faces use — a square pin under the
-    /// square bore of a block it touches, the pin's top — has no edge to its own body, the
-    /// grouping cannot place it, and the line's four uses are counted in one solid. Two bodies
-    /// are the answer there; the faces round a straight contact line are not yet paired.
+    /// voids meeting along a line is the smallest example.
     ///
     /// Two sampled boxes sharing exactly an edge are **not** this: those are answers.
     NonManifoldResultEdge,

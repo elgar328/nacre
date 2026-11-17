@@ -114,7 +114,7 @@ pub(crate) struct RulingExtent {
     /// cell inside the strip is where that plane's two sides are stated at the lateral.
     ///
     /// `None` for a tangent ruling (`side == 0`) only: a class with no world statement reads its
-    /// stored facing ([`crate::arrangement::plus_theta_is_above`]), and every half-edge of the
+    /// stored facing ([`crate::planes::plus_theta_is_above`]), and every half-edge of the
     /// class's walk bounds a cell — the chart's census asserts the rest are formed.
     ///
     /// It ships, not an instrument — the cell reader reads it beside the rims' labels

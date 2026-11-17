@@ -731,6 +731,86 @@ pub(super) fn arc_extent(
     }
 }
 
+/// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
+/// leaving a ruling counter-clockwise about the axis enters the side the wall's plane faces.
+///
+/// **One atom, four readers.** [`crate::combinatorics::RulingCarrier::side`] is
+/// `sign((x − o) · (m̂ × n̂_r))` against the class's *rational* name, and the scalar triple product
+/// gives `(x − o) · (m̂ × n̂) = n̂ · ((x − o) × m̂) = −r·(n̂ · θ̂)`, so `sign(n̂_r · θ̂) = −side`;
+/// the world name's sense (`κ`, [`crate::planes::WorldName`] — the truth's, since the name alone
+/// carries no direction and the plane cache is a rounded image) carries that to the plane's own
+/// facing. The four consumers are the
+/// rulings road's graze side, `arrangement::ruling_interior_is_even`, the chart's vertical read
+/// and the component join's order round a ruling (`assembly::face_components`) — and the whole
+/// point of naming it is that none of them spells the product a second time. Three of them read a
+/// **label** or a face's side and stay in the stored frame; the one that picks a **cell** —
+/// `ruling_interior_is_even` — crosses into the chart's frame with `frame_sign`, and it is the
+/// only reader that does.
+pub(crate) fn plus_theta_is_above(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    side: i8,
+) -> Option<bool> {
+    // A tangent ruling (`side == 0`) is never a recorded crossing, so nothing labelled by this
+    // sign reaches it; the day one does, the answer is a measurement, not a sign.
+    debug_assert_ne!(side, 0, "a tangent ruling has no +θ side to be above");
+    let kappa = jd.canon_sense(wc);
+    Some(-(kappa * side) == 1)
+}
+
+/// **Whether plane class `a`'s chord is met before `b`'s** turning from the `+θ` tangent inward at
+/// the line whose direction across the cylinder is `r` ([`crate::planes::SharedRuling::radial`]) —
+/// `arrangement::cyl_chart::Station::chords`' order, and the component join's round a ruling. Each
+/// chord's direction is its class's normal turned about the axis, pointed into the cylinder
+/// (against `r`); `a` comes first iff `(d_a × d_b)·m > 0`. Refused as
+/// `WitnessNotRational` where the arithmetic cannot answer, and as `CylinderStagesDisagree` for two
+/// chords along one direction — two secant classes through one line are two planes, so that is a
+/// broken premise rather than a tie.
+pub(crate) fn chord_before(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    r: &[nacre_exact::Rat; 3],
+    a: usize,
+    b: usize,
+) -> Result<bool, RejectReason> {
+    use nacre_exact::{Rat, cross3_rat, dot3_rat};
+    let m = def.dir();
+    let inward = |c: usize| -> Option<[Rat; 3]> {
+        let w = jd.world_rat(c)?;
+        let d = cross3_rat(&m, &[w[0], w[1], w[2]])?;
+        if dot3_rat(&d, r)? > Rat::from_int(0) {
+            Some([
+                Rat::from_int(0).checked_sub(d[0])?,
+                Rat::from_int(0).checked_sub(d[1])?,
+                Rat::from_int(0).checked_sub(d[2])?,
+            ])
+        } else {
+            Some(d)
+        }
+    };
+    let turn = (|| dot3_rat(&cross3_rat(&inward(a)?, &inward(b)?)?, &m))()
+        .ok_or(RejectReason::WitnessNotRational)?;
+    match turn.cmp(&Rat::from_int(0)) {
+        core::cmp::Ordering::Greater => Ok(true),
+        core::cmp::Ordering::Less => Ok(false),
+        core::cmp::Ordering::Equal => Err(RejectReason::CylinderStagesDisagree),
+    }
+}
+
+/// Whether the axis of the cylinder `def` lies above class `wc` in the label frame (`wc`'s stored
+/// normal) — the one side a lateral tangent to `wc` lies on, the cylinder bending to its axis on
+/// both sides of the tangent line, and the side opposite the tangent line's radial (the rulings
+/// road's grazes and the component join's half of a tangent plane round a ruling). `None` where
+/// the class has no world statement.
+pub(crate) fn axis_above(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<bool> {
+    let w = jd.planes[wc].world.as_ref().ok()?;
+    Some(w.sense.sign() * nacre_exact::plane_residual_sign(&w.name, def.origin()) > 0)
+}
+
 #[cfg(test)]
 #[path = "../tests/cyl_geom.rs"]
 mod tests;

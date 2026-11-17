@@ -12,7 +12,7 @@
 //!   cylinder's rulings, where the window's side walls are tangent to it, and along two chords);
 //! - a cube and a triangular prism touching along one edge line that three plane classes hold.
 
-use super::scoreboard::{OPS, Want, check, counted, refused, run};
+use super::scoreboard::{OPS, Want, check, counted, run};
 use super::*;
 
 type Build = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
@@ -119,10 +119,9 @@ const PI: f64 = std::f64::consts::PI;
 fn wants(name: &str) -> [Want; 4] {
     let none = || counted(&[], &[]);
     match name {
-        // The Fuse is the two bodies touching on the bore's outline — refused, todo
-        // 「곧은 모서리에서만 만나는 면」.
+        // Two bodies: the pin's six faces, the bored block's ten.
         "a square pin under its bore" => [
-            refused(RejectReason::NonManifoldResultEdge),
+            counted(&[8.0, 24.0], &[6, 10]),
             counted(&[24.0], &[10]),
             counted(&[8.0], &[6]),
             none(),
@@ -134,14 +133,16 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[PI], &[4]),
             none(),
         ],
+        // Two bodies: the pocketed pin's eleven faces, the block's ten.
         "a pocketed square pin under its bore" => [
-            refused(RejectReason::StraightAngle),
+            counted(&[7.0, 24.0], &[11, 10]),
             counted(&[24.0], &[10]),
             counted(&[7.0], &[11]),
             none(),
         ],
+        // Two bodies: the half disk's four faces, the framed slab's ten.
         "a half disk in a window" => [
-            refused(RejectReason::NonManifoldResultEdge),
+            counted(&[PI, 20.0], &[4, 10]),
             counted(&[20.0], &[10]),
             counted(&[PI], &[4]),
             none(),

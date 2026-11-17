@@ -6,10 +6,11 @@
 //! *not* do is separate a body from itself: where the material loops around the contact, cutting
 //! there leaves one piece and no 2-manifold contains it, so that fuse is refused.
 //!
-//! The criterion is connectivity through **manifold contacts only** — an edge two faces use. It is
-//! the 3D reading of the rule `unify_coplanar_faces` already applies to coplanar faces one
-//! dimension down ("faces that merely lie on the same plane without touching must each survive on
-//! their own").
+//! The criterion is connectivity through **one material**: round each edge a face joins the next
+//! face round on its material side (`assembly::face_components`), so at a contact line each body's
+//! two faces join each other and not the other body's. It is the 3D reading of the rule
+//! `unify_coplanar_faces` already applies to coplanar faces one dimension down ("faces that merely
+//! lie on the same plane without touching must each survive on their own").
 
 use nacre_math::{Point2, Point3};
 use nacre_ops::fixtures::cuboid;

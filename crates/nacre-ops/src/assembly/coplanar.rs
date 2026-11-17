@@ -53,9 +53,10 @@ pub(crate) fn unify_coplanar_faces(
             }
         }
     }
-    // **Joined only across a manifold contact** — an edge exactly two faces use, the rule
-    // `face_components` joins solids by. An edge more faces use is where bodies touch: the floor
-    // under two wings that meet along a knife is two faces, and the knife is an edge of all four
+    // **Joined only across an edge exactly two faces use** — the merge erases the edges it joins
+    // across, and an edge another face also uses must stay. That is not `face_components`' rule,
+    // which joins faces bounding one material round any edge: the floor under two wings that meet
+    // along a knife is two faces of one body, and the knife is an edge of all four
     // (`arrangement::knife_parts`). Erasing it would lay one face under both wings.
     for fs in carriers.values() {
         if let [a, b] = fs[..]

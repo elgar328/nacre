@@ -78,7 +78,6 @@ use crate::planes::{SolidSide, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, combinatorics, reject};
 use core::cmp::Ordering;
-use nacre_exact::Rat;
 use nacre_exact::quad::Toward;
 
 #[cfg(test)]
@@ -141,10 +140,10 @@ pub(crate) struct Station {
     /// **The walls in chord order.** Inside the cylinder every secant plane through the line runs
     /// from it as a chord, and all those chords enter the disk: turning from the lateral's `+θ`
     /// tangent `τ = m × r` inward (counter-clockwise about `m`, towards `−r`), they come one after
-    /// another within a half turn, so the order is total ([`chord_before`]). The first chord closes
-    /// the chamber beside the `+θ` sector, the last the one beside `−θ`, and each two neighbours
-    /// the chamber between them — OCCT's `GetFaceOff` picks the next face about an edge by the same
-    /// angle, asked here as an exact sign. The station's own wall is one of them.
+    /// another within a half turn, so the order is total ([`crate::planes::chord_before`]). The
+    /// first chord closes the chamber beside the `+θ` sector, the last the one beside `−θ`, and each
+    /// two neighbours the chamber between them — OCCT's `GetFaceOff` picks the next face about an
+    /// edge by the same angle, asked here as an exact sign. The station's own wall is one of them.
     ///
     /// Outside, the line cuts the cross-section into as many chambers again: the one between two
     /// neighbouring walls' outer halves is the vertically opposite angle of the one between their
@@ -787,7 +786,9 @@ fn stations_of_lines(
             for c in chords {
                 let mut at = ordered.len();
                 for (p, o) in ordered.iter().enumerate() {
-                    if chord_before(jd, &cyl.def, &r, c.1.wall, o.1.wall).map_err(reject)? {
+                    if crate::planes::chord_before(jd, &cyl.def, &r, c.1.wall, o.1.wall)
+                        .map_err(reject)?
+                    {
                         at = p;
                         break;
                     }
@@ -899,44 +900,6 @@ fn spokes(
         }
     }
     Ok(out)
-}
-
-/// **Whether plane class `a`'s chord is met before `b`'s** turning from the `+θ` tangent inward at
-/// the line whose direction across the cylinder is `r` ([`crate::planes::SharedRuling::radial`]) —
-/// [`Station::chords`]'s order. Each chord's direction is its class's normal turned about the axis,
-/// pointed into the cylinder (against `r`); `a` comes first iff `(d_a × d_b)·m > 0`. Refused as
-/// `WitnessNotRational` where the arithmetic cannot answer, and as `CylinderStagesDisagree` for two
-/// chords along one direction — two secant classes through one line are two planes, so that is a
-/// broken premise rather than a tie.
-fn chord_before(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    r: &[Rat; 3],
-    a: usize,
-    b: usize,
-) -> Result<bool, RejectReason> {
-    use nacre_exact::{cross3_rat, dot3_rat};
-    let m = def.dir();
-    let inward = |c: usize| -> Option<[Rat; 3]> {
-        let w = jd.world_rat(c)?;
-        let d = cross3_rat(&m, &[w[0], w[1], w[2]])?;
-        if dot3_rat(&d, r)? > Rat::from_int(0) {
-            Some([
-                Rat::from_int(0).checked_sub(d[0])?,
-                Rat::from_int(0).checked_sub(d[1])?,
-                Rat::from_int(0).checked_sub(d[2])?,
-            ])
-        } else {
-            Some(d)
-        }
-    };
-    let turn = (|| dot3_rat(&cross3_rat(&inward(a)?, &inward(b)?)?, &m))()
-        .ok_or(RejectReason::WitnessNotRational)?;
-    match turn.cmp(&Rat::from_int(0)) {
-        core::cmp::Ordering::Greater => Ok(true),
-        core::cmp::Ordering::Less => Ok(false),
-        core::cmp::Ordering::Equal => Err(RejectReason::CylinderStagesDisagree),
-    }
 }
 
 #[cfg(test)]

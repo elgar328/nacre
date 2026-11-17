@@ -4,6 +4,7 @@
 //! belongs to.
 
 use super::*;
+use nacre_exact::Rat;
 /// **The chart's lines and cells, checked where they are made.** It ships no capability: it
 /// rebuilds every cylinder class's chart beside the emitter, asserts the chart's invariants on
 /// it, and records the counts `cyl_chart`'s tests read.

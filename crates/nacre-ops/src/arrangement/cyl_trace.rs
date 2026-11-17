@@ -805,32 +805,6 @@ pub(super) fn corner_on_section(
     (-material, material == arc_flank(arc_ccw, arc_arriving))
 }
 
-/// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
-/// leaving a ruling counter-clockwise about the axis enters the side the wall's plane faces.
-///
-/// **One atom, three readers.** [`combinatorics::RulingCarrier::side`] is
-/// `sign((x − o) · (m̂ × n̂_r))` against the class's *rational* name, and the scalar triple product
-/// gives `(x − o) · (m̂ × n̂) = n̂ · ((x − o) × m̂) = −r·(n̂ · θ̂)`, so `sign(n̂_r · θ̂) = −side`;
-/// the world name's sense (`κ`, [`crate::planes::WorldName`] — the truth's, since the name alone
-/// carries no direction and the plane cache is a rounded image) carries that to the plane's own
-/// facing. The three consumers are the
-/// rulings road's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
-/// whole point of naming it is that none of them spells the product a second time. Two of them
-/// read a **label** and stay in the stored frame; the one that picks a **cell** —
-/// [`ruling_interior_is_even`] — crosses into the chart's frame with `frame_sign`, and it is the
-/// only reader that does.
-pub(crate) fn plus_theta_is_above(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    side: i8,
-) -> Option<bool> {
-    // A tangent ruling (`side == 0`) is never a recorded crossing, so nothing labelled by this
-    // sign reaches it; the day one does, the answer is a measurement, not a sign.
-    debug_assert_ne!(side, 0, "a tangent ruling has no +θ side to be above");
-    let kappa = jd.canon_sense(wc);
-    Some(-(kappa * side) == 1)
-}
-
 /// **One boundary cycle — a hole, a panel, a chain rim — read against one class crossing the
 /// axis**: the walk's features turned into extents against the class's section (`trace` the class's
 /// plane; [`trace_on_face`]) — a circle across the axis, an ellipse oblique to it. A hole is

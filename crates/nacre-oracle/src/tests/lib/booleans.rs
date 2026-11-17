@@ -722,3 +722,93 @@ fn a_half_disk_around_a_shorter_one_matches_occt() {
         [1, 2, 0, 1],
     );
 }
+
+// ─── Faces that meet their body only on contact lines ────────────────────────────────────────
+
+/// A `4 × 4 × 2` block on `z ∈ [2, 4]` bored through by the square `[−1, 1]²`, and the square's
+/// pin on `z ∈ [0, 2]` below it.
+fn square_bore_and_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let block = nacre_ops::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
+    let tool = nacre_ops::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 1.0, 4.0]);
+    let bored = boolean(m, BoolKind::Cut, block, tool).unwrap()[0];
+    (
+        bored,
+        nacre_ops::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 1.0, 2.0]),
+    )
+}
+
+/// **A square pin under its square bore** — the pin's top meets the block only on the bore's
+/// outline, straight edges four faces use; the Fuse is two bodies.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_square_pin_under_its_bore_matches_occt() {
+    all_booleans_match_occt(square_bore_and_pin, [2, 1, 1, 0]);
+}
+
+/// **A half-disk pin under its half-disk bore** — one cylinder handle; the pin's top meets the
+/// block on the diameter and the arc alone.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_half_disk_pin_under_its_bore_matches_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let block = nacre_ops::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
+            let tool = sweep_z(m, vec![half_disk(true)], 4.0);
+            let bored = boolean(m, BoolKind::Cut, block, tool).unwrap()[0];
+            (bored, sweep_z(m, vec![half_disk(true)], 2.0))
+        },
+        [2, 1, 1, 0],
+    );
+}
+
+/// **The square pin with a `1 × 1 × 1` pocket in its top** — what meets the block only on the
+/// bore's outline is the top with the pocket's walls and floor.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_pocketed_square_pin_under_its_bore_matches_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let (bored, pin) = square_bore_and_pin(m);
+            let pocket = nacre_ops::fixtures::cuboid(m, [-0.5, -0.5, 1.0], [0.5, 0.5, 2.0]);
+            (bored, boolean(m, BoolKind::Cut, pin, pocket).unwrap()[0])
+        },
+        [2, 1, 1, 0],
+    );
+}
+
+/// **A half disk whose flat fills a slab's window** — the contact runs along two of the
+/// cylinder's rulings, where the window's side walls are tangent to it, and along two chords.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_half_disk_in_a_window_matches_occt() {
+    all_booleans_match_occt(
+        |m| {
+            let slab = nacre_ops::fixtures::cuboid(m, [-3.0, -1.0, -1.0], [3.0, 0.0, 3.0]);
+            let window = nacre_ops::fixtures::cuboid(m, [-1.0, -1.0, 0.0], [1.0, 0.0, 2.0]);
+            let frame = boolean(m, BoolKind::Cut, slab, window).unwrap()[0];
+            (frame, sweep_z(m, vec![half_disk(true)], 2.0))
+        },
+        [2, 1, 1, 0],
+    );
+}
+
+/// **A cube and a triangular prism touching along one line** that the planes `x = 1`, `y = 1`
+/// and `x = y` hold.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn two_prisms_on_a_line_of_three_planes_match_occt() {
+    all_booleans_match_occt(
+        |m| {
+            use nacre_exact::Rat;
+            let cube = nacre_ops::fixtures::cuboid(m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+            let rat = |p: [i128; 2]| p.map(Rat::from_int);
+            let triangle = nacre_ops::Ring2d::new(
+                vec![rat([1, 1]), rat([3, 3]), rat([1, 3])],
+                vec![nacre_ops::Edge2d::Line; 3],
+            )
+            .unwrap();
+            (cube, sweep_z(m, vec![triangle], 1.0))
+        },
+        [2, 1, 1, 0],
+    );
+}
