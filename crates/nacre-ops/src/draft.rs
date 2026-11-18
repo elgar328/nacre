@@ -381,11 +381,10 @@ pub(crate) struct LineStar {
     kept: Vec<bool>,
 }
 
-/// One half-face leaving a line, for [`LineStar::from_spokes`]: its face, its solid, and whether
-/// that solid's material lies counter-clockwise after it.
+/// One half-face leaving a line, for [`LineStar::sectors_of`]: its solid, and whether that solid's
+/// material lies counter-clockwise after it.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Spoke {
-    pub(crate) face: usize,
     pub(crate) solid: crate::planes::SolidSide,
     pub(crate) material_ccw: bool,
 }
@@ -428,15 +427,27 @@ impl LineStar {
         Some((0..n).map(|i| (a(i), b(i))).collect())
     }
 
-    /// The star of `spokes` under `kind` — `None` where [`Self::sectors_of`] is.
-    pub(crate) fn from_spokes(kind: BoolKind, spokes: &[Spoke]) -> Option<Self> {
-        let sectors = Self::sectors_of(spokes)?;
-        Some(Self::new(
-            spokes
-                .iter()
-                .zip(&sectors)
-                .map(|(s, &(a, b))| (s.face, keep(kind, a, b))),
-        ))
+    /// The spoke [`Self::knife`] gives the plane's two halves.
+    pub(crate) const KNIFE_PLANE: usize = 0;
+
+    /// **The star round a knife** — a plane's two halves, and between them on one side two faces
+    /// of one solid leaving the plane round the wedge they bound: counter-clockwise from the
+    /// plane's half on that side, the two faces, the plane's other half. The sectors are the
+    /// chamber beside the plane on the faces' side (one material on both sides of the wedge, since
+    /// near the line the only boundaries there are the plane and the two faces), the wedge, the
+    /// chamber again, and the far side. Whether the plane's faces end on the line is
+    /// [`Self::continues`] of [`Self::KNIFE_PLANE`]: they do exactly where the chamber beside is
+    /// kept and neither the wedge nor the far side is — the kept material then rests on the plane
+    /// on both sides of the knife and meets itself only along it. The two faces may be one face's
+    /// two halves (a lateral touching the plane along a ruling).
+    pub(crate) fn knife(beside: bool, wedge: bool, far: bool) -> Self {
+        let (first, second) = (1, 2);
+        Self::new([
+            (Self::KNIFE_PLANE, beside),
+            (first, wedge),
+            (second, beside),
+            (Self::KNIFE_PLANE, far),
+        ])
     }
 
     /// **Does `face` run on across the line in the result?** `None` where no spoke of it is in the

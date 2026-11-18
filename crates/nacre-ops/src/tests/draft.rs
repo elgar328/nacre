@@ -64,18 +64,17 @@ fn the_kept_sectors_fall_into_runs() {
 /// line.
 #[test]
 fn the_sectors_are_walked_from_each_solids_two_halves() {
-    let s = |face, solid, material_ccw| Spoke {
-        face,
+    let s = |solid, material_ccw| Spoke {
         solid,
         material_ccw,
     };
     // A's face through the line (material above: ccw from spoke 0), B's two faces ending on it
     // above with the wedge between them B's.
     let spokes = [
-        s(0, SolidSide::A, true),
-        s(1, SolidSide::B, true),
-        s(2, SolidSide::B, false),
-        s(0, SolidSide::A, false),
+        s(SolidSide::A, true),
+        s(SolidSide::B, true),
+        s(SolidSide::B, false),
+        s(SolidSide::A, false),
     ];
     assert_eq!(
         LineStar::sectors_of(&spokes),
@@ -86,17 +85,43 @@ fn the_sectors_are_walked_from_each_solids_two_halves() {
             (false, false)
         ])
     );
-    let cut = LineStar::from_spokes(BoolKind::Cut, &spokes).expect("a valid pair");
+    // The shape is a knife — B's two faces round the wedge above A's plane — so its star under an
+    // operation is the knife's.
+    let under = |kind| {
+        let s = LineStar::sectors_of(&spokes).expect("a valid pair");
+        let kept = |i: usize| crate::draft::keep(kind, s[i].0, s[i].1);
+        LineStar::knife(kept(0), kept(1), kept(3))
+    };
     // `A − B` keeps A above outside B's wedge: A's face ends on the line.
-    assert_eq!(cut.continues(0), Some(false));
+    let cut = under(BoolKind::Cut);
+    assert_eq!(cut.continues(LineStar::KNIFE_PLANE), Some(false));
     assert_eq!(cut.kept_runs(), 2);
-    let fuse = LineStar::from_spokes(BoolKind::Fuse, &spokes).expect("a valid pair");
-    assert_eq!(fuse.continues(0), Some(true));
+    assert_eq!(
+        under(BoolKind::Fuse).continues(LineStar::KNIFE_PLANE),
+        Some(true)
+    );
     // Three spokes of one solid, or two with one material side, are refused.
     let mut three = spokes.to_vec();
-    three.push(s(3, SolidSide::B, true));
+    three.push(s(SolidSide::B, true));
     assert_eq!(LineStar::sectors_of(&three), None);
     let mut same = spokes;
     same[2].material_ccw = true;
     assert_eq!(LineStar::sectors_of(&same), None);
+}
+
+/// **The plane's faces end on a knife exactly where the chamber beside it is kept and neither the
+/// wedge nor the far side is** — every keep of the three sectors, against that sentence (the
+/// [`LineStar::knife`] doc). Kept beside and far alike with the wedge dropped, the plane's faces
+/// pass under the knife on the far side; with the wedge kept, the material passes through it.
+#[test]
+fn a_knife_parts_the_plane_where_only_the_chamber_beside_it_is_kept() {
+    for bits in 0u8..8 {
+        let (beside, wedge, far) = (bits & 1 == 1, bits & 2 == 2, bits & 4 == 4);
+        let star = LineStar::knife(beside, wedge, far);
+        assert_eq!(
+            star.continues(LineStar::KNIFE_PLANE) == Some(false),
+            beside && !wedge && !far,
+            "beside {beside}, wedge {wedge}, far {far}"
+        );
+    }
 }

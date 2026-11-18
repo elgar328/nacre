@@ -227,17 +227,10 @@ fn knife_parts(kind: BoolKind, merged: &[(SolidSide, SegKind)], label: Label) ->
     };
     let mut wedge = label;
     wedge[label_bit(x, side)] ^= true;
-    // Counter-clockwise from the plane's half on one side of the knife, turning to `side`: the
-    // chamber on `side`, the knife's two faces round the wedge between them, the chamber again,
-    // the plane's other half, and the far side.
-    let (plane, (first, second)) = (0, (1, 2));
-    let star = crate::draft::LineStar::new([
-        (plane, kept(label, side)),
-        (first, kept(wedge, side)),
-        (second, kept(label, side)),
-        (plane, kept(label, !side)),
-    ]);
-    star.continues(plane) == Some(false)
+    use crate::draft::LineStar;
+    LineStar::knife(kept(label, side), kept(wedge, side), kept(label, !side))
+        .continues(LineStar::KNIFE_PLANE)
+        == Some(false)
 }
 
 /// The solid whose knife this is and the side its faces leave to — `None` unless every

@@ -63,47 +63,47 @@ pub(crate) fn pinch(
     // along the wall's own half-planes and bends to its axis, so each of its halves lies just
     // inside the wall's on that side — `W2` between them, `L` between the lateral's two halves,
     // `W2` again, and `F` below the wall.
-    let (wall, lateral) = (0, 1);
     let spokes = [
         Spoke {
-            face: wall,
             solid: wall_solid,
             material_ccw: lens_in_wall_solid,
         },
         Spoke {
-            face: lateral,
             solid: cyl_solid,
             material_ccw: cyl_orient > 0,
         },
         Spoke {
-            face: lateral,
             solid: cyl_solid,
             material_ccw: cyl_orient < 0,
         },
         Spoke {
-            face: wall,
             solid: wall_solid,
             material_ccw: !lens_in_wall_solid,
         },
     ];
-    let star = LineStar::from_spokes(kind, &spokes)
+    let sectors = LineStar::sectors_of(&spokes)
         .expect("a row pairs two solids, each bringing two halves with opposite material sides");
+    let kept = |i: usize| crate::draft::keep(kind, sectors[i].0, sectors[i].1);
+    debug_assert_eq!(sectors[0], sectors[2], "the two wedges are one material");
+    // The wall is the knife's plane and the lateral's two halves its two faces: the star round a
+    // knife, the lens its wedge.
+    let star = LineStar::knife(kept(0), kept(1), kept(3));
     if star.kept_runs() < 2 {
         return None;
     }
-    if star.continues(wall) == Some(false) || star.continues(lateral) == Some(false) {
+    if star.continues(LineStar::KNIFE_PLANE) == Some(false) {
         return Some(Pinch::Wedges);
     }
     // What the verdict's reading of this shape stands on: the lens is the cylinder's operand's
     // material alone and the far side the wall's alone.
     debug_assert!(
-        LineStar::sectors_of(&spokes).is_some_and(|s| {
+        {
             let own = |(a, b): (bool, bool)| match wall_solid {
                 SolidSide::A => (a, b),
                 SolidSide::B => (b, a),
             };
-            own(s[1]) == (false, true) && own(s[3]) == (true, false)
-        }),
+            own(sectors[1]) == (false, true) && own(sectors[3]) == (true, false)
+        },
         "the lens and the far side are the two operands' own"
     );
     Some(Pinch::LensAndFar)
