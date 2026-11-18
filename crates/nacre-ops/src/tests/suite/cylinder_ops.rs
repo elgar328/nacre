@@ -941,13 +941,10 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// while the caps do). Read at the extremum (`combinatorics::arc_extremum_winding`), all three
 /// kinds build with their exact volumes.
 ///
-/// `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut and Common
-/// assemble clean and build; the Fuse's two cap chords are each an interior boundary between a
-/// half-disk 2-gon and its neighbour that the coplanar merge abstains on (the chord and its arcs
-/// collide in the node-pair edge key), and the pair the merge leaves would spell a stated
-/// plane-self edge — validate's producer bug. The whole-result check refuses that shape by the
-/// cleaning's own name (`CoplanarMerge`, the chord's corner as witness) until the merge learns to
-/// thread mixed rings.
+/// `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Every boolean
+/// builds; in the Fuse each cap's half disk joins the plate face it is flush with across its
+/// chord — the coplanar merge's edge key tells the chord from the arcs on the same two nodes
+/// (`NodeEdge`).
 #[test]
 fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
