@@ -1,0 +1,157 @@
+//! **Lumps that meet only along tangent lines** — the scoreboard of booleans whose kept material
+//! near a tangent line is the two wedges between the cylinder and the wall it touches. Each family
+//! is run as Fuse, both Cuts and Common:
+//!
+//! - a plate less the pin tangent to three of its walls: the material is three lumps, each pair
+//!   meeting only along the line where the pin touches a wall;
+//! - a plate less a pin tangent to one wall, the control: the two wedges join round the pin, one
+//!   body touching itself along the line;
+//! - a slab less a rod tangent to two opposite walls and longer than the slab: two lumps, the lines
+//!   ending where the slab's faces end while the rod runs on. Its union is not run here: the slab's
+//!   top less the rod's disk is two regions meeting at the two points of contact, which the union
+//!   returns as one face the mesh refuses (todo 「원판이 두 점에서 가르는 면」).
+
+use super::scoreboard::{OPS, Want, check, counted, refused, run};
+use super::*;
+
+type Build = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
+
+fn p(x: f64, y: f64) -> nacre_math::Point2 {
+    nacre_math::Point2::from_array([x, y])
+}
+
+/// The prism over `profile`, from `z = z0` up `dist`.
+fn sweep_from(m: &mut Model, profile: Profile2d, z0: f64, dist: f64) -> Handle<Solid> {
+    let frame = if z0 == 0.0 {
+        SketchFrame::world(m, Axis::Z)
+    } else {
+        datum_frame(
+            m,
+            SketchPlane::from_axes(
+                Point3::from_array([0.0, 0.0, z0]),
+                nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
+                nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+            ),
+        )
+    };
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist,
+        },
+    )
+    .expect("the profile extrudes") else {
+        unreachable!()
+    };
+    solid
+}
+
+fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Profile2d {
+    Profile2d::polygon(vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)]).unwrap()
+}
+
+/// The plate `[0, 4] × [0, 2]`, two tall, and the unit pin about `(3, 1)` as tall: the pin touches
+/// the walls `y = 0`, `y = 2` and `x = 4`.
+fn plate_and_pin_on_three_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        sweep_from(m, rect(0.0, 0.0, 4.0, 2.0), 0.0, 2.0),
+        sweep_from(m, circle_profile([3.0, 1.0], 1.0), 0.0, 2.0),
+    )
+}
+
+/// The slab `[−1, 1] × [−2, 2]` on `z ∈ [0, 2]`, and the unit rod about the `z` axis on
+/// `z ∈ [−1, 3]`: the rod touches the walls `x = ±1` and runs past the slab both ways.
+fn slab_and_rod_on_two_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        sweep_from(m, rect(-1.0, -2.0, 1.0, 2.0), 0.0, 2.0),
+        sweep_from(m, circle_profile([0.0, 0.0], 1.0), -1.0, 4.0),
+    )
+}
+
+/// The plate `[0, 4] × [0, 4]`, two tall, and the unit pin about `(2, 3)` as tall: the pin touches
+/// the wall `y = 4` alone.
+fn plate_and_pin_on_one_wall(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        sweep_from(m, rect(0.0, 0.0, 4.0, 4.0), 0.0, 2.0),
+        sweep_from(m, circle_profile([2.0, 3.0], 1.0), 0.0, 2.0),
+    )
+}
+
+const FAMILIES: [(&str, Build); 2] = [
+    (
+        "a plate and the pin on three of its walls",
+        plate_and_pin_on_three_walls,
+    ),
+    (
+        "a plate and the pin on one of its walls",
+        plate_and_pin_on_one_wall,
+    ),
+];
+
+const PI: f64 = std::f64::consts::PI;
+
+/// Each family's answers as Fuse, the first less the second, the second less the first, Common.
+fn wants(name: &str) -> [Want; 4] {
+    let none = || counted(&[], &[]);
+    match name {
+        // The pin is inside the plate: the union is the plate, the common the pin. The plate less
+        // the pin is three lumps meeting along the three lines of contact — the left one of six
+        // faces and the two corners of five, `2(6 − π/2)` and `2(1 − π/4)` twice, as OCCT builds
+        // them (sixteen faces, `2(8 − π)`) — refused as one body touching itself (todo
+        // 「접선에서만 만나는 덩이」).
+        "a plate and the pin on three of its walls" => [
+            counted(&[16.0], &[6]),
+            refused(RejectReason::SelfTouchingResult),
+            none(),
+            counted(&[2.0 * PI], &[3]),
+        ],
+        // The two wedges beside the line of contact join round the pin: one body touching itself.
+        "a plate and the pin on one of its walls" => [
+            counted(&[32.0], &[6]),
+            refused(RejectReason::SelfTouchingResult),
+            none(),
+            counted(&[2.0 * PI], &[3]),
+        ],
+        other => panic!("no answers stated for {other}"),
+    }
+}
+
+/// Every family, as each of the four booleans, comes out as [`check`] reads its answer.
+#[test]
+fn lumps_meeting_only_on_tangent_lines() {
+    for (name, build) in FAMILIES {
+        for (op, want) in OPS.into_iter().zip(wants(name)) {
+            let mut m = Model::new();
+            let (a, b) = build(&mut m);
+            let got = run(&mut m, op, a, b);
+            check(&format!("{name} {op:?}"), &m, got, &want);
+        }
+    }
+}
+
+/// **A slab less a rod tangent to two of its walls and longer than it** — every boolean but the
+/// union (the module doc). The slab less the rod is two lumps meeting along the two lines, each
+/// `2(4 − π/2)` of six faces; refused as one body touching itself (todo 「접선에서만 만나는 덩이」).
+/// The rod less the slab is its two ends, and the common the rod's middle.
+#[test]
+fn a_slab_and_the_rod_on_two_of_its_walls() {
+    use super::scoreboard::Op;
+    let none_of_the_union = [
+        (Op::CutAb, refused(RejectReason::SelfTouchingResult)),
+        (Op::CutBa, counted(&[PI, PI], &[3, 3])),
+        (Op::Common, counted(&[2.0 * PI], &[3])),
+    ];
+    for (op, want) in none_of_the_union {
+        let mut m = Model::new();
+        let (a, b) = slab_and_rod_on_two_walls(&mut m);
+        let got = run(&mut m, op, a, b);
+        check(
+            &format!("a slab and the rod on two of its walls {op:?}"),
+            &m,
+            got,
+            &want,
+        );
+    }
+}
