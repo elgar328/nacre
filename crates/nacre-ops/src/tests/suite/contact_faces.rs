@@ -10,9 +10,11 @@
 //!   the top with the pocket's walls and floor, not one face);
 //! - a half disk prism whose flat fills the window of a slab (the contact runs along two of the
 //!   cylinder's rulings, where the window's side walls are tangent to it, and along two chords);
-//! - a cube and a triangular prism touching along one edge line that three plane classes hold.
+//! - a cube and a triangular prism touching along one edge line that three plane classes hold;
+//! - a rod bored through by the half disk and the half's pin below it, whose diameter no plane
+//!   class crosses: the order round it is not read, and the Fuse is refused (`UnorderedEdges`).
 
-use super::scoreboard::{OPS, Want, check, counted, run};
+use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
 
 type Build = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
@@ -102,7 +104,23 @@ fn three_planes_on_a_line(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     (cube, sweep(m, triangle, 1.0))
 }
 
-const FAMILIES: [(&str, Build); 5] = [
+/// A rod of radius 2 on `z ∈ [2, 4]` bored through by the unit circle's upper half, and the half's
+/// pin below it — one half-disk cylinder handle, and no plane class across the diameter.
+fn d_pin_in_a_rod(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let rod = crate::fixtures::cylinder(
+        m,
+        Point3::from_array([0.0, 0.0, 2.0]),
+        nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+        2.0,
+        2.0,
+    )
+    .solid;
+    let tool = sweep(m, upper_half(), 4.0);
+    let bored = cut(m, rod, tool);
+    (bored, sweep(m, upper_half(), 2.0))
+}
+
+const FAMILIES: [(&str, Build); 6] = [
     ("a square pin under its bore", square_pin),
     ("a half-disk pin under its bore", d_pin),
     ("a pocketed square pin under its bore", pocketed_pin),
@@ -111,6 +129,7 @@ const FAMILIES: [(&str, Build); 5] = [
         "two prisms on a line of three planes",
         three_planes_on_a_line,
     ),
+    ("a half-disk pin under its bore in a rod", d_pin_in_a_rod),
 ];
 
 const PI: f64 = std::f64::consts::PI;
@@ -151,6 +170,13 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[1.0, 2.0], &[6, 5]),
             counted(&[1.0], &[6]),
             counted(&[2.0], &[5]),
+            none(),
+        ],
+        // The Fuse is two bodies, `π` and `7π`, once the order round the diameter is read.
+        "a half-disk pin under its bore in a rod" => [
+            refused(RejectReason::UnorderedEdges),
+            counted(&[7.0 * PI], &[5]),
+            counted(&[PI], &[4]),
             none(),
         ],
         other => panic!("no answers stated for {other}"),

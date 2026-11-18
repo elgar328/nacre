@@ -206,15 +206,17 @@ pub enum RejectReason {
     /// **A ring node with no side**: the edges meeting there run along one line, so the loop has no
     /// left or right at it.
     StraightAngle,
-    // Their lines are then identical (parallel plus a shared point), which upstream is supposed to
-    // have already resolved: `merge_coincident` folds an edge traced twice, and `Aliases` folds two
+    // At an arrangement vertex their lines are then identical (parallel plus a shared point), which
+    // upstream is supposed to have already resolved: `merge_coincident` folds an edge traced twice, and `Aliases` folds two
     // walls that carry one line. Reaching here means one of those did not, and the honest answer is
     // that this arrangement cannot be ordered rather than an order picked arbitrarily — the
     // ordering feeds `next`, so a guess there is a wrong face, silently.
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
     /// The same is said of two result faces leaving one curve of the result along one direction:
-    /// the component join reads its pairs off that curve's cyclic order.
+    /// the component join reads its pairs off that curve's cyclic order. And of a line of the result
+    /// only plane faces hold when no plane class of the boolean crosses it: that order is read on
+    /// such a cut, and without one it is not read.
     ///
     /// A line and an arc **tangent** at the vertex are not this when the arc leaves the other way
     /// (a fillet's smooth corner is a half turn, read by geometry). What is this: the same way —

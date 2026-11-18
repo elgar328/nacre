@@ -93,6 +93,7 @@ While the version is `0.0.z`, every release may break anything.
 - `judge::WitnessPoint`'s wide and judged frame steps charge a narrowed axis or origin component half an ulp — floored at the smallest normal `f64`, and nothing for an exact component — where they charged the realization's radius plus a whole ulp.
 - `props::centroid` gives the centroid of a solid with cylindrical faces — a bore, a fillet, an arc in its profile — where it refused with `props::PropsError::CentroidOfCurvedFace`. Like the volume, it is an `f64` measurement.
 - `OpError::VerticesInMixedFrames` displays what it names, `the datum names a vertex on a nameless datum` — it read `the datum's vertices' carriers do not share one motion`, which vertices in two frames no longer are refused for.
+- A union of two bodies touching along a line only plane faces hold, with no plane of either body across it — a half-disk pin under its half-disk bore through a round rod — is refused as `ops::RejectReason::UnorderedEdges` (not supported: the order of the faces round that line is not read), where it was refused as `ops::RejectReason::OpenResultShell`.
 
 ### Removed
 

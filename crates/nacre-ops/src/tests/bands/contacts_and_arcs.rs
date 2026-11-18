@@ -1225,8 +1225,8 @@ fn the_bands_loop_is_one_continuous_cycle() {
 /// result comes back as **one** component.
 ///
 /// Asserted on `name_result_vertices`' own product (the subdivision must run first for the
-/// chord's line key to match), across all three fixtures. red: the band's registration
-/// removed → n == 2 and the held grouping is `PierceVertexUnnamed`.
+/// chord's line key to match), across all three fixtures. red: the band's ring edges left out of
+/// the component join → n == 2.
 #[test]
 fn the_grouping_joins_across_a_cut_rim() {
     for (origin, axis) in [
@@ -1311,11 +1311,8 @@ fn the_grouping_joins_across_a_cut_rim() {
             cyls,
             &crate::assembly::Tangencies::none(),
         )
-        .expect("the naming runs");
-        let g = named
-            .grouping
-            .as_ref()
-            .expect("the grouping joins across the cut rim");
+        .expect("the naming runs and the grouping joins across the cut rim");
+        let g = &named.grouping;
         assert_eq!(g.n, 1, "one component");
         assert_eq!(g.positives, vec![0], "one material piece, no cavity");
     }

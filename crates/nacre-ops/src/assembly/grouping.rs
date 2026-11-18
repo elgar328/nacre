@@ -77,9 +77,9 @@ pub(crate) fn comp_face(
 /// whole result; several mean either an enclosed void (a cavity — an inward-oriented shell) or a
 /// severed operand (two or more material-enclosing shells).
 ///
-/// **Deciding early is not the same as *rejecting* early.** [`reconstruct`](fn@reconstruct) holds
-/// this `Result` and raises it late, past the minting; the arena a declining boolean leaves is the
-/// quantity `replay::a_late_reject_is_not_index_neutral` measures.
+/// **A refusal here is the boolean's answer**, raised where it is decided
+/// ([`name_result_vertices`]), before any handle is minted: every later step reads the groups, so
+/// none of them speaks over a grouping that did not answer.
 pub(super) fn group_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[LocalFace],

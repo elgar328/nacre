@@ -1,8 +1,8 @@
 use super::*;
 pub(crate) struct Named {
-    /// The grouping, **held** — raised deep in the minting.
-    /// (`pub(crate)`: the grouping fence reads the held result directly.)
-    pub(crate) grouping: Result<Grouping, BoolError>,
+    /// The grouping — always one that answered: a grouping that cannot answer is the naming's
+    /// refusal. (`pub(crate)`: the grouping fence reads it directly.)
+    pub(crate) grouping: Grouping,
     pub(crate) group_of: Vec<usize>,
     /// The working face list where it differs from the caller's — the split-twin subdivision
     /// and/or the per-solid dissolve rewrote rings. `None` = the caller's list stands.
@@ -10,9 +10,9 @@ pub(crate) struct Named {
     pub(crate) defs: HashMap<(usize, NodeId), Def>,
 }
 
-/// **Everything `reconstruct` decides before a single handle is minted** — the grouping (held,
-/// not raised), the per-solid straight-angle dissolve, the whole-result self-touch judgement, and
-/// every ring node's defining triple.
+/// **Everything `reconstruct` decides before a single handle is minted** — the grouping, the
+/// per-solid straight-angle dissolve, the whole-result self-touch judgement, and every ring node's
+/// defining triple.
 ///
 /// A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
 /// one: a fence calls it directly on the faces production feeds it. Model-immutable by signature:
@@ -144,14 +144,12 @@ pub(crate) fn name_result_vertices(
     // themselves) is scoped to one group, so no result solid can be named by — or share a handle
     // with — a solid it merely touches.
     //
-    // **Held, not raised.** A failed grouping is reported further down, and until then every
-    // face is one group (`replay::a_late_reject_is_not_index_neutral` measures the arena a
-    // declining boolean leaves).
-    let grouping = group_faces(jd, faces, cyls);
-    let group_of: Vec<usize> = match &grouping {
-        Ok(g) => g.group_of.clone(),
-        Err(_) => vec![0; faces.len()],
-    };
+    // **A grouping that cannot answer is the answer**, raised here: every step below reads the
+    // groups, so none of them may speak over a stand-in. Putting every face in one group instead
+    // welds a contact line's four uses onto one handle, and the edge-use guard then names
+    // `NonManifoldResultEdge` for a result whose faces the component join could not pair.
+    let grouping = group_faces(jd, faces, cyls)?;
+    let group_of: Vec<usize> = grouping.group_of.clone();
     // **A straight angle is a per-solid question, and only a result in several pieces can make
     // the two answers differ.** The cleaning pass runs `dissolve_straight_angles` over the whole
     // result, so it keeps a node that is a real corner *somewhere* — right while the result is one
@@ -160,17 +158,16 @@ pub(crate) fn name_result_vertices(
     // second's ring it is a vertex with no name there — only two of the three planes through it
     // bound that solid — and a whole-result derivation fills the gap by borrowing the *other*
     // body's plane. So each solid drops the nodes that are straight runs **for it**.
-    let per_solid: Option<Vec<LocalFace>> = match &grouping {
-        Ok(g) if g.n > 1 => {
-            let mut v = faces.to_vec();
-            let shared = combinatorics::SharedLines::of(jd, cyls);
-            for gi in 0..g.positives.len() {
-                let which: Vec<usize> = (0..v.len()).filter(|&i| group_of[i] == gi).collect();
-                dissolve_straight_angles(&mut v, &which, &shared);
-            }
-            Some(v)
+    let per_solid: Option<Vec<LocalFace>> = if grouping.n > 1 {
+        let mut v = faces.to_vec();
+        let shared = combinatorics::SharedLines::of(jd, cyls);
+        for gi in 0..grouping.positives.len() {
+            let which: Vec<usize> = (0..v.len()).filter(|&i| group_of[i] == gi).collect();
+            dissolve_straight_angles(&mut v, &which, &shared);
         }
-        _ => None,
+        Some(v)
+    } else {
+        None
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
     // **The whole-result judgement runs before a single cell is minted.** Everything
@@ -179,10 +176,8 @@ pub(crate) fn name_result_vertices(
     // whichever local derivation happens to fail first on its unnameable corners: a
     // self-touching body's pinch line cannot be honestly named by any face-local rule (its
     // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured).
-    // A held grouping error stays held (raised further down); the self-touch question is only
-    // askable of a
-    // grouping that answered.
-    if let Ok(g) = &grouping {
+    {
+        let g = &grouping;
         let body_comps: Vec<Vec<usize>> =
             g.positives.iter().map(|m| g.comps_of[m].clone()).collect();
         let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); g.n];

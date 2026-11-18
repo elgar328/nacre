@@ -180,9 +180,11 @@ pub(super) fn face_components(
     faces: &[LocalFace],
 ) -> Result<(Vec<usize>, usize), BoolError> {
     let mut parent: Vec<usize> = (0..faces.len()).collect();
-    // The faces round each ring edge, with where each meets it. One use is a dangling edge — the
-    // edge-use guard's to name. Both tables are walked in key order, so a refusal names the same
-    // curve run after run.
+    // The faces round each ring edge, with where each meets it. One use joins nothing, and it is
+    // no proof of an open face set: a face split at a node its neighbour runs straight through
+    // uses its two pieces once each (a body standing on itself at a corner on the block's top
+    // edge, which the self-touch verdict refuses). Both tables are walked in key order, so a
+    // refusal names the same curve run after run.
     let mut users: BTreeMap<NodeEdge, Vec<EdgeUse<'_>>> = BTreeMap::new();
     for (face, lf) in faces.iter().enumerate() {
         for ring in rings_of(lf) {
@@ -477,8 +479,9 @@ fn plane_spokes(
         return Err(stages());
     };
     // A table with no class across the line has no cut to read the order on — the order is not
-    // read, and the refusal says so. Measured: no straight star in the suite, the ignored sweep,
-    // the census or the kit reaches it.
+    // read, and the refusal says so: the half-disk pin under its bore through a rod
+    // (`contact_faces`), whose diameter only planes along it hold. The order about the line itself
+    // needs no cut and no predicate answers it yet.
     let t = (0..jd.planes.len())
         .find(|&t| jd.plane_pair_dir_sign(t, p, q) != 0)
         .ok_or_else(|| reject(RejectReason::UnorderedEdges))?;

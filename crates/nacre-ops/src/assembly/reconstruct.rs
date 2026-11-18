@@ -33,11 +33,8 @@ pub(crate) fn reconstruct(
     let cut = rims.cut_per_group(faces, &group_of);
     // **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
-    // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
-    // question "do these two lumps share a solid" is only askable of a grouping that answered.
-    if let Ok(g) = &grouping {
-        tangency_reject(&tangencies, g)?;
-    }
+    // minted, so a refusal leaves the arena as it found it.
+    tangency_reject(&tangencies, &grouping)?;
 
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();
@@ -533,7 +530,7 @@ pub(crate) fn reconstruct(
             return Err(reject(RejectReason::OpenResultShell));
         }
     }
-    // **The grouping decided at the top of this function, raised here.** What it says:
+    // **The grouping the naming decided, made into shells.** What it says:
     // one component is the whole result; several mean either an enclosed void (a cavity, an
     // inward-oriented shell) or a severed operand (two or more material-enclosing shells), and a
     // surviving cavity belongs to the piece whose outer shell nests it. See [`group_faces`] — and
@@ -544,7 +541,7 @@ pub(crate) fn reconstruct(
         positives,
         mut comps_of,
         ..
-    } = grouping?;
+    } = grouping;
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
