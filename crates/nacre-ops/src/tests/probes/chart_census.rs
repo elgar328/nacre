@@ -67,8 +67,10 @@ pub(crate) fn census(
         // ends there. Its answer is that it has none, and `read_cell` skips it. (A station's side
         // closed by a wall that draws no piece there is silent too, `ChordSays::NoPiece` — the
         // piece itself carries its answer, and this loop reads pieces.) The cell beside the
-        // line outside the cylinder (`outer`) is formed with it — every half-edge of the class's
-        // walk bounds a cell — and `slit_at` reads it where the lateral keeps the outside.
+        // line outside the cylinder (`outer`) is formed with it, and a tangent station's two cells
+        // (`beside`) in its stead — every half-edge of the class's walk bounds a cell — and
+        // `slit_at` reads them, off the ruling's station where it has one: every secant ruling, and
+        // no tangent one, through which no chord runs.
         for t in &chart.theta {
             assert!(
                 t.label.is_some() || t.side == 0,
@@ -79,6 +81,18 @@ pub(crate) fn census(
                 t.outer.is_some(),
                 t.label.is_some(),
                 "a ruling's two cells came apart: cyl {k}, wall {}",
+                t.wall
+            );
+            assert_eq!(
+                t.beside.is_some(),
+                t.side == 0,
+                "a tangent ruling's two cells came apart: cyl {k}, wall {}",
+                t.wall
+            );
+            assert_eq!(
+                t.station.is_some(),
+                t.side != 0,
+                "a ruling's station came apart: cyl {k}, wall {}",
                 t.wall
             );
         }

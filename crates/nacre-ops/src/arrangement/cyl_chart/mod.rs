@@ -27,7 +27,7 @@
 //! |---|---|---|---|
 //! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 22,220 |
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 4,616 |
-//! | `n ⊥ m` | `d = r` | **no line** from another solid's plane (a tangency grazes and divides nothing) — but where its face **ends** on a secant wall's ruling, a spoke of that ruling's station ([`Station::tangent`]); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends | 2,062 |
+//! | `n ⊥ m` | `d = r` | **no line** from another solid's plane (a tangency grazes and divides nothing) — but where its face **ends** on a secant wall's ruling, a spoke of that ruling's station ([`Station::tangent`]); the face's **own** tangent wall is a ruling of `side = 0` with **no chord**, where the face ends | 2,062 |
 //! | `n ⊥ m` | `d > r`, or no face reaching the lateral | nothing | 24,661 |
 //! | oblique | — | a **section** — a line of the chart, crossing others, which the class draws on its own arrangement (`CylRecord::Sections`) wherever the plane touches none of the lateral's circles; a cell it bounds on one side only is a face with an elliptical edge | 298 |
 //!
@@ -49,7 +49,11 @@
 //! the line ([`Station::tangent`], off the gate's record of the pair). The row's other half: a fillet's or a slot's wall is tangent to its **own**
 //! cylinder, and that ruling is not a crossing but the face's edge — a station of `side = 0`
 //! carrying no label (the seated face states the piece itself, `SegKind::Tangent`), which the cell
-//! reader takes as «the face ends here» and the vertical-answer assertion exempts. And a third
+//! reader takes as «the face ends here» and the vertical-answer assertion exempts. It has no
+//! chord: the wall's halves along `±τ` are the spokes of its star, and beyond each half the cell
+//! beside the line on that side (`ThetaSeg::beside`) says what the sector there holds — so two
+//! laterals each ending on their own tangent wall from either side of one ruling are cut there
+//! when the material meets on the line alone ([`Chart::slit_at`]). And a third
 //! reading: when the *other* solid's plane runs through the axis, one of its two verticals **is**
 //! that tangent ruling — a line two planes and the cylinder share. Its ends have one name (the
 //! alias table's, seeded from the operands, which every name the chart reads already wears), and
@@ -103,7 +107,7 @@ pub(crate) use read_cell::*;
 pub(crate) struct ThetaSeg {
     pub(crate) wall: usize,
     /// The ruling's side on its wall — `0` a **tangent** station: a line the face ends
-    /// on, with no chamber to read behind it, so no `label`.
+    /// on, with no chamber to read behind it, so no `label` (its cells are `beside`).
     pub(crate) side: i8,
     /// The piece's own two pierce nodes: the θ **order** is asked of these
     /// (`circular_order_about_seam` via `combinatorics::theta_groups`), never of a coordinate.
@@ -121,6 +125,9 @@ pub(crate) struct ThetaSeg {
     /// A cell's chamber never reads it; [`Chart::slit_at`] does, where the lateral keeps the
     /// outside.
     pub(crate) outer: Option<Label>,
+    /// A tangent ruling's two cells beside the line —
+    /// [`RulingExtent::beside`](crate::arrangement::RulingExtent::beside).
+    pub(crate) beside: Option<[Label; 2]>,
     /// Who traced this line — [`RulingExtent::marks`](crate::arrangement::RulingExtent::marks). Membership is `label`'s question; whether
     /// this lateral face is even here is this one's.
     #[cfg(test)]
@@ -129,8 +136,9 @@ pub(crate) struct ThetaSeg {
     /// order (the line secant classes share on the cylinder, [`crate::planes::SharedRuling`], is one
     /// station, and the chamber beside the lateral on each side of it is closed by a different one
     /// of their planes — [`Station::chords`]), and a tangent wall where it ends on the line
-    /// against a lateral face of the other solid ([`Station::tangent`]). `None` for a tangent
-    /// ruling (`side == 0`): no chord runs through it.
+    /// against a lateral face of the other solid ([`Station::tangent`]). `None` exactly at a
+    /// tangent ruling (`side == 0`): no chord runs through it, and [`Chart::slit_at`] reads its
+    /// star (asserted by the chart census).
     pub(crate) station: Option<Station>,
 }
 
@@ -442,6 +450,7 @@ pub(crate) fn chart_of(
             on,
             label: r.label,
             outer: r.outer,
+            beside: r.beside,
             #[cfg(test)]
             marks: r.marks.clone(),
             station: None,

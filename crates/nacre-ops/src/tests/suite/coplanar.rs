@@ -301,7 +301,7 @@ fn overhang_boss_with_a_non_convex_footprint() {
 
 /// The plane half of the result's cleaning: merge, then one straight-angle pass over every face.
 fn unify_then_dissolve(faces: Vec<LocalFace>, p: &[WorkingPlane]) -> Vec<LocalFace> {
-    let mut out = unify_coplanar_faces(faces, &crate::planes::test_judge(p), &[]).unwrap();
+    let mut out = unify_coplanar_faces(faces, &[], &crate::planes::test_judge(p), &[]).unwrap();
     let all: Vec<usize> = (0..out.len()).collect();
     crate::assembly::dissolve_straight_angles(&mut out, &all, &Default::default());
     out
@@ -434,7 +434,7 @@ fn a_hole_filled_by_two_faces_still_merges() {
         face(0, vec![h11, m11, m12, h12], vec![]), // left filler
         face(0, vec![m11, h21, h22, m12], vec![]), // right filler
     ];
-    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p), &[]).unwrap();
+    let out = unify_coplanar_faces(faces, &[], &crate::planes::test_judge(&p), &[]).unwrap();
     assert_eq!(out.len(), 1, "the hole is filled, so one face remains");
     assert!(out[0].inner.is_empty(), "and it has no hole left");
     assert_eq!(out[0].outer.expect_ring().len(), 4, "just the outer square");

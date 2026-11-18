@@ -286,14 +286,6 @@ fn vertex_bits(m: &Model, s: Handle<Solid>) -> Vec<[u64; 3]> {
     bits
 }
 
-fn face_count(m: &Model, s: Handle<Solid>) -> usize {
-    let sol = m.solid(s);
-    std::iter::once(sol.outer)
-        .chain(sol.cavities.iter().copied())
-        .map(|sh| m.shell(sh).faces.len())
-        .sum()
-}
-
 /// A cylinder of radius 2 from `z = 0` to `z = 1` about the `z` axis, through the product's own road.
 fn round_pin(m: &mut Model) -> Handle<Solid> {
     nacre_ops::fixtures::cylinder(

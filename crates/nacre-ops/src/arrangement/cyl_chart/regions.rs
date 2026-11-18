@@ -176,7 +176,7 @@ pub(crate) fn walk(
     // assembly sees the touch: four uses of one edge in one solid, or two solids apart. Run
     // through as one face, the lateral hides it under a shell every count calls closed.
     let slits: Vec<bool> = (0..chart.theta.len())
-        .map(|j| chart.slit_at(jd, j, kind).map_err(reject))
+        .map(|j| chart.slit_at(jd, def, j, kind).map_err(reject))
         .collect::<Result<_, BoolError>>()?;
     let slit = |j: usize| slits.get(j).copied().unwrap_or(false);
 

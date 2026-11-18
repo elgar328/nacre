@@ -1669,7 +1669,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 5. **라벨.** `Label = [A_above, A_below, B_above, B_below]` 를 모서리 마스크(`edge_mask`)로 전파하고 **모든** 모서리에서 검증한다
    (`label_cells`; `UnreachedCell`·`LabelConflict`). «above» 는 클래스의 **저장된** 법선 쪽이다 — `Label` doc(`frame_sign`, 방출의 `flip`).
 6. **생존 규칙·방출.** 아래.
-7. **청소·조립.** `arrangement::whole_result_faces`(`unify_coplanar_faces` → 옆면 방출 → 결과 전체의 `dissolve_straight_angles`)
+7. **청소·조립.** `arrangement::whole_result_faces`(옆면 방출 → `unify_coplanar_faces` → 결과 전체의 `dissolve_straight_angles`)
    → `assemble_fuse_cut` 이 vertex handle 을 면의 first-appearance 로 배정한다(「병렬 — 판정만 병렬, 순서는 고정」).
 
 **생존 규칙.** 한 챔버(평면 한쪽의 공간)의 `(inA, inB)` 에 대한 술어 하나다(`draft::keep`):
@@ -1995,7 +1995,8 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 세로선(`ThetaSeg`)으로, 클래스의 자취를 선으로 얹는다(`cyl_chart` 의 모듈 doc).
 
 - **할선 룰링 하나는 정거장 하나이고, 그 별은 그 선에 간선을 가진 반쪽 면 전부다** — 할선 벽들의 현과 그 선에서 끝나는
-  접선 벽 가운데 그 자리 옆면과 솔리드가 다른 것의 반쪽 — 끝나는지는 솔리드마다 읽는다(`Station`·`Chart::slit_at`). 선을 품는 평면은 할선이거나 접선뿐이다. 공유 룰링은 할선
+  다른 솔리드의 접선 벽(`Station`·`Chart::slit_at`). 제 벽의 접선 룰링엔 현이 없고 그 별은 벽의 두 반쪽이다 — 반쪽 너머는
+  반쪽마다 그 쪽 벽 칸이 말한다(`ThetaSeg::beside`). 선을 품는 평면은 할선이거나 접선뿐이다. 공유 룰링은 할선
   벽들에 면이 없는 높이에서도 차트의 정거장이다 — 차트는 곡면 전체에 선을 깔고 칸을 분류하며(Requicha 의 분류,
   Mäntylä 의 이웃), 그 선에서 옆면이 끝나는지는 기록이 아니라 이 분류가 정한다.
 - **옆면 위의 곡선은 룰링이거나 θ 의 그래프다** — 높이 순서 `quad::section_height_order`(래퍼

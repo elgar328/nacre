@@ -77,25 +77,35 @@ pub(super) fn per_class(
                 return None;
             }
             // The chart's vertical answer — see [`RulingExtent::label`] and
-            // [`RulingExtent::outer`], the two cells beside the ruling. Each is an `Option` rather
-            // than a `?` deliberately: dropping the piece here would make the recorded population
-            // differ between a test build and a release one, and then the census would be measuring
-            // a corpus production never sees.
-            let (label, outer) = {
+            // [`RulingExtent::outer`], the two cells beside a secant ruling, and
+            // [`RulingExtent::beside`], a tangent one's. Each is an `Option` rather than a `?`
+            // deliberately: dropping the piece here would make the recorded population differ
+            // between a test build and a release one, and then the census would be measuring a
+            // corpus production never sees.
+            let (label, outer, beside) = {
                 let cell_at = |even: bool| -> Option<Label> {
                     Some(labels[*face_of.get(&(2 * i + usize::from(!even)))?])
                 };
                 // A **tangent** ruling (`side == 0`) has no interior side on this class:
                 // the plane touches the cylinder, and both cells beside the line lie outside its
-                // disk. Its extent carries no label — the chart reads it as a station where the
-                // face ends, not as a wall with a chamber behind it.
-                let inside = if side == 0 {
-                    None
+                // disk. Its extent carries no label — no chamber lies behind it — but both cells,
+                // one per side: each states the plane's far side beyond the wall's half there, and
+                // the two differ wherever another solid's face meets the line from that far side
+                // (its graze flips that solid's bits, `edge_mask`).
+                let (out, outer, beside) = if side == 0 {
+                    (
+                        None,
+                        None,
+                        cell_at(true).zip(cell_at(false)).map(<[Label; 2]>::from),
+                    )
                 } else {
-                    ruling_interior_is_even(jd, wc, side)
+                    let inside = ruling_interior_is_even(jd, wc, side);
+                    (
+                        inside.and_then(cell_at),
+                        inside.and_then(|inside| cell_at(!inside)),
+                        None,
+                    )
                 };
-                let out = inside.and_then(cell_at);
-                let outer = inside.and_then(|inside| cell_at(!inside));
                 #[cfg(test)]
                 {
                     // The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
@@ -144,7 +154,7 @@ pub(super) fn per_class(
                         ruling_probe::LABELLED.push(out.is_some());
                     }
                 }
-                (out, outer)
+                (out, outer, beside)
             };
             Some((
                 cyl,
@@ -154,6 +164,7 @@ pub(super) fn per_class(
                     end: p.end,
                     label,
                     outer,
+                    beside,
                     #[cfg(test)]
                     marks: p.merged.clone(),
                 },

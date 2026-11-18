@@ -1233,6 +1233,15 @@ pub fn non_watertight(t: &nacre_tess::Tessellation) -> usize {
     counts.values().filter(|&&n| n != 2).count()
 }
 
+/// The faces of solid `s`, its cavities' too.
+pub fn face_count(m: &Model, s: Handle<Solid>) -> usize {
+    let sol = m.solid(s);
+    std::iter::once(sol.outer)
+        .chain(sol.cavities.iter().copied())
+        .map(|sh| m.shell(sh).faces.len())
+        .sum()
+}
+
 /// **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
 /// (`tess_census`), which the front-door tests do not pass through. The mesh exists, is
 /// watertight, has no lateral triangle leaning off its surface, and its signed volume is the

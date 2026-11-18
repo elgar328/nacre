@@ -84,14 +84,13 @@ pub(crate) struct CellRead<'a> {
 }
 
 impl Chart {
-    /// **Whether the lateral ends at station `i` on both sides** — where the material the lateral
+    /// **Whether the lateral ends at ruling `i` on both sides** — where the material the lateral
     /// bounds does not run round the line: a sector between two neighbouring spokes of the line's
     /// star — the secant walls' chords ([`Station::chords`]) and the tangent walls of a solid other
     /// than the lateral's where they end on the line ([`Station::tangent`]) — **on the lateral's
     /// material side**, is not
     /// in the result. All kept, the material runs across the line and so does the lateral; one not
-    /// kept, what lies on the two sides meets on the line alone. `false` for a tangent ruling
-    /// (`side == 0`, whose `station` is `None` — no chord runs through it), for a station one chord
+    /// kept, what lies on the two sides meets on the line alone. `false` for a station one chord
     /// alone runs through with no tangent wall ending there — nothing lies between the lateral's
     /// halves but that chord — and for one with a wall that
     /// draws no piece there ([`ChordSays::NoPiece`]): the line is then the lateral's own edge, and
@@ -110,6 +109,20 @@ impl Chart {
     /// box also reaches past the block over a plane through the line — a second chord, with no face
     /// there, outside the box's corner — only the chord next to the tangent half reads the box's
     /// own sector (`edge_on_a_ruling`).
+    ///
+    /// **A tangent ruling** (`side == 0`) has no [`Station`] — no chord runs through it — and its
+    /// star is its wall's two halves, the tangent halves, and beyond each half the plane's far side
+    /// as the wall's cell on that side states it (`ThetaSeg::beside`) — each half's own, as a
+    /// secant station reads each tangent half's off the chord next to it. The room between the wall
+    /// and the lateral is a cusp of no angle, so another plane through the line leaves it on the
+    /// far side, between the wall's halves: the chart draws no line for a plane whose face reaches
+    /// no lateral, and one spoke stands for them between the two far sectors. What it hides is a
+    /// void between two such planes with the material kept beside both halves — folding the planes
+    /// through the line into a station as chords is todo 「접선에서만 만나는 덩이」's. The lateral's continuing
+    /// is the conjunction of the two far sectors, so which cell lies on `+τ` is not asked. Two
+    /// cusps whose floors and laterals each end on the line from either side meet there alone: the
+    /// floors' far side is not kept, and the lateral is cut. A lateral keeping its inside (a
+    /// fillet, a boss) bounds one chamber between its halves and runs on.
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
@@ -138,18 +151,43 @@ impl Chart {
     /// the result's self-touch verdict asks it once the solids are known — the walls' edge inside
     /// the solid's own lateral (`assembly::self_touch`).
     ///
-    /// `Err` when a label or a side could not be read: the labels are formed for every secant
-    /// ruling piece, so their absence is the stages disagreeing.
+    /// `Err` when a label, a side or a station could not be read: the labels are formed for every
+    /// ruling piece, a tangent one's two cells too, and every secant piece is a station, so their
+    /// absence is the stages disagreeing. Every ruling is read, whether or not the walk uses its
+    /// answer.
     pub(crate) fn slit_at(
         &self,
         jd: &Judge<'_, WorkingPlane>,
+        def: &nacre_topo::CylinderDef,
         i: usize,
         kind: BoolKind,
     ) -> Result<bool, RejectReason> {
         let stages = RejectReason::CylinderStagesDisagree;
-        let Some(st) = &self.theta[i].station else {
-            return Ok(false);
-        };
+        let keeps = |b: (bool, bool)| crate::draft::keep(kind, b.0, b.1);
+        let lateral = 0;
+        // A tangent ruling (see the doc). The room is the lateral's outside, so the lateral keeps
+        // its inside exactly where the room is not kept — read off one cell, by the premise below.
+        if self.theta[i].side == 0 {
+            let seg = &self.theta[i];
+            let [even, odd] = seg.beside.ok_or(stages)?;
+            let axis_above = crate::planes::axis_above(jd, seg.wall, def).ok_or(stages)?;
+            let far = |l: &Label| keeps(read_bits(l, !axis_above));
+            let keeps_outside = keeps(read_bits(&even, axis_above));
+            let star = if keeps_outside {
+                let (one_half, unseen, other_half) = (1, 2, 3);
+                vec![
+                    (lateral, true),
+                    (one_half, far(&even)),
+                    (unseen, far(&odd)),
+                    (other_half, true),
+                    (lateral, false),
+                ]
+            } else {
+                vec![(lateral, true), (lateral, false)]
+            };
+            return Ok(crate::draft::LineStar::new(star).continues(lateral) == Some(false));
+        }
+        let st = self.theta[i].station.as_ref().ok_or(stages)?;
         if st
             .chords
             .iter()
@@ -166,7 +204,6 @@ impl Chart {
             let near = crate::planes::plus_theta_is_above(jd, c.wall, c.side).ok_or(stages)?;
             walls.push((label.ok_or(stages)?, outer, near));
         }
-        let keeps = |b: (bool, bool)| crate::draft::keep(kind, b.0, b.1);
         let inside = keeps(read_bits(&walls[0].0, walls[0].2));
         let mut between: Vec<bool> = Vec::with_capacity(walls.len());
         for pair in walls.windows(2) {
@@ -188,7 +225,6 @@ impl Chart {
         // order. The chambers next to the lateral are kept and the far side is not — the premise
         // above: the answer is read only between two cells the walk emits, each keeping one side
         // of the lateral.
-        let lateral = 0;
         let n = walls.len();
         // Each spoke with the sector counter-clockwise after it.
         let mut star: Vec<(usize, bool)> = vec![(lateral, true)];

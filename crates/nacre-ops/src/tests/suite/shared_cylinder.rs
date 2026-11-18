@@ -13,8 +13,8 @@
 //! whose statements of the diameter's rulings overlap in part and one inside the other with both
 //! ends inside (the rulings cut at each other's ends), a bored block below the bore's pin (the
 //! rim joined the other way round), two blocks bitten by one circle into cusps that meet on its
-//! tangent ruling — alone, joined round the bore, and beside a plane through the axis. Every
-//! family is run as Fuse, both Cuts and Common.
+//! tangent ruling — alone, mirrored and offset along it, joined round the bore, joined on their
+//! floor, and beside a plane through the axis. Every family is run as Fuse, both Cuts and Common.
 //!
 //! The class carries both operands' lateral faces, and the chart reads its cells for both — the
 //! inside chamber off the arrangement's labels, and the outside as the inside with every solid
@@ -248,10 +248,22 @@ fn bore_below_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
 /// `z ∈ [lo, lo + len]` — one statement wherever it is written, so the bites of one family share
 /// its handle.
 fn bitten(m: &mut Model, min: [f64; 3], max: [f64; 3], lo: f64, len: f64) -> Handle<Solid> {
+    bitten_about(m, 1.0, min, max, lo, len)
+}
+
+/// [`bitten`] about the axis line `x = 1, y = axis_y`.
+fn bitten_about(
+    m: &mut Model,
+    axis_y: f64,
+    min: [f64; 3],
+    max: [f64; 3],
+    lo: f64,
+    len: f64,
+) -> Handle<Solid> {
     let block = crate::fixtures::cuboid(m, min, max);
     let tool = crate::fixtures::cylinder(
         m,
-        Point3::from_array([1.0, 1.0, lo]),
+        Point3::from_array([1.0, axis_y, lo]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         1.0,
         len,
@@ -270,6 +282,16 @@ fn two_cusps(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     )
 }
 
+/// [`two_cusps`] mirrored across `y = 0` — the floor's axis side the other way — and two high, the
+/// second raised by one: the cusps meet on the tangent ruling `(1, 0)` over `z ∈ [1, 2]` only, and
+/// each runs on along the line alone beyond it.
+fn two_cusps_under_the_axis_offset_along_it(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bitten_about(m, -1.0, [0.0, -1.0, 0.0], [1.0, 0.0, 2.0], -1.0, 5.0),
+        bitten_about(m, -1.0, [1.0, -1.0, 1.0], [2.0, 0.0, 3.0], -1.0, 5.0),
+    )
+}
+
 /// The blocks `[−1, 1] × [0, 3]` and `[1, 3] × [0, 3]`, each less the circle about `(1, 1)`: the
 /// cusps meet on the tangent ruling `(1, 0)` and the blocks share the face `x = 1` above the
 /// circle — one body round a bore tangent to its floor, whose boundary touches itself along the
@@ -279,6 +301,27 @@ fn two_cusps_joined_round_the_bore(m: &mut Model) -> (Handle<Solid>, Handle<Soli
         bitten(m, [-1.0, 0.0, 0.0], [1.0, 3.0, 1.0], -1.0, 3.0),
         bitten(m, [1.0, 0.0, 0.0], [3.0, 3.0, 1.0], -1.0, 3.0),
     )
+}
+
+/// The block `[−1, 1] × [0, 3]` less the circle, and the block `[−1, 3] × [0, 3] × [0, 2]` with
+/// `[−1, 1] × [0, 1]` notched out under its top and the circle bitten on `z ∈ [−1, 1]`: the cusps
+/// meet on the tangent ruling `(1, 0)` below `z = 1`, and the two floors `y = 0` meet again along
+/// `z = 1` beside it — one body round a bore tangent to its floor, the floor one face of its plane.
+fn two_cusps_joined_on_their_floor(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let first = bitten(m, [-1.0, 0.0, 0.0], [1.0, 3.0, 1.0], -1.0, 3.0);
+    let block = crate::fixtures::cuboid(m, [-1.0, 0.0, 0.0], [3.0, 3.0, 2.0]);
+    let notch = crate::fixtures::cuboid(m, [-2.0, -1.0, -1.0], [1.0, 4.0, 1.0]);
+    let stepped = crate::boolean(m, BoolKind::Cut, block, notch).expect("the notch")[0];
+    let tool = crate::fixtures::cylinder(
+        m,
+        Point3::from_array([1.0, 1.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    )
+    .solid;
+    let second = crate::boolean(m, BoolKind::Cut, stepped, tool).expect("the bite")[0];
+    (first, second)
 }
 
 /// The first cusp of [`two_cusps`] and the block `[1, 2] × [−1, 1]` less the same circle: the
@@ -291,7 +334,7 @@ fn a_cusp_beside_a_plane_through_the_axis(m: &mut Model) -> (Handle<Solid>, Hand
     )
 }
 
-const FAMILIES: [(&str, Build); 20] = [
+const FAMILIES: [(&str, Build); 22] = [
     ("two identical prisms", identical),
     ("one circle swept both ways", swept_both_ways),
     ("a bored plate and the bore's pin", bore_and_pin),
@@ -317,8 +360,16 @@ const FAMILIES: [(&str, Build); 20] = [
     ("a bored block below the bore's pin", bore_below_pin),
     ("two cusps meeting on their tangent ruling", two_cusps),
     (
+        "two cusps under the axis, offset along it",
+        two_cusps_under_the_axis_offset_along_it,
+    ),
+    (
         "two cusped blocks joined round the bore",
         two_cusps_joined_round_the_bore,
+    ),
+    (
+        "two cusped blocks joined on their floor",
+        two_cusps_joined_on_their_floor,
     ),
     (
         "a cusp beside a plane through the axis",
@@ -470,23 +521,38 @@ fn wants(name: &str) -> [Want; 4] {
             none(),
             counted(&[PI / 2.0], &[4]),
         ],
-        // The cusps meet on the ruling `(1, 0)` alone — two bodies of five faces, as OCCT builds
-        // them — but the union comes back as one solid of eight faces: the floors `y = 0` merge
-        // across the line and the lateral runs on over it (todo 「접선에서만 만나는 덩이」).
+        // The cusps meet on the ruling `(1, 0)` alone: two bodies of five faces, as OCCT builds
+        // them — each floor `y = 0` and each lateral ends on the line, which bounds a cusp on
+        // either side and no material between them.
         "two cusps meeting on their tangent ruling" => [
-            counted(&[2.0 - PI / 2.0], &[8]),
+            counted(&[1.0 - PI / 4.0, 1.0 - PI / 4.0], &[5, 5]),
             counted(&[1.0 - PI / 4.0], &[5]),
             counted(&[1.0 - PI / 4.0], &[5]),
             none(),
         ],
+        // Two bodies of five faces again, the line an edge of both over the stretch they share and
+        // of one beyond it.
+        "two cusps under the axis, offset along it" => [
+            counted(&[2.0 - PI / 2.0, 2.0 - PI / 2.0], &[5, 5]),
+            counted(&[2.0 - PI / 2.0], &[5]),
+            counted(&[2.0 - PI / 2.0], &[5]),
+            none(),
+        ],
         // The union is a block bored by a circle tangent to its floor: one body whose boundary
-        // touches itself along `(1, 0)`, which the same block less the circle in one boolean is
-        // refused as. Built from the two halves it comes back as a solid of seven faces (todo
-        // 「접선에서만 만나는 덩이」).
+        // touches itself along `(1, 0)`. The two floors stay two faces there, so the line is an
+        // edge four faces of one solid use.
         "two cusped blocks joined round the bore" => [
-            counted(&[12.0 - PI], &[7]),
+            refused(RejectReason::NonManifoldResultEdge),
             counted(&[6.0 - PI / 2.0], &[7]),
             counted(&[6.0 - PI / 2.0], &[7]),
+            none(),
+        ],
+        // One body whose boundary touches itself along `(1, 0)`, its floor one face across the
+        // line: the laterals' edge lies inside it, and the self-touch verdict names the line.
+        "two cusped blocks joined on their floor" => [
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[6.0 - PI / 2.0], &[7]),
+            counted(&[18.0 - PI / 2.0], &[9]),
             none(),
         ],
         // OCCT builds the union as two bodies of five and six faces; the kernel refuses every

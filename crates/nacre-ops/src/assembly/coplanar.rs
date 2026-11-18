@@ -22,11 +22,18 @@ use super::*;
 /// each hole its owner — the same two exact predicates `arrangement::nest_cells` uses for the same
 /// question, neither of which reads a coordinate.
 ///
+/// **An edge is interior only if no other face uses it** — `others` are the result's faces this
+/// pass does not merge (the laterals), counted among each edge's users and never grouped or
+/// returned. Two bodies standing on one floor either side of a tangent ruling, each lateral ending
+/// on the line from its own side, put four faces on that edge: the floor's two pieces bound
+/// different material there and stay two faces.
+///
 /// Abstains rather than guesses — the group is emitted as it came — where two faces claim one side
 /// of an edge, where an opposed pair is ambiguous, or where the cyclic order at a node the region
 /// passes twice cannot be read ([`merge_component`]).
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
+    others: &[LocalFace],
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<LocalFace>, BoolError> {
@@ -53,13 +60,21 @@ pub(crate) fn unify_coplanar_faces(
             }
         }
     }
+    // The edges a face this pass does not merge uses (the laterals): on one of them a third face
+    // stands.
+    let lateral_edges: HashSet<NodeEdge> = others
+        .iter()
+        .flat_map(LocalFace::poly_rings)
+        .flat_map(|ring| (0..ring.len()).map(move |t| NodeEdge::of(ring, t)))
+        .collect();
     // **Joined only across an edge exactly two faces use** — the merge erases the edges it joins
     // across, and an edge another face also uses must stay. That is not `face_components`' rule,
     // which joins faces bounding one material round any edge: the floor under two wings that meet
     // along a knife is two faces of one body, and the knife is an edge of all four
     // (`arrangement::knife_parts`). Erasing it would lay one face under both wings.
-    for fs in carriers.values() {
+    for (e, fs) in &carriers {
         if let [a, b] = fs[..]
+            && !lateral_edges.contains(e)
             && group_key(&faces[a]) == group_key(&faces[b])
         {
             let (ri, rj) = (uf_find(&mut comp, a), uf_find(&mut comp, b));
@@ -187,7 +202,12 @@ type RegionRings = (Bound, Vec<Bound>);
 /// as-is. A node left with two ways out is not itself a reason: the merged region passes that
 /// point twice — a face pinched there — and the walk takes the way that keeps the region on its
 /// left (step 3). A region that only *touches itself* there threads too, and is the whole-result
-/// judgement's to name: the 45° fold arrives here and leaves as `SelfTouchingResult`.
+/// judgement's to name: the 45° fold arrives here and leaves as `SelfTouchingResult`. So does an
+/// edge the group walks both ways that another face uses too — two floors joined elsewhere on
+/// their plane and meeting on a tangent ruling the laterals end on: erased, the laterals' edge lies
+/// inside the merged floor, which the self-touch verdict names with the line as its witness.
+/// Abstaining there instead leaves the floors as two faces of one plane, which the straight-angle
+/// pass refuses by a name that says nothing of the touch (measured).
 ///
 /// **Why abstaining is safe is not "merging is only tidiness"** — the contact fuse refutes
 /// that: unmerged coplanar faces leave the corners on a

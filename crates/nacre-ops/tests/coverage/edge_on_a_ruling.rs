@@ -32,7 +32,9 @@
 //! [`a_body_touching_itself_along_a_laterals_own_edge_is_refused`]. And the line running through
 //! `A`'s lateral where `B` ends on it with one side tangent and one across, into a notch or a bore,
 //! and past the notch over a plane through the line — see
-//! [`a_tangent_wall_ending_on_a_line_the_lateral_runs_through`].
+//! [`a_tangent_wall_ending_on_a_line_the_lateral_runs_through`]. And `A`'s face ending on its own
+//! tangent ruling, a cusp's floor or a fillet's wall, with `B` meeting the line from beyond the
+//! wall: it builds — see [`a_body_meeting_a_tangent_ruling_from_beyond_its_wall_builds`].
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
@@ -436,6 +438,153 @@ fn a_tangent_wall_on_a_flats_edge_from_outside_builds_or_is_refused() {
                 (got, want) => panic!("{p}: [{i}] {got:?}, want {want:?}"),
             }
         }
+    }
+}
+
+/// The unit square less the circle about `(1, 1)` of radius 1 — a cusp whose floor `y = 0` and
+/// wall `x = 0` each end on their tangent ruling, `(1, 0)` and `(0, 1)`, where the lateral ends.
+fn cusp() -> Profile2d {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let ring = nacre_ops::Ring2d::new(
+        vec![[r(0), r(0)], [r(1), r(0)], [r(0), r(1)]],
+        vec![
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Arc {
+                center: [r(1), r(1)],
+                r2: r(1),
+                ccw: false,
+            },
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a cusp");
+    nacre_ops::from_paths(vec![ring]).expect("a cusp").remove(0)
+}
+
+/// The square `[0, 2]²` with its corner `(2, 2)` rounded about `(1, 1)`: the fillet's lateral
+/// ends on the walls `x = 2` and `y = 2` along their tangent rulings `(2, 1)` and `(1, 2)`, and
+/// keeps its inside.
+fn rounded_corner() -> Profile2d {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let ring = nacre_ops::Ring2d::new(
+        vec![
+            [r(0), r(0)],
+            [r(2), r(0)],
+            [r(2), r(1)],
+            [r(1), r(2)],
+            [r(0), r(2)],
+        ],
+        vec![
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Arc {
+                center: [r(1), r(1)],
+                r2: r(1),
+                ccw: true,
+            },
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a rounded corner");
+    nacre_ops::from_paths(vec![ring])
+        .expect("a rounded corner")
+        .remove(0)
+}
+
+/// **A face ending on its own tangent ruling, and `B` meeting that line from beyond the wall** —
+/// `A` is the [`cusp`] (its floor and lateral end on `(1, 0)`) or the [`rounded_corner`] (its wall
+/// `y = 2` and fillet end on `(1, 2)`), and `B` stands on the wall's far side with its corner on
+/// the line: a prism whose slanted face runs through the line, or a box whose face through the line
+/// runs through the axis too. The two bodies touch along the line alone, and every boolean builds
+/// with each body as its operand was — `A ∪ B` the two, `A − B` and `B − A` one, `A ∩ B` none —
+/// faces and volume per body; axis-aligned and side by side, the unions are `5 + 5`, `5 + 6`,
+/// `7 + 5` and `7 + 6` faces, and OCCT 7.9 gives the same volumes and face totals. On the wall's class the two cells beside
+/// the line differ on the far side — `B`'s face ending there flips `B`'s bits on one side only —
+/// and the lateral's star reads each wall half's own (`Chart::slit_at`). red: the star asking the
+/// two cells to agree → every boolean `LabelConflict`.
+#[test]
+fn a_body_meeting_a_tangent_ruling_from_beyond_its_wall_builds() {
+    let pi = std::f64::consts::PI;
+    // `A`'s profile, faces and volume, and `B`'s two prisms.
+    type Family = (
+        fn() -> Profile2d,
+        usize,
+        f64,
+        [(&'static str, &'static [[f64; 2]]); 2],
+    );
+    let families: [Family; 2] = [
+        (
+            cusp,
+            5,
+            2.0 * (1.0 - pi / 4.0),
+            [
+                (
+                    "a prism slanted under the cusp",
+                    &[[1.0, 0.0], [2.0, 0.0], [2.0, -1.0]],
+                ),
+                (
+                    "a box under the cusp",
+                    &[[1.0, -1.0], [2.0, -1.0], [2.0, 0.0], [1.0, 0.0]],
+                ),
+            ],
+        ),
+        (
+            rounded_corner,
+            7,
+            2.0 * (3.0 + pi / 4.0),
+            [
+                (
+                    "a wedge on the rounded wall",
+                    &[[1.0, 2.0], [3.0, 2.0], [3.0, 4.0]],
+                ),
+                (
+                    "a box on the rounded wall",
+                    &[[1.0, 2.0], [3.0, 2.0], [3.0, 3.0], [1.0, 3.0]],
+                ),
+            ],
+        ),
+    ];
+    let by_size = |x: &(usize, f64), y: &(usize, f64)| x.0.cmp(&y.0).then(x.1.total_cmp(&y.1));
+    for (a_profile, fa, a, quads) in families {
+        let ran = every_placement(a_profile, &quads, |c, m, got| {
+            let solids = got.unwrap_or_else(|e| panic!("{c}: {e:?}"));
+            let vs = nacre_validate::validate(m);
+            assert!(vs.is_empty(), "{c}: {vs:?}");
+            let mut bodies: Vec<(usize, f64)> = solids
+                .iter()
+                .map(|&s| (face_count(m, s), volume(m, s)))
+                .collect();
+            drawn(c, m, &solids, bodies.iter().map(|b| b.1).sum());
+            let a_body = (fa, a);
+            let b_body = (c.placement.quad.len() + 2, c.placement.b_volume());
+            let mut want = match (c.kind, c.swapped) {
+                (BoolKind::Fuse, _) => vec![a_body, b_body],
+                (BoolKind::Cut, false) => vec![a_body],
+                (BoolKind::Cut, true) => vec![b_body],
+                (BoolKind::Common, _) => vec![],
+            };
+            bodies.sort_by(by_size);
+            want.sort_by(by_size);
+            assert_eq!(
+                bodies.len(),
+                want.len(),
+                "{c}: bodies {bodies:?}, want {want:?}"
+            );
+            for (got, want) in bodies.iter().zip(&want) {
+                assert_eq!(
+                    got.0, want.0,
+                    "{c}: faces, bodies {bodies:?}, want {want:?}"
+                );
+                assert!(
+                    (got.1 - want.1).abs() < 1e-9,
+                    "{c}: volume, bodies {bodies:?}"
+                );
+            }
+        });
+        assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
     }
 }
 

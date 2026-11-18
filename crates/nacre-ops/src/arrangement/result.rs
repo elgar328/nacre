@@ -101,7 +101,7 @@ pub(crate) struct ArcLabel {
 pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
     /// Which of the wall's two rulings — or `0`, a **tangent** wall's single one, the
-    /// one station that carries no label: nothing changes across it, the face ends there.
+    /// one station that carries no `label`: no chamber lies behind it, the face ends there.
     pub(crate) side: i8,
     pub(crate) end: [NodeId; 2],
     /// **The chart's vertical answer**: the label of the cell this
@@ -128,6 +128,12 @@ pub(crate) struct RulingExtent {
     /// and only these cells state them ([`crate::arrangement::cyl_chart::Chart::slit_at`]). `None`
     /// exactly where `label` is.
     pub(crate) outer: Option<Label>,
+    /// **A tangent ruling's two cells beside the line**, on its even and its odd half-edge — both
+    /// outside the disk, each stating the room between the wall and the lateral on the axis side
+    /// and, beyond the wall's half on that side, the plane's far side
+    /// ([`crate::arrangement::cyl_chart::Chart::slit_at`] reads each half's own). `None` for a
+    /// secant ruling, whose cells are `label` and `outer`.
+    pub(crate) beside: Option<[Label; 2]>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.
     ///
@@ -295,11 +301,19 @@ pub(crate) fn seam_table(
     Ok(seam)
 }
 
-/// **The whole result's faces, cleaned once** — the plane arrangement's faces merged per coplanar
-/// group ([`crate::assembly::unify_coplanar_faces`]), every cylinder class's lateral faces
-/// appended ([`cyl_chart::emit_lateral`]), then one straight-angle pass over the whole list
+/// **The whole result's faces, cleaned once** — every cylinder class's lateral faces
+/// ([`cyl_chart::emit_lateral`]), the plane arrangement's faces merged per coplanar group with the
+/// laterals counted among the faces on each edge ([`crate::assembly::unify_coplanar_faces`]), the
+/// laterals appended, then one straight-angle pass over the whole list
 /// ([`crate::assembly::dissolve_straight_angles`]), and the result's rims read off what that pass
 /// left ([`crate::draft::held_rims`]).
+///
+/// **The laterals come first because the merge's rule is a sentence about every face**: it joins
+/// two coplanar faces only across an edge no other face uses. Counted over the plane faces alone,
+/// a floor that two bodies stand on either side of a tangent ruling — each lateral ending on the
+/// line from its own side — reads as two faces of one floor and merges into one, and the two
+/// bodies come back as one solid. The merge's refusal still comes first: the rows and the laterals
+/// are built before it and their refusals raised after it.
 ///
 /// **The pass runs after the laterals exist** because its rule — a node goes only where every ring
 /// through it runs straight on — is a sentence about every ring. Run over the plane faces alone it
@@ -321,26 +335,36 @@ pub(crate) fn whole_result_faces(
     faces_tab: &[FaceRow],
     plane_ix: &[ClassIx],
 ) -> Result<(Vec<LocalFace>, HeldRims), BoolError> {
+    // **The lateral faces come from the chart**: every cylinder class's cells, read off the plane
+    // arrangement's own labels and emitted as `LocalFace`s, the type the plane side emits.
+    let chart = (!cyls.is_empty()).then(|| {
+        crate::bands::cyl_rows(faces_tab, plane_ix).map(|rows| {
+            let lateral = cyl_chart::emit_lateral(kind, jd, cyls, curved, &rows);
+            (rows, lateral)
+        })
+    });
+    let counted: &[LocalFace] = match &chart {
+        Some(Ok((_, Ok(lateral)))) => lateral,
+        _ => &[],
+    };
     // Merge coplanar, same-normal faces that share a full edge (e.g. the split side walls a fused
     // coincident interface leaves) so the result is a minimal, chainable solid — a second boolean
     // on it then sees no redundant coplanar planes.
     let mut faces = timed!(
         UNIFY,
-        crate::assembly::unify_coplanar_faces(faces, jd, cyls)
+        crate::assembly::unify_coplanar_faces(faces, counted, jd, cyls)
     )?;
-    if !cyls.is_empty() {
-        let rows = crate::bands::cyl_rows(faces_tab, plane_ix)?;
-        // **The lateral faces come from the chart**: every cylinder class's cells, read off the
-        // plane arrangement's own labels and emitted as `LocalFace`s, the type the plane side
-        // emits.
-        let lateral = cyl_chart::emit_lateral(kind, jd, cyls, curved, &rows);
+    if let Some(chart) = chart {
         // The census sits *before* the cleaning pass on purpose: the cleaning dissolves nodes,
         // which would blur the face-by-face question being asked. The census holds the chart
         // against its own rules (and the emitter against the census's independent count), in
         // test builds; the emitter's refusal is handed to it before `?` decides, so a refused
         // class is still recorded.
         #[cfg(test)]
-        cyl_chart::census(jd, cyls, kind, &faces, curved, &rows, &lateral);
+        if let Ok((rows, lateral)) = &chart {
+            cyl_chart::census(jd, cyls, kind, &faces, curved, rows, lateral);
+        }
+        let (_, lateral) = chart?;
         // Merged, they would not be: each lateral face is a region of its chart already, so there
         // is no phantom seam to erase (measured: a merging pass over them merges nothing over the
         // suite).
