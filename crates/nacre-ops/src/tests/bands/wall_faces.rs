@@ -545,23 +545,50 @@ fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
     }
 }
 
-/// **The bridge pre-pass splits the wall's two straight edges under the through stud.**
+/// **The touch under a through stud is a vertex of the cap, the wall and the lateral.**
 ///
-/// A stud through the cube (`center` anchoring, `z ∈ [−1, 1]`) pinches **both** caps: on
-/// each, the stud's circle touches the square's `x = 0.5` edge at one point, and that edge
-/// is shared with the `x = 0.5` wall. Before the pre-pass a straight edge carries exactly its
-/// two ends, so the touching sample — a vertex of the circle — is a vertex of neither the
-/// square ring nor the wall. The pre-pass inserts it into both edges' polylines, so the cap
-/// gains its twin and the wall gains the same vertex (no T-vertex, no crack).
-///
-/// Read through the test-only `bridge_report`, because `tessellate` still refuses these caps
-/// (the bridge itself is the next commit) and discards everything on the way out.
+/// A stud through the cube (`center` anchoring, `z ∈ [−1, 1]`) pinches **both** caps: on each, the
+/// stud's circle touches the square's `x = 0.5` edge at one point, and that edge is shared with the
+/// `x = 0.5` wall. The arrangement cuts the circle and the edge there (`split_circles`), so the
+/// point is one vertex every face through it uses — the cap's pinched loop, the wall's ring (no
+/// T-vertex) and the stud's lateral past the cap — and the mesh has nothing to bridge.
 #[test]
-fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
+fn the_touch_under_a_through_stud_is_a_vertex_of_every_face_through_it() {
+    let at = |m: &Model, s: Handle<Solid>, p: [f64; 3]| -> (usize, usize) {
+        let p = Point3::from_array(p);
+        let mut vertices = std::collections::HashSet::new();
+        let mut faces = 0usize;
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            let face = m.face(fh);
+            let mut here = false;
+            for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                for he in &lp.half_edges {
+                    for &vh in &m.edge(he.edge).vertices {
+                        if m.vertex_point(vh).distance(p) <= 1e-9 {
+                            vertices.insert(vh);
+                            here = true;
+                        }
+                    }
+                }
+            }
+            faces += usize::from(here);
+        }
+        (vertices.len(), faces)
+    };
+    let no_bridge = |m: &Model| {
+        let (report, _) = nacre_tess::bridge_report(m, &nacre_tess::TessConfig::default())
+            .expect("the budget can be kept");
+        assert!(
+            report.splits.is_empty() && report.declined.is_empty(),
+            "{:?} {:?}",
+            report.splits,
+            report.declined
+        );
+    };
     let mut m = Model::new();
     let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
-    // The seam on `−y`, off the touching point `(0.5, 0)` — on `+x` it would *be* that point, a
-    // vertex of the b-rep rather than a sample of the circle.
+    // The seam on `−y`, off the touching point `(0.5, 0)` — on `+x` the circle's own vertex would
+    // be that point whatever the arrangement did.
     let stud = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([0.3, 0.0, -1.0]),
@@ -573,35 +600,15 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     .solid;
     let out = crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the through stud fuses");
     assert_eq!(out.len(), 1);
-    let (report, t) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default())
-        .expect("the budget can be kept");
-    assert!(
-        report.declined.is_empty(),
-        "declined: {:?}",
-        report.declined
-    );
-    assert_eq!(report.splits.len(), 2, "splits: {:?}", report.splits);
-    assert_ne!(
-        report.splits[0].edge, report.splits[1].edge,
-        "one split per cap"
-    );
-    for s in &report.splits {
-        assert!(
-            matches!(m.edge_curve(s.edge), nacre_geom::Curve::Line(_)),
-            "the split edge is straight"
-        );
-        let poly = &t.by_edge[&s.edge];
-        assert_eq!(poly.len(), 3, "two ends and the touching sample");
-        assert_eq!(poly[s.at], s.vertex);
-        assert!(
-            matches!(
-                t.vertices.get(s.vertex).origin,
-                nacre_tess::TessOrigin::OnEdge { .. }
-            ),
-            "the inserted vertex is the circle's own sample, not a new one"
+    for z in [-0.5, 0.5] {
+        assert_eq!(
+            at(&m, out[0], [0.5, 0.0, z]),
+            (1, 3),
+            "the touch at z = {z}"
         );
     }
-    // The blind stud (base anchoring) pinches one cap only.
+    no_bridge(&m);
+    // The blind stud (base anchoring) pinches the top cap only.
     let mut m = Model::new();
     let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
     let stud = crate::fixtures::cylinder_with_seam(
@@ -613,11 +620,18 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
         2.0,
     )
     .solid;
-    crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the blind stud fuses");
-    let (report, _) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default())
-        .expect("the budget can be kept");
-    assert!(report.declined.is_empty(), "{:?}", report.declined);
-    assert_eq!(report.splits.len(), 1, "{:?}", report.splits);
+    let out = crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the blind stud fuses");
+    assert_eq!(
+        at(&m, out[0], [0.5, 0.0, 0.5]),
+        (1, 3),
+        "the touch on the top cap"
+    );
+    assert_eq!(
+        at(&m, out[0], [0.5, 0.0, -0.5]).0,
+        0,
+        "the bottom cap is not touched"
+    );
+    no_bridge(&m);
 }
 
 /// **A tangency from *outside* is two bodies, not a refusal** — the control that says

@@ -555,10 +555,10 @@ fn crossing_measured(
             // index spaces — rather than inside a predicate that would then have to guess.
             -ruling.side,
             // **A touch is not what this asks about**. The node no road mints is a
-            // **crossing**; an arc tangent to a ruling divides nothing, which is the same sentence
-            // as for a tangency at a vertex. Measured: a slab wall at `x = ±12` puts a
-            // `d 30` cylinder's rulings exactly on a `d 18` tool's circle, and the boolean that
-            // follows validates clean.
+            // **crossing**. Where an arc only touches the ruling the point lies on two cylinders
+            // whose axes are not parallel, which no vertex names, so the arc stays whole there;
+            // the pair rule refuses first where the two side faces meet (`CylinderPairContact` —
+            // `a_boss_touching_its_flats_rulings_is_refused_by_the_pair_rule`).
             false,
         ))
     };
@@ -710,9 +710,9 @@ pub(super) fn split_class_edges(
         match split_circles(jd, cyls, wc, segs, circles, aliases)? {
             Some((s, c, a, r)) => {
                 // The names below rest on this: `split_circles` answers `Some` only when some
-                // circle collected a node — an arc's end or a crossing — and either yields at
-                // least one arc (a tangency is skipped before it is collected). So "was split"
-                // and "has arcs" are one fact.
+                // circle collected a node — an arc's end, a crossing or a touch — and either yields
+                // at least one arc (one node makes one arc round to itself). So "was split" and
+                // "has arcs" are one fact.
                 debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
                 (Cow::Owned(s), a, Cow::Owned(c), r)
             }

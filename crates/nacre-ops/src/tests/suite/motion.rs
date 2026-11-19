@@ -486,8 +486,8 @@ fn the_mesh_covers_the_faces_it_approximates() {
     }
     // The pinched caps: a stud tangent to the cube's wall. Blind (base anchored,
     // one cap pinched) and through (`center` anchored — the user's own script — both caps
-    // pinched). These are the first solids whose caps are triangulated across a bridge, and
-    // this oracle is the only thing that would see a bridged cap come out the wrong shape.
+    // pinched). Each pinched cap passes the touch's vertex twice, and this oracle is the only
+    // thing that would see a pinched cap come out the wrong shape.
     for (name, base_z) in [("blind stud", 0.0), ("through stud", -1.0)] {
         let mut m = Model::new();
         let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);

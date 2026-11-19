@@ -1224,9 +1224,9 @@ fn an_edge_at_a_grooves_mouth_builds() {
     expect_fuse(&mut m, a, wedge, want, true, "a wedge leaning off the wall");
 }
 
-/// **A body whose edge touches its own cap's rim at one point is refused** — the edge test's
-/// touch: a line tangent to a curved bound meets the face's closed region at a point no vertex
-/// names.
+/// **A body whose edge touches its own cap's rim at one point is refused** — the touch is cut on
+/// the cap's plane as a crossing is, so it is a vertex the arm and the boss both use: the pinch
+/// the result check names (`NonManifoldVertex`), its witness that point.
 ///
 /// A plate carries a boss of radius 5 up to 4 above it, and a column on the plate carries an arm
 /// over the boss's side of it whose bottom face lies on the cap's plane and whose edge there runs
@@ -1314,23 +1314,25 @@ fn a_body_touching_its_own_cap_rim_at_a_point_is_refused() {
                         (
                             true,
                             Err(BoolError::Rejected {
-                                reason: RejectReason::SelfTouchingResult,
+                                reason: RejectReason::NonManifoldVertex,
                                 at: witness,
                             }),
                         ) => {
                             if !tilted {
-                                // The witness is the arm's edge on the tangent line.
-                                let Some(nacre_ops::RejectWhere::Segment(ends)) = witness else {
+                                // The witness is the touch: the foot of the rim's centre on the
+                                // arm's tangent line, on the cap's plane.
+                                let Some(nacre_ops::RejectWhere::Point(p)) = witness else {
                                     panic!("{at}: witness {witness:?}");
                                 };
-                                let line = |p: Point3| {
-                                    let [x, y, z] = p.as_array();
-                                    let [a, b] = [arm[0], arm[3]];
-                                    let cross =
-                                        (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
-                                    cross.abs() < 1e-9 && (z - 4.0).abs() < 1e-9
-                                };
-                                assert!(ends.iter().all(|&p| line(p)), "{at}: witness {ends:?}");
+                                let [a, b] = [arm[0], arm[3]];
+                                let d = [b[0] - a[0], b[1] - a[1]];
+                                let t = -(a[0] * d[0] + a[1] * d[1]) / (d[0] * d[0] + d[1] * d[1]);
+                                let foot =
+                                    Point3::from_array([a[0] + t * d[0], a[1] + t * d[1], 4.0]);
+                                assert!(
+                                    p.distance(foot) < 1e-9,
+                                    "{at}: witness {p:?}, touch {foot:?}"
+                                );
                             }
                         }
                         (false, Ok(solids)) => {
@@ -1698,9 +1700,10 @@ fn a_body_touching_its_own_lateral_at_a_point_is_refused() {
 ///   face meets no stretch of it — and the part's edge in the cap's plane ends on the rim, which is
 ///   cut there, so the joined body's two fans share that vertex: the pinch, `NonManifoldVertex`;
 /// - **an edge along the top rim's tangent**, the face above it: its edge meets the rim at
-///   `(5, 0, 4)` only.
+///   `(5, 0, 4)` only — a touch the cap's plane cuts as a crossing, so it is the same shared
+///   vertex: `NonManifoldVertex`.
 ///
-/// Joined, each touches itself (`SelfTouchingResult`, the top rim's corner `NonManifoldVertex`); moved
+/// Joined, each touches itself (`SelfTouchingResult`, the two on the top rim `NonManifoldVertex`); moved
 /// off the side by 0.5, or standing apart, it builds — one body or two. In either operand order.
 #[test]
 fn a_part_on_a_tangent_plane_is_asked_where_it_meets_the_side() {
@@ -1779,7 +1782,10 @@ fn a_part_on_a_tangent_plane_is_asked_where_it_meets_the_side() {
                     };
                     let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
                     let want = match (joined, lift == 0.0) {
-                        (true, true) if row == "a corner on the top rim" => {
+                        (true, true)
+                            if row == "a corner on the top rim"
+                                || row == "an edge along the top rim's tangent" =>
+                        {
                             Want::Refused(RejectReason::NonManifoldVertex)
                         }
                         (true, true) => Want::Touches,

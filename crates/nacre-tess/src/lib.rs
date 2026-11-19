@@ -65,24 +65,18 @@ pub enum TessError {
     /// at a corner — is drawn the same way, its two visits the twins, at as many points as the face
     /// has: where each visit bounds its own sector of material, the convex sectors slide and one
     /// that is not stays (`polygon::pinch`). A face whose material is two pieces meeting only at a
-    /// point — a strip whose top a pin's foot takes away up to one point of its far edge — is drawn
-    /// too, each piece its own ring there. What still comes back under this name is what those
+    /// point is drawn too, each piece its own ring there. What still comes back under this name is what those
     /// roads do not cover, the bridge's each counted by the pre-pass: a vertex on another ring's
     /// *vertex* (`AtEnd`), a neighbour exactly on the touched line, a touch on a curved edge or
     /// beside a curved face, two touches on one segment or at one point, a point passed three
     /// times, and a bridge beside any other bridge or pinch.
     ///
-    /// **This does not say the solid is wrong — and that is measured, not hoped.** The
-    /// population is an exact **tangency**: a hole touching another ring at one point, where a
-    /// sampled circle vertex lands on the touch. Both fixtures are `validate`-clean with volumes
-    /// exact to `1e-9`, and
-    /// **the surface is a 2-manifold at the touch**: the link of the boundary on a small sphere
-    /// there is a *single* circle, because the pinched face's two lobes are joined around through
-    /// the neighbouring curved face; OCCT, given the same operands, returns a body of the same
-    /// volume, area and face count. What is pinched is the **face**, not the surface, so the
-    /// capability that owes an answer is **not** the non-manifold test (it was right) but this
-    /// layer's own: a consistent symbolic order for coincident vertices in the sweep — which
-    /// `polygon::sos` supplies. For what is still refused, the
+    /// **This does not say the solid is wrong.** A touch pinches the face, not the surface: the link
+    /// of the boundary on a small sphere there is a *single* circle, the pinched face's two sides
+    /// joined around through the face and its neighbours, and OCCT given the same operands returns
+    /// a body of the same volume and area. The kernel's booleans give every such touch a vertex —
+    /// one ring passing it twice, which the sweep orders symbolically (`polygon::sos`) — so the
+    /// bridge serves rings that touch where no vertex is. For what is still refused, the
     /// loss is larger than one face: a mesh stops at the first refusal in its range ([`tessellate`]
     /// — every live solid — or [`tessellate_solids`]), and the playground's drawing stops at the
     /// first value whose mesh is refused, so one pinched face erases every body of that run.
@@ -1523,6 +1517,52 @@ pub fn kinked_edges(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Kink
     out
 }
 
+/// The faces whose triangles are not **one** piece joined edge to edge — each with its piece count,
+/// in handle order. Test-only (`test-util`): the mesh locks assert it is empty.
+///
+/// A face is one connected region (STEP's face domain), and the mesh of a connected region is
+/// joined edge to edge: a pinch passes its vertex twice but the region stays one, and a lateral's
+/// band names each cut point once at both its angles ([`joined_band`]). Two pieces are a face whose
+/// interior falls apart — regions meeting only at points, which a b-rep spells as two faces.
+#[cfg(any(test, feature = "test-util"))]
+pub fn split_faces(t: &Tessellation) -> Vec<(Handle<Face>, usize)> {
+    fn root(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    let mut out = Vec::new();
+    for (&f, tris) in &t.by_face {
+        let mut parent: Vec<usize> = (0..tris.len()).collect();
+        let mut first_on: HashMap<[u32; 2], usize> = HashMap::new();
+        for (i, &th) in tris.iter().enumerate() {
+            let v = t.triangles.get(th).vertices;
+            for k in 0..3 {
+                let (a, b) = (v[k].index(), v[(k + 1) % 3].index());
+                match first_on.entry([a.min(b), a.max(b)]) {
+                    std::collections::hash_map::Entry::Occupied(e) => {
+                        let (ra, rb) = (root(&mut parent, i), root(&mut parent, *e.get()));
+                        parent[ra] = rb;
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(i);
+                    }
+                }
+            }
+        }
+        let pieces = (0..tris.len())
+            .filter(|&i| root(&mut parent, i) == i)
+            .count();
+        if pieces > 1 {
+            out.push((f, pieces));
+        }
+    }
+    out.sort_by_key(|(f, _)| f.index());
+    out
+}
+
 /// A chord of a curved edge's polyline that stands off its curve by more than the chord budget,
 /// and by how much: the edge, the chord's first sample (its place in the polyline), and the
 /// farthest the curve over it stands off the chord. Test-only (`test-util`).
@@ -2344,9 +2384,10 @@ fn cut_seamless_bands(
 /// cut at their vertices — the first sample of each polyline ([`sample_curve`] starts a closed
 /// curve there). `None` for any other face, and for two vertices at different angles: the cut is
 /// the segment between them, which lies on the surface only as a ruling, and the joined ring's
-/// consecutive pairs are the one place the interior budget does not look. Every producer puts a
-/// whole rim's vertex at `θ = 0`; the guard keeps a producer that does not from shipping a chord
-/// through the solid — such a face goes to the generator instead.
+/// consecutive pairs are the one place the interior budget does not look. A whole rim's vertex is
+/// its seam (`θ = 0`) unless the rim was cut at one point — a tangency, a corner resting on it —
+/// and the guard keeps two such vertices at different angles from shipping a chord through the
+/// solid: that face goes to the generator instead.
 fn whole_rims_cut(t: &Tessellation, model: &Model, face: &Face, cyl: &Cylinder) -> Option<Cut> {
     let [ref inner] = face.inner[..] else {
         return None;

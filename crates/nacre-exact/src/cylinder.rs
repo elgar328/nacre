@@ -461,8 +461,8 @@ pub fn cylinder_ruling_reached(
 /// **`touch_counts` names the boundary rather than assuming one**. [`cylinder_ruling_reached`] is
 /// closed — a piece touching the ruling at one point has *reached* it — and that is the right
 /// reading for a clearance. The arrangement's net wants the other one: what it cannot mint is a
-/// **crossing**, and an edge tangent to another divides nothing. Two propositions, one door, and
-/// the caller says which.
+/// **crossing**, and a touch it leaves to the rule that refuses two cylinders' side faces meeting.
+/// Two propositions, one door, and the caller says which.
 pub fn cylinder_ruling_reached_extent(
     coeffs: &[Rat; 4],
     reach: &StripReach<'_>,

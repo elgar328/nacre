@@ -605,8 +605,7 @@ pub(crate) struct WorkingCyl {
     /// gate's: the gate states a tangency's geometry ([`Tangency`]) and knows no operation; the
     /// boolean reads each row under its own `kind` ([`crate::assembly::pinch`]) and lists here the
     /// walls whose row leaves the two wedges alone. That line is an edge of the result where it can
-    /// be one: the wall's class draws it as a knife (`arrangement::rulings_on_class`), and a circle
-    /// of this cylinder is cut where an edge on that wall touches it (`arrangement::split_circles`).
+    /// be one: the wall's class draws it as a knife (`arrangement::rulings_on_class`).
     pub(crate) parting: Vec<usize>,
 }
 

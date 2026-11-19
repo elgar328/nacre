@@ -1105,7 +1105,7 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
 ///   `validate` clean, its volume exact — the cap's wedges touching along the line where nothing
 ///   draws it.
 ///
-/// Both vertex orders, all six booleans, the volumes in closed form.
+/// Both vertex orders, all six booleans, the volumes in closed form, and every body drawn.
 #[test]
 fn a_tangent_face_across_its_edge_on_the_line_is_judged_where_it_crosses() {
     use nacre_math::Vector3;
@@ -1185,6 +1185,7 @@ fn a_tangent_face_across_its_edge_on_the_line_is_judged_where_it_crosses() {
                             assert_eq!(solids.len(), n, "{at}: bodies");
                             let got: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
                             assert!((got - v).abs() < 1e-9, "{at}: volume {got}, want {v}");
+                            drawn(&at, &m, &solids, v);
                         }
                         (Err(BoolError::Rejected { reason, .. }), Err(w)) => {
                             assert_eq!(reason, w, "{at}");

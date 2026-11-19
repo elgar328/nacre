@@ -493,9 +493,10 @@ fn wants(name: &str) -> [Want; 4] {
         ],
         // The pin's circle is also tangent to the plate's top wall, at `(3, 2)`: the plate less the
         // pin is two lumps meeting only along that line — the corner of five faces and the rest of
-        // six, eleven as OCCT builds them.
+        // six, eleven as OCCT builds them. In the union the plate's top less the pin's disk is two
+        // faces meeting at that point, the corner beyond the disk and the rest.
         "a filleted plate and its fillet's pin" => [
-            counted(&[plate + PI], &[8]),
+            counted(&[plate + PI], &[9]),
             counted(&[2.0 - PI / 2.0, 12.0 - PI], &[5, 6]),
             counted(&[PI], &[3]),
             counted(&[2.0 * PI], &[3]),

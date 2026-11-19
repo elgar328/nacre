@@ -238,8 +238,8 @@ fn touch_and_crossings(
 
 /// **A crossing the three-point question cannot place stays for the order, and the round records
 /// its second name.** The boss's axis is at `(40, 5)`, so its circle in the plate's top class passes
-/// the plate's corner `(40, 0, 20)`: the wall `y = 0` touches it there (the tangency, skipped as a
-/// crossing) and the wall `x = 40` crosses it there and at `(40, 10, 20)`. An arc from the touch
+/// the plate's corner `(40, 0, 20)`: the wall `y = 0` touches it there (a tangency, cut as a
+/// crossing is) and the wall `x = 40` crosses it there and at `(40, 10, 20)`. An arc from the touch
 /// point, named on `y = 0` as a fillet's arc end is named on its tangent wall, to the far crossing
 /// has the near crossing as another name of its end, which no alias states — so the three-point
 /// order of the arc's ends and that crossing is `Coincident` (both lie on the seam, `(40, 0)`), and

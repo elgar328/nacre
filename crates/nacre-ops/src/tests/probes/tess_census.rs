@@ -46,6 +46,22 @@ pub(crate) fn record(model: &Model) {
             kinked.is_empty(),
             "a boolean built a solid whose curve's polyline kinks past the budget: {kinked:?}"
         );
+        // And every face of the model is one piece (`split_faces`) whose loops meet only at
+        // vertices — the bridge pre-pass, which splices a ring touching another at a point no
+        // vertex names, finds nothing (`bridge_report`). A face of two pieces, or loops touching
+        // where neither has a corner, is what STEP calls a broken face; the mesh would draw both.
+        let split = nacre_tess::split_faces(t);
+        assert!(
+            split.is_empty(),
+            "a face of the model is in pieces: {split:?}"
+        );
+        let (bridges, _) = nacre_tess::bridge_report(model, &cfg).expect("the mesh was built");
+        assert!(
+            bridges.splits.is_empty() && bridges.declined.is_empty(),
+            "loops of a face of the model touch where no vertex is: {:?} {:?}",
+            bridges.splits,
+            bridges.declined
+        );
         // And each lateral's curves stand their samples on common generators
         // (`unshared_columns`) — a band between two curves sampled off each other's θs tilts.
         let unshared = nacre_tess::unshared_columns(model, t);

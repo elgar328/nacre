@@ -751,8 +751,8 @@ pub enum RejectReason {
     /// **A circle and a ruling of one plane class cross** — two cylinders' curves crossing on one
     /// plane, at a point this kernel cannot name.
     ///
-    /// **Crossing, not merely meeting.** A tangency divides nothing — as for a tangency at a vertex
-    /// — so a curve that only touches another mints no node and needs none.
+    /// **Crossing, not merely meeting.** A circle that only touches a ruling is not refused under
+    /// this name.
     ///
     /// **A backstop.** Two cylinders whose side faces may meet are refused before this, as
     /// [`RejectReason::CylinderPairContact`]; this name is raised only if an edge the boolean drew

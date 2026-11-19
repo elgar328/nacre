@@ -8,10 +8,10 @@ type SplitCircles = Option<(
     Vec<(usize, CutRim)>,
 )>;
 
-/// **Cut every circle a segment crosses into arcs, and the segments with it.** Every segment — the
-/// class's knives too ([`is_knife`]): a curve is cut at every vertex on it, and where a knife
-/// meets a circle (the end of an edge lying in this plane, or its crossing) is where the other
-/// solid's faces meet the lateral.
+/// **Cut every circle a segment meets — crossing or tangent — into arcs, and the segments with
+/// it.** Every segment — the class's knives too ([`is_knife`]): a curve is cut at every vertex on
+/// it, and where a knife meets a circle (the end of an edge lying in this plane, or its crossing)
+/// is where the other solid's faces meet the lateral.
 ///
 /// This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`] names
 /// them. The work here is ordering: around the circle (θ,
@@ -93,29 +93,15 @@ pub(super) fn split_circles(
             let Some(xs) = circle_crossings(jd, wc, circ, def, sg)? else {
                 return Err(reject(RejectReason::WitnessNotRational));
             };
-            Ok(xs
-                .into_iter()
-                // **A tangency is a vertex exactly where the operation parts the material along
-                // the segment's wall** (`WorkingCyl::parting`): there the tangent
-                // line is an edge of the result (`rulings_on_class`' knife), and its end here is a
-                // vertex of both curves. Anywhere else a tangency touches without separating, and
-                // the skip is right — the circle it grazes stays whole, so a circle the split
-                // leaves with one node is always one a vertex lies on (`combinatorics::ring_floor`).
-                // Three reasons: measured, the link at such a touch is a *single* circle and OCCT
-                // returns the same body, so minting a vertex would invent structure that is not
-                // there; the `UnorderedEdges` that cutting every touch would reach is the
-                // **rulings** vocabulary (`side` ±1), which the tangent wall never enters because
-                // the gate records no crossing for it; and this arm is not gated on the gate's cut
-                // record, so a ⊥ class takes the same road whatever the gate recorded. The 15
-                // measured cells with no third plane on the tangent line assemble with it in place.
-                .filter(|&n| {
-                    !matches!(
-                        combinatorics::pierce_name(n),
-                        Some((_, _, crate::combinatorics::QuadRoot::Double))
-                    ) || cyls[cyl].parting.contains(&sg.wall)
-                })
-                .map(|n| (n, None))
-                .collect())
+            // **A touch is a cut point like a crossing** (root `Double`): where two curves meet,
+            // crossing or tangent, the point is a vertex of both, and a vertex nothing bends at
+            // dissolves in the cleanup (`assembly::coplanar::dissolve_straight_angles`); a whole
+            // rim keeps one (`nacre_topo::Edge::vertices`). Without
+            // the vertex the cell walk cannot part a region that meets the rest only at the
+            // touch: a disk tangent to two opposite edges of a face would be one face of two
+            // pieces, and a hole tangent to the outer ring at one point two loops meeting where
+            // neither has a vertex — what STEP calls intersecting loops.
+            Ok(xs.into_iter().map(|n| (n, None)).collect())
         },
         // **A crossing shown off every arc the class carries is no cut point** — asked against each
         // arc's two ends alone ([`combinatorics::theta_between`]), under the table's name, so the
@@ -537,8 +523,7 @@ pub(super) fn split_segments_at(
 /// segment.** Both roots come back: dropping the ones outside takes a fence through each
 /// endpoint, and a fence is a *plane*, which an end a cylinder pins does not have. Extent is an
 /// ordering question, so it belongs with the rule that answers ordering for both kinds of end
-/// ([`combinatorics::closed_contains`]) — and the caller already post-filters here anyway, for the
-/// tangency.
+/// ([`combinatorics::closed_contains`]).
 fn circle_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
@@ -584,10 +569,9 @@ fn circle_crossings(
 /// **Where a segment crosses a cylinder's rulings on a ∥ class** — the straight sibling of
 /// [`circle_crossings`], same machinery ([`nacre_exact::quad::plane_plane_cylinder`],
 /// the same fences, the same names), different reachable arms: on a class **parallel** to the axis
-/// the meet can be tangent to the lateral — **skipped**, because a touch divides nothing and
-/// cutting there would make a zero-length piece — or lie on it: a segment at an angle no lateral
-/// face holds crosses nothing, and one a face holds the ruling split refuses by name rather than
-/// reasoning it unreachable.
+/// the class can be tangent to the lateral — its one ruling is crossed at root `Double` — or the
+/// segment's line can lie on it: a segment at an angle no lateral face holds crosses nothing, and
+/// one a face holds the ruling split refuses by name rather than reasoning it unreachable.
 ///
 /// Returns each crossing with the meet it was solved as ([`combinatorics::PiercePoint`] — exact, or
 /// an interval box where a class has no world statement; the side and extent tests below read it

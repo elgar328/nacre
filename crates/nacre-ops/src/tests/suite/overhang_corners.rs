@@ -313,7 +313,7 @@ fn a_box_on_a_pins_cap_past_its_rim_takes_a_second_boolean() {
 }
 
 /// The control beside the edge: a pin tangent to the edge `x = 40` from inside keeps its rim one
-/// closed edge — no corner on the wall.
+/// closed edge, its one vertex the touch `(40, 20, 10)` — where the plate's top is pinched.
 #[test]
 fn a_pin_tangent_to_the_edge_takes_a_second_boolean() {
     let pinned = 16000.0 + 12.0 * PI;
@@ -329,13 +329,12 @@ fn a_pin_tangent_to_the_edge_takes_a_second_boolean() {
 
 /// The same pin cut by a box across the touch: a strip of the plate under the pin's part beyond
 /// the box's wall, whose top the pin's foot takes away up to the edge `x = 40` it touches — the
-/// strip's top face is two pieces meeting only at `(40, 20, 10)`. The mesh sees the two pieces
-/// where a sample of the pin's arc lands on that point, which it does with the wall through the
-/// axis (`38`) and past it (`38.5`) — asserted, so a sampling that misses the point (the shape is
-/// then drawn without reaching the two pieces) says so here. That every result meshes is the
+/// strip's top is two faces meeting only at `(40, 20, 10)`, the vertex where the arrangement cut
+/// the pin's arc and the edge. The mesh has a vertex there with the wall through the axis (`38`)
+/// and past it (`38.5`) — asserted. That every result meshes, each face in one piece, is the
 /// boolean exit's lock (`tess_census`).
 #[test]
-fn a_pin_tangent_to_the_edge_cut_across_the_touch_leaves_two_lobes() {
+fn a_pin_tangent_to_the_edge_cut_across_the_touch_leaves_two_faces() {
     let pinned = 16000.0 + 12.0 * PI;
     let pin = |m: &mut Model| plate_with_pin(m, [38.0, 20.0, 10.0], 2.0, 3.0);
     for wall in [38.0, 38.5] {
@@ -350,7 +349,7 @@ fn a_pin_tangent_to_the_edge_cut_across_the_touch_leaves_two_lobes() {
             mesh.vertices
                 .iter()
                 .any(|(_, v)| v.pos.as_array() == [40.0, 20.0, 10.0]),
-            "the pin's arc is sampled on the touch, wall {wall}"
+            "the touch is a vertex of the mesh, wall {wall}"
         );
         // The box `[wall,45]×[17,23]×[8,14]`: `[wall,40]×[17,23]×[8,10]` of the plate and the
         // pin's disk past `x = wall`.

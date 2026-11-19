@@ -524,6 +524,20 @@ fn record(
                 unshared.is_empty(),
                 "{tag}: a lateral's curves sampled off each other's θs: {unshared:?}"
             );
+            // And every face of the model is one piece whose loops meet only at vertices — the
+            // lib suite's exit asserts the same (`tess_census`), where the reason is written.
+            let split = nacre_tess::split_faces(t);
+            assert!(
+                split.is_empty(),
+                "{tag}: a face of the model in pieces: {split:?}"
+            );
+            let (bridges, _) = nacre_tess::bridge_report(m, &cfg).expect("the mesh was built");
+            assert!(
+                bridges.splits.is_empty() && bridges.declined.is_empty(),
+                "{tag}: loops of a face touching where no vertex is: {:?} {:?}",
+                bridges.splits,
+                bridges.declined
+            );
         }
     }
     print!("c {tag} in:{inputs} ");

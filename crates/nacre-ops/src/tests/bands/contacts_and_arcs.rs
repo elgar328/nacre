@@ -1,4 +1,4 @@
-//! Contacts, arcs and chained booleans: slits, arc classes, subdivided twins, the band's loop,
+//! Contacts, arcs and chained booleans: pinches, arc classes, subdivided twins, the band's loop,
 //! contact cuts.
 
 use super::*;
@@ -33,56 +33,56 @@ fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
     }
 }
 
-/// **The tangency is a *slit*, not a cut — and that is why no combinatorial check can see it.**
-/// Two clauses, because either alone passes vacuously:
+/// **The tangency is a vertex, and one loop passes it twice.** The arrangement cuts a circle where
+/// a segment touches it as where one crosses it (`split_circles`), so the touch is a vertex of
+/// both curves; the hole and the ring it touches meet there, and the face's boundary is **one**
+/// loop through that vertex twice — the spelling STEP gives a pinched face (distinct bounds of a
+/// face share no vertex). Two clauses, because either alone passes vacuously:
 ///
-/// 1. **No vertex within `1e-9` of the touch.** The arrangement names the point exactly
-///    (`NodeId::pierce(.., QuadRoot::Double)`) and then *discards* it — a tangency touches
-///    without separating, so the circle keeps its closed cell. `nonmanifold_vertices` and the
-///    Euler count read topology, and there is none here: **their silence is not evidence**
-///    about this point, in either direction.
-/// 2. **The circle that touches is still whole** — a closed `[v, v]` rim edge passing through
-///    the point. Without this the first clause cannot tell "the circle was never cut" from
-///    "the circle was cut and its vertex landed elsewhere".
+/// 1. **One vertex at the touch** — no twin minted beside it, and not zero (a touch no vertex
+///    names is two loops meeting where neither has a corner, which a checker reads as crossing).
+/// 2. **A face's loop visits it twice** — the pinch, not two faces meeting there.
 ///
-/// What *is* the evidence that the solid is sound: the link of the boundary at the touch is a
-/// single circle (the pinched face's two lobes are joined around through the neighbouring
-/// curved face), the material is locally one piece, and a second kernel returns a body of the
-/// same volume and area (`nacre-oracle`'s `a_segment_tangent_to_a_rim_is_a_body_to_occt` and
-/// `a_rim_tangent_to_a_plate_top_is_a_body_to_occt`, measured against an ε-twin whose tangency
-/// is broken). ⇒ **the surface is a 2-manifold there; only the face is pinched.**
-fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
+/// What says the solid is sound: the link of the boundary at the touch is a single circle (the
+/// pinched face's two sides are joined around through the face itself and the neighbouring curved
+/// face), the material is locally one piece, and a second kernel returns a body of the same volume
+/// and area (`nacre-oracle`'s `a_segment_tangent_to_a_rim_is_a_body_to_occt` and
+/// `a_rim_tangent_to_a_plate_top_is_a_body_to_occt`, measured against an ε-twin whose tangency is
+/// broken). ⇒ **the surface is a 2-manifold there; only the face is pinched.**
+fn the_touch_is_a_pinch_vertex(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
     let p = Point3::from_array(at);
     let sol = m.solid(s).clone();
-    let (mut vertices_at, mut whole_circle_through) = (0usize, 0usize);
-    let mut seen = std::collections::HashSet::new();
+    let mut at_touch = std::collections::HashSet::new();
+    let mut twice = 0usize;
     for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
         for &fh in &m.shell(sh).faces {
             let face = m.face(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                let mut visits = 0usize;
                 for he in &lp.half_edges {
-                    if !seen.insert(he.edge) {
-                        continue;
-                    }
                     let e = m.edge(he.edge);
-                    for &vh in e.vertices.iter() {
+                    let start = if he.forward {
+                        e.vertices[0]
+                    } else {
+                        e.vertices[1]
+                    };
+                    for &vh in &e.vertices {
                         if m.vertex_point(vh).distance(p) <= 1e-9 {
-                            vertices_at += 1;
+                            at_touch.insert(vh);
                         }
                     }
-                    // A whole circle is the closed `[v, v]` rim spelling; a cut one is arcs.
-                    if e.vertices[0] == e.vertices[1] && m.edge_curve(he.edge).distance(p) <= 1e-9 {
-                        whole_circle_through += 1;
+                    if m.vertex_point(start).distance(p) <= 1e-9 {
+                        visits += 1;
                     }
+                }
+                if visits >= 2 {
+                    twice += 1;
                 }
             }
         }
     }
-    assert_eq!(vertices_at, 0, "a tangency mints no vertex: {at:?}");
-    assert!(
-        whole_circle_through > 0,
-        "the touching circle is still whole (a closed rim edge through {at:?})"
-    );
+    assert_eq!(at_touch.len(), 1, "one vertex at the touch {at:?}");
+    assert!(twice > 0, "a face's loop passes the touch {at:?} twice");
 }
 
 /// **A tangency builds.** The boss's `x = 11` edge is exactly tangent to the rim `(8,10)`,
@@ -90,9 +90,8 @@ fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
 /// that can reach here, and the only one whose point carries no radical (`(11, 10, 5)`,
 /// rational).
 ///
-/// **And a touch is not a break**: the circle keeps its closed cell, so the arrangement needs
-/// nothing special here. With the whole guard off it would produce exactly the solid asserted below
-/// (measured); a guard whose sentence is wider than its proposition refuses it.
+/// **And a touch is not a break**: the circle is cut at the touch and the plate's top stays one
+/// face, pinched there.
 #[test]
 fn a_segment_tangent_to_the_rim_builds() {
     let mut m = Model::new();
@@ -128,17 +127,14 @@ fn a_segment_tangent_to_the_rim_builds() {
         0,
         "genus 1: V{v_n} E{e_n} F{f_n} L{l_n}"
     );
-    // **This χ is the genus's lock, not the tangency's.** A pinch *that has a vertex* makes
-    // χ odd — what `check_result_topology` reads — but a tangency mints no vertex at all
-    // (below), so an even χ is compatible with a pinch and with none: it decides nothing
-    // here. Deleting this assertion would lose the genus, not the manifold claim.
-    the_touch_is_a_slit(&m, out[0], [11.0, 10.0, 5.0]);
-    // **And the solid meshes — across a bridge.** The boss's footprint
-    // touches the bore's rim at exactly one point, so the plate's top face has two inner
-    // loops meeting there: its interior is pinched. `SelfTouchingBoundary` here would be
-    // a statement about the *tessellator* (`validate` is clean above and the volume is
-    // exact). Instead the touching sample is put into the straight edge it lies on, the two
-    // holes are spliced into one at that point, and the sweep orders the twins symbolically.
+    // **This χ is the genus's lock, not the tangency's.** The pinch's vertex leaves χ as it was —
+    // the touch is the rim's one vertex, so one edge more (the segment cut there) and one inner loop
+    // fewer (the two holes are one loop through the vertex twice) — so it decides nothing about the
+    // touch. Deleting this assertion would lose the genus, not the manifold claim.
+    the_touch_is_a_pinch_vertex(&m, out[0], [11.0, 10.0, 5.0]);
+    // **And the solid meshes.** The boss's footprint touches the bore's rim at one point, so the
+    // plate's top face is one loop through that vertex twice: its interior is pinched there, and
+    // the sweep orders the two visits symbolically (`nacre_tess`'s `Revisit::Pinch`).
     crate::tests::mesh_covers_faces("segment tangent to the rim", &m, &out);
 }
 
@@ -258,10 +254,10 @@ fn the_pinched_ring_re_cuts_along_the_rims_tangent() {
 /// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` wall (interned after
 /// the caps) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
 ///
-/// **A tangency, so there is exactly one root** — and that also means the circle is not separated,
-/// so this **builds** rather than refusing. The single root is still what makes the naming rule
-/// visible here (it is what the fixture is for), and the witness is the *split point that never
-/// happens*. That matters: the straddling fixtures deliberately accept either of their two
+/// **A tangency, so there is exactly one root** — the circle is cut there and the face it touches
+/// stays one, pinched, so this **builds** rather than refusing. The single root is what makes the
+/// naming rule visible here (it is what the fixture is for), and the witness is that cut point.
+/// That matters: the straddling fixtures deliberately accept either of their two
 /// crossings, and a fixture copied from that template would be green whether or not the root rule
 /// is right. Here `disc = 0` — the rim (`x = 4`, centre `(4, 2, 1.5)`, `r = 0.5`) touches `z = 2`
 /// at the single point `(4, 2, 2)`, solved from the fixture's own numbers — and the name it must
@@ -303,12 +299,11 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
         "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
     );
     // The genus's lock, not the tangency's — see the note in the fixture above.
-    the_touch_is_a_slit(&m, out[0], [4.0, 2.0, 2.0]);
-    // **And the solid meshes — the same pinch, spelled inner-to-outer.** The boss's
-    // base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the `x = 4` face's
-    // hole touches its own outer ring at one point and the face's interior is pinched there.
-    // `validate` is clean above and the volume is exact; the touch is bridged
-    // and the face's triangles are held to its exact area.
+    the_touch_is_a_pinch_vertex(&m, out[0], [4.0, 2.0, 2.0]);
+    // **And the solid meshes — the same pinch, hole against outer ring.** The boss's base circle
+    // is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the `x = 4` face's hole and outer
+    // ring are one loop through that vertex twice; the face's triangles are held to its exact
+    // area.
     crate::tests::mesh_covers_faces("turned boss tangent to the plate top", &m, &out);
 }
 

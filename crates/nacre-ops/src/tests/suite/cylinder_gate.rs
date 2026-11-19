@@ -109,8 +109,8 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
     );
     assert!(!reach(1, true), "and never comes near the other one");
     // **And the same reach does not *cross* it.** The arrangement's net asks about a
-    // crossing, because a node no road mints is one; an edge tangent to another divides nothing,
-    // which is the same sentence as for a tangency at a vertex.
+    // crossing, because a node no road mints is one; where an arc only touches a ruling the point
+    // lies on two cylinders whose axes are not parallel, which the pair rule refuses first.
     assert!(!reach(-1, false), "ending on the ruling is not crossing it");
     assert!(!reach(1, false));
     // And for a **disk**, where the two readings are the only thing separating a tangency from
@@ -276,6 +276,62 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
             ),
             "{kind:?}: {out:?}"
         );
+    }
+}
+
+/// **A boss or pocket whose circle touches its flat's edge rulings is refused by the pair rule** —
+/// the d 30 cylinder about `z` (height 30) flatted at `x = ±12`, whose flat `x = 12` ends on the
+/// rulings `y = ±9`, and a d 18 circle on that flat about `(12, 0, 15)` (its frame is `u = ŷ`,
+/// `v = ẑ`, the origin `(12, 0, 0)`). The circle touches both rulings, where the tool's lateral
+/// meets the cylinder's: a point on two cylinders whose axes are not parallel, which no vertex
+/// names, so the arrangement leaves an arc touching another cylinder's ruling uncut
+/// (`per_class`'s `circle_crosses_ruling`) and this gate refuses first. The d 17 twin clears the
+/// rulings and builds.
+#[test]
+fn a_boss_touching_its_flats_rulings_is_refused_by_the_pair_rule() {
+    let flatted = |m: &mut Model| {
+        let rod = axis_cylinder(m, [0.0; 3], [0.0, 0.0, 1.0], 15.0, 30.0);
+        let slab = crate::fixtures::cuboid(m, [-12.0, -20.0, 0.0], [12.0, 20.0, 30.0]);
+        let body = boolean(m, BoolKind::Common, rod, slab).expect("the flatted rod");
+        assert_eq!(body.len(), 1, "one flatted rod");
+        m.shell(m.solid(body[0]).outer)
+            .faces
+            .clone()
+            .into_iter()
+            .find(|&f| {
+                crate::ops::face_plane(m, f)
+                    .is_ok_and(|sp| sp.normal()[0] > 0.5 && (sp.origin()[0] - 12.0).abs() < 1e-9)
+            })
+            .expect("the flat x = 12")
+    };
+    for (r, refused) in [(9.0, true), (8.5, false)] {
+        for pocket in [false, true] {
+            let mut m = Model::new();
+            let flat = flatted(&mut m);
+            let tool = circle_profile([0.0, 15.0], r);
+            let out = if pocket {
+                crate::fixtures::pocket(&mut m, flat, tool, 3.0)
+            } else {
+                crate::fixtures::pad(&mut m, flat, tool, 3.0)
+            };
+            let at = format!("r {r}, pocket {pocket}");
+            if refused {
+                assert!(
+                    matches!(
+                        out,
+                        Err(crate::fixtures::FeatureError::Op(OpError::Boolean(
+                            BoolError::Rejected {
+                                reason: RejectReason::CylinderPairContact,
+                                ..
+                            }
+                        )))
+                    ),
+                    "{at}: {out:?}"
+                );
+            } else {
+                assert!(out.is_ok(), "{at}: {out:?}");
+            }
+        }
     }
 }
 

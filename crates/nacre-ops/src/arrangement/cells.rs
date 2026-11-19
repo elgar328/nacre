@@ -141,9 +141,8 @@ pub(super) fn walk_cells(
             // `2np + 2i` (disk side) and its `^1` twin (outside), so the label propagation's
             // twin arithmetic works unmodified (`2np` is even). No crossing machinery is owed: a
             // circle and a segment cannot **cross** on this class — the gate cleared the pair or
-            // recorded it, and `split_circles` refuses a crossed oblique section — and the one
-            // shape that touches, a tangency, is skipped by `split_circles`' `Double` arm rather
-            // than cut (a touch divides nothing).
+            // recorded it, and `split_circles` refuses a crossed oblique section — and a circle a
+            // segment touches is cut there as a crossed one is (`split_circles`).
             for (i, _) in circles.iter().enumerate() {
                 let he_in = he_count + 2 * i;
                 face_of.insert(he_in, cells.len());

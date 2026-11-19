@@ -396,10 +396,11 @@ pub(super) fn self_touch_reject(
         // plane face, through boxes and exact plane membership; the point arm below asks a vertex
         // against every plane face; the lateral arms after it ask both of every lateral face. What
         // none asks abstains rather than pretends, each for a reason written down. An arc edge:
-        // where it lies in a plane face the faces overlap in area (the coplanar merge's), and where
-        // it touches one at a point no vertex names, a straight edge of that face touches the arc's
-        // own cap there (the planar arm's touch), or the face lies on a wall tangent along the
-        // ruling (the tangency verdict), or it is slanted to the axis — its plane touches the arc's
+        // where it lies in a plane face the faces overlap in area (the coplanar merge's); where a
+        // straight edge in the arc's own cap plane touches it, `split_circles` cut both there and
+        // the point is a vertex the result check reads; and where it touches a face at a point no
+        // vertex names, the face lies on a wall tangent along the ruling (the tangency verdict),
+        // or it is slanted to the axis — its plane touches the arc's
         // circle at that point, which the gate refuses for every circle a lateral's boundary rides
         // (`ObliqueCylinderCut`) — or the face's bound is another cylinder's arc
         // (`CylinderPairContact`); the last two lean on the gate refusing first. A vertex resting on

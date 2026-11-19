@@ -11,9 +11,8 @@
 //! - a plate less a pin tangent to one wall, the control: the two wedges join round the pin, one
 //!   body touching itself along the line;
 //! - a slab less a rod tangent to two opposite walls and longer than the slab: two lumps, the lines
-//!   ending where the slab's faces end while the rod runs on. Its union is not run here: the slab's
-//!   top less the rod's disk is two regions meeting at the two points of contact, which the union
-//!   returns as one face the mesh refuses (todo 「원판이 두 점에서 가르는 면」).
+//!   ending where the slab's faces end while the rod runs on. In its union the slab's top less the
+//!   rod's disk is two faces meeting at the two points of contact, and so is its bottom.
 
 use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
@@ -179,19 +178,23 @@ fn lumps_meeting_only_on_tangent_lines() {
     }
 }
 
-/// **A slab less a rod tangent to two of its walls and longer than it** — every boolean but the
-/// union (the module doc). The slab less the rod is two lumps meeting along the two lines, each
-/// `2(4 − π/2)` of six faces, as OCCT builds them, the lines ending where the slab's faces end.
-/// The rod less the slab is its two ends, and the common the rod's middle.
+/// **A slab less a rod tangent to two of its walls and longer than it.** The union is one body of
+/// twelve faces: the slab's top and bottom are two faces each, meeting at the points where the
+/// rod's circle touches the walls, and the walls stay whole. OCCT builds fourteen, a count that
+/// fits it also parting each wall the rod touches along the line of contact. The slab less the
+/// rod is two lumps meeting along the two lines, each `2(4 − π/2)` of six faces, as OCCT builds
+/// them, the lines ending where the slab's faces end. The rod less the slab is its two ends, and
+/// the common the rod's middle.
 #[test]
 fn a_slab_and_the_rod_on_two_of_its_walls() {
     use super::scoreboard::Op;
-    let none_of_the_union = [
+    let every_boolean = [
+        (Op::Fuse, counted(&[16.0 + 2.0 * PI], &[12])),
         (Op::CutAb, counted(&[8.0 - PI, 8.0 - PI], &[6, 6])),
         (Op::CutBa, counted(&[PI, PI], &[3, 3])),
         (Op::Common, counted(&[2.0 * PI], &[3])),
     ];
-    for (op, want) in none_of_the_union {
+    for (op, want) in every_boolean {
         let mut m = Model::new();
         let (a, b) = slab_and_rod_on_two_walls(&mut m);
         let got = run(&mut m, op, a, b);
