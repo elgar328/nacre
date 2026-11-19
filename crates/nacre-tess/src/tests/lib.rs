@@ -242,8 +242,7 @@ fn no_chord_turns_more_than_the_angular_budget() {
                 continue; // a straight edge has no turn to measure, however many samples
             }
             // Wrapping is right because every multi-point *curved* polyline here is a
-            // closed rim; an arc would need the two end turns left out. A straight
-            // edge can carry a third sample too (the bridge pre-pass), and is skipped above.
+            // closed rim; an arc would need the two end turns left out.
             let p: Vec<Point3> = ring.iter().map(|&h| t.vertices.get(h).pos).collect();
             for i in 0..p.len() {
                 let (a, b, c) = (p[i], p[(i + 1) % p.len()], p[(i + 2) % p.len()]);
@@ -1873,7 +1872,7 @@ fn a_curves_samples_stand_at_their_columns_numbers() {
     for (name, m) in &shapes {
         let reach = m.reachable();
         let (live, mut sets) = theta_sets(m, &cfg, &reach).expect("within the finest");
-        let (Finished { t, cuts, .. }, _) = finish_polylines(m, &reach, &live, &mut sets);
+        let Finished { t, cuts, .. } = finish_polylines(m, &reach, &live, &mut sets);
         let mut cut_at: std::collections::HashMap<Handle<TessVertex>, Handle<Face>> =
             std::collections::HashMap::new();
         for (&fh, cut) in &cuts {
@@ -2663,7 +2662,7 @@ fn a_lateral_chart_point_is_its_angle_plus_whole_turns() {
         build(&mut m, &window);
         let reach = m.reachable();
         let (live, mut sets) = theta_sets(&m, &cfg, &reach).expect("θ sets");
-        let (Finished { t, cuts, .. }, _) = finish_polylines(&m, &reach, &live, &mut sets);
+        let Finished { t, cuts, .. } = finish_polylines(&m, &reach, &live, &mut sets);
         for &(fh, face) in &live {
             let Some(cyl) = m.surface_cache(face.surface).cylinder() else {
                 continue;

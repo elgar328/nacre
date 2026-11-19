@@ -18,8 +18,9 @@ nacre-predicates = { workspace = true }
 nacre-props = { workspace = true }
 
 [features]
-# Exposes the bridge pre-pass on its own (`bridge_report`) so a crate that can build a boolean
-# can lock what it split — the same shape as nacre-topo's `test-util`. Never on in a product build.
+# Exposes the mesh's checks (`leaning_laterals`, `kinked_edges`, `split_faces`, ...) so a crate
+# that can build a boolean can lock what its mesh draws — the same shape as nacre-topo's
+# `test-util`. Never on in a product build.
 # It also turns on geom's, whose `chord_standoff` the curve checks (`sagging_edges`) read.
 test-util = ["nacre-geom/test-util"]
 

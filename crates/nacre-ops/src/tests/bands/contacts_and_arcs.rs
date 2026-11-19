@@ -134,7 +134,7 @@ fn a_segment_tangent_to_the_rim_builds() {
     the_touch_is_a_pinch_vertex(&m, out[0], [11.0, 10.0, 5.0]);
     // **And the solid meshes.** The boss's footprint touches the bore's rim at one point, so the
     // plate's top face is one loop through that vertex twice: its interior is pinched there, and
-    // the sweep orders the two visits symbolically (`nacre_tess`'s `Revisit::Pinch`).
+    // the sweep orders the two visits symbolically (`nacre_tess`'s `Revisit`).
     crate::tests::mesh_covers_faces("segment tangent to the rim", &m, &out);
 }
 

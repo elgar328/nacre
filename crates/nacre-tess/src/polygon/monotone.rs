@@ -54,11 +54,8 @@ enum Kind {
 
 /// The decomposition: **every directed ring edge has the interior on its left** — one
 /// uniform rule the whole sweep leans on, and the only thing it reads of the rings. A
-/// face's outer boundary runs counter-clockwise and its holes clockwise; a face whose
-/// material is two lobes meeting only at a point, or an island touching its hole's rim,
-/// comes as one ring per lobe or island ([`super::triangulate_uv`] cuts it there), and the
-/// sweep takes them in the same pass — how many rings wind which way, and which lies
-/// inside which, it never asks.
+/// face's outer boundary runs counter-clockwise and its holes clockwise — how many rings
+/// wind which way, and which lies inside which, the sweep never asks.
 ///
 /// Returns the monotone pieces, each a CCW ring of the same indices. No vertex is
 /// created, and no vertex is repeated within a piece.
@@ -92,7 +89,7 @@ pub(super) fn decompose(
     if !meets.crossings.is_empty() {
         return Err(TessError::DegenerateRing);
     }
-    // A pair of twins — a bridge's or a pinch's — touch each other's outgoing segment at their
+    // A pair of twins — a pinch's — touch each other's outgoing segment at their
     // shared point: exactly two `AtEnd` records, `(o on h→…)` and `(h on o→…)`, and those are the
     // boundary this decomposition *was* given an order for. Any other touch is a boundary this
     // decomposition cannot draw.
@@ -147,24 +144,23 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 ///    `f64` comparison on stored coordinates, like everything else in this file.
 /// 2. **Two segments passing through each other**, ends strictly straddling each other's line.
 ///
-/// **A touch vouches for nothing by itself — so each one is asked to.** A vertex sitting on
-/// another segment is either a *tangency* (the boundary reaches the segment and turns back) or a
-/// *crossing that happens to land on a vertex* (the boundary passes through). One `orient2d`
-/// pair tells them apart: the vertex's two ring neighbours lie on the **same** side of the
-/// segment's line for a tangency and on **opposite** sides for a crossing. The test is complete
-/// only where the other ring is straight at the touch — a vertex strictly *inside* a segment
-/// ([`TouchKind::Interior`]). Where two rings share a vertex coordinate ([`TouchKind::AtEnd`])
-/// the other ring bends there too and one line is not enough; that case, and a neighbour lying
-/// exactly on the line, are left [`Witness::Abstained`] — recorded, never promoted. Measured:
-/// a diamond hole crossing the outer ring at its own two vertices came back as a *touch* before
-/// this witness existed, and a bridge laid on that evidence would have meshed a region outside
-/// the outer ring.
+/// **A touch is asked whether it is one.** A vertex sitting strictly inside another segment
+/// ([`TouchKind::Interior`]) is either a *tangency* (the boundary reaches the segment and turns
+/// back) or a *crossing that happens to land on a vertex* (the boundary passes through). One
+/// `orient2d` pair tells them apart: the vertex's two ring neighbours lie on the **same** side of
+/// the segment's line for a tangency and on **opposite** sides for a crossing — then it is a
+/// crossing ([`Crossing::Through`]), named [`TessError::DegenerateRing`] rather than a touch,
+/// because every triangulation of it is wrong. A neighbour exactly on the line, and two rings
+/// sharing a vertex coordinate ([`TouchKind::AtEnd`] — the other ring bends there too, and one line
+/// is not enough), stay touches. Measured: a diamond hole crossing the outer ring at its own two
+/// vertices came back as a *touch* before this test existed.
 ///
 /// **Why a vertex is enough for the touching case.** A tangency is one point, and the sampled
-/// boundary reproduces it only when a sample happens to land there — which both measured fixtures
-/// do, their seams sitting on the touch. A tangency whose sampling *misses* the point produces a
-/// boundary that is genuinely separated, meshes, and is wrong only by the sampling error it was
-/// always allowed. So this looks for the vertex, not for the tangency.
+/// boundary reproduces it only when a sample lands there. A boolean's tangency is a vertex of the
+/// b-rep (the arrangement cuts a curve wherever another meets it), so a sample stands on it. A
+/// tangency at no vertex whose sampling *misses* the point produces a boundary that is genuinely
+/// separated, meshes, and is wrong only by the sampling error it was always allowed. So this looks
+/// for the vertex, not for the tangency.
 ///
 /// **A *crossing* is the other answer, and it is a different sentence.** Two segments that
 /// pass through each other with no vertex at the crossing make the ring set not a polygon at all —
@@ -195,7 +191,7 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
         touches: Vec::new(),
         crossings: Vec::new(),
     };
-    // 1. A vertex sitting on a segment it does not belong to — the touch, asked for its witness.
+    // 1. A vertex sitting on a segment it does not belong to — the touch, asked whether it is one.
     for (i, &p) in uv.iter().enumerate() {
         for a in 0..uv.len() {
             let b = next[a];
@@ -216,36 +212,27 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
                 TouchKind::AtEnd
             } else if p == v {
                 // The same shared coordinate is the start of `next[a]`, recorded there — one
-                // record per touch, or a bridge laid on it would be laid twice.
+                // record per touch: a pinch's twins are sanctioned by exactly their two records.
                 continue;
             } else {
                 continue;
             };
-            let witness = match kind {
-                TouchKind::AtEnd => Witness::Abstained,
-                TouchKind::Interior => {
-                    let (s_prev, s_next) = (side(u, v, uv[prev[i]]), side(u, v, uv[next[i]]));
-                    if s_prev == 0 || s_next == 0 {
-                        Witness::Abstained
-                    } else if s_prev == s_next {
-                        Witness::Tangent
-                    } else {
-                        // The boundary passes through the segment here: a crossing that landed
-                        // on a vertex. It is not a touch at all.
-                        meets.crossings.push(Crossing::Through {
-                            vertex: i,
-                            segment: a,
-                        });
-                        continue;
-                    }
+            if kind == TouchKind::Interior {
+                let (s_prev, s_next) = (side(u, v, uv[prev[i]]), side(u, v, uv[next[i]]));
+                if s_prev != 0 && s_next != 0 && s_prev != s_next {
+                    // The boundary passes through the segment here: a crossing that landed on a
+                    // vertex. It is not a touch at all.
+                    meets.crossings.push(Crossing::Through {
+                        vertex: i,
+                        segment: a,
+                    });
+                    continue;
                 }
-            };
+            }
             meets.touches.push(Touch {
                 vertex: i,
                 segment: a,
-                segment_end: b,
                 kind,
-                witness,
             });
         }
     }
@@ -279,38 +266,24 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
     meets
 }
 
-/// Where on its segment a touching vertex sits — the bit a bridge builder branches on.
+/// Where on its segment a touching vertex sits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum TouchKind {
-    /// The vertex coincides with one of the segment's ends: two rings share a coordinate, and
-    /// both bend there. A bridge between them costs nothing.
+    /// The vertex coincides with one of the segment's ends: two visits share a coordinate, and
+    /// both bend there — a pinch's twins, or a touch no vertex of the b-rep sanctions.
     AtEnd,
-    /// The vertex sits strictly inside the segment: the other ring is straight there. A bridge
-    /// needs that segment split at the vertex first — and the split must reach every face that
-    /// shares the edge, or the mesh cracks.
+    /// The vertex sits strictly inside the segment: the boundary touches a straight run of itself
+    /// where it has no vertex.
     Interior,
-}
-
-/// What the tangency witness said about a touch.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Witness {
-    /// Both ring neighbours on one side of the touched line: the boundary turns back here.
-    Tangent,
-    /// Not decidable from one line — an `AtEnd` touch, or a neighbour exactly on the line.
-    /// Kept as a touch (this decomposition still has no answer), never promoted to a crossing.
-    Abstained,
 }
 
 /// One vertex on one segment it does not belong to — see [`self_touch`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Touch {
     pub(crate) vertex: usize,
-    /// The segment `segment → segment_end` (`segment_end == next[segment]`, carried so a caller
-    /// without the ring arrays can find the segment in its own polylines).
+    /// The segment `segment → next[segment]`.
     pub(crate) segment: usize,
-    pub(crate) segment_end: usize,
     pub(crate) kind: TouchKind,
-    pub(crate) witness: Witness,
 }
 
 /// Where the boundary passes through itself — see [`self_touch`]. Segments are named by the
@@ -320,7 +293,7 @@ pub(crate) enum Crossing {
     /// Two segments passing through each other, the crossing on neither's vertex.
     Segments(usize, usize),
     /// The boundary passing through `segment` at `vertex`, which lies strictly inside it — the
-    /// touch scan's witness saw `vertex`'s two ring neighbours on opposite sides.
+    /// touch scan saw `vertex`'s two ring neighbours on opposite sides.
     Through { vertex: usize, segment: usize },
 }
 
@@ -776,8 +749,8 @@ mod tests;
 
 #[cfg(test)]
 mod touch_tests {
-    //! The tangency witness itself, read off `self_touch`'s output — `polygon`'s tests only see
-    //! the error name, and the name cannot tell `Tangent` from `Abstained`.
+    //! What `self_touch` records, read off its output — `polygon`'s tests only see the error name,
+    //! and the name cannot tell one touch record from two, or which kind each is.
     use super::*;
 
     fn meets(uv: &[P2], rings: &[&[usize]]) -> Meets {
@@ -786,7 +759,7 @@ mod touch_tests {
     }
 
     /// A hole's apex on the outer ring's edge: one record, strictly inside the segment, and both
-    /// neighbours on the inner side — the witness says tangent.
+    /// neighbours on the inner side — a touch.
     #[test]
     fn an_apex_on_an_edge_is_an_interior_tangency() {
         let uv = [
@@ -805,15 +778,13 @@ mod touch_tests {
             vec![Touch {
                 vertex: 4,
                 segment: 0,
-                segment_end: 1,
                 kind: TouchKind::Interior,
-                witness: Witness::Tangent,
             }]
         );
     }
 
-    /// A diamond crossing the outer ring at its own two vertices: the witness sees the neighbours
-    /// straddle the edge, so neither vertex is a touch — it is a crossing.
+    /// A diamond crossing the outer ring at its own two vertices: the neighbours straddle the
+    /// edge, so neither vertex is a touch — it is a crossing.
     #[test]
     fn a_vertex_the_boundary_passes_through_is_a_crossing_not_a_touch() {
         let uv = [
@@ -838,10 +809,9 @@ mod touch_tests {
     }
 
     /// Two rings sharing a corner coordinate: recorded once per (vertex, other ring), never for
-    /// both segments meeting at the shared point; and the witness abstains, since the other ring
-    /// bends there too.
+    /// both segments meeting at the shared point.
     #[test]
-    fn a_shared_corner_is_recorded_once_and_abstains() {
+    fn a_shared_corner_is_recorded_once() {
         let uv = [
             [0.0, 0.0],
             [4.0, 0.0],
@@ -856,7 +826,6 @@ mod touch_tests {
         assert_eq!(m.touches.len(), 2, "{m:?}");
         for t in &m.touches {
             assert_eq!(t.kind, TouchKind::AtEnd, "{t:?}");
-            assert_eq!(t.witness, Witness::Abstained, "{t:?}");
         }
         // The hole's vertex on the outer's segment starting at the corner, and the outer's corner
         // on the hole's segment starting there.
@@ -870,10 +839,10 @@ mod touch_tests {
         );
     }
 
-    /// A hole edge lying along the outer edge: each of its ends is on the segment, but the other
-    /// neighbour is on the line too — the witness cannot decide and says so.
+    /// A hole edge lying along the outer edge: each of its ends is on the segment, and the other
+    /// neighbour is on the line too — one line cannot call it a crossing, so it stays a touch.
     #[test]
-    fn a_neighbour_on_the_line_makes_the_witness_abstain() {
+    fn a_neighbour_on_the_line_leaves_a_touch() {
         let uv = [
             [0.0, 0.0],
             [4.0, 0.0],
@@ -888,7 +857,6 @@ mod touch_tests {
         assert_eq!(m.touches.len(), 2, "{m:?}");
         for t in &m.touches {
             assert_eq!(t.kind, TouchKind::Interior, "{t:?}");
-            assert_eq!(t.witness, Witness::Abstained, "{t:?}");
         }
     }
 }

@@ -33,8 +33,8 @@ pub enum TessError {
     /// other than twice (`cut_seamless_bands`).
     ///
     /// **The cases where two vertices meet in *coordinates* are not here** but
-    /// [`Self::SelfTouchingBoundary`] — a different proposition: those rings are exactly what the
-    /// b-rep asked for, and it is this decomposition that has no answer for them.
+    /// [`Self::SelfTouchingBoundary`] — a different proposition: the rings are a polygon, and the
+    /// boundary touches itself.
     ///
     /// **The crossing clause covers a hole crossing its outer ring**, not only a ring crossing
     /// itself: without `monotone`'s `self_touch` that input comes back `Ok` with eight confident,
@@ -51,40 +51,31 @@ pub enum TessError {
     /// assumed because the b-rep guarantees it and this layer cannot: a decomposition
     /// handed a self-crossing ring would otherwise return a confident, wrong mesh.
     DegenerateRing,
-    /// **The face's boundary touches itself, and no bridge was laid there**: some vertex lies on
-    /// the boundary somewhere other than at its own two edges — on another ring, or on a
-    /// non-adjacent part of its own. The region is pinched there, so it is not a disk with sibling
-    /// holes and this decomposition has no triangulation of it *as the rings it was given*.
+    /// **The face's boundary touches itself other than as a face may.** A face is one connected
+    /// region and its loops do not meet; the one way its boundary may touch itself is one loop
+    /// passing a vertex twice — a groove whose tip touches the face's own rim, a hole touching a
+    /// boss's footprint at a corner — and such a face is drawn, at as many such vertices as it has.
+    /// Refused under this name:
     ///
-    /// **The common case is drawn, not refused.** A hole whose sample sits
-    /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
-    /// `Interior` + `Tangent`) has that sample put into the edge's polyline by [`tessellate`]'s
-    /// bridge pre-pass, the two rings are spliced into one at that point, and the sweep orders the
-    /// resulting coincident pair symbolically (`polygon::sos`). **One ring passing a mesh vertex
-    /// twice** — a groove whose tip touches the face's own rim, a hole touching a boss's footprint
-    /// at a corner — is drawn the same way, its two visits the twins, at as many points as the face
-    /// has: where each visit bounds its own sector of material, the convex sectors slide and one
-    /// that is not stays (`polygon::pinch`). A face whose material is two pieces meeting only at a
-    /// point is drawn too, each piece its own ring there. What still comes back under this name is what those
-    /// roads do not cover, the bridge's each counted by the pre-pass: a vertex on another ring's
-    /// *vertex* (`AtEnd`), a neighbour exactly on the touched line, a touch on a curved edge or
-    /// beside a curved face, two touches on one segment or at one point, a point passed three
-    /// times, and a bridge beside any other bridge or pinch.
+    /// - a boundary touching itself at a point no vertex is — a loop on a straight edge of another
+    ///   loop or of its own — where the sampled boundary shows it: a touch on a curve is seen only
+    ///   when a sample lands on it, and a touch the samples miss is drawn as the separated boundary
+    ///   the samples are;
+    /// - two loops passing one vertex;
+    /// - material in two pieces that meet only at a point;
+    /// - a point the boundary passes three times, or twice with both sides straight there.
     ///
-    /// **This does not say the solid is wrong.** A touch pinches the face, not the surface: the link
-    /// of the boundary on a small sphere there is a *single* circle, the pinched face's two sides
-    /// joined around through the face and its neighbours, and OCCT given the same operands returns
-    /// a body of the same volume and area. The kernel's booleans give every such touch a vertex —
-    /// one ring passing it twice, which the sweep orders symbolically (`polygon::sos`) — so the
-    /// bridge serves rings that touch where no vertex is. For what is still refused, the
-    /// loss is larger than one face: a mesh stops at the first refusal in its range ([`tessellate`]
-    /// — every live solid — or [`tessellate_solids`]), and the playground's drawing stops at the
-    /// first value whose mesh is refused, so one pinched face erases every body of that run.
+    /// The mesh does not mend these: the first three are not a face STEP writes (its loops
+    /// intersect, or its domain is not connected), and the kernel's booleans make none of them.
     ///
-    /// The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier, by
-    /// `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check calls the same
-    /// thing a *pinch*; this is the spelling a chart actually produces, since `face_rings` gives
-    /// every ring its own index range.
+    /// **This does not say the solid's shape is wrong**: the first three are a shape spelled as no
+    /// face should be, the last a boundary this mesh cannot order. For what is refused, the loss is
+    /// larger than one face: a mesh stops at the first refusal in its range ([`tessellate`] — every live solid — or
+    /// [`tessellate_solids`]), and the playground's drawing stops at the first value whose mesh is
+    /// refused, so one such face erases every body of that run.
+    ///
+    /// The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier and
+    /// comes back as [`Self::DegenerateRing`].
     SelfTouchingBoundary,
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
@@ -310,8 +301,8 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessE
 /// The same road, walked over less: edges are sampled and faces triangulated one by one, a curve
 /// on the θ set of the face it bounds ([`FaceThetas`]), two solids share no face or edge, a set
 /// grows only by what its own solid's planar faces ask for ([`finish_polylines`] — a round another
-/// solid needs lays the same samples again), and the bridge pre-pass pairs only faces on one edge
-/// — so a face's triangles are the same whichever other solids are meshed beside it.
+/// solid needs lays the same samples again) — so a face's triangles are the same whichever other
+/// solids are meshed beside it.
 pub fn tessellate_solids(
     model: &Model,
     solids: &[Handle<Solid>],
@@ -324,8 +315,7 @@ pub fn tessellate_solids(
     // 1. Sample every live edge into a shared polyline (the crack-free contract), finished
     // before any face reads them.
     let (live, mut sets) = theta_sets(model, cfg, &reach)?;
-    let (Finished { mut t, cuts, asked }, _report) =
-        finish_polylines(model, &reach, &live, &mut sets);
+    let Finished { mut t, cuts, asked } = finish_polylines(model, &reach, &live, &mut sets);
     // 2. Triangulate each live face, reusing the shared edge polylines.
     for &(fh, face) in &live {
         triangulate_face(
@@ -357,9 +347,7 @@ pub fn tessellate_solids(
 ///    chord's middle. **After the band cut**: a sample put into an arc pushes its chord out toward
 ///    the curve, so it can make a crossing that was not there.
 ///
-/// A round in which no set grew is the last: its polylines are the ones shipped, and the bridge
-/// pre-pass reads the touches its scans found ([`bridge_shared_edges`] — what it inserts lies
-/// exactly on a straight edge, so it changes no polyline's shape). A round that grew a set is
+/// A round in which no set grew is the last: its polylines are the ones shipped. A round that grew a set is
 /// thrown away whole: the store is append-only, so sampling a curve again into the same
 /// tessellation would leave its old samples in it, and an OBJ writes every vertex the mesh holds.
 /// Measured, that resampling and the band cut cost about 1.4 ms a round next to 100 bored disks.
@@ -370,7 +358,7 @@ pub fn tessellate_solids(
 /// chart is asked once** ([`polygon::Asked`]): the scan reads the chart's points and rings and
 /// nothing else, so a face whose chart is the previous round's, bit for bit, takes that round's
 /// answer. What comes back is each planar face's last scan, which its triangulation reads the
-/// same way — a face no bridge or pinch changed is not scanned again there. Measured next to 100
+/// same way — it hands the sweep the rings as scanned, so the face is not scanned again there. Measured next to 100
 /// bored disks, a model taking nine rounds meshed in 711 ms asking every chart afresh and in
 /// 457 ms asking each once (a one-round model, 437 ms). A model with no crossing has one round —
 /// sampled, cut and scanned once.
@@ -392,49 +380,41 @@ fn finish_polylines(
     reach: &nacre_topo::Reachable,
     live: &[(Handle<Face>, &Face)],
     sets: &mut ThetaSets,
-) -> (Finished, BridgeReport) {
+) -> Finished {
     // Each planar face's last scan — a map only taken from and put into, never walked.
     let mut asked: HashMap<Handle<Face>, polygon::Asked> = HashMap::new();
     loop {
         let mut t = Tessellation::default();
         sample_edges(&mut t, model, reach, sets);
         let cuts = cut_seamless_bands(&mut t, model, live);
-        let mut touches: Vec<Touch> = Vec::new();
-        let mut report = BridgeReport::default();
         let mut grew = false;
         for &(fh, face) in live {
             let plane = match model.surface_cache(face.surface) {
                 nacre_topo::SurfaceCache::Plane { plane, .. } => plane,
-                // Crossings and bridges are asked on planar charts only — on a cylinder's chart a
+                // Crossings are asked on planar charts only — on a cylinder's chart a
                 // circle is level, a ruling upright and an ellipse a graph of θ, so sampling cannot
                 // cross them. An arm rather than an `else`, so a third surface kind is a compile
                 // error here and its author decides.
                 nacre_topo::SurfaceCache::Cylinder { .. } => continue,
             };
             // A face whose chart or rings are refused is left for its own triangulation to name.
-            let Some(BoundaryScan {
-                chart,
-                scan,
-                wanted,
-            }) = crossing_chords(&t, model, face, plane, sets, asked.remove(&fh))
+            let Some(BoundaryScan { scan, wanted }) =
+                crossing_chords(&t, model, face, plane, sets, asked.remove(&fh))
             else {
                 continue;
             };
             for (edge, theta) in wanted {
                 grew |= sets.of_mut(edge).add(theta);
             }
-            bridgeable_touches(fh, &chart, scan.meets(), &mut touches, &mut report);
             asked.insert(fh, scan);
         }
         if !grew {
-            let report = bridge_shared_edges(&mut t, model, live, touches, report);
-            return (Finished { t, cuts, asked }, report);
+            return Finished { t, cuts, asked };
         }
     }
 }
 
-/// What [`finish_polylines`] hands the faces' triangulation — beside the bridge pre-pass's report,
-/// which only a test reads.
+/// What [`finish_polylines`] hands the faces' triangulation.
 struct Finished {
     /// The finished edge polylines, and no triangles yet.
     t: Tessellation,
@@ -914,12 +894,9 @@ impl FaceThetas {
 /// `1e-4`, about 2,300 samples a circle at `1e-6` — and at `1e-8` the cap is reached and the face
 /// refused by name.
 ///
-/// **One scan, three readers.** The last round's answer is the boundary as it is shipped, which is
-/// what the bridge pre-pass reads its touches off ([`bridgeable_touches`]) — asked once, not again
-/// by a second pass over the same polylines. Measured as a separate pass, the second ask was 7.7%
-/// of the census's meshing time. The face's triangulation takes it too, where its chart is the
-/// scan's ([`polygon::Asked`]); and `prior`, the face's scan from the round before, is this round's
-/// answer where the chart has not moved.
+/// **The scan is read, not repeated.** The last round's answer is the boundary as it is shipped, and the
+/// face's triangulation takes it, where its chart is the scan's ([`polygon::Asked`]); and `prior`,
+/// the face's scan from the round before, is this round's answer where the chart has not moved.
 ///
 /// **Faces that cannot cross are scanned and ask nothing**: one with no circle edge (straight
 /// segments do not sag), and one bounded by one whole circle alone — its samples lie on the circle
@@ -956,7 +933,6 @@ fn crossing_chords(
     let meets = scan.meets();
     if !curved || one_circle || meets.crossings.is_empty() {
         return Some(BoundaryScan {
-            chart,
             scan,
             wanted: Vec::new(),
         });
@@ -999,16 +975,11 @@ fn crossing_chords(
             wanted.push(w);
         }
     }
-    Some(BoundaryScan {
-        chart,
-        scan,
-        wanted,
-    })
+    Some(BoundaryScan { scan, wanted })
 }
 
 /// What [`crossing_chords`] found on one planar face's boundary.
 struct BoundaryScan {
-    chart: Chart,
     /// How the boundary meets itself, kept with the chart it asked ([`polygon::Asked`]).
     scan: polygon::Asked,
     /// Each crossing arc's edge and the θ it asks its lateral's set for.
@@ -1081,220 +1052,6 @@ fn arc_midpoint(
         return None;
     }
     Some((step.edge, theta))
-}
-
-/// One insertion the bridge pre-pass made: `vertex` now sits at `at` in `by_edge[edge]`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Split {
-    pub edge: Handle<Edge>,
-    pub at: usize,
-    pub vertex: Handle<TessVertex>,
-}
-
-/// Why the bridge pre-pass left a bridgeable-looking touch alone. Counted, never acted on:
-/// every case is a shape this pass does not bridge, and the sweep goes on refusing it by name.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Declined {
-    /// The touched segment is a chord of a curved edge: a point on the chord is not on the curve.
-    CurvedEdge,
-    /// A face sharing the touched edge is not planar: a vertex planted there would seed diagonals
-    /// on a curved chart, a population this pass has not measured.
-    CurvedNeighbour,
-    /// Two touches on one segment: three coincident vertices have no consistent order.
-    SharedSegment,
-    /// One vertex touching two different segments.
-    MultiSegment,
-    /// The touched segment was not found consecutive in any polyline of its face.
-    NoEdge,
-}
-
-/// What the bridge pre-pass did and declined, for the caller that wants to read it.
-#[derive(Clone, Debug, Default)]
-pub struct BridgeReport {
-    pub splits: Vec<Split>,
-    pub declined: Vec<(Handle<Face>, Declined)>,
-}
-
-/// A touch the bridge pre-pass may bridge: `vertex` of `face`'s boundary lies on the segment `seg`
-/// of another of its rings.
-struct Touch {
-    face: Handle<Face>,
-    vertex: Handle<TessVertex>,
-    seg: [Handle<TessVertex>; 2],
-}
-
-/// The touches of one planar face's boundary that [`bridge_shared_edges`] may bridge, read off the
-/// scan the crossing pass made of it ([`crossing_chords`]) — a vertex touching a straight run at an
-/// interior point, tangentially; one touching two segments is declined (`MultiSegment`).
-fn bridgeable_touches(
-    face: Handle<Face>,
-    chart: &Chart,
-    meets: &polygon::Meets,
-    out: &mut Vec<Touch>,
-    report: &mut BridgeReport,
-) {
-    use polygon::{TouchKind, Witness};
-    let bridgeable =
-        |tc: &polygon::Touch| tc.kind == TouchKind::Interior && tc.witness == Witness::Tangent;
-    let mut per_vertex: HashMap<usize, usize> = HashMap::new();
-    for tc in meets.touches.iter().filter(|tc| bridgeable(tc)) {
-        *per_vertex.entry(tc.vertex).or_default() += 1;
-    }
-    for tc in meets.touches.iter().filter(|tc| bridgeable(tc)) {
-        if per_vertex[&tc.vertex] > 1 {
-            report.declined.push((face, Declined::MultiSegment));
-            continue;
-        }
-        out.push(Touch {
-            face,
-            vertex: chart.handles[tc.vertex],
-            seg: [chart.handles[tc.segment], chart.handles[tc.segment_end]],
-        });
-    }
-}
-
-/// **The bridge pre-pass — a tangency's sample becomes a sample of the edge it touches.**
-///
-/// A planar face whose hole touches another ring at exactly one point is a valid solid the
-/// sweep cannot decompose: the touching vertex is a sample of the *curved* edge, and the
-/// straight edge it lands on carries only its two ends ([`sample_edges`]' `Line` arm), so the
-/// square ring has no vertex there to bridge to. Inserting that existing vertex into the
-/// straight edge's polyline gives the face the twin it needs — and, because `by_edge` is
-/// shared and read live by every face, gives the neighbouring face the same vertex, which is
-/// what keeps the mesh crack-free (a split one side does not know about is a T-vertex).
-///
-/// **Order matters twice.** Touches are collected over *every* live face before any polyline
-/// is changed, so a face walked later does not see an already-split edge and misreport the
-/// touch as `AtEnd`; and insertions on one edge go later-position-first, so earlier positions
-/// stay valid. The pass is idempotent: a polyline that already holds the vertex is left alone.
-///
-/// **Edge → faces is built here, from the live set** — the model holds no reverse index, and this
-/// pass runs on the model as handed to it.
-///
-/// What it declines, it counts (see [`Declined`]); the population it was measured on is four
-/// planar caps, every touch `Interior` and `Tangent` on a straight edge shared by two planes.
-fn bridge_shared_edges(
-    t: &mut Tessellation,
-    model: &Model,
-    live: &[(Handle<Face>, &Face)],
-    cands: Vec<Touch>,
-    mut report: BridgeReport,
-) -> BridgeReport {
-    struct Pending {
-        edge: Handle<Edge>,
-        at: usize,
-        vertex: Handle<TessVertex>,
-        face: Handle<Face>,
-    }
-    // 1. Every bridgeable touch was read before anything is changed ([`bridgeable_touches`]).
-    if cands.is_empty() {
-        return report;
-    }
-
-    // 2. Which faces share each edge, and which of them are planar.
-    let planar: HashMap<Handle<Face>, bool> = live
-        .iter()
-        .map(|&(fh, f)| {
-            (
-                fh,
-                // The **truth**, path-qualified: in this file the bare `Surface` is geom's
-                // (the cache), and aliasing the topo one in would give the truth a second
-                // vocabulary here. A face's kind is a fact about what it is, so the truth
-                // answers it — and a new surface kind lands there first.
-                matches!(model.surface(f.surface), nacre_topo::Surface::Plane { .. }),
-            )
-        })
-        .collect();
-    let mut faces_on: HashMap<Handle<Edge>, Vec<Handle<Face>>> = HashMap::new();
-    for &(fh, face) in live {
-        for lp in loops_of(face) {
-            for he in &lp.half_edges {
-                faces_on.entry(he.edge).or_default().push(fh);
-            }
-        }
-    }
-
-    // 3. Find each touched segment in its face's polylines and apply the guards.
-    let mut pending: Vec<Pending> = Vec::new();
-    for c in &cands {
-        let face = live
-            .iter()
-            .find(|(fh, _)| *fh == c.face)
-            .map(|(_, f)| *f)
-            .expect("a candidate names a live face");
-        let mut found = None;
-        'search: for lp in loops_of(face) {
-            for he in &lp.half_edges {
-                let poly = &t.by_edge[&he.edge];
-                for k in 0..poly.len().saturating_sub(1) {
-                    let (p, q) = (poly[k], poly[k + 1]);
-                    if (p == c.seg[0] && q == c.seg[1]) || (p == c.seg[1] && q == c.seg[0]) {
-                        found = Some((he.edge, k));
-                        break 'search;
-                    }
-                }
-            }
-        }
-        let Some((eh, k)) = found else {
-            report.declined.push((c.face, Declined::NoEdge));
-            continue;
-        };
-        if !matches!(model.edge_curve(eh), Curve::Line(_)) {
-            report.declined.push((c.face, Declined::CurvedEdge));
-            continue;
-        }
-        if faces_on[&eh].iter().any(|f| !planar[f]) {
-            report.declined.push((c.face, Declined::CurvedNeighbour));
-            continue;
-        }
-        pending.push(Pending {
-            edge: eh,
-            at: k,
-            vertex: c.vertex,
-            face: c.face,
-        });
-    }
-    let mut on_segment: HashMap<(Handle<Edge>, usize), usize> = HashMap::new();
-    for p in &pending {
-        *on_segment.entry((p.edge, p.at)).or_default() += 1;
-    }
-    let (shared, mut ok): (Vec<_>, Vec<_>) = pending
-        .into_iter()
-        .partition(|p| on_segment[&(p.edge, p.at)] > 1);
-    for p in shared {
-        report.declined.push((p.face, Declined::SharedSegment));
-    }
-
-    // 4. Insert — per edge, later positions first, never twice.
-    ok.sort_by_key(|p| (p.edge.index(), std::cmp::Reverse(p.at)));
-    for p in ok {
-        let poly = t.by_edge.get_mut(&p.edge).expect("the edge was sampled");
-        if poly.contains(&p.vertex) {
-            continue;
-        }
-        poly.insert(p.at + 1, p.vertex);
-        report.splits.push(Split {
-            edge: p.edge,
-            at: p.at + 1,
-            vertex: p.vertex,
-        });
-    }
-    report
-}
-
-/// What the bridge pre-pass did, for a test that wants to see it before any face is triangulated
-/// (the returned `Tessellation` holds the finished edge polylines and no triangles) — the same
-/// passes [`tessellate`] runs, in its order, and refused where it refuses a curve
-/// ([`TessError::OverBudget`]). Test-only (`test-util`).
-#[cfg(feature = "test-util")]
-pub fn bridge_report(
-    model: &Model,
-    cfg: &TessConfig,
-) -> Result<(BridgeReport, Tessellation), TessError> {
-    let reach = model.reachable();
-    let (live, mut sets) = theta_sets(model, cfg, &reach)?;
-    let (Finished { t, .. }, report) = finish_polylines(model, &reach, &live, &mut sets);
-    Ok((report, t))
 }
 
 /// A triangle on a cylinder's lateral that leans off the surface, and by how much: the angle in
@@ -1523,7 +1280,9 @@ pub fn kinked_edges(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Kink
 /// A face is one connected region (STEP's face domain), and the mesh of a connected region is
 /// joined edge to edge: a pinch passes its vertex twice but the region stays one, and a lateral's
 /// band names each cut point once at both its angles ([`joined_band`]). Two pieces are a face whose
-/// interior falls apart — regions meeting only at points, which a b-rep spells as two faces.
+/// interior falls apart — regions meeting only at points, which a b-rep spells as two faces. The
+/// sweep refuses such a face where it sees the pieces touch ([`TessError::SelfTouchingBoundary`]);
+/// this reads the triangles of every face that was drawn.
 #[cfg(any(test, feature = "test-util"))]
 pub fn split_faces(t: &Tessellation) -> Vec<(Handle<Face>, usize)> {
     fn root(parent: &mut [usize], mut x: usize) -> usize {
@@ -2977,8 +2736,7 @@ fn triangulate_face(
         polygon::Element::Edge(c) => edge_in_budget(cfg, &geom, c.map(|k| (k.0, at(k)))),
         polygon::Element::Facet(c) => facet_in_budget(cfg, &geom, c.map(|k| (k.0, at(k)))),
     };
-    let (tris, rings_used) =
-        polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits, &within, asked)?;
+    let tris = polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits, &within, asked)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
     // first minted vertices. Everything before it was already a shared boundary vertex.
     for &p in &uv[boundary..] {
@@ -2991,17 +2749,19 @@ fn triangulate_face(
             },
         }));
     }
-    within_budget(t, cfg, &geom, &handles, &rings_used, &tris)?;
+    within_budget(t, cfg, &geom, &handles, &rings, &tris)?;
     for tri in tris {
         push_tri(t, fh, tri.map(|i| handles[i]));
     }
     Ok(())
 }
 
-/// **The mesh vertices the face's boundary passes twice — one vertex at one chart point**: in two
-/// different rings, the bridges the sweep should lay there; twice in one ring, a pinch. Which ring's
-/// straight edge was split, and whether a pinch can be ordered, is `polygon`'s to read off the
-/// geometry.
+/// **The mesh vertices one ring of the face passes twice — one vertex at one chart point**: the
+/// pinches, the one way a face's boundary may touch itself (a loop passing a vertex twice).
+/// Whether a pinch can be ordered is `polygon`'s to read off the geometry. **Two rings passing one
+/// vertex are not handed over**: loops of a face do not meet, and the sweep, handed no twins for
+/// that point, refuses the touch it finds there ([`TessError::SelfTouchingBoundary`]) — one
+/// function answers every touch the boundary makes.
 ///
 /// **One vertex at two chart points is not a revisit**: a band's cut point stands at its `θ` and a
 /// turn on ([`joined_band`]), the two ends of the rectangle the sweep draws. On a plane each vertex
@@ -3011,10 +2771,6 @@ fn triangulate_face(
 /// of its handle — looked up, or computed afresh at each visit from the same inputs. Two
 /// visits that are not one point after all are refused by name at the twins (`polygon::pinch`).
 /// The key carries the handle, so a signed zero or a `NaN` cannot join two vertices.
-///
-/// On a cylinder a revisit only ever comes from the face's own loops — the bridge pre-pass inserts
-/// samples on planes alone — and two rings sharing a vertex there has not been met: whether its
-/// straight-edge premise ([`polygon::Bridge`]) holds on a chart is unmeasured.
 fn shared_vertices(
     handles: &[Handle<TessVertex>],
     rings: &[Vec<usize>],
@@ -3026,15 +2782,8 @@ fn shared_vertices(
         for (k, &i) in ring.iter().enumerate() {
             let key = (handles[i], uv[i].map(f64::to_bits));
             match seen.get(&key) {
-                Some(&(rj, kj)) if rj != ri => {
-                    out.push(polygon::Revisit::Bridge(polygon::Bridge {
-                        ring_x: rj,
-                        x: kj,
-                        ring_y: ri,
-                        y: k,
-                    }))
-                }
-                Some(&(_, kj)) => out.push(polygon::Revisit::Pinch {
+                Some(&(rj, _)) if rj != ri => {}
+                Some(&(_, kj)) => out.push(polygon::Revisit {
                     ring: ri,
                     x: kj,
                     y: k,

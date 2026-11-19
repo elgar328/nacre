@@ -878,9 +878,9 @@ fn a_notched_cube_meshes() {
 /// only reason ear clipping terminates — does not apply, so it would stall (measured: all six
 /// convex vertices would have a diagonal that genuinely crosses the other hole).
 ///
-/// **Nothing here is rotated**: three boxes and two fuses are enough. No two rings here share a
-/// vertex, so no bridge is laid and the pinch is never built, and the face meshes into the same
-/// watertight surface everything else does.
+/// **Nothing here is rotated**: three boxes and two fuses are enough. The sweep joins no rings, so
+/// the pinch is never built, and the face meshes into the same watertight surface everything else
+/// does.
 #[test]
 fn a_wall_with_two_windows_meshes() {
     let mut m = Model::new();

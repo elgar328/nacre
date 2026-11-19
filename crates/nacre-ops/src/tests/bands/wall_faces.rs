@@ -285,7 +285,7 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
 /// **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})` — and
 /// its three answers.** `center` is mid-height, so the stud runs `z ∈ [−1, 1]` through the cube and
 /// is tangent to the wall `x = 0.5` along the cube's whole height. Both caps are pinched (the
-/// stud's circle touches each square's edge at one point) — and both are bridged and drawn.
+/// stud's circle touches each square's edge at one point) — and both are drawn.
 ///
 /// Volumes derived: the stud is `π r² · 2`, the part inside the cube `π r² · 1`.
 #[test]
@@ -551,7 +551,7 @@ fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
 /// stud's circle touches the square's `x = 0.5` edge at one point, and that edge is shared with the
 /// `x = 0.5` wall. The arrangement cuts the circle and the edge there (`split_circles`), so the
 /// point is one vertex every face through it uses — the cap's pinched loop, the wall's ring (no
-/// T-vertex) and the stud's lateral past the cap — and the mesh has nothing to bridge.
+/// T-vertex) and the stud's lateral past the cap.
 #[test]
 fn the_touch_under_a_through_stud_is_a_vertex_of_every_face_through_it() {
     let at = |m: &Model, s: Handle<Solid>, p: [f64; 3]| -> (usize, usize) {
@@ -575,16 +575,6 @@ fn the_touch_under_a_through_stud_is_a_vertex_of_every_face_through_it() {
         }
         (vertices.len(), faces)
     };
-    let no_bridge = |m: &Model| {
-        let (report, _) = nacre_tess::bridge_report(m, &nacre_tess::TessConfig::default())
-            .expect("the budget can be kept");
-        assert!(
-            report.splits.is_empty() && report.declined.is_empty(),
-            "{:?} {:?}",
-            report.splits,
-            report.declined
-        );
-    };
     let mut m = Model::new();
     let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
     // The seam on `−y`, off the touching point `(0.5, 0)` — on `+x` the circle's own vertex would
@@ -607,7 +597,6 @@ fn the_touch_under_a_through_stud_is_a_vertex_of_every_face_through_it() {
             "the touch at z = {z}"
         );
     }
-    no_bridge(&m);
     // The blind stud (base anchoring) pinches the top cap only.
     let mut m = Model::new();
     let cube = crate::fixtures::cuboid(&mut m, [-0.5; 3], [0.5; 3]);
@@ -631,7 +620,6 @@ fn the_touch_under_a_through_stud_is_a_vertex_of_every_face_through_it() {
         0,
         "the bottom cap is not touched"
     );
-    no_bridge(&m);
 }
 
 /// **A tangency from *outside* is two bodies, not a refusal** — the control that says

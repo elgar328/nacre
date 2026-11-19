@@ -1,23 +1,16 @@
-//! **A symbolic order for the sanctioned coincident pairs — the twins each bridge or pinch makes.**
+//! **A symbolic order for the sanctioned coincident pairs — the twins each pinch makes.**
 //!
-//! A face's boundary can pass one point twice. When a hole's ring is spliced into the ring it
-//! touches, the touching vertex appears twice in the merged ring: once as the split ring's vertex,
-//! once as the hole's, at the same coordinate. When one ring passes a point twice — a pinch, a
-//! groove whose tip touches the face's own rim — it already does; where it bounds two lobes meeting
-//! only there, it is cut in two at the point and the pair is the two rings' visits. Every exact
-//! predicate the sweep asks about that pair answers zero, and the sweep has no order for a zero.
+//! A face's boundary can pass one point twice: one ring passing a vertex twice — a pinch, a groove
+//! whose tip touches the face's own rim — at two indices of one coordinate. Every exact predicate
+//! the sweep asks about that pair answers zero, and the sweep has no order for a zero.
 //! The classic answer (Edelsbrunner–Mücke) is to *simulate* a displacement: decide every tie as if
 //! each twin had moved by an infinitesimal `ε` in a direction of its own, and read the sign off the
 //! first-order term. No coordinate moves — the triangles come out on the exact points — only the
 //! ties are decided, consistently, as one actual small displacement would decide them.
 //!
 //! **Each twin slides along one of its own edges, or stays**: `d_o = uv[o_along] − T`,
-//! `d_h = uv[h_along] − T`. On a bridge the two are the ends of the split straight segment — the
-//! split ring's copy slides toward its predecessor, the hole's toward its successor — so both
-//! twins stay *on* that line for every `ε` and keep every collinearity they had with the rest of
-//! the ring. On a pinch the earlier visit slides along its incoming edge and the later along its
-//! outgoing one (for two lobes, the visit in each ring cut from it), each into its own sector of
-//! material, which is what separates them; a visit whose sector is not convex names itself as its
+//! `d_h = uv[h_along] − T`. The earlier visit slides along its incoming edge and the later along
+//! its outgoing one, each into its own sector of material, which is what separates them; a visit whose sector is not convex names itself as its
 //! target (`d = 0`) and stays, the other's slide alone separating them (`polygon::pinch` decides
 //! which, and checks the sectors allow it).
 //!
@@ -26,8 +19,7 @@
 //! an infinitesimal `δ`. The twins' displacement is taken infinitely smaller still, `ε ≪ δ`, so
 //! a twin against a non-twin at the same `v` is decided by `u` exactly as any two points are, and
 //! only the twins' own tie needs `ε`. `orient2d` does not turn with the sweep, so `δ` never enters
-//! a side test. A displacement with a normal component is therefore no harm to the order; what
-//! the tangential slide buys a bridge is the kept collinearity.
+//! a side test. A displacement with a normal component is therefore no harm to the order.
 //!
 //! **Twin-only.** Two facts keep this from touching anything else. Every zero the sweep can
 //! meet without the twins is already a refusal (`self_touch`: a vertex on another edge's open
@@ -49,7 +41,7 @@
 //! toward.
 //!
 //! What is *not* symbolic: `classify`'s turn (a zero there is a real spike), the touch
-//! detector and its witness (a zero there *is* the touch), the crossing scan, `emit`'s
+//! detector and its side test (a zero there *is* the touch), the crossing scan, `emit`'s
 //! zero-area refusal, and `delaunay::refine`'s convexity test. Each of those must go on
 //! answering about the real numbers.
 
@@ -57,16 +49,13 @@ use super::{P2, lex_less};
 use nacre_predicates::{Expansion, orient2d};
 
 /// One sanctioned pair: two indices at one coordinate, each with the index of the ring
-/// neighbour it slides toward (on a bridge the two ends of the split segment), or its own index
-/// if it stays.
+/// neighbour it slides toward, or its own index if it stays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Twins {
-    /// The earlier visit of the ring passing the point (on a bridge, the split ring's copy of the
-    /// touching vertex; for two lobes, the visit in the ring cut from it first); slides toward
-    /// `o_along` (its `prev`, or itself).
+    /// The earlier visit of the ring passing the point; slides toward `o_along` (its `prev`, or
+    /// itself).
     pub(super) o: usize,
-    /// The later visit (on a bridge, the touching ring's copy; for two lobes, the visit in the
-    /// other ring); slides toward `h_along` (its `next`, or itself).
+    /// The later visit; slides toward `h_along` (its `next`, or itself).
     pub(super) h: usize,
     pub(super) o_along: usize,
     pub(super) h_along: usize,
