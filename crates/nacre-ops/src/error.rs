@@ -173,6 +173,14 @@ pub enum RejectReason {
     /// solid, one closed boundary split between them. Unlike [`Self::NonManifoldResultEdge`] this
     /// says nothing bad about the input: it is ours to fix.
     OpenResultShell,
+    /// A flat face of the result has a boundary that meets itself somewhere it may not: two of
+    /// its edges cross, touch, or overlap away from a vertex they share, one of its vertices sits
+    /// inside another of its edges, two of its loops pass one vertex, or a loop passing a vertex
+    /// more than once crosses itself there or leaves the face in pieces meeting only there. A face is one connected region
+    /// whose boundary meets itself only where one loop passes a vertex more than once. Like
+    /// [`Self::OpenResultShell`] this says nothing bad about the input: it is ours to fix. The
+    /// witness is the vertex or the edge where it was found.
+    FaceBoundsMeet,
     // The assembly stated one surface pair and the faces kept another. A shipped check, because ops
     // cannot lean on `validate` and a release build would otherwise return that solid. No boolean
     // in the suite fires it; a planted edge does.
@@ -1063,6 +1071,7 @@ impl RejectReason {
             Self::NonManifoldResultEdge => "non_manifold_result_edge",
             Self::SelfTouchingResult => "self_touching_result",
             Self::OpenResultShell => "open_result_shell",
+            Self::FaceBoundsMeet => "face_bounds_meet",
             Self::EdgeCarrierMismatch => "edge_carrier_mismatch",
             Self::CoincidentNodes => "coincident_nodes",
             Self::RingNaming => "ring_naming",
@@ -1174,6 +1183,7 @@ impl RejectReason {
             | Self::CoplanarMerge => RejectClass::NotSupported,
             // An invariant broke: malformed assembly, or a backstop that should be unreachable.
             Self::OpenResultShell
+            | Self::FaceBoundsMeet
             | Self::EdgeCarrierMismatch
             | Self::EulerParity
             | Self::NegativeGenus

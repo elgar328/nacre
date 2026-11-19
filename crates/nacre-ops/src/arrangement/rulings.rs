@@ -260,7 +260,10 @@ fn tangent_knife(
             let a = nr.triples[i];
             // A node on the ruling (`0`), or one this cannot place, is a boundary meeting it
             // otherwise than by an arc across it.
-            if !matches!(node_ruling_side(jd, def, wc, a), Some(1 | -1)) {
+            if !matches!(
+                combinatorics::node_ruling_side(jd, def, wc, a),
+                Some(1 | -1)
+            ) {
                 return Ok(Vec::new());
             }
             let Wall::Arc { ccw, plane: c, .. } = nr.walls[i] else {
@@ -302,7 +305,7 @@ fn tangent_knife(
 /// What one boundary cycle of a lateral leaves on a wall class ([`cycle_on_wall`]).
 struct WallCycle {
     /// Stations on the class's rulings, `(side, event, name)` — `side` the ruling's identity
-    /// ([`node_ruling_side`]).
+    /// ([`combinatorics::node_ruling_side`]).
     stations: Vec<(i8, LineEvent, NodeId)>,
     /// The cycle's edges lying on a ruling of the class with another plane across them, `(side,
     /// edge)` — plane-pair lines the lateral ends on ([`lateral_half_of_plane_pair_lines`]).
@@ -338,7 +341,7 @@ struct ArcMeet {
 /// tangent class meets each section's plane in a line that touches the cylinder or misses it, so
 /// no arc crosses it and nothing is read.
 ///
-/// The walk's features become stations on the ruling they lie on ([`node_ruling_side`]):
+/// The walk's features become stations on the ruling they lie on ([`combinatorics::node_ruling_side`]):
 /// - a **crossing** inside an arc toggles the face there;
 /// - a **corner** on a ruling — one node, two arcs meeting there — toggles it exactly when the
 ///   walk's flanks differ, named by the arriving arc's end;
@@ -449,7 +452,7 @@ fn cycle_on_wall(
     let run_side = |nodes: &[NodeId]| -> Result<i8, DeclineKind> {
         let mut out = None;
         for &x in nodes {
-            let s = node_ruling_side(jd, def, wc, x).ok_or(DeclineKind::Ruling)?;
+            let s = combinatorics::node_ruling_side(jd, def, wc, x).ok_or(DeclineKind::Ruling)?;
             match out {
                 None => out = Some(s),
                 // An edge whose two ends answer differently is not a ruling at all — it
@@ -603,23 +606,6 @@ fn body_side(
     let body_above =
         i32::from(material_theta_sign(cf.orient_sign, tau)) * i32::from(theta_dot_stored) > 0;
     Ok((tau, body_above))
-}
-
-/// Which of the two rulings of `wall` this pierce node sits on, `0` being a **tangent** wall's
-/// single ruling — [`crate::combinatorics::ruling_side_signed`] asked of the point the name
-/// denotes. The one spelling:
-/// the chart's `ruling_name` reads it too.
-///
-/// The `0` is asked of the point, not read off the name's root (`Double`): see
-/// [`crate::combinatorics::ruling_side_signed`] for why the two do not agree.
-pub(crate) fn node_ruling_side(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    wall: usize,
-    n: NodeId,
-) -> Option<i8> {
-    let (_, cyl, _) = combinatorics::pierce_name(n)?;
-    combinatorics::pierce_meet(jd, cyl, def, n)?.ruling_side(jd, wall, def)
 }
 
 /// **The lateral's half of a plane-pair line on a ruling of class `wc`** — the cycle's `edges`

@@ -372,9 +372,28 @@ pub(crate) fn cache_reach(cache: &nacre_topo::PointCache) -> CacheReach {
 
 /// **A few ulps of `x`, and the smallest normal** — how far an `f64` computed near `x` may round
 /// from the value it stands for. A bound read in `f64` is widened by it to hold the truth:
-/// [`cache_reach`]'s radius, and the self-touch sieve's rational circle boxes.
+/// [`cache_reach`]'s radius, and a rational box read in `f64` ([`rat_box_reach`]).
 pub(crate) fn round_slack(x: f64) -> f64 {
     x.abs() * (4.0 * f64::EPSILON) + f64::MIN_POSITIVE
+}
+
+/// **A rational box as a [`CacheReach`]** — each low end rounded and moved one [`round_slack`] down,
+/// each high end up, so the `f64` box holds the rational one; `None` (no box proven) is the box
+/// that holds everything, which keeps every candidate a sieve reads it for.
+pub(crate) fn rat_box_reach(b: Option<[[nacre_exact::Rat; 3]; 2]>) -> CacheReach {
+    match b {
+        Some([l, h]) => (
+            l.map(|x| {
+                let x = x.to_f64();
+                x - round_slack(x)
+            }),
+            h.map(|x| {
+                let x = x.to_f64();
+                x + round_slack(x)
+            }),
+        ),
+        None => ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
+    }
 }
 
 /// **[`cache_reach`] in rationals, its ends moved outward** — `None` where the reach is not finite

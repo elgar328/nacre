@@ -122,7 +122,8 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "nacre-ops/src/assembly/self_touch.rs",
         1,
         "`side_of`: a point question in `self_touch_reject`'s `node_side` (where a result node lies \
-         against a face's plane)",
+         against a face's plane, or against the line of one of its face's own edges in \
+         `face_bounds_meet`)",
     ),
     (
         "nacre-ops/src/lib.rs",

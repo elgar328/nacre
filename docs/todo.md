@@ -374,6 +374,13 @@ doc). 그래서 스크립트의 모든 중간값이 끝까지 살아 있고, 살
   이름도 갈린다(`WitnessNotRational`·`CylinderGateUndecided`).
 - `planes::frame_faces_up_the_axis` 를 `direction::arc_side` 가 `axis_up · frame_sign` 으로 손 철자한다.
 
+### 옆면의 제 경계는 결과 계약이 묻지 않는다
+
+평면 결과 면은 결과 계약의 면 테두리 팔이 정확히 묻는다(design 「불리언 엔진」). 옆면은 불리언 출구의 메시 단언과 `split_faces`
+뿐이고, 메시는 표본 사이의 접점을 못 본다(평면에서 쟀다: 3-4-5 벽에 접한 막대). 옆면 경계(림·단면 호·룰링 — 스위트에서 약 4만
+조각)가 만나는 점은 같은 관통 이름이고 순서는 θ·높이(`theta_place`·`axis_param_on_cylinder`)다. 스스로 만나는 옆면을 만드는 길은 못
+찾았다(안 쟀다). 그 팔이 서면 `split_faces` 를 은퇴시킨다.
+
 ## 보류 — 인구가 생기면
 
 ### reuse 의 꼭짓점 이름은 판정 없이 세 평면을 받는다 — 인구가 생기면

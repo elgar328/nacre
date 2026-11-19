@@ -356,21 +356,11 @@ pub(crate) fn assemble_fuse_cut(
 pub(super) fn self_touch_reject(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    seam: &[SeamVertex],
+    pt: &NodeReach,
     groups: &[Vec<usize>],
     by_comp_lf: &[Vec<&LocalFace>],
     tg: &Tangencies<'_>,
 ) -> Result<(), BoolError> {
-    // Per node: the coordinate a reject names as its witness, and the reach the sieve reads.
-    let pt: HashMap<NodeId, (Point3, crate::planes::CacheReach)> = seam
-        .iter()
-        .map(|sv| {
-            (
-                sv.triple,
-                (sv.cache.coord(), crate::planes::cache_reach(&sv.cache)),
-            )
-        })
-        .collect();
     // **The witness is the smallest offending edge, else the smallest offending vertex**, not
     // the first a hash map hands over — the rejection's `at` is a census key's neighbour and must
     // not move between runs. Only the rejecting path keeps scanning, so a result that builds pays
@@ -392,7 +382,8 @@ pub(super) fn self_touch_reject(
     };
     for g in groups {
         // **The arms, one proposition** — "an edge or a vertex of this solid meets the closed
-        // region of one of its own faces it does not bound". The planar arm asks an edge of every
+        // region of one of its own faces it does not bound" (a face's own bounds meeting each
+        // other is `face_bounds_meet`'s, asked after this). The planar arm asks an edge of every
         // plane face, through boxes and exact plane membership; the point arm below asks a vertex
         // against every plane face; the lateral arms after it ask both of every lateral face. What
         // none asks abstains rather than pretends, each for a reason written down. An arc edge:
@@ -447,14 +438,15 @@ pub(super) fn self_touch_reject(
             // A circle bulges past every node, so a curved bound takes its whole circle's box — and
             // with no exact circle the box holds everything: a box with no proved bound must not
             // drop a candidate.
-            let circle_box = |cyl: usize| match cyls.get(cyl).and_then(|c| {
-                combinatorics::arc_box_rat(jd, lf.surf.plane(), &c.def, crate::planes::Theta::Whole)
-            }) {
-                Some([cl, ch]) => (
-                    cl.map(|x| outward(x.to_f64(), -1.0)),
-                    ch.map(|x| outward(x.to_f64(), 1.0)),
-                ),
-                None => ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
+            let circle_box = |cyl: usize| {
+                crate::planes::rat_box_reach(cyls.get(cyl).and_then(|c| {
+                    combinatorics::arc_box_rat(
+                        jd,
+                        lf.surf.plane(),
+                        &c.def,
+                        crate::planes::Theta::Whole,
+                    )
+                }))
             };
             // A face bounded outside by a circle — a cap disk — has no ring to grow from; its
             // box is its circle's.
@@ -468,7 +460,7 @@ pub(super) fn self_touch_reject(
                     let u = r.nodes[i];
                     owners.entry(NodeEdge::of(r, i)).or_default().push(j);
                     visits.push((u, j));
-                    if let Some(&(_, (rl, rh))) = pt.get(&u) {
+                    if let Some(&(_, (rl, rh))) = pt.0.get(&u) {
                         grow(rl, rh);
                     }
                     // An arc bulges past its two ends: the box takes its whole circle's.
@@ -488,10 +480,6 @@ pub(super) fn self_touch_reject(
         // to share a turned class's Cramer parts, cost more in hashing than it saved).
         let side = |n: NodeId, q: usize| node_side(jd, cyls, n, q);
         let on = |n: NodeId, q: usize| node_side(jd, cyls, n, q) == Some(0);
-        let reach_of = |n: NodeId| {
-            pt.get(&n)
-                .map_or(([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]), |&(_, r)| r)
-        };
         let mut read: HashMap<usize, combinatorics::CompFace> = HashMap::new();
         'edges: for (key, own) in &owners {
             // An arc lies in a plane face only on its own circle's plane, where the face would
@@ -499,9 +487,7 @@ pub(super) fn self_touch_reject(
             let NodeEdge::Line((u, v)) = *key else {
                 continue;
             };
-            let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));
-            let el: [f64; 3] = core::array::from_fn(|k| ul[k].min(vl[k]));
-            let eh: [f64; 3] = core::array::from_fn(|k| uh[k].max(vh[k]));
+            let (el, eh) = pt.edge_reach([u, v]);
             for &j in near_buf.of(&grid, &boxes, el, eh) {
                 if own.contains(&j) {
                     continue;
@@ -570,7 +556,7 @@ pub(super) fn self_touch_reject(
         for at in visits.chunk_by(|x, y| x.0 == y.0) {
             let n = at[0].0;
             let mine = |j: usize| at.binary_search(&(n, j)).is_ok();
-            let (nl, nh) = reach_of(n);
+            let (nl, nh) = pt.reach(n);
             for &j in near_buf.of(&grid, &boxes, nl, nh) {
                 if mine(j) {
                     continue;
@@ -628,15 +614,9 @@ pub(super) fn self_touch_reject(
             let mut cf: Option<Result<combinatorics::CompFace, BoolError>> = None;
             let (mut bl, mut bh) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
             let mut grow = |plane: usize, cyl: usize| {
-                let (cl, ch) = match cyls.get(cyl).and_then(|c| {
+                let (cl, ch) = crate::planes::rat_box_reach(cyls.get(cyl).and_then(|c| {
                     combinatorics::arc_box_rat(jd, plane, &c.def, crate::planes::Theta::Whole)
-                }) {
-                    Some([cl, ch]) => (
-                        cl.map(|x| outward(x.to_f64(), -1.0)),
-                        ch.map(|x| outward(x.to_f64(), 1.0)),
-                    ),
-                    None => ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
-                };
+                }));
                 for i in 0..3 {
                     bl[i] = bl[i].min(cl[i]);
                     bh[i] = bh[i].max(ch[i]);
@@ -666,7 +646,7 @@ pub(super) fn self_touch_reject(
             let near =
                 |(l, h): ([f64; 3], [f64; 3])| (0..3).all(|i| l[i] <= bh[i] && h[i] >= bl[i]);
             for &n in &nodes {
-                if own.contains(&n) || !near(reach_of(n)) {
+                if own.contains(&n) || !near(pt.reach(n)) {
                     continue;
                 }
                 let cf = match cf.get_or_insert_with(|| super::grouping::comp_face(jd, cyls, lf)) {
@@ -706,9 +686,7 @@ pub(super) fn self_touch_reject(
                 if w[0] == w[1] {
                     continue;
                 }
-                let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));
-                let el: [f64; 3] = core::array::from_fn(|i| ul[i].min(vl[i]));
-                let eh: [f64; 3] = core::array::from_fn(|i| uh[i].max(vh[i]));
+                let (el, eh) = pt.edge_reach([u, v]);
                 if !near((el, eh)) {
                     continue;
                 }
@@ -763,12 +741,8 @@ pub(super) fn self_touch_reject(
         // The offending edge itself, as the witness — or the end the seam table realized — or the
         // offending vertex.
         let at = match touch {
-            Touch::Edge([u, v]) => match (pt.get(&u), pt.get(&v)) {
-                (Some(a), Some(b)) => Some(crate::RejectWhere::Segment([a.0, b.0])),
-                (Some(a), None) | (None, Some(a)) => Some(crate::RejectWhere::Point(a.0)),
-                (None, None) => None,
-            },
-            Touch::Point(n) => pt.get(&n).map(|a| crate::RejectWhere::Point(a.0)),
+            Touch::Edge(e) => pt.witness_segment(e),
+            Touch::Point(n) => pt.witness_point(n),
         };
         return Err(match at {
             Some(at) => crate::reject_at(RejectReason::SelfTouchingResult, at),
@@ -894,7 +868,7 @@ fn tangent_hand(
     clippy::disallowed_methods,
     reason = "a point question: where a result node lies against a face's plane"
 )]
-fn node_side(
+pub(super) fn node_side(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     n: NodeId,
@@ -907,8 +881,8 @@ fn node_side(
 /// lateral on `g`'s plane (a rim, or an arc on it) and a bound of `g` on the cylinder (its circle,
 /// or an arc of it)? Every point of a lateral's boundary is a point of the face across it, so an
 /// element of that face meeting the lateral's boundary meets another bound of its own face there —
-/// the face's pinch, which the surface takes (a pinched face is a valid solid), and which the
-/// planar arms do not ask of a face's own bounds either.
+/// a question of the face's own bounds, which [`face_bounds_meet`] asks (a pinch there passes it,
+/// a pinched face being a valid solid), not this arm.
 fn shares_a_curve(g: &LocalFace, lat: &LocalFace, k: usize) -> bool {
     let p = g.surf.plane();
     fn bounds(lf: &LocalFace) -> impl Iterator<Item = &Bound> {
@@ -936,12 +910,6 @@ fn shares_a_curve(g: &LocalFace, lat: &LocalFace, k: usize) -> bool {
 /// A face's rings, outer first.
 pub(super) fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
     lf.poly_rings()
-}
-
-/// `x` moved one rounding step further `away` (`−1` down, `+1` up) — a rounded rational bound
-/// made to hold the rational.
-fn outward(x: f64, away: f64) -> f64 {
-    x + away * crate::planes::round_slack(x)
 }
 
 /// **Where a self-touch was found** — on an edge of the body, or at a vertex of it with no edge on

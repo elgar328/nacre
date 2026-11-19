@@ -18,6 +18,7 @@ use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, S
 use std::collections::{HashMap, HashSet};
 
 mod coplanar;
+mod face_bounds;
 mod grouping;
 mod naming;
 mod reconstruct;
@@ -28,11 +29,52 @@ pub(crate) mod tess_census;
 mod topology;
 
 pub(crate) use coplanar::*;
+pub(crate) use face_bounds::*;
 pub(crate) use grouping::*;
 pub(crate) use naming::*;
 pub(crate) use reconstruct::*;
 pub(crate) use self_touch::*;
 pub(crate) use topology::*;
+
+/// **Per result node, by name: the coordinate a refusal names as its witness and the reach its cache
+/// proves**, which the sieves read — built once for the result contract's two judgements
+/// ([`self_touch_reject`], [`face_bounds_meet`]), which read it through the methods below.
+#[derive(Default)]
+pub(crate) struct NodeReach(HashMap<NodeId, (Point3, crate::planes::CacheReach)>);
+
+impl NodeReach {
+    /// The box node `n`'s cache proves it in — the box that holds everything for a node the table
+    /// does not hold, which keeps every candidate a sieve reads it for.
+    pub(super) fn reach(&self, n: NodeId) -> crate::planes::CacheReach {
+        self.0
+            .get(&n)
+            .map_or(([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]), |&(_, r)| r)
+    }
+
+    /// The box a straight edge `[u, v]` lies in: the hull of its ends' [`Self::reach`].
+    pub(super) fn edge_reach(&self, [u, v]: [NodeId; 2]) -> crate::planes::CacheReach {
+        let ((ul, uh), (vl, vh)) = (self.reach(u), self.reach(v));
+        (
+            core::array::from_fn(|k| ul[k].min(vl[k])),
+            core::array::from_fn(|k| uh[k].max(vh[k])),
+        )
+    }
+
+    /// The witness a refusal names at node `n`: its coordinate, where the table holds it.
+    pub(super) fn witness_point(&self, n: NodeId) -> Option<crate::RejectWhere> {
+        self.0.get(&n).map(|a| crate::RejectWhere::Point(a.0))
+    }
+
+    /// The witness a refusal names at the edge `[u, v]`: the edge itself, or the end the table
+    /// holds.
+    pub(super) fn witness_segment(&self, [u, v]: [NodeId; 2]) -> Option<crate::RejectWhere> {
+        match (self.0.get(&u), self.0.get(&v)) {
+            (Some(a), Some(b)) => Some(crate::RejectWhere::Segment([a.0, b.0])),
+            (Some(a), None) | (None, Some(a)) => Some(crate::RejectWhere::Point(a.0)),
+            (None, None) => None,
+        }
+    }
+}
 
 /// **A ring edge's identity in node space** — "a line is unordered, a circle is ordered" (`Wall`
 /// is the type half, [`EdgeKey`] the handle-space half; this is the node-space half), and the one

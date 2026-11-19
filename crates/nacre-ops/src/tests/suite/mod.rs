@@ -1155,6 +1155,7 @@ mod cylinder_classes;
 mod cylinder_gate;
 mod cylinder_ops;
 mod extrude;
+mod face_bounds;
 mod frame_chains;
 mod frames;
 mod loop_nesting;

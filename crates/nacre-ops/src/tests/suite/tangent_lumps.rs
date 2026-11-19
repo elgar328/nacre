@@ -73,6 +73,19 @@ fn slab_and_rod_on_two_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     )
 }
 
+/// [`slab_and_rod_on_two_walls`] turned off the axes: the slab between the walls `3x + 4y = ±5`
+/// (the parallelogram `(−3, 1), (1, −2), (3, −1), (−1, 2)`, area ten) on `z ∈ [0, 2]`, and the same
+/// rod, which touches the walls at `±(3/5, 4/5)` — points no axis-aligned sample of its circle
+/// lands on.
+fn slab_and_rod_on_two_slanted_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let quad = Profile2d::polygon(vec![p(-3.0, 1.0), p(1.0, -2.0), p(3.0, -1.0), p(-1.0, 2.0)])
+        .expect("a parallelogram");
+    (
+        sweep_from(m, quad, 0.0, 2.0),
+        sweep_from(m, circle_profile([0.0, 0.0], 1.0), -1.0, 4.0),
+    )
+}
+
 /// The plate `[0, 4] × [0, 4]`, two tall, and the unit pin about `(2, 3)` as tall: the pin touches
 /// the wall `y = 4` alone.
 fn plate_and_pin_on_one_wall(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
@@ -175,6 +188,33 @@ fn lumps_meeting_only_on_tangent_lines() {
             let got = run(&mut m, op, a, b);
             check(&format!("{name} {op:?}"), &m, got, &want);
         }
+    }
+}
+
+/// **[`a_slab_and_the_rod_on_two_of_its_walls`] between slanted walls** — the same faces and lumps,
+/// the slab's area ten. The touch points sit where the rod's circle meets the walls at no axis
+/// angle, so a cut the arrangement missed there is not one a mesh sample would land on: what holds
+/// the top and bottom in two faces each is the touch being a vertex, and the result contract's
+/// face-bounds arm (`FaceBoundsMeet`) is what refuses it if not.
+#[test]
+fn a_slab_and_the_rod_on_two_of_its_slanted_walls() {
+    use super::scoreboard::Op;
+    let every_boolean = [
+        (Op::Fuse, counted(&[20.0 + 2.0 * PI], &[12])),
+        (Op::CutAb, counted(&[10.0 - PI, 10.0 - PI], &[6, 6])),
+        (Op::CutBa, counted(&[PI, PI], &[3, 3])),
+        (Op::Common, counted(&[2.0 * PI], &[3])),
+    ];
+    for (op, want) in every_boolean {
+        let mut m = Model::new();
+        let (a, b) = slab_and_rod_on_two_slanted_walls(&mut m);
+        let got = run(&mut m, op, a, b);
+        check(
+            &format!("a slab and the rod on two of its slanted walls {op:?}"),
+            &m,
+            got,
+            &want,
+        );
     }
 }
 

@@ -715,6 +715,29 @@ fn arc_side(
     Ok(side * up * way * jd.planes[p].frame_sign)
 }
 
+/// **The way out a face's walk takes from an arrival** — of the departures `ways` leaving one
+/// node, the first clockwise from the arrival turned back (`back`): the walk keeps the face on its
+/// left, so it leaves by the departure that bounds the face's wedge on the arrival's other side.
+/// The coplanar merge walks a merged face by it, and a result face's loop must agree with it
+/// wherever the loop passes a node more than once (`assembly::face_bounds_meet`). Ordered by
+/// [`angular_order`] — ties by curvature, and two departures on one ray are `UnorderedEdges`.
+/// Returns an index into `ways`.
+pub(crate) fn way_out(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    back: &EdgeDir,
+    ways: &[EdgeDir],
+) -> Result<usize, BoolError> {
+    let mut dirs = Vec::with_capacity(ways.len() + 1);
+    dirs.push(back.clone());
+    dirs.extend(ways.iter().cloned());
+    // The order starts at `back` (index 0), so its last entry is `back`'s clockwise neighbour.
+    match angular_order(jd, p, &dirs)?.last() {
+        Some(&k) if k > 0 => Ok(k - 1),
+        _ => Err(reject(RejectReason::UnorderedEdges)),
+    }
+}
+
 /// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
 /// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
 /// given as `(fp, s)`. The signed turn between edges i and j is [`departure_turn`].

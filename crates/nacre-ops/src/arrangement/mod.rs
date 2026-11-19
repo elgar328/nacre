@@ -101,7 +101,7 @@ use crossings::*;
 pub(crate) use per_class::MIXED_CLASS_AUDIT;
 use per_class::{arrange_class, split_class_edges};
 pub(crate) use result::*;
-pub(crate) use rulings::*;
+use rulings::*;
 pub(crate) use setup::*;
 use sides::*;
 pub(crate) use split::*;

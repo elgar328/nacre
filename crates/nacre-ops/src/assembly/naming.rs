@@ -176,6 +176,7 @@ pub(crate) fn name_result_vertices(
     // whichever local derivation happens to fail first on its unnameable corners: a
     // self-touching body's pinch line cannot be honestly named by any face-local rule (its
     // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured).
+    let reach = node_reach(seam);
     {
         let g = &grouping;
         let body_comps: Vec<Vec<usize>> =
@@ -184,8 +185,9 @@ pub(crate) fn name_result_vertices(
         for (i, lf) in faces.iter().enumerate() {
             by_comp_lf[g.labels[i]].push(lf);
         }
-        self_touch_reject(jd, cyls, seam, &body_comps, &by_comp_lf, tg)?;
+        self_touch_reject(jd, cyls, &reach, &body_comps, &by_comp_lf, tg)?;
     }
+    face_bounds_meet(jd, cyls, &reach, faces)?;
     // **A result vertex is named by the faces that meet it.**
     //
     // The arrangement names a point by a canonical plane triple — lexicographically first among
@@ -282,4 +284,18 @@ pub(crate) fn name_result_vertices(
         per_solid: per_solid.or(subdivided),
         defs: def_triple,
     })
+}
+
+/// [`NodeReach`] off the seam table.
+fn node_reach(seam: &[SeamVertex]) -> NodeReach {
+    NodeReach(
+        seam.iter()
+            .map(|sv| {
+                (
+                    sv.triple,
+                    (sv.cache.coord(), crate::planes::cache_reach(&sv.cache)),
+                )
+            })
+            .collect(),
+    )
 }

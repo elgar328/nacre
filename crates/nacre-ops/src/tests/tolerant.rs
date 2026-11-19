@@ -1917,6 +1917,22 @@ mod name_integer_road {
         *out.first().expect("the slice leaves material")
     }
 
+    /// **The wide cap beside an unmoved cuboid `[-1, 5] × [-1, 5] × [-1, 4]`, one table** — the
+    /// tool on the wide datum of `m` and the cuboid, both operands' faces classed together (the
+    /// shape a boolean of the two would judge): every cuboid class is narrow and named in the
+    /// world, and the tool's base cap is wide and named in the world.
+    fn wide_cap_beside_a_cuboid(m: &mut Model) -> Vec<WorkingPlane> {
+        let tool = wide_datum_tool(m, 0.4, 1.2).expect("a wide datum carries a tool");
+        let cub = crate::fixtures::cuboid(m, [-1.0, -1.0, -1.0], [5.0, 5.0, 4.0]);
+        let faces: Vec<crate::planes::FaceRow> = collect_planes(m, cub)
+            .unwrap()
+            .into_iter()
+            .chain(collect_planes(m, tool).unwrap())
+            .collect();
+        let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+        crate::planes::dense_planes(&faces, &canon).0
+    }
+
     /// Whether the name-integer road opens for these planes with a wide one among them — the
     /// fixture-validity probe (`Judge::name_rows`' condition plus the wide plane this module is
     /// about; a fixture where no question passes it would run the differential against nothing).
@@ -1978,15 +1994,7 @@ mod name_integer_road {
         for arm in ["world", "rotated", "mirrored"] {
             let mut m = wf_pocket_model();
             let named: Vec<WorkingPlane> = if arm == "world" {
-                let tool = wide_datum_tool(&mut m, 0.4, 1.2).expect("a wide datum carries a tool");
-                let cub = crate::fixtures::cuboid(&mut m, [-1.0, -1.0, -1.0], [5.0, 5.0, 4.0]);
-                let faces: Vec<crate::planes::FaceRow> = collect_planes(&m, cub)
-                    .unwrap()
-                    .into_iter()
-                    .chain(collect_planes(&m, tool).unwrap())
-                    .collect();
-                let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
-                crate::planes::dense_planes(&faces, &canon).0
+                wide_cap_beside_a_cuboid(&mut m)
             } else {
                 let sliced = cuboid_sliced_by_the_wide_plane(&mut m);
                 let moved = if arm == "rotated" {
@@ -2280,6 +2288,93 @@ mod name_integer_road {
                 "{family} {label}: a starved judge without names must come back empty-handed"
             );
         }
+    }
+
+    /// **A crossing on a ruling through a class with no narrow world statement fails by its
+    /// cause** (`combinatorics::crossing_on_ruling`) — `Width` for a
+    /// statement past `Rat`, `Undecided` for none; never `NoCrossing`, which is a proof. Here
+    /// because the one table with a real wide class is this module's (`wide_cap_beside_a_cuboid`).
+    /// A cylinder about `z` through `(5, 2)`, radius `1`, which the
+    /// cuboid's wall `x = 5` sections: its cap `z = −1` names the crossing on that wall's ruling
+    /// (the control). The wide cap fails by width as the plane crossing the ruling, and as the
+    /// wall on either road (two roots, or the tangent's one) — it holds no ruling of this
+    /// cylinder, and the row is that the width is read first. The cap with its world statement
+    /// struck from a copy of the table fails by the cause struck: none, or one too wide.
+    #[test]
+    fn a_ruling_crossing_through_an_unread_class_fails_by_its_cause() {
+        use crate::combinatorics::{RulingNameFail, crossing_on_ruling};
+        let mut m = wf_pocket_model();
+        let planes = wide_cap_beside_a_cuboid(&mut m);
+        let jd = crate::planes::test_judge(&planes);
+        let ri = Rat::from_int;
+        // The class with this normal's zero pattern through this point.
+        let class = |n: [i128; 3], p: [Rat; 3]| -> usize {
+            (0..planes.len())
+                .find(|&c| {
+                    jd.world_rat(c).is_some_and(|w| {
+                        (0..3).all(|i| (w[i] == ri(0)) == (n[i] == 0))
+                            && nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &p)
+                                .and_then(|d| d.checked_add(w[3]))
+                                == Some(ri(0))
+                    })
+                })
+                .expect("the cuboid holds that plane")
+        };
+        let wall = class([1, 0, 0], [ri(5), ri(0), ri(0)]);
+        let cap = class([0, 0, 1], [ri(0), ri(0), ri(-1)]);
+        let wide = (0..planes.len())
+            .find(|&c| {
+                planes[c]
+                    .world
+                    .as_ref()
+                    .is_ok_and(|w| w.name.narrow().is_none())
+            })
+            .expect("premise: the tool's cap is named in the world, past `Rat`");
+        let def = nacre_topo::CylinderDef::new(
+            [ri(5), ri(2), ri(0)],
+            [ri(0), ri(0), ri(1)],
+            [ri(1), ri(0), ri(0)],
+            nacre_exact::BigRat::from(ri(1)),
+        )
+        .expect("a cylinder");
+        let struck = |fail: nacre_topo::WorldFail| {
+            let mut t = planes.clone();
+            t[cap].world = Err(fail);
+            t
+        };
+        let (unstated, too_wide) = (
+            struck(nacre_topo::WorldFail::Unstated),
+            struck(nacre_topo::WorldFail::Width),
+        );
+        let ask = |t: &[WorkingPlane], wc, fc, side| {
+            crossing_on_ruling(&crate::planes::test_judge(t), &def, wc, fc, 0, side).err()
+        };
+        assert!(
+            ask(&planes, cap, wall, 1).is_none(),
+            "the control: the cap names its crossing"
+        );
+        use RulingNameFail::{Undecided, Width};
+        let rows = [
+            (
+                "wide crossing plane",
+                ask(&planes, wide, wall, 1),
+                Some(Width),
+            ),
+            ("wide wall", ask(&planes, cap, wide, 1), Some(Width)),
+            ("wide tangent wall", ask(&planes, cap, wide, 0), Some(Width)),
+            (
+                "no statement",
+                ask(&unstated, cap, wall, 1),
+                Some(Undecided),
+            ),
+            (
+                "a statement too wide",
+                ask(&too_wide, cap, wall, 1),
+                Some(Width),
+            ),
+        ];
+        let wrong: Vec<_> = rows.iter().filter(|(_, got, want)| got != want).collect();
+        assert!(wrong.is_empty(), "rows answered otherwise: {wrong:?}");
     }
 }
 

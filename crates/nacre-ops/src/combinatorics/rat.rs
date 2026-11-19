@@ -255,15 +255,31 @@ pub(crate) fn rim_arc_of(
     .unwrap_or(crate::planes::Theta::Whole)
 }
 
+/// **The box of an arc edge on class `wc`, `ends` counter-clockwise about the axis** — the arc's
+/// own ([`arc_box_rat`] over its angle, [`rim_arc_of`] about the circle's centre on `wc`), or its
+/// whole circle's where the arc's own cannot be formed, which holds it too. `None` where neither
+/// has an exact description.
+pub(crate) fn arc_edge_box_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+    ends: [NodeId; 2],
+) -> Option<[[nacre_exact::Rat; 3]; 2]> {
+    let theta = circle_centre_rat(jd, wc, def).map_or(crate::planes::Theta::Whole, |c| {
+        rim_arc_of(jd, cyls, &c, &def.dir(), ends)
+    });
+    arc_box_rat(jd, wc, def, theta)
+        .or_else(|| arc_box_rat(jd, wc, def, crate::planes::Theta::Whole))
+}
+
 /// **Points whose box holds a ring**, in the judge's interval arithmetic — every corner, whatever
-/// names it ([`node_point_hp`]), and for every arc the corners of its own box ([`arc_box_rat`] —
-/// its two ends as the arc's angle, or the whole circle where they have no rational spelling). A
+/// names it ([`node_point_hp`]), and for every arc the corners of its box ([`arc_edge_box_rat`]). A
 /// straight edge lies in its two corners' hull and an arc in its box, so the ring lies in the hull
 /// of these points, and a point outside their box on some axis is outside the ring. **The arc's
 /// ends are read about the axis**: a ring edge runs `node → to`, counter-clockwise about the axis
 /// when [`ArcCarrier::ccw`] says so; read the other way they would name the complementary arc,
-/// whose box is not a bound on this one. `wc` is the ring's class — an arc's circle centre is where its
-/// axis meets that plane. `None` for a point the precision could not separate, or a class or
+/// whose box is not a bound on this one. `wc` is the ring's class. `None` for a point the precision could not separate, or a class or
 /// circle with no exact description.
 ///
 /// Read backwards on a plate whose arc bulges past its corners' hull, the box proves a ray clear
@@ -285,13 +301,7 @@ pub(crate) fn ring_box_points_hp(
             } else {
                 [e.to, e.node]
             };
-            let theta = circle_centre_rat(jd, wc, &ac.def)
-                .map_or(crate::planes::Theta::Whole, |c| {
-                    rim_arc_of(jd, cyls, &c, &ac.def.dir(), ends)
-                });
-            // An arc whose own box cannot be formed takes its circle's, which holds it too.
-            let [lo, hi] = arc_box_rat(jd, wc, &ac.def, theta)
-                .or_else(|| arc_box_rat(jd, wc, &ac.def, crate::planes::Theta::Whole))?;
+            let [lo, hi] = arc_edge_box_rat(jd, cyls, wc, &ac.def, ends)?;
             for bits in 0..8usize {
                 out.push(std::array::from_fn(|k| {
                     let v = if bits >> k & 1 == 0 { lo[k] } else { hi[k] };

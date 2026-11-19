@@ -64,6 +64,15 @@ impl NodeId {
         self.0
     }
 
+    /// **Whether plane `w` is one this name is spelled with** — [`name_planes`] asked of one
+    /// plane, without building the list (a point named by a plane lies on it).
+    pub(crate) fn holds_plane(self, w: usize) -> bool {
+        match self.0 {
+            NodeKind::ThreePlane(t) => t.contains(&w),
+            NodeKind::Pierce { planes, .. } => planes.contains(&w),
+        }
+    }
+
     /// The canonical name of the point where three plane classes meet.
     ///
     /// **Sorting is *this variant's* canonicalization, not the definition of canonical** — see

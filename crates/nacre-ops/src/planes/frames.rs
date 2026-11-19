@@ -75,14 +75,24 @@ pub(crate) struct WorkingPlane {
 }
 
 impl WorkingPlane {
-    /// **Why a reader that needs this class's exact world statement has none** — the cause as a
-    /// refusal: a statement `Rat` cannot hold is width (`WitnessNotRational`), a truth that states
-    /// no rational world image is geometry (`CylinderGateUndecided`). A `Wide` name has a world
-    /// statement but no narrow projection, so it is width too.
-    pub(crate) fn world_absent(&self) -> RejectReason {
+    /// **Why a reader that needs this class's narrow world statement has none** — the one place
+    /// the cause is decided: a truth that states no rational world image is geometry (`Unstated`),
+    /// a statement `Rat` cannot hold is width (`Width`). A `Wide` name has a world statement but no
+    /// narrow projection, so it is width too. Each road says the cause in its own words
+    /// ([`Self::world_absent`], `combinatorics::RulingNameFail`).
+    pub(crate) fn world_absent_cause(&self) -> nacre_topo::WorldFail {
         match self.world {
-            Ok(_) | Err(nacre_topo::WorldFail::Width) => RejectReason::WitnessNotRational,
-            Err(nacre_topo::WorldFail::Unstated) => RejectReason::CylinderGateUndecided,
+            Ok(_) | Err(nacre_topo::WorldFail::Width) => nacre_topo::WorldFail::Width,
+            Err(nacre_topo::WorldFail::Unstated) => nacre_topo::WorldFail::Unstated,
+        }
+    }
+
+    /// [`Self::world_absent_cause`] as a refusal: width is `WitnessNotRational`, geometry
+    /// `CylinderGateUndecided`.
+    pub(crate) fn world_absent(&self) -> RejectReason {
+        match self.world_absent_cause() {
+            nacre_topo::WorldFail::Width => RejectReason::WitnessNotRational,
+            nacre_topo::WorldFail::Unstated => RejectReason::CylinderGateUndecided,
         }
     }
 

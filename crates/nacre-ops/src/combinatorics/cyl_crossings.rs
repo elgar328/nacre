@@ -262,7 +262,8 @@ pub(crate) fn theta_between(
 /// line roads ask of an arc ([`ClassLine`]): the walk's *how many* (its length, where the ends
 /// cannot say) and a crossing's *which* (its `nth` entry, [`Feature::Crossing`]).
 ///
-/// The arc lies in the face's own plane `fc` (a cap's ⊥ plane), so the meet decides first:
+/// The arc lies in the face's own plane `fc` — a cap across the axis, or a slanted face whose arc is
+/// an ellipse; the meet and the containment read either alike — so the meet decides first:
 /// - two parallel planes (`fc` against another ⊥ class — every cap meets its twin this way), a
 ///   line missing the circle, or a **tangent** one cross nothing. The tangent case is common: a
 ///   fillet's straight edge lies on `L` and its arc leaves the end tangentially, a touch with no
@@ -473,9 +474,9 @@ pub(crate) fn arc_touch(
 /// crosses the class — `cycle_on_class`'s crossing arm asks this very door with the ruling's own
 /// side — so the planar scan and the lateral's walk cannot name it apart.
 ///
-/// `Err` says why there is no such point, in two causes ([`RulingNameFail`]): a description past
-/// `Rat`, or classes that name no crossing of that wall's ruling — a wall not parallel to the
-/// axis, no pair of roots (or no double root for a tangent wall), or both roots on one side (the
+/// `Err` says why there is no such point, in three causes ([`RulingNameFail`]): a description past
+/// `Rat`, a class with no world statement to read, or classes that name no crossing of that wall's
+/// ruling — a wall parallel to the axis, no pair of roots (or no double root for a tangent wall), or both roots on one side (the
 /// two rulings of a wall within the radius — through the axis or offset from it — are symmetric
 /// about the plane through the axis with normal `m × n̂`, so `ruling_side` tells them apart).
 pub(crate) fn crossing_on_ruling(
@@ -488,7 +489,11 @@ pub(crate) fn crossing_on_ruling(
 ) -> Result<NodeId, RulingNameFail> {
     use RulingNameFail::{NoCrossing, Undecided, Width};
     use nacre_judge::cylinder::LineMeet;
-    let w = jd.world_rat(wc).ok_or(NoCrossing)?;
+    // A wall with no narrow world statement is unread, by its cause
+    // (`WorkingPlane::world_absent_cause`).
+    let Some(w) = jd.world_rat(wc) else {
+        return Err(jd.planes[wc].world_absent_cause().into());
+    };
     if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) == nacre_exact::Orient::Zero {
         return Err(NoCrossing);
     }
@@ -498,14 +503,15 @@ pub(crate) fn crossing_on_ruling(
     if side == 0 {
         return match meet {
             LineMeet::Tangent(..) => Ok(NodeId::pierce(wc, fc, cyl, QuadRoot::Double)),
-            LineMeet::Overflow => Err(Width),
+            LineMeet::Overflow | LineMeet::Wide => Err(Width),
+            LineMeet::Undecided => Err(Undecided),
             _ => Err(NoCrossing),
         };
     }
     let roots = match meet {
         LineMeet::Pair(roots) => roots,
         LineMeet::Undecided => return Err(Undecided),
-        LineMeet::Overflow => return Err(Width),
+        LineMeet::Overflow | LineMeet::Wide => return Err(Width),
         _ => return Err(NoCrossing),
     };
     // A root whose side overflowed is not on `side` as far as this can tell; the other root may
@@ -538,13 +544,41 @@ pub(crate) fn crossing_on_ruling(
 /// words (the tracer into its decline).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RulingNameFail {
-    /// A description past `Rat`: the meet of the two planes and the cylinder, or a root's side
-    /// of the wall, overflowed.
+    /// A description past `Rat`: a class's world name, the meet of the two planes and the
+    /// cylinder, or a root's side of the wall.
     Width,
-    /// The classes name no crossing of that wall's ruling — or a class has no narrow world
-    /// statement, which the cylinder gate demands of every class it does not section.
+    /// The classes name no crossing of that wall's ruling — proven, never a statement missing.
     NoCrossing,
-    /// A wall with no world statement (one that sections the cylinder): the roots' boxes could not
-    /// say which ruling each is on.
+    /// A class with no world statement: the wall's own, or the face's where the roots' boxes
+    /// could not say which ruling each is on, or a tangency the intervals cannot state.
     Undecided,
+}
+
+/// The cause a class's missing world statement names ([`crate::planes::WorkingPlane::world_absent_cause`]),
+/// as this road's cause.
+impl From<nacre_topo::WorldFail> for RulingNameFail {
+    fn from(f: nacre_topo::WorldFail) -> Self {
+        match f {
+            nacre_topo::WorldFail::Unstated => Self::Undecided,
+            nacre_topo::WorldFail::Width => Self::Width,
+        }
+    }
+}
+
+/// Which of the two rulings of `wall` this pierce node sits on, `0` being a **tangent** wall's
+/// single ruling — [`ruling_side_signed`] asked of the point the name
+/// denotes. The one spelling:
+/// the arrangement's ruling walk and the chart's `ruling_name` read it, and a result face's bounds
+/// (`assembly::face_bounds_meet`).
+///
+/// The `0` is asked of the point, not read off the name's root (`Double`): see
+/// [`ruling_side_signed`] for why the two do not agree.
+pub(crate) fn node_ruling_side(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wall: usize,
+    n: NodeId,
+) -> Option<i8> {
+    let (_, cyl, _) = pierce_name(n)?;
+    pierce_meet(jd, cyl, def, n)?.ruling_side(jd, wall, def)
 }

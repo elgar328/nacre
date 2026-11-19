@@ -246,7 +246,7 @@ pub(crate) struct Event {
 /// drift apart.
 type RulingName = (usize, i8);
 
-/// **Which of a wall's two rulings a pierce node lies on** — `arrangement::node_ruling_side`, the
+/// **Which of a wall's two rulings a pierce node lies on** — [`combinatorics::node_ruling_side`], the
 /// one spelling (`ruling_side` asked of a name) the chart's `Wall::Ruling { side, plane }` states,
 /// `plane` the wall it was asked against. A copy of that function's body here (the same
 /// `pierce_meet` + `ruling_side`) would be a second spelling one module apart.
@@ -275,7 +275,7 @@ fn ruling_side_of(
         return Err(stages);
     }
     jd.world_rat(wall).ok_or(stages)?;
-    crate::arrangement::node_ruling_side(jd, def, wall, n).ok_or(RejectReason::WitnessNotRational)
+    combinatorics::node_ruling_side(jd, def, wall, n).ok_or(RejectReason::WitnessNotRational)
 }
 
 /// **One cell of the chart** — an axis interval crossed with a slab, the θ between two

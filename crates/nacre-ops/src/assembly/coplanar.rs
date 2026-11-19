@@ -342,8 +342,8 @@ fn merge_component(
     //    there, or a hole touching the outer at a vertex, which is the same face. The next edge is
     //    the one bounding the sector the walk arrived in: with the region on the left of travel
     //    (step 4 reads an outer ring as winding +1 in `wc`'s frame), the first way out clockwise
-    //    from the edge it came in on — the cyclic order the arrangement's own cell walk reads
-    //    (`dir_at`, `angular_order`). Asked only at such a node, so a group with none threads as a
+    //    from the edge it came in on (`combinatorics::way_out`) — the cyclic order the
+    //    arrangement's own cell walk reads. Asked only at such a node, so a group with none threads as a
     //    sequence of single steps. A node whose order cannot be read leaves the group as it is
     //    (the abstention above).
     // The edge as the ring that carries it states it — looked up only at such a node.
@@ -380,12 +380,11 @@ fn merge_component(
                         let back = combinatorics::dir_at(jd, cyls, wc, &edge_of(&cur)?, v)
                             .ok()?
                             .reversed();
-                        let mut dirs = vec![back];
+                        let mut dirs = Vec::with_capacity(ways.len());
                         for w in ways {
                             dirs.push(combinatorics::dir_at(jd, cyls, wc, &edge_of(w)?, v).ok()?);
                         }
-                        let order = combinatorics::angular_order(jd, wc, &dirs).ok()?;
-                        Some(ways[order[order.len() - 1] - 1])
+                        Some(ways[combinatorics::way_out(jd, wc, &back, &dirs).ok()?])
                     })() else {
                         return Ok(None);
                     };

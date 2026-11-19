@@ -311,7 +311,7 @@ fn unify_then_dissolve(faces: Vec<LocalFace>, p: &[WorkingPlane]) -> Vec<LocalFa
 /// right-hand normal is `n_out`. The merge reads more than `n_out` — `loop_winding` and
 /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
 /// dummy triangle would make those answers meaningless.
-fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingPlane {
+pub(super) fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingPlane {
     let mut at = [0.0; 3];
     at[axis] = d;
     let origin = Point3::from_array(at);
