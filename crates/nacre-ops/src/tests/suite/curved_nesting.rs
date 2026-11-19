@@ -33,6 +33,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 3] {
                 grazed: Vec::new(),
                 records: Vec::new(),
                 boxes: Vec::new(),
+                parting: Vec::new(),
             }
         })
         .collect();

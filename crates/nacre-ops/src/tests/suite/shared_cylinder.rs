@@ -492,11 +492,11 @@ fn wants(name: &str) -> [Want; 4] {
             none(),
         ],
         // The pin's circle is also tangent to the plate's top wall, at `(3, 2)`: the plate less the
-        // pin is two lumps meeting only along that line, refused as one body touching itself (todo
-        // 「접선에서만 만나는 덩이」).
+        // pin is two lumps meeting only along that line — the corner of five faces and the rest of
+        // six, eleven as OCCT builds them.
         "a filleted plate and its fillet's pin" => [
             counted(&[plate + PI], &[8]),
-            refused(RejectReason::SelfTouchingResult),
+            counted(&[2.0 - PI / 2.0, 12.0 - PI], &[5, 6]),
             counted(&[PI], &[3]),
             counted(&[2.0 * PI], &[3]),
         ],

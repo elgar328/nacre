@@ -476,6 +476,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
                 grazed: Vec::new(),
                 records: Vec::new(),
                 boxes: Vec::new(),
+                parting: Vec::new(),
             }
         })
         .collect();

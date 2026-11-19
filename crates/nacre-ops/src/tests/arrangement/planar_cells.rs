@@ -709,6 +709,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
                     grazed: Vec::new(),
                     records: Vec::new(),
                     boxes: Vec::new(),
+                    parting: Vec::new(),
                 }
             })
             .collect()

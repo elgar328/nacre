@@ -462,12 +462,25 @@ pub(crate) fn boolean(
         geom,
         plane_ix,
         class_owner,
-        cyls,
+        mut cyls,
         tangencies,
         standard,
         notes,
         ..
     } = timed!(SETUP, plane_index_setup(model, a, b))?;
+    // **The tangent lines this operation parts the material at** — the gate states each row's
+    // geometry and the operation reads it, once, for this and for the verdict
+    // ([`Tangencies::pinches`], [`WorkingCyl::parting`]): on the stretch where both solids run
+    // through the line, the wedges alone are kept.
+    let tg = Tangencies {
+        kind,
+        rows: &tangencies,
+    };
+    for (t, shape) in tg.pinches() {
+        if shape == Pinch::Wedges && !cyls[t.cyl].parting.contains(&t.wall) {
+            cyls[t.cyl].parting.push(t.wall);
+        }
+    }
     // The operation's judging, made once: the dense plane table, the standard it is held to, and
     // the collector. Everything below reaches predicates through this, so there is exactly one
     // place where "how this boolean judges" is decided.
@@ -579,21 +592,7 @@ pub(crate) fn boolean(
 
         timed!(
             ASSEMBLE,
-            assemble_fuse_cut(
-                model,
-                a,
-                b,
-                &jd,
-                &seam,
-                &faces,
-                &cyls,
-                &rims,
-                crate::assembly::Tangencies {
-                    kind,
-                    rows: &tangencies
-                },
-                &mut memo,
-            )
+            assemble_fuse_cut(model, a, b, &jd, &seam, &faces, &cyls, &rims, tg, &mut memo,)
         )
     };
     let out = run(model);

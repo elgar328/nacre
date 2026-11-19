@@ -708,10 +708,10 @@ pub(super) fn trace_one(
                 // The claim is checked at the end of this walk rather than trusted — see
                 // `curves_owed` — because an element silently missing does not decline, it
                 // corrupts every label on the class.
-                // Except a **tangent** ruling (`side == 0`): the lateral touches this
-                // class along it and crosses nowhere, so no ruling trace will ever back it — the
-                // seated face is the only face on this class with that line as an edge, and it
-                // states the piece itself, `Seated` like its straight edges. `up` says which end
+                // Except a **tangent** ruling (`side == 0`): the face's own lateral touches this
+                // class along it and crosses nowhere, and ends there, so no ruling trace of it backs
+                // the line — the seated face is its solid's only face on this class with that line
+                // as an edge, and it states the piece itself, `Seated` like its straight edges. `up` says which end
                 // is the lower one along the axis (a ruling [`Piece`]'s `end` ascends).
                 if let crate::combinatorics::Wall::Ruling {
                     cyl, side: 0, up, ..

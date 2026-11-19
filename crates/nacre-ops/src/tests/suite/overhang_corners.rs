@@ -549,6 +549,7 @@ fn vertex_names(
                 grazed: Vec::new(),
                 records: Vec::new(),
                 boxes: Vec::new(),
+                parting: Vec::new(),
             }
         })
         .collect();

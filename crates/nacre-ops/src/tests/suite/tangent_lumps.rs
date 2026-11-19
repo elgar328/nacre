@@ -2,8 +2,12 @@
 //! near a tangent line is the two wedges between the cylinder and the wall it touches. Each family
 //! is run as Fuse, both Cuts and Common:
 //!
-//! - a plate less the pin tangent to three of its walls: the material is three lumps, each pair
-//!   meeting only along the line where the pin touches a wall;
+//! - a plate less the pin tangent to three of its walls: the material is three lumps, the two
+//!   corners each meeting the rest only along the line where the pin touches a wall;
+//! - the same with a lid fused over the plate, wider than it: the lid joins the three lumps, one
+//!   body whose lines of contact are each an edge four of its faces use;
+//! - the same plate stepped down at its far end, the step's top crossing the lines midway: three
+//!   lumps again;
 //! - a plate less a pin tangent to one wall, the control: the two wedges join round the pin, one
 //!   body touching itself along the line;
 //! - a slab less a rod tangent to two opposite walls and longer than the slab: two lumps, the lines
@@ -79,7 +83,36 @@ fn plate_and_pin_on_one_wall(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     )
 }
 
-const FAMILIES: [(&str, Build); 2] = [
+/// [`plate_and_pin_on_three_walls`] with a lid `[−1, 5] × [−1, 3]` on `z ∈ [2, 3]` fused on: the
+/// lid joins the three lumps over the lines' upper ends.
+fn lidded_plate_and_pin_on_three_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let (plate, pin) = plate_and_pin_on_three_walls(m);
+    let lid = sweep_from(m, rect(-1.0, -1.0, 5.0, 3.0), 2.0, 1.0);
+    let lidded = crate::boolean(m, BoolKind::Fuse, plate, lid).expect("the lid")[0];
+    (lidded, pin)
+}
+
+/// [`plate_and_pin_on_three_walls`] stepped down to one tall on `x ∈ [0, 1]`: the step's top
+/// `z = 1` crosses the three lines midway.
+fn stepped_plate_and_pin_on_three_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let low = sweep_from(m, rect(0.0, 0.0, 1.0, 2.0), 0.0, 1.0);
+    let high = sweep_from(m, rect(1.0, 0.0, 4.0, 2.0), 0.0, 2.0);
+    let stepped = crate::boolean(m, BoolKind::Fuse, low, high).expect("the step")[0];
+    (
+        stepped,
+        sweep_from(m, circle_profile([3.0, 1.0], 1.0), 0.0, 2.0),
+    )
+}
+
+const FAMILIES: [(&str, Build); 4] = [
+    (
+        "a lidded plate and the pin on three of its walls",
+        lidded_plate_and_pin_on_three_walls,
+    ),
+    (
+        "a stepped plate and the pin on three of its walls",
+        stepped_plate_and_pin_on_three_walls,
+    ),
     (
         "a plate and the pin on three of its walls",
         plate_and_pin_on_three_walls,
@@ -99,11 +132,10 @@ fn wants(name: &str) -> [Want; 4] {
         // The pin is inside the plate: the union is the plate, the common the pin. The plate less
         // the pin is three lumps meeting along the three lines of contact — the left one of six
         // faces and the two corners of five, `2(6 − π/2)` and `2(1 − π/4)` twice, as OCCT builds
-        // them (sixteen faces, `2(8 − π)`) — refused as one body touching itself (todo
-        // 「접선에서만 만나는 덩이」).
+        // them (sixteen faces, `2(8 − π)`): the line of contact is an edge of both lumps.
         "a plate and the pin on three of its walls" => [
             counted(&[16.0], &[6]),
-            refused(RejectReason::SelfTouchingResult),
+            counted(&[2.0 - PI / 2.0, 2.0 - PI / 2.0, 12.0 - PI], &[5, 5, 6]),
             none(),
             counted(&[2.0 * PI], &[3]),
         ],
@@ -111,6 +143,22 @@ fn wants(name: &str) -> [Want; 4] {
         "a plate and the pin on one of its walls" => [
             counted(&[32.0], &[6]),
             refused(RejectReason::SelfTouchingResult),
+            none(),
+            counted(&[2.0 * PI], &[3]),
+        ],
+        // The lid joins the three lumps over the lines' upper ends: one body whose three lines of
+        // contact are each an edge four of its faces use (OCCT: one solid of twenty faces).
+        "a lidded plate and the pin on three of its walls" => [
+            counted(&[40.0], &[11]),
+            refused(RejectReason::NonManifoldResultEdge),
+            none(),
+            counted(&[2.0 * PI], &[3]),
+        ],
+        // The step's top crosses the three lines midway and joins nothing: three lumps as on the
+        // flat plate, the left one `10 − π` of eight faces (OCCT: the same volumes).
+        "a stepped plate and the pin on three of its walls" => [
+            counted(&[14.0], &[8]),
+            counted(&[2.0 - PI / 2.0, 2.0 - PI / 2.0, 10.0 - PI], &[5, 5, 8]),
             none(),
             counted(&[2.0 * PI], &[3]),
         ],
@@ -133,13 +181,13 @@ fn lumps_meeting_only_on_tangent_lines() {
 
 /// **A slab less a rod tangent to two of its walls and longer than it** — every boolean but the
 /// union (the module doc). The slab less the rod is two lumps meeting along the two lines, each
-/// `2(4 − π/2)` of six faces; refused as one body touching itself (todo 「접선에서만 만나는 덩이」).
+/// `2(4 − π/2)` of six faces, as OCCT builds them, the lines ending where the slab's faces end.
 /// The rod less the slab is its two ends, and the common the rod's middle.
 #[test]
 fn a_slab_and_the_rod_on_two_of_its_walls() {
     use super::scoreboard::Op;
     let none_of_the_union = [
-        (Op::CutAb, refused(RejectReason::SelfTouchingResult)),
+        (Op::CutAb, counted(&[8.0 - PI, 8.0 - PI], &[6, 6])),
         (Op::CutBa, counted(&[PI, PI], &[3, 3])),
         (Op::Common, counted(&[2.0 * PI], &[3])),
     ];

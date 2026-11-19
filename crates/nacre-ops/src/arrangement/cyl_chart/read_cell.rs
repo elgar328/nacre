@@ -122,7 +122,10 @@ impl Chart {
     /// is the conjunction of the two far sectors, so which cell lies on `+τ` is not asked. Two
     /// cusps whose floors and laterals each end on the line from either side meet there alone: the
     /// floors' far side is not kept, and the lateral is cut. A lateral keeping its inside (a
-    /// fillet, a boss) bounds one chamber between its halves and runs on.
+    /// fillet, a boss) bounds one chamber between its halves and runs on. A wall running through
+    /// the line where the operation parts the material along it — its class's knife
+    /// (`rulings::tangent_knife`) — is read the same way: its two halves are the line's two
+    /// spokes on that side, ending there in the result.
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
@@ -360,7 +363,7 @@ impl Chart {
         // marks are an instrument's field, so a wall says nothing there.
         let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
             let seg = self.theta.get(i)?;
-            // A tangent station has no chamber behind it to read: the face ends
+            // A tangent station has no chamber behind it to read: the wall's faces end
             // there, and its `label` is `None` by design — said by the side, not inferred.
             if seg.side == 0 {
                 return None;

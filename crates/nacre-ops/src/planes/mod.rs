@@ -601,6 +601,13 @@ pub(crate) struct WorkingCyl {
     /// (`combinatorics::arc_box_rat`), not against these. Built only when a nameless class asks;
     /// empty otherwise.
     pub(crate) boxes: Vec<[[nacre_exact::Rat; 3]; 2]>,
+    /// **The wall classes this boolean parts the material at along their tangent line** — not the
+    /// gate's: the gate states a tangency's geometry ([`Tangency`]) and knows no operation; the
+    /// boolean reads each row under its own `kind` ([`crate::assembly::pinch`]) and lists here the
+    /// walls whose row leaves the two wedges alone. That line is an edge of the result where it can
+    /// be one: the wall's class draws it as a knife (`arrangement::rulings_on_class`), and a circle
+    /// of this cylinder is cut where an edge on that wall touches it (`arrangement::split_circles`).
+    pub(crate) parting: Vec<usize>,
 }
 
 /// **What the gate tells the arrangement about one plane class and a cylinder** — an entry of

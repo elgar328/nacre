@@ -5,8 +5,9 @@ use super::*;
 ///
 /// Asked only after the circle road answered "no circle"; **empty** (silently) unless the gate
 /// **recorded** the pair — the wall within the radius (through the axis or offset from it), or
-/// touching the cylinder along one ruling, where the face states only its half of a plane-pair
-/// line on it ([`lateral_half_of_plane_pair_lines`]) — and declining rather than contributing
+/// touching the cylinder along one ruling, where the face states its half of a plane-pair line on
+/// it ([`lateral_half_of_plane_pair_lines`]) and, where the operation parts the material along that
+/// ruling, the knife it leaves there ([`tangent_knife`]) — and declining rather than contributing
 /// *partially* when it does but a piece cannot be stated — a half-contributed rectangle would
 /// leave the class's 1-skeleton dangling, which is a worse lie than an honest incomplete-trace
 /// mark.
@@ -38,18 +39,19 @@ pub(super) fn rulings_on_class(
     // wall class is a d=0 pair, and its coplanar bottom cap's chord lands on a line the plate
     // already traces. The rectangle goes exactly to the pairs whose record draws rulings.
     let sections = cyls.get(k).is_some_and(|cy| cy.sections_along(wc));
-    // **A class touching the cylinder along one ruling** draws no ruling piece — the tangent
-    // divides nothing — but where the face's own edge lies on that ruling with another plane
-    // across it, the lateral states its half of that plane-pair line, by the rule the secant
-    // rulings use, on the class's one ruling (`side = 0`).
+    // **A class touching the cylinder along one ruling** draws no ruling piece where the tangent
+    // divides nothing; where the operation parts the material along it, the lateral leaves its
+    // knife there. Where the face's own edge lies on that ruling with another plane across it, the
+    // lateral states its half of that plane-pair line, by the rule the secant rulings use, on the
+    // class's one ruling (`side = 0`).
     if cyls.get(k).is_some_and(|cy| cy.touches(wc)) {
         let Some(def) = cf.def.as_ref() else {
             return Err(DeclineKind::Ruling);
         };
-        let LateralShape { cycles, .. } = lateral_shape(jd, fl, def, k)?;
+        let shape = lateral_shape(jd, fl, def, k)?;
         let above = axis_above(jd, wc, def).ok_or(DeclineKind::Ruling)?;
         let mut grazes = Vec::new();
-        for (inner, ring) in &cycles {
+        for (inner, ring) in &shape.cycles {
             // A loop on another lateral states no plane-pair line (two laterals meeting are the
             // gate's to refuse, by name).
             let Some(nr) = ring.poly() else {
@@ -67,7 +69,12 @@ pub(super) fn rulings_on_class(
                 &mut grazes,
             )?;
         }
-        return Ok((Vec::new(), grazes));
+        let knife = if cyls[k].parting.contains(&wc) {
+            tangent_knife(jd, cf, def, wc, k, which, above, &shape, cyls, found)?
+        } else {
+            Vec::new()
+        };
+        return Ok((knife, grazes));
     }
     if !cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc)) {
         return Ok((Vec::new(), Vec::new()));
@@ -104,11 +111,6 @@ pub(super) fn rulings_on_class(
     let mat = SegKind::Transversal {
         mat: cf.orient_sign,
     };
-    // **Where two points stand on a ruling** — their sections' order on its generator, the one
-    // spelling ([`combinatorics::height_order_on_generator`]); a point it cannot place declines.
-    let order = |a: NodeId, b: NodeId| {
-        combinatorics::height_order_on_generator(jd, k, def, a, b).ok_or(DeclineKind::Ruling)
-    };
     let mut out = Vec::with_capacity(2);
     let mut grazes = Vec::new();
     for side in [1i8, -1i8] {
@@ -144,22 +146,7 @@ pub(super) fn rulings_on_class(
                     .map(|&(_, e, x)| (e, x)),
             );
         }
-        combinatorics::try_sort_by(&mut stations, |x, y| {
-            Ok(order(x.1, y.1)?.then(x.0.cmp(&y.0)))
-        })?;
-        let same: Vec<bool> = stations
-            .windows(2)
-            .map(|w| Ok(order(w[0].1, w[1].1)? == core::cmp::Ordering::Equal))
-            .collect::<Result<_, DeclineKind>>()?;
-        // Two names at one height on this ruling are one point — the order is exact. Recorded for
-        // the next round and read under the first name, as the plane road's sweep does.
-        for i in 0..same.len() {
-            if same[i] && stations[i].1 != stations[i + 1].1 {
-                found.record_same_point_traced(jd, cyls, stations[i].1, stations[i + 1].1)?;
-                stations[i + 1].1 = stations[i].1;
-            }
-        }
-        let pieces = sweep_line(&stations, &same, |n| n, mat)?;
+        let pieces = sweep_ruling(jd, def, k, &mut stations, mat, cyls, found)?;
         #[cfg(test)]
         if pieces
             .iter()
@@ -186,6 +173,130 @@ pub(super) fn rulings_on_class(
         }
     }
     Ok((out, grazes))
+}
+
+/// **The pieces of a ruling the lateral covers, swept over its stations** — the stations put in
+/// order along the generator (their sections' heights, the one spelling
+/// [`combinatorics::height_order_on_generator`]; a point it cannot place declines), two names at
+/// one height read as one point (an exact proof, recorded for the next round and read under the
+/// first name, as the plane road's sweep does), then [`sweep_line`] with `mat` where the face is.
+#[allow(clippy::too_many_arguments)]
+fn sweep_ruling(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    k: usize,
+    stations: &mut [(LineEvent, NodeId)],
+    mat: SegKind,
+    cyls: &[crate::planes::WorkingCyl],
+    found: &mut Aliases,
+) -> Result<Vec<([NodeId; 2], SegKind)>, DeclineKind> {
+    let order = |a: NodeId, b: NodeId| {
+        combinatorics::height_order_on_generator(jd, k, def, a, b).ok_or(DeclineKind::Ruling)
+    };
+    combinatorics::try_sort_by(stations, |x, y| Ok(order(x.1, y.1)?.then(x.0.cmp(&y.0))))?;
+    let same: Vec<bool> = stations
+        .windows(2)
+        .map(|w| Ok(order(w[0].1, w[1].1)? == core::cmp::Ordering::Equal))
+        .collect::<Result<_, DeclineKind>>()?;
+    for i in 0..same.len() {
+        if same[i] && stations[i].1 != stations[i + 1].1 {
+            found.record_same_point_traced(jd, cyls, stations[i].1, stations[i + 1].1)?;
+            stations[i + 1].1 = stations[i].1;
+        }
+    }
+    sweep_line(stations, &same, |n| n, mat)
+}
+
+/// **The knife a lateral leaves on a wall that touches it, where this boolean parts the material
+/// there** ([`crate::planes::WorkingCyl::parting`]) — the stretches of the tangent ruling the face
+/// runs through, each stated twice as a graze on the axis side: the face's two halves leave the
+/// wall along it and bend to the axis on both sides, two faces of one solid leaving the plane to
+/// one side, which is a knife ([`is_knife`]). Whether it is an edge of the class's faces is the
+/// knife's rule (`arrange_class`), and the chart reads the cells beside it only where it is.
+///
+/// The stretches are where the face's boundary crosses the ruling, swept along it
+/// ([`sweep_ruling`]): each whole rim, and each arc of a boundary cycle that holds the ruling's
+/// angle strictly inside ([`combinatorics::theta_place`] of the arc's point on it,
+/// [`combinatorics::crossing_on_ruling`]). A boundary that meets the ruling anywhere else — an arc
+/// ending on it, a node on it — or a line another class shares states no knife: the boolean is
+/// then judged with the line no edge (`assembly::tangency_reject`), which refuses it as today.
+#[allow(clippy::too_many_arguments)]
+fn tangent_knife(
+    jd: &Judge<'_, WorkingPlane>,
+    cf: &crate::planes::CylFaceInfo,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    k: usize,
+    which: SolidSide,
+    above: bool,
+    shape: &LateralShape,
+    cyls: &[crate::planes::WorkingCyl],
+    found: &mut Aliases,
+) -> Result<Vec<RulingTrace>, DeclineKind> {
+    use crate::combinatorics::{ThetaPlace, Wall};
+    // A line another plane class shares on this cylinder ([`crate::planes::SharedRuling`] — one of
+    // its classes cuts the lateral there) is a station of the chart already; this wall's halves
+    // belong in that station's star, which no reading states yet.
+    if cyls[k]
+        .shared
+        .iter()
+        .any(|sr| sr.line.0 == wc || sr.line.1 == wc)
+    {
+        return Ok(Vec::new());
+    }
+    let at = |c: usize| {
+        combinatorics::crossing_on_ruling(jd, def, c, wc, k, 0).map_err(|_| DeclineKind::Ruling)
+    };
+    let mut stations: Vec<(LineEvent, NodeId)> = Vec::new();
+    for &(c, _) in &shape.rims {
+        stations.push((LineEvent::Toggle, at(c)?));
+    }
+    for (_, ring) in &shape.cycles {
+        let Some(nr) = ring.poly() else {
+            return Ok(Vec::new());
+        };
+        let n = nr.triples.len();
+        for i in 0..n {
+            let a = nr.triples[i];
+            // A node on the ruling (`0`), or one this cannot place, is a boundary meeting it
+            // otherwise than by an arc across it.
+            if !matches!(node_ruling_side(jd, def, wc, a), Some(1 | -1)) {
+                return Ok(Vec::new());
+            }
+            let Wall::Arc { ccw, plane: c, .. } = nr.walls[i] else {
+                continue;
+            };
+            let b = nr.triples[(i + 1) % n];
+            let (lo, hi) = if ccw { (a, b) } else { (b, a) };
+            let x = at(c)?;
+            match combinatorics::theta_place(jd, k, def, lo, hi, x) {
+                Some(ThetaPlace::Inside) => stations.push((LineEvent::Toggle, x)),
+                Some(ThetaPlace::Outside) => {}
+                Some(ThetaPlace::At(_)) | None => return Ok(Vec::new()),
+            }
+        }
+    }
+    let mat = SegKind::Transversal {
+        mat: cf.orient_sign,
+    };
+    let mut out = Vec::new();
+    for (end, kind) in sweep_ruling(jd, def, k, &mut stations, mat, cyls, found)? {
+        if !matches!(kind, SegKind::Transversal { .. }) {
+            continue;
+        }
+        for _ in 0..2 {
+            out.push(RulingTrace {
+                cyl: k,
+                side: 0,
+                end,
+                solid: which,
+                kind: SegKind::Graze { body_above: above },
+                #[cfg(test)]
+                orient: cf.orient_sign,
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// What one boundary cycle of a lateral leaves on a wall class ([`cycle_on_wall`]).

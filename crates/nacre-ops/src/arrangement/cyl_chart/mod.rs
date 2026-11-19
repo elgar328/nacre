@@ -27,7 +27,7 @@
 //! |---|---|---|---|
 //! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 22,220 |
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 4,616 |
-//! | `n ⊥ m` | `d = r` | **no line** from another solid's plane (a tangency grazes and divides nothing) — but where its face **ends** on a secant wall's ruling, a spoke of that ruling's station ([`Station::tangent`]); the face's **own** tangent wall is a ruling of `side = 0` with **no chord**, where the face ends | 2,062 |
+//! | `n ⊥ m` | `d = r` | **no line** from another solid's plane where its tangency divides nothing; where the operation parts the material along it, the wall's knife — a ruling of `side = 0` with **no chord**; where its face **ends** on a secant wall's ruling, a spoke of that ruling's station ([`Station::tangent`]); the face's **own** tangent wall is a ruling of `side = 0` with **no chord**, where the face ends | 2,062 |
 //! | `n ⊥ m` | `d > r`, or no face reaching the lateral | nothing | 24,661 |
 //! | oblique | — | a **section** — a line of the chart, crossing others, which the class draws on its own arrangement (`CylRecord::Sections`) wherever the plane touches none of the lateral's circles; a cell it bounds on one side only is a face with an elliptical edge | 298 |
 //!
@@ -42,9 +42,11 @@
 //! boolean's gate sorts — the oblique row's are sections, beside 115 oblique classes with no face
 //! reaching the lateral and 16 the gate refuses as sections no road draws. The **offset** wall (`0
 //! < d < r`) adds vertical lines at *irrational* θ; the chart never reads a θ **value**, only an
-//! order, so nothing breaks. The **tangent** wall (`d = r`) adds no line: a grazing line stands at
-//! no event, so the gate records no crossing and this table's third row is «no line», not «one
-//! vertical». Where another solid's tangent face ends on the line a secant wall draws, it is an
+//! order, so nothing breaks. The **tangent** wall (`d = r`) adds no line of its own: a grazing
+//! line stands at no event, so the gate records no crossing and this table's third row is «no
+//! line», not «one vertical» — unless `keep` leaves only the two wedges beside it
+//! (`WorkingCyl::parting`), where the wall's class draws it as a knife and the chart reads it as a
+//! station of `side = 0`, like the face's own tangent wall below. Where another solid's tangent face ends on the line a secant wall draws, it is an
 //! edge there, not a contact: the station of that ruling reads it as one of the half-faces round
 //! the line ([`Station::tangent`], off the gate's record of the pair). The row's other half: a fillet's or a slot's wall is tangent to its **own**
 //! cylinder, and that ruling is not a crossing but the face's edge — a station of `side = 0`
@@ -106,8 +108,9 @@ pub(crate) use read_cell::*;
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
     pub(crate) wall: usize,
-    /// The ruling's side on its wall — `0` a **tangent** station: a line the face ends
-    /// on, with no chamber to read behind it, so no `label` (its cells are `beside`).
+    /// The ruling's side on its wall — `0` a **tangent** station: a line the wall's faces end on
+    /// (its own tangent edge, or its knife where the operation parts the material there), with no
+    /// chamber to read behind it, so no `label` (its cells are `beside`).
     pub(crate) side: i8,
     /// The piece's own two pierce nodes: the θ **order** is asked of these
     /// (`circular_order_about_seam` via `combinatorics::theta_groups`), never of a coordinate.
@@ -700,8 +703,10 @@ fn stations_of_lines(
             continue;
         }
         let (wall, side) = (theta[i].wall, theta[i].side);
-        // A tangent ruling has no chord: the face ends there, and no wall runs through it. Nor does
-        // a two-secant record name its class — a class tangent to the cylinder is no secant of it.
+        // A tangent ruling has no chord: the wall's faces end there, and no secant wall runs
+        // through it — a line another class shares states no knife (`rulings::tangent_knife`). Nor
+        // does a two-secant record name its class — a class tangent to the cylinder is no secant of
+        // it.
         if side == 0 {
             debug_assert!(
                 records

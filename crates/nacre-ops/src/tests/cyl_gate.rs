@@ -1926,3 +1926,36 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         assert_eq!(t.reading.as_ref().err(), Some(&unread), "{t:?}");
     }
 }
+
+/// **Pieces of a line are covered by a union exactly where one of its joined pieces holds each** —
+/// and an end that cannot be compared covers nothing ([`pieces_cover`]). Two pieces touching at an
+/// end join; a gap between them leaves the piece across it uncovered. The last row is a union
+/// whose lower end lies just above the piece's, `1/p` against `1/q` with `p = 2¹⁰⁰ + 1` and
+/// `q = 2¹⁰⁰ + 3`: their difference's denominator `p·q` overflows `i128`, so the order cannot be
+/// read, and the piece is not covered — a walk that reads «cannot compare» as «starts below» would
+/// call it covered.
+#[test]
+fn pieces_are_covered_only_where_every_end_is_placed() {
+    use nacre_exact::quad::QuadVal;
+    let v = |n: i128, d: i128| QuadVal::from_rat(Rat::new(n, d).expect("a rational"));
+    let piece = [v(0, 1), v(2, 1)];
+    assert!(pieces_cover(
+        vec![[v(1, 1), v(2, 1)], [v(0, 1), v(1, 1)]],
+        &[piece]
+    ));
+    assert!(!pieces_cover(
+        vec![[v(0, 1), v(1, 2)], [v(1, 1), v(2, 1)]],
+        &[piece]
+    ));
+    assert!(!pieces_cover(Vec::new(), &[piece]));
+    let (p, q) = ((1i128 << 100) + 1, (1i128 << 100) + 3);
+    assert_eq!(
+        v(1, p).cmp_value(&v(1, q)),
+        None,
+        "the two ends cannot be compared"
+    );
+    assert!(!pieces_cover(
+        vec![[v(1, p), v(1, 1)]],
+        &[[v(1, q), v(1, 1)]]
+    ));
+}

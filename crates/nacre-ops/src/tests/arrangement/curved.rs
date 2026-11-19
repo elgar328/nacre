@@ -154,6 +154,7 @@ fn armed_boss_at(
             grazed: Vec::new(),
             records: Vec::new(),
             boxes: Vec::new(),
+            parting: Vec::new(),
         });
     }
     let wc = setup
@@ -712,6 +713,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
         grazed: Vec::new(),
         records: Vec::new(),
         boxes: Vec::new(),
+        parting: Vec::new(),
     }];
     let rows = crate::planes::collect_planes(&m, block).expect("the block's face table");
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
@@ -840,6 +842,7 @@ fn a_lateral_face_is_asked_for_points_and_edges_as_a_plane_face_is() {
         grazed: Vec::new(),
         records: Vec::new(),
         boxes: Vec::new(),
+        parting: Vec::new(),
     }];
     let rows = crate::planes::collect_planes(&m, stair).expect("the staircase's face table");
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
@@ -2951,6 +2954,7 @@ fn a_pencil_names_one_crossing_by_any_pair_and_a_split_keeps_it() {
         grazed: Vec::new(),
         records: Vec::new(),
         boxes: Vec::new(),
+        parting: Vec::new(),
     }];
     let mut rows = crate::planes::collect_planes(&m, a).unwrap();
     rows.extend(crate::planes::collect_planes(&m, b).unwrap());
@@ -3073,6 +3077,7 @@ fn a_point_on_a_cylinder_has_the_names_its_planes_give_it() {
         grazed: Vec::new(),
         records: Vec::new(),
         boxes: Vec::new(),
+        parting: Vec::new(),
     }];
     let rows = crate::planes::collect_planes(&m, cube).unwrap();
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
@@ -3291,6 +3296,7 @@ fn a_restatement_reads_a_cutting_plane_with_no_world_statement() {
         grazed: Vec::new(),
         records: Vec::new(),
         boxes: Vec::new(),
+        parting: Vec::new(),
     }];
     let mut rows = crate::planes::collect_planes(&m, a).unwrap();
     rows.extend(crate::planes::collect_planes(&m, b).unwrap());

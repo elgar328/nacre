@@ -622,6 +622,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                 grazed: Vec::new(),
                 records: Vec::new(),
                 boxes: Vec::new(),
+                parting: Vec::new(),
             }
         })
         .collect();

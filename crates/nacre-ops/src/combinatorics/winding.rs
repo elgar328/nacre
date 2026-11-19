@@ -449,9 +449,10 @@ fn arc_extremum_winding(
 /// honest cells at two. One arc whose two ends are the **same node** is a circle cut at exactly
 /// that point — a polygon's vertex lying on it — and is a cell boundary on its own: the closed
 /// edge with one vertex that OCCT (`BOPDS_DS::InitPaveBlocks`), Parasolid and ACIS all keep as a
-/// self-loop, and Euler counts it as one vertex and one edge. A tangency never arrives here as
-/// that ring: `split_circles` mints no vertex for a `Double` root, so the circle it grazes stays
-/// whole.
+/// self-loop, and Euler counts it as one vertex and one edge. A tangency arrives here as that ring
+/// only where the operation parts the material along its line (`split_circles` cuts a `Double`
+/// root only for `WorkingCyl::parting`), and then its point is a vertex of the result like any
+/// other; elsewhere the circle it grazes stays whole.
 pub(crate) fn ring_floor(any_arc: bool, self_loop_arc: bool) -> usize {
     if self_loop_arc {
         1

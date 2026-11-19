@@ -34,7 +34,7 @@ pub(crate) fn reconstruct(
     // **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
     // minted, so a refusal leaves the arena as it found it.
-    tangency_reject(&tangencies, &grouping)?;
+    tangency_reject(&tangencies, &grouping, jd, cyls, faces)?;
 
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();

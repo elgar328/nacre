@@ -413,8 +413,10 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
 }
 
 /// **A knife** — an edge whose [`edge_mask`] is all-false: it changes no label when crossed, so the
-/// cells on its two sides carry one label. It is one solid's edge in the class's plane with both
-/// its faces leaving to one side. Equal labels are not one region of the result, though — the
+/// cells on its two sides carry one label. It is one solid's boundary leaving the class's plane to
+/// one side along a line — an edge in the plane with both its faces leaving that way, or a lateral
+/// touching the plane along its tangent ruling, its two halves bending away
+/// (`rulings::tangent_knife`). Equal labels are not one region of the result, though — the
 /// wedge between the knife's two faces reaches the plane along it, and where the kept material
 /// beside it is cut by that wedge the knife is where the result's face on this plane ends
 /// (`per_class::knife_parts`). So a knife is set apart, not dropped ([`split_class_edges`]), and
@@ -424,7 +426,8 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
 /// its cause.
 ///
 /// A single-point tangency on a class line becomes no segment at all, and a tangency along a
-/// line is likewise an edge that never enters the DCEL.
+/// line enters the DCEL only as a knife where the operation parts the material there
+/// (`WorkingCyl::parting`).
 /// Where a knife edge coincides with the *other* solid's real boundary, that solid's
 /// contributions make the mask non-false and the edge is no knife — a true boundary cannot be set
 /// apart this way. Where that boundary is a lateral's ruling, it is a ruling piece rather than a

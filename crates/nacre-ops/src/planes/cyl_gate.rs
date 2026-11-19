@@ -92,6 +92,7 @@ pub(crate) fn cylinder_gate(
             grazed: Vec::new(),
             records: Vec::new(),
             boxes: Vec::new(),
+            parting: Vec::new(),
         });
     }
 
@@ -645,12 +646,14 @@ fn class_meet(
                 // `chord_stations`, `rulings_on_class`), and all three stay true because this pair
                 // never reaches them — a tangency is a double root where those roads spell two
                 // distinct ones, so a cut's record would put the pair on the ruling road and
-                // assemble nothing. Kept apart, the arrangement needs no tangency arm: of 21
+                // assemble nothing. Kept apart, the arrangement reads it as a contact: of 21
                 // measured cells, the 15 outside the third-plane population (a third class's face
                 // reaching the line) assemble, `validate` clean and
                 // volumes exact. Its record is its own (`CylRecord::Touches`): the line divides
-                // no cell of this plane, nor the chart where the wall's face runs through it, and is
-                // the plane's one station on the cylinder. A face of the wall **ending** on the line
+                // no cell of this plane, nor the chart where the wall's face runs through it — but
+                // where the operation parts the material along it (`WorkingCyl::parting`, read off
+                // the rows below), where the wall's class draws it as a knife — and is the plane's
+                // one station on the cylinder. A face of the wall **ending** on the line
                 // is an edge there, which the chart's station on a secant wall's ruling reads off the
                 // pair's record (`SharedRuling::tangent_halves`).
                 //
@@ -1120,9 +1123,10 @@ pub(crate) struct TangentReading {
     /// is the verdict's ground — and the self-touch check's tangent hand-off's: a point of the lateral
     /// it finds on the line is this verdict's question exactly there, and anywhere else on the line
     /// the contact is the check's own. A valid solid meets a line with one face running through it or two
-    /// faces ending on it, so here no third face reaches the line and nothing in the arrangement
-    /// draws it — the three regions are the whole picture — and elsewhere on the contact one of
-    /// the solids has an edge on the line, which the arrangement draws and the structure judges.
+    /// faces ending on it, so here no third face reaches the line — the three regions are the whole
+    /// picture, and the arrangement draws the line only where the operation parts them
+    /// (`WorkingCyl::parting`) — and elsewhere on the contact one of the solids has an edge on the
+    /// line, which the arrangement draws and the structure judges.
     ///
     /// **Interior, holes and span included** ([`line_runs_through_face`]). Corners on both
     /// sides of the line say this only of a convex face without holes: a U-shaped face or one with
@@ -1701,6 +1705,25 @@ fn joined(met: Vec<[nacre_exact::QuadVal; 2]>) -> Option<Vec<[nacre_exact::QuadV
         }
     }
     Some(out)
+}
+
+/// **Does the union of `union` cover every piece of `pieces`?** — closed pieces of one line, the
+/// union [`joined`] and each piece inside one of its pieces. `false` where two ends cannot be
+/// compared: an end that cannot be placed covers nothing.
+pub(crate) fn pieces_cover(
+    union: Vec<[nacre_exact::QuadVal; 2]>,
+    pieces: &[[nacre_exact::QuadVal; 2]],
+) -> bool {
+    use core::cmp::Ordering;
+    let Some(union) = joined(union) else {
+        return false;
+    };
+    let at_most = |a: &nacre_exact::QuadVal, b: &nacre_exact::QuadVal| {
+        matches!(a.cmp_value(b), Some(Ordering::Less | Ordering::Equal))
+    };
+    pieces
+        .iter()
+        .all(|[lo, hi]| union.iter().any(|[a, b]| at_most(a, lo) && at_most(hi, b)))
 }
 
 /// How one loop of the wall face meets the tangent line.

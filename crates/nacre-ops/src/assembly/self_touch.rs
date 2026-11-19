@@ -9,7 +9,30 @@ pub(crate) struct Tangencies<'a> {
     pub(crate) rows: &'a [crate::planes::Tangency],
 }
 
-impl Tangencies<'_> {
+impl<'a> Tangencies<'a> {
+    /// **The rows whose material falls apart near the line under this operation, with how** — the
+    /// one reading of a row under `kind`, which the arrangement asks to know where to draw a parting
+    /// line (`WorkingCyl::parting`) and the verdict asks to judge ([`tangency_reject`]). A row counts
+    /// where it has a stretch of positive length on which both solids run through the line
+    /// (`TangentReading::through`): a corner grazing the line at a point is a valid tangency
+    /// (measured), and so is a solid ending on it, whose edge the structure reads.
+    pub(crate) fn pinches(&self) -> impl Iterator<Item = (&'a crate::planes::Tangency, Pinch)> {
+        let kind = self.kind;
+        self.rows.iter().filter_map(move |t| {
+            if t.reading.through.is_empty() {
+                return None;
+            }
+            let shape = pinch(
+                kind,
+                t.wall_solid,
+                t.cyl_solid,
+                t.reading.lens_in_wall_solid,
+                t.cyl_orient,
+            )?;
+            Some((t, shape))
+        })
+    }
+
     /// For the roads that assemble without a gate run (the band-road fixtures). The `kind` here
     /// is a placeholder, not a choice: with no rows the verdict returns before reading it, which is
     /// why naming an operation at this one site is not the casework the rule forbids.
@@ -118,10 +141,16 @@ pub(crate) fn pinch(
 /// What makes it a defect is the two lumps landing in **one** body — and the [`Pinch`] says how to
 /// read that:
 ///
-/// - **The wedges** are both bounded by the one wall face the line runs through (this verdict's
-///   ground, `TangentReading::through`), and a tangency splits no face — it mints no vertex and no
-///   edge — so that face ties them into one component of the result. A statement about the engine's
-///   result, not the geometry: two pieces touching along two lines still share the face.
+/// - **The wedges** are both bounded by the wall face the line runs through (this verdict's ground,
+///   `TangentReading::through`). The material parts there, so the arrangement draws the line as an
+///   edge where it can (`WorkingCyl::parting` — the wall's knife and the chart's tangent station),
+///   and an edge on the line is the structure's to judge: the wedges are then separate faces, of two
+///   bodies or of one whose edge four faces use. Where the result has no edge on the line over the
+///   whole ground ([`line_is_an_edge`]) — the knife could not be an edge (it ends inside the wall
+///   face, and the material passes round its end), the chart could not part the lateral there, the
+///   lateral's boundary meets the line in a way the knife does not read, or the line is another
+///   class's station — one face still ties the wedges into one component of the result, and the
+///   verdict refuses.
 /// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
 ///   and a wall it touches from outside (the truth table in `bands`). The lens is then the
 ///   cylinder's operand's material alone and the far side the wall's alone — two different solids
@@ -138,7 +167,7 @@ pub(crate) fn pinch(
 /// real contact: the gate writes one only for a wall face that touches the line where the lateral
 /// face lies on it, and `through` says where the line crosses that face's interior and the lateral
 /// runs on either side of it (holes and gaps read, `planes::cylinder_gate`'s
-/// `line_runs_through_face`). The wedges then lie
+/// `line_runs_through_face`). Where the line is no edge the wedges then lie
 /// against that face and the lateral in one body, and the lens and the far side are in one body
 /// exactly when the result is one. Asking whether a body holds a face on the wall's class and one
 /// on the cylinder's is not the rule: read alone, it convicts the lens and the far side of two
@@ -147,28 +176,19 @@ pub(crate) fn pinch(
 /// **The ground is the stretches where both solids run through the line**
 /// (`TangentReading::through`). Elsewhere on a row's contact one solid has an edge on the line: the
 /// arrangement draws that line, a face that ends there ends on an edge, and the structure judges
-/// what meets on it — the self-touch check's arms on an edge along a ruling or inside a face, the
+/// what meets on it — as it does the drawn line on the ground itself — the self-touch check's arms on an edge along a ruling or inside a face, the
 /// shell guard on an edge four faces use. Every row here was read whole — a row the gate could not
 /// read never reaches the verdict (`planes::TangentReading`).
-pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), BoolError> {
-    for t in tg.rows {
-        // Two lumps, and a stretch of positive length where both solids run through the line — a
-        // corner grazing the line at a point is a valid tangency (measured), and so is a solid
-        // ending on it, whose edge the structure reads.
-        if t.reading.through.is_empty() {
-            continue;
-        }
-        let Some(shape) = pinch(
-            tg.kind,
-            t.wall_solid,
-            t.cyl_solid,
-            t.reading.lens_in_wall_solid,
-            t.cyl_orient,
-        ) else {
-            continue;
-        };
+pub(super) fn tangency_reject(
+    tg: &Tangencies<'_>,
+    g: &Grouping,
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[LocalFace],
+) -> Result<(), BoolError> {
+    for (t, shape) in tg.pinches() {
         let together = match shape {
-            Pinch::Wedges => true,
+            Pinch::Wedges => !line_is_an_edge(jd, cyls, faces, t),
             Pinch::LensAndFar => g.positives.len() == 1,
         };
         if together {
@@ -179,6 +199,66 @@ pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), B
         }
     }
     Ok(())
+}
+
+/// **Does the result have an edge on the row's tangent line over the whole of its ground?** — the
+/// line's edges both the wall's faces and the lateral end on ([`edges_on_line`]), their ends read
+/// as heights on the axis ([`combinatorics::axis_param_on_cylinder`]), covering every piece of
+/// `through` ([`crate::planes::pieces_cover`] — a height or an end that cannot be read covers
+/// nothing). Read off the result, after the cleaning pass, not off what the arrangement drew: a
+/// knife the wall's class carried while the chart could not part the lateral is no edge of the
+/// lateral, whatever became of the wall's cells beside it.
+fn line_is_an_edge(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[LocalFace],
+    t: &crate::planes::Tangency,
+) -> bool {
+    use nacre_exact::quad::QuadVal;
+    let def = &cyls[t.cyl].def;
+    let height = |n| combinatorics::axis_param_on_cylinder(jd, cyls, n, def);
+    let mut spans: Vec<[QuadVal; 2]> = Vec::new();
+    for [a, b] in edges_on_line(faces, t.wall, t.cyl) {
+        let (Some(a), Some(b)) = (height(a), height(b)) else {
+            return false;
+        };
+        match a.cmp_value(&b) {
+            Some(core::cmp::Ordering::Greater) => spans.push([b, a]),
+            Some(_) => spans.push([a, b]),
+            None => return false,
+        }
+    }
+    crate::planes::pieces_cover(spans, &t.reading.through)
+}
+
+/// **The edges of the result on `cyl`'s tangent ruling in `wall`'s plane that the wall's faces and
+/// the lateral both end on** — a wall face's `Wall::Ruling` of side `0` on `cyl`, kept where a face
+/// on `cyl` has the same edge ([`NodeEdge::of`], the key the coplanar merge and the component join
+/// read an edge by). Both, because either face ties the wedges into one component where it runs on
+/// across the line: a wall edge with the lateral running through it is no parting, and the merge
+/// that would join the wall's cells there abstains on shapes it cannot read and emits them as they
+/// came (`unify_coplanar_faces`).
+fn edges_on_line(faces: &[LocalFace], wall: usize, cyl: usize) -> Vec<[NodeId; 2]> {
+    let lateral: HashSet<NodeEdge> = faces
+        .iter()
+        .filter(|lf| lf.surf == ClassIx::Cyl(cyl))
+        .flat_map(LocalFace::poly_rings)
+        .flat_map(|r| (0..r.nodes.len()).map(move |i| NodeEdge::of(r, i)))
+        .collect();
+    let mut out = Vec::new();
+    for lf in faces.iter().filter(|lf| lf.surf == ClassIx::Plane(wall)) {
+        for r in lf.poly_rings() {
+            let n = r.nodes.len();
+            for i in 0..n {
+                if matches!(r.walls[i], Wall::Ruling { cyl: c, side: 0, .. } if c == cyl)
+                    && lateral.contains(&NodeEdge::of(r, i))
+                {
+                    out.push([r.nodes[i], r.nodes[(i + 1) % n]]);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Push the reconstructed result and supersede the inputs.
@@ -1000,3 +1080,7 @@ impl NearFaces {
         &self.out
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/self_touch.rs"]
+mod tests;

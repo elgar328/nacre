@@ -95,24 +95,24 @@ pub(super) fn split_circles(
             };
             Ok(xs
                 .into_iter()
-                // A tangency touches without separating — `segment_meets_cylinder` above already
-                // let that shape through, and cutting there would make a zero-length arc.
-                //
-                // **The skip is right, and a tangency mints no vertex** — the circle it grazes
-                // stays whole, so a circle the split leaves with one node is always one a vertex
-                // lies on (`combinatorics::ring_floor`). Three reasons: measured, the link at such
-                // a touch is a *single* circle and OCCT returns the same body, so minting a vertex
-                // would invent structure that is not there; the `UnorderedEdges` that lifting this
-                // skip would reach is the **rulings** vocabulary (`side` ±1), which the tangent
-                // wall never enters because the gate records no crossing for it; and this arm is
-                // not gated on the gate's cut record, so a ⊥ class takes the same road whatever the gate
-                // recorded. The 15 measured cells with no third plane on the tangent line assemble
-                // with it in place.
+                // **A tangency is a vertex exactly where the operation parts the material along
+                // the segment's wall** (`WorkingCyl::parting`): there the tangent
+                // line is an edge of the result (`rulings_on_class`' knife), and its end here is a
+                // vertex of both curves. Anywhere else a tangency touches without separating, and
+                // the skip is right — the circle it grazes stays whole, so a circle the split
+                // leaves with one node is always one a vertex lies on (`combinatorics::ring_floor`).
+                // Three reasons: measured, the link at such a touch is a *single* circle and OCCT
+                // returns the same body, so minting a vertex would invent structure that is not
+                // there; the `UnorderedEdges` that cutting every touch would reach is the
+                // **rulings** vocabulary (`side` ±1), which the tangent wall never enters because
+                // the gate records no crossing for it; and this arm is not gated on the gate's cut
+                // record, so a ⊥ class takes the same road whatever the gate recorded. The 15
+                // measured cells with no third plane on the tangent line assemble with it in place.
                 .filter(|&n| {
                     !matches!(
                         combinatorics::pierce_name(n),
                         Some((_, _, crate::combinatorics::QuadRoot::Double))
-                    )
+                    ) || cyls[cyl].parting.contains(&sg.wall)
                 })
                 .map(|n| (n, None))
                 .collect())

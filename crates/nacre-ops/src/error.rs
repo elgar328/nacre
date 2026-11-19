@@ -128,12 +128,14 @@ pub enum RejectReason {
     ///
     /// Two sampled boxes sharing exactly an edge are **not** this: those are answers.
     NonManifoldResultEdge,
-    // Nothing splits at a curved contact, so there is no edge to count and no vertex to link —
-    // the topology sees a perfectly ordinary solid — and it is caught instead by asking what the
-    // material near the line is: three regions (the lens inside the cylinder, the **two** wedges
+    // A curved contact splits nothing where the material does not part along it, so there is no
+    // edge to count and no vertex to link — the topology sees a perfectly ordinary solid — and it
+    // is caught instead by asking what the material near the line is: three regions (the lens inside the cylinder, the **two** wedges
     // beside it, the far half-space), adjacent only `L–W2` and `F–W2`, so the kept ones fall
     // apart exactly when `(W2 ∧ ¬L ∧ ¬F)` or `(L ∧ F ∧ ¬W2)` — and the pieces land in one body.
-    // See `assembly::tangency_reject`. The second disjunct is *not* a defect on its own.
+    // See `assembly::tangency_reject`. The second disjunct is *not* a defect on its own; under the
+    // first the line is an edge wherever the arrangement can draw it (`WorkingCyl::parting`), and
+    // the verdict asks only where it is not.
     //
     // Measured: on a tangent `Cut` the count alone returns `Ok` with `validate` clean and every
     // net silent, which is why the curved witness has a rule of its own. Both stay because each

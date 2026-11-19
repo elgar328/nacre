@@ -188,13 +188,14 @@ pub(super) fn per_class(
 
 /// **A knife parts the kept material beside it** — the rule that makes a knife an edge of the
 /// class's faces. The result's faces on a plane end where the material they bound parts, and a
-/// label change says so for every edge but a knife: the knife's solid `X` has both faces leaving
-/// the plane to one side `S`, so the label is one on both sides of it, and what differs is the
+/// label change says so for every edge but a knife: the knife's solid `X` has both faces — or a
+/// lateral's two halves — leaving the plane to one side `S`, so the label is one on both sides of it, and what differs is the
 /// wedge between the two faces — the chamber on `S` with `X`'s bit there turned over (two faces of
 /// one solid, crossed in turn). The cells beside the knife are a face where `keep` differs between
 /// their two chambers; where the kept one is `S`'s and the wedge is not kept, the kept material on
 /// `S` reaches the plane on both sides of the knife and meets itself only along it, so the face
-/// ends there — two wings resting on one floor, the floor two faces. A knife whose wedge is the
+/// ends there — two wings resting on one floor, the floor two faces (the star round a knife,
+/// [`LineStar::knife`](crate::draft::LineStar::knife)). A knife whose wedge is the
 /// kept one, or whose kept chamber is the other side's, leaves the face whole: the material it
 /// bounds passes under the knife.
 ///
@@ -204,7 +205,8 @@ pub(super) fn per_class(
 /// on both sides of it, `keep` is too, and the class has no face there to part.
 ///
 /// **`X`'s two bits in `label` are equal**: `X` has no face on the plane where its knife lies — a
-/// face there would hold `X`'s own edge inside it, which no valid solid has.
+/// face there would hold `X`'s own edge inside it, or touch `X`'s own lateral along the lateral's
+/// tangent ruling, which no valid solid has.
 fn knife_parts(kind: BoolKind, merged: &[(SolidSide, SegKind)], label: Label) -> bool {
     let Some((x, side)) = knife_grazer(merged) else {
         debug_assert!(
@@ -727,7 +729,9 @@ pub(super) fn split_class_edges(
         None => (segs2, Cow::Borrowed(rulings)),
     };
     // The knives cut every curve above and are set apart here, last: whether one is an edge of the
-    // class's faces is asked of the material beside it (`arrange_class`).
+    // class's faces is asked of the material beside it (`arrange_class`). A knife is a piece whose
+    // mask is zero, whatever curve it lies on — two faces of one solid leaving the plane to one
+    // side, two planar faces along a segment or a lateral's two halves along its tangent ruling.
     let mut knives = Vec::new();
     let mut segs4 = Vec::with_capacity(segs3.len());
     for sg in segs3.into_owned() {
@@ -737,12 +741,20 @@ pub(super) fn split_class_edges(
             segs4.push(sg);
         }
     }
+    let mut rulings3 = Vec::with_capacity(rulings2.len());
+    for r in rulings2.into_owned() {
+        if is_knife(&r.merged)? {
+            knives.push(Piece::from(r));
+        } else {
+            rulings3.push(r);
+        }
+    }
     // Segments, then arcs, then ruling pieces — the order [`ClassEdges`] numbers them in.
     let pieces = segs4
         .into_iter()
         .map(Piece::from)
         .chain(arcs)
-        .chain(rulings2.into_owned().into_iter().map(Piece::from))
+        .chain(rulings3.into_iter().map(Piece::from))
         .collect();
     Ok(ClassSplit {
         pieces,
