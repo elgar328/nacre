@@ -1107,7 +1107,14 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
 ///   `validate` clean, its volume exact — the cap's wedges touching along the line where nothing
 ///   draws it.
 ///
-/// Both vertex orders, all six booleans, the volumes in closed form, and every body drawn.
+/// Each family has two twins ([`Twin`]): `B`'s lower slab reaching past `A`'s floor, so the wedges
+/// join the rest of `B − A` below `A`; and `A` notched above `B`, so `A`'s lateral has an edge on
+/// the line `(1, 0)` — a node on the ruling, where the wall's class draws no knife
+/// (`rulings::tangent_knife`). The notched `A ∪ B` is refused while `B ∪ A` builds the one body
+/// whose volume the closed form gives (todo 「노치 난 원통과 L 의 합이 순서에 따라 갈린다」).
+///
+/// Both frames (the world and [`pythagorean_frame`]), both vertex orders, all six booleans, the
+/// volumes in closed form, the faces of each body ([`answer`]), and every body drawn.
 #[test]
 fn a_tangent_face_across_its_edge_on_the_line_is_judged_where_it_crosses() {
     use nacre_math::Vector3;
@@ -1115,91 +1122,181 @@ fn a_tangent_face_across_its_edge_on_the_line_is_judged_where_it_crosses() {
     let pi = std::f64::consts::PI;
     // The disk's segment beyond `y = −d`.
     let segment = |d: f64| d.acos() - d * (1.0 - d * d).sqrt();
-    type Family = (&'static str, f64, f64, f64, usize);
-    // (name, the profile's `y` start, |B|, |A ∩ B|, the bodies of A − B).
-    let families: [Family; 2] = [
-        ("the L", -1.0, 7.0, 0.75 * pi, 2),
-        (
-            "the L whose caps alone are tangent",
-            -0.5,
-            6.5,
-            0.5 * (pi - segment(0.5)) + 0.25 * pi,
-            1,
-        ),
-    ];
-    let a = 2.0 * pi;
     let mut ran = 0;
-    for (family, y0, b, common, a_less_b) in families {
-        let l: &[[f64; 2]] = &[
-            [y0, 0.5],
-            [3.0, 0.5],
-            [3.0, 1.5],
-            [0.0, 1.5],
-            [0.0, 1.0],
-            [y0, 1.0],
-        ];
-        for rotated in [false, true] {
-            let mut l = l.to_vec();
-            if rotated {
-                l.rotate_left(1);
-            }
-            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-                for swapped in [false, true] {
-                    let mut m = Model::new();
-                    let extrude = |m: &mut Model, frame, profile, dist| {
-                        let Ok(OpOutput::Extrude { solid, .. }) = apply(
-                            m,
-                            &Operation::Extrude {
-                                frame,
-                                profile,
-                                dist,
-                            },
-                        ) else {
-                            panic!("extrude")
-                        };
-                        solid
-                    };
-                    let world = nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z);
-                    let sa = extrude(&mut m, world, unit_disk(), 2.0);
-                    let side = datum_frame(
-                        &mut m,
-                        SketchPlane::from_axes(
-                            Point3::from_array([-1.0, 0.0, 0.0]),
-                            Vector3::from_array([0.0, 1.0, 0.0]),
-                            Vector3::from_array([0.0, 0.0, 1.0]),
-                        ),
-                    );
-                    let profile = Profile2d::polygon(l.iter().map(|q| p2(q[0], q[1])).collect())
-                        .expect("an L");
-                    let sb = extrude(&mut m, side, profile, 2.0);
-                    let (x, y) = if swapped { (sb, sa) } else { (sa, sb) };
-                    let at = format!("{family}, rotated = {rotated}, {kind:?} swapped = {swapped}");
-                    let want = match (kind, swapped) {
-                        (BoolKind::Fuse, _) => Ok((1, a + b - common)),
-                        (BoolKind::Cut, false) => Ok((a_less_b, a - common)),
-                        (BoolKind::Cut, true) => Err(RejectReason::SelfTouchingResult),
-                        (BoolKind::Common, _) => Ok((1, common)),
-                    };
-                    match (boolean(&mut m, kind, x, y), want) {
-                        (Ok(solids), Ok((n, v))) => {
-                            let vs = nacre_validate::validate(&m);
-                            assert!(vs.is_empty(), "{at}: {vs:?}");
-                            assert_eq!(solids.len(), n, "{at}: bodies");
-                            let got: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
-                            assert!((got - v).abs() < 1e-9, "{at}: volume {got}, want {v}");
-                            drawn(&at, &m, &solids, v);
-                        }
-                        (Err(BoolError::Rejected { reason, .. }), Err(w)) => {
-                            assert_eq!(reason, w, "{at}");
-                        }
-                        (got, want) => panic!("{at}: {got:?}, want {want:?}"),
+    for (family, y0) in [
+        ("the L", -1.0),
+        ("the L whose caps alone are tangent", -0.5),
+    ] {
+        for twin in [Twin::Plain, Twin::Low, Twin::Notched] {
+            let z_low = if twin == Twin::Low { -0.5 } else { 0.5 };
+            let b = 2.0 * ((3.0 - y0) * (1.0 - z_low) + 1.5);
+            let common = (1.0 - f64::max(z_low, 0.0)) * (pi - segment(-y0)) + 0.25 * pi;
+            let a = if twin == Twin::Notched {
+                1.9 * pi
+            } else {
+                2.0 * pi
+            };
+            let l: &[[f64; 2]] = &[
+                [y0, z_low],
+                [3.0, z_low],
+                [3.0, 1.5],
+                [0.0, 1.5],
+                [0.0, 1.0],
+                [y0, 1.0],
+            ];
+            for tilted in [false, true] {
+                for rotated in [false, true] {
+                    let mut l = l.to_vec();
+                    if rotated {
+                        l.rotate_left(1);
                     }
-                    ran += 1;
+                    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                        for swapped in [false, true] {
+                            let mut m = Model::new();
+                            let extrude = |m: &mut Model, frame, profile, dist| {
+                                let Ok(OpOutput::Extrude { solid, .. }) = apply(
+                                    m,
+                                    &Operation::Extrude {
+                                        frame,
+                                        profile,
+                                        dist,
+                                    },
+                                ) else {
+                                    panic!("extrude")
+                                };
+                                solid
+                            };
+                            let [u, v, w] = if tilted {
+                                [[0.6, 0.8, 0.0], [-0.48, 0.36, 0.8], [0.64, -0.48, 0.6]]
+                            } else {
+                                [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+                            };
+                            let base = if tilted {
+                                pythagorean_frame(&mut m, Point3::from_array([0.0; 3]))
+                            } else {
+                                nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z)
+                            };
+                            let mut sa = extrude(&mut m, base, unit_disk(), 2.0);
+                            if twin == Twin::Notched {
+                                let top = if tilted {
+                                    [1.024, -0.768, 0.96]
+                                } else {
+                                    [0.0, 0.0, 1.6]
+                                };
+                                let frame = datum_frame(
+                                    &mut m,
+                                    SketchPlane::from_axes(
+                                        Point3::from_array(top),
+                                        Vector3::from_array(u),
+                                        Vector3::from_array(v),
+                                    ),
+                                );
+                                let quarter = Profile2d::polygon(vec![
+                                    p2(0.0, 0.0),
+                                    p2(2.0, 0.0),
+                                    p2(2.0, 2.0),
+                                    p2(0.0, 2.0),
+                                ])
+                                .expect("a square");
+                                let tool = extrude(&mut m, frame, quarter, 0.9);
+                                sa =
+                                    boolean(&mut m, BoolKind::Cut, sa, tool).expect("the notch")[0];
+                            }
+                            let side = datum_frame(
+                                &mut m,
+                                SketchPlane::from_axes(
+                                    Point3::from_array(u.map(|c| -c)),
+                                    Vector3::from_array(v),
+                                    Vector3::from_array(w),
+                                ),
+                            );
+                            let profile =
+                                Profile2d::polygon(l.iter().map(|q| p2(q[0], q[1])).collect())
+                                    .expect("an L");
+                            let sb = extrude(&mut m, side, profile, 2.0);
+                            let (x, y) = if swapped { (sb, sa) } else { (sa, sb) };
+                            let at = format!(
+                                "{family}, {twin:?}, tilted = {tilted}, rotated = {rotated}, {kind:?} swapped = {swapped}"
+                            );
+                            let v_want = match (kind, swapped) {
+                                (BoolKind::Fuse, _) => a + b - common,
+                                (BoolKind::Cut, false) => a - common,
+                                (BoolKind::Cut, true) => b - common,
+                                (BoolKind::Common, _) => common,
+                            };
+                            match (boolean(&mut m, kind, x, y), answer(y0, twin, kind, swapped)) {
+                                (Ok(solids), Ok(want)) => {
+                                    let vs = nacre_validate::validate(&m);
+                                    assert!(vs.is_empty(), "{at}: {vs:?}");
+                                    let got: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
+                                    assert!(
+                                        (got - v_want).abs() < 1e-9,
+                                        "{at}: volume {got}, want {v_want}"
+                                    );
+                                    let mut faces: Vec<usize> = solids
+                                        .iter()
+                                        .map(|&s| m.shell(m.solid(s).outer).faces.len())
+                                        .collect();
+                                    faces.sort_unstable();
+                                    assert_eq!(faces, want, "{at}: faces per body");
+                                    drawn(&at, &m, &solids, v_want);
+                                }
+                                (Err(BoolError::Rejected { reason, .. }), Err(w)) => {
+                                    assert_eq!(reason, w, "{at}");
+                                }
+                                (got, want) => panic!("{at}: {got:?}, want {want:?}"),
+                            }
+                            ran += 1;
+                        }
+                    }
                 }
             }
         }
     }
-    assert_eq!(ran, 2 * 2 * 6, "the families");
+    assert_eq!(ran, 2 * 3 * 2 * 2 * 6, "the families");
+}
+
+/// The variants of `a_tangent_face_across_its_edge_on_the_line_is_judged_where_it_crosses`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Twin {
+    /// `B`'s lower slab on `z ∈ [1/2, 1]`, within `A`'s span.
+    Plain,
+    /// The lower slab on `z ∈ [−1/2, 1]`, past `A`'s floor, where the wedges join the rest of `B`.
+    Low,
+    /// The plain `B`, and `A` less the quarter `x, y ≥ 0` over `z ∈ [1.6, 2]`: `A`'s lateral has
+    /// an edge on the line `(1, 0)` above `B`.
+    Notched,
+}
+
+/// What each boolean of that test answers — the faces of each body, fewest first, or the refusal.
+/// `y0` names the family: `−1` the L, `−1/2` the L whose caps alone are tangent.
+fn answer(y0: f64, twin: Twin, kind: BoolKind, swapped: bool) -> Result<Vec<usize>, RejectReason> {
+    use RejectReason::{OpenResultShell, SelfTouchingResult};
+    let the_l = y0 == -1.0;
+    Ok(match (kind, swapped) {
+        (BoolKind::Cut, true) => return Err(SelfTouchingResult),
+        (BoolKind::Fuse, false) if twin == Twin::Notched => {
+            return Err(if the_l {
+                SelfTouchingResult
+            } else {
+                OpenResultShell
+            });
+        }
+        (BoolKind::Fuse, _) => match twin {
+            Twin::Plain => vec![14],
+            Twin::Low => vec![if the_l { 10 } else { 11 }],
+            Twin::Notched => vec![17],
+        },
+        (BoolKind::Cut, false) => match (the_l, twin) {
+            (true, Twin::Plain) => vec![3, 5],
+            (true, Twin::Low) => vec![5],
+            (true, Twin::Notched) => vec![3, 8],
+            (false, Twin::Plain) => vec![8],
+            (false, Twin::Low) => vec![7],
+            (false, Twin::Notched) => vec![11],
+        },
+        (BoolKind::Common, _) => vec![if the_l { 5 } else { 6 }],
+    })
 }
 
 /// **A pinched cap as an operand** — the union a wedge with its apex on the rim leaves past the

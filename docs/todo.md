@@ -330,6 +330,11 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 `shared_cylinder.rs`). 인구는 재지 않았다. 선을 품은 평면을 한 정거장의 현으로 접으면 `slit_at` 의 대신 살이 그 현들로
 바뀐다 — 게이트 기록(`SharedRuling`)이 짝 평면의 면이 선에 닿는 구간을 실어야 한다. 그 전엔 두 평면 사이의 빈 부채꼴을 못 본다.
 
+### 노치 난 원통과 L 의 합이 순서에 따라 갈린다
+
+`edge_on_a_ruling` L 시험의 `Twin::Notched`(옆면이 선 `(1, 0)` 위에 간선을 가진 `A`): `A ∪ B` 는 `SelfTouchingResult`(자기접촉
+판정의 옆면 팔)·`OpenResultShell` 로 거절되고 `B ∪ A` 는 닫힌 꼴 부피의 한 몸체로 선다 — 앞의 것이 거짓 거절이다. 원인은 재지 않았다.
+
 ### 거절의 이름이 기하보다 폭을 먼저 묻는 자리
 
 답은 같고 이름(`WitnessNotRational` / `CylinderGateUndecided`)만 갈린다. 인구는 재지 않았다.
