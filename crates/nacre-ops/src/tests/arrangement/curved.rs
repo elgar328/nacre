@@ -1635,15 +1635,11 @@ fn the_armed_solids_mass_properties_are_exact() {
 fn the_armed_solid_tessellates_watertight() {
     let (m, _setup, _wc) = armed_assembled_through_boss();
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).unwrap();
-    let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
-    for (_, tri) in mesh.triangles.iter() {
-        for k in 0..3 {
-            let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-            *uses.entry((x.min(y), x.max(y))).or_default() += 1;
-        }
-    }
-    let open = uses.values().filter(|&&n| n != 2).count();
-    assert_eq!(open, 0, "the mesh is watertight");
+    assert_eq!(
+        nacre_tess::non_watertight(&mesh),
+        0,
+        "the mesh is watertight"
+    );
 }
 
 /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**

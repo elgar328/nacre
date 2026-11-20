@@ -1066,7 +1066,7 @@ pub struct Leaning {
 }
 
 /// Every lateral triangle of `t` whose facet departs from its surface by more than `limit_deg`, or
-/// that has no area. Test-only (`test-util`): the mesh locks call it with the budget's
+/// that has no area. Test-only (`test-util`): [`drawing_faults`] asks it with the budget's
 /// `max_angle_deg`.
 ///
 /// **Why the budget bounds it.** The mesher asks every facet the same of its own accord
@@ -1124,7 +1124,7 @@ pub struct Unshared {
 
 /// Every θ a curve of a cylindrical face of `t` stands a sample at — its ends included — that
 /// another curve of the face spans and has no sample as near as one column. Test-only
-/// (`test-util`): the mesh locks call it.
+/// (`test-util`): [`drawing_faults`] asks it.
 ///
 /// **What it holds the sampler to**: the curves of one lateral stand on common generators
 /// ([`FaceThetas`]), so a band between two of them never tilts by their samples' offset. Its
@@ -1231,7 +1231,7 @@ pub struct Kinked {
 /// Every pair of consecutive chords in a curved edge's polyline (`by_edge`) that turns by more than
 /// `limit_deg` — the closing chord of a whole rim with both its neighbours, an arc's chords only
 /// among themselves (the turn across an edge's end vertex is the model's corner, not a chord's).
-/// Test-only (`test-util`): the mesh locks call it with the budget's `max_angle_deg`.
+/// Test-only (`test-util`): [`drawing_faults`] asks it with the budget's `max_angle_deg`.
 ///
 /// **What it holds the sampler to.** A curve's polyline must keep the angular budget along the
 /// curve itself, and nothing else asks: `within_budget` and [`leaning_laterals`] read surface
@@ -1322,6 +1322,116 @@ pub fn split_faces(t: &Tessellation) -> Vec<(Handle<Face>, usize)> {
     out
 }
 
+/// **The planar faces with a triangle that does not face the face's way** — each face once, with the
+/// smallest `(p₁ − p₀) × (p₂ − p₀) · n` over its triangles, `n` the face's outward normal
+/// ([`nacre_props::face_normal_at`]). A triangle wound against its face (or of no area) draws the
+/// face inside out there; watertightness and the signed volume do not see one small such triangle.
+/// Test-only (`test-util`).
+#[cfg(any(test, feature = "test-util"))]
+pub fn facing_away(model: &Model, t: &Tessellation) -> Vec<(Handle<Face>, f64)> {
+    let mut out = Vec::new();
+    for (&f, tris) in &t.by_face {
+        let Some(&first) = tris.first() else {
+            continue;
+        };
+        if !matches!(
+            model.surface_cache(model.face(f).surface),
+            SurfaceCache::Plane { .. }
+        ) {
+            continue;
+        }
+        let at = t.vertices.get(t.triangles.get(first).vertices[0]).pos;
+        let Some(n) = nacre_props::face_normal_at(model, f, at) else {
+            out.push((f, f64::NAN));
+            continue;
+        };
+        let worst = tris
+            .iter()
+            .map(|&h| {
+                let p = t.triangles.get(h).vertices.map(|v| t.vertices.get(v).pos);
+                (p[1] - p[0]).cross(p[2] - p[0]).dot(n)
+            })
+            .fold(f64::INFINITY, f64::min);
+        if worst.is_nan() || worst <= 0.0 {
+            out.push((f, worst));
+        }
+    }
+    out.sort_by_key(|&(f, _)| f.index());
+    out
+}
+
+/// **Undirected triangle edges not used by exactly two triangles** — `0` for a watertight mesh.
+/// Test-only (`test-util`).
+#[cfg(any(test, feature = "test-util"))]
+pub fn non_watertight(t: &Tessellation) -> usize {
+    let mut counts: HashMap<(u32, u32), usize> = HashMap::new();
+    for (_, tri) in t.triangles.iter() {
+        let [a, b, c] = tri.vertices.map(|h| h.index());
+        for (x, y) in [(a, b), (b, c), (c, a)] {
+            *counts.entry((x.min(y), x.max(y))).or_default() += 1;
+        }
+    }
+    counts.values().filter(|&&n| n != 2).count()
+}
+
+/// **What keeps a mesh from being the drawing of its b-rep** — the one proposition the mesh locks
+/// assert of every solid a boolean returns (the lib's boolean exit, the census rows, the front-door
+/// fixtures), empty when it holds. Test-only (`test-util`). Its clauses:
+///
+/// - watertight ([`non_watertight`]);
+/// - no lateral triangle leaning off its cylinder past `cfg.max_angle_deg` ([`leaning_laterals`],
+///   measured without the mesher's own facet judgement) — a lattice point placed a few ulps off the
+///   boundary makes a sliver leaning up to 90° off;
+/// - no curve's polyline turning past the budget along itself ([`kinked_edges`]) — the surface
+///   normals a boundary chord keeps say nothing of its curve;
+/// - no curve's chord standing off its curve past the chord budget ([`sagging_edges`]) — the mesh's
+///   own check reads interior edges against their surface, not boundary chords against their
+///   curve;
+/// - every face one piece ([`split_faces`]) — the sweep refuses a face of pieces only where it sees
+///   them touch;
+/// - every planar triangle facing its face's way ([`facing_away`]);
+/// - each lateral's curves sampled on common generators ([`unshared_columns`]) — a band between two
+///   curves sampled off each other's θs tilts.
+#[cfg(any(test, feature = "test-util"))]
+pub fn drawing_faults(model: &Model, t: &Tessellation, cfg: &TessConfig) -> Vec<String> {
+    let mut out = Vec::new();
+    let leaks = non_watertight(t);
+    if leaks > 0 {
+        out.push(format!("the mesh leaks at {leaks} triangle edges"));
+    }
+    let leaning = leaning_laterals(model, t, cfg.max_angle_deg);
+    if !leaning.is_empty() {
+        out.push(format!(
+            "lateral triangles lean off their cylinder: {leaning:?}"
+        ));
+    }
+    let kinked = kinked_edges(model, t, cfg.max_angle_deg);
+    if !kinked.is_empty() {
+        out.push(format!("curve polylines kink past the budget: {kinked:?}"));
+    }
+    let split = split_faces(t);
+    if !split.is_empty() {
+        out.push(format!("faces in pieces: {split:?}"));
+    }
+    let away = facing_away(model, t);
+    if !away.is_empty() {
+        out.push(format!(
+            "planar faces with a triangle facing away: {away:?}"
+        ));
+    }
+    let unshared = unshared_columns(model, t);
+    if !unshared.is_empty() {
+        out.push(format!(
+            "lateral curves sampled off each other's θs: {unshared:?}"
+        ));
+    }
+    let sagging = sagging_edges(model, t, cfg);
+    if !sagging.is_empty() {
+        out.push(format!("curve chords sag past the budget: {sagging:?}"));
+    }
+    out
+}
+
 /// A chord of a curved edge's polyline that stands off its curve by more than the chord budget,
 /// and by how much: the edge, the chord's first sample (its place in the polyline), and the
 /// farthest the curve over it stands off the chord. Test-only (`test-util`).
@@ -1335,8 +1445,8 @@ pub struct Sagging {
 
 /// Every chord of a curved edge's polyline (`by_edge`) the curve stands off by more than `cfg`'s
 /// chord budget — a whole rim's closing chord included — or none where the budget asks nothing.
-/// Test-only (`test-util`): the mesh locks call it beside [`kinked_edges`], which holds the other
-/// budget to the same polylines.
+/// Test-only (`test-util`): [`drawing_faults`] asks it beside [`kinked_edges`], which holds the
+/// other budget to the same polylines.
 ///
 /// **What it holds the sampler to.** The chord a polyline puts in for its curve must stay within
 /// `tol` of it, and the mesh's own check does not ask: `within_budget` reads interior edges

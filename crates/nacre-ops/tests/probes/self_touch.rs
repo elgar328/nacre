@@ -678,7 +678,8 @@ fn a_pin_flush_in_a_round_hole_is_one_body() {
                 assert!((v - want).abs() < 1e-6, "{at}: volume {v}, want {want}");
                 let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
                     .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
-                assert_eq!(crate::common::non_watertight(&t), 0, "{at}: the mesh leaks");
+                let faults = nacre_tess::drawing_faults(&m, &t, &nacre_tess::TessConfig::default());
+                assert!(faults.is_empty(), "{at}: {faults:?}");
             }
         }
     }

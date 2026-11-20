@@ -1221,18 +1221,6 @@ pub fn mesh_volume(t: &nacre_tess::Tessellation) -> f64 {
         .sum()
 }
 
-/// Undirected triangle edges not shared by exactly two triangles.
-pub fn non_watertight(t: &nacre_tess::Tessellation) -> usize {
-    let mut counts: std::collections::HashMap<(u32, u32), usize> = Default::default();
-    for (_, tri) in t.triangles.iter() {
-        let [a, b, c] = tri.vertices.map(|h| h.index());
-        for (x, y) in [(a, b), (b, c), (c, a)] {
-            *counts.entry((x.min(y), x.max(y))).or_default() += 1;
-        }
-    }
-    counts.values().filter(|&&n| n != 2).count()
-}
-
 /// The faces of solid `s`, its cavities' too.
 pub fn face_count(m: &Model, s: Handle<Solid>) -> usize {
     let sol = m.solid(s);
@@ -1243,9 +1231,9 @@ pub fn face_count(m: &Model, s: Handle<Solid>) -> usize {
 }
 
 /// **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
-/// (`tess_census`), which the front-door tests do not pass through. The mesh exists, is
-/// watertight, has no lateral triangle leaning off its surface, and its signed volume is the
-/// solids' own up to what sampling cuts off a curved face:
+/// (`tess_census`), which the front-door tests do not pass through. The mesh exists, is the drawing
+/// of its b-rep (`nacre_tess::drawing_faults`), and its signed volume is the solids' own up to what
+/// sampling cuts off a curved face:
 /// at most the face's area times the sagitta the budget allows, the smaller of `TessConfig::tol`
 /// and `r(1 − cos(max_angle / 2))` — the two budgets `TessConfig` states. The slack comes from the
 /// budget, not from the fixture: `tol` alone would allow `0.126` on the unit cylinder's lateral,
@@ -1254,11 +1242,8 @@ pub fn drawn(c: &dyn std::fmt::Display, m: &Model, solids: &[Handle<Solid>], vol
     let cfg = nacre_tess::TessConfig::default();
     let t = nacre_tess::tessellate(m, &cfg)
         .unwrap_or_else(|e| panic!("{c}: the mesher refuses it: {e:?}"));
-    assert_eq!(non_watertight(&t), 0, "{c}: the mesh leaks");
-    let leaning = nacre_tess::leaning_laterals(m, &t, cfg.max_angle_deg);
-    assert!(leaning.is_empty(), "{c}: {leaning:?}");
-    let unshared = nacre_tess::unshared_columns(m, &t);
-    assert!(unshared.is_empty(), "{c}: {unshared:?}");
+    let faults = nacre_tess::drawing_faults(m, &t, &cfg);
+    assert!(faults.is_empty(), "{c}: {faults:?}");
     let mut slack = 0.0;
     for &s in solids {
         let solid = m.solid(s);

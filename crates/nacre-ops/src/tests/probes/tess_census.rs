@@ -30,38 +30,13 @@ pub(crate) static MESHED: Ledger<()> = Ledger::new();
 pub(crate) fn record(model: &Model) {
     let cfg = nacre_tess::TessConfig::default();
     let mesh = nacre_tess::tessellate(model, &cfg);
-    // **And it lies on its surface**: no lateral triangle leans off the cylinder by more than the
-    // budget (`leaning_laterals`, measured without the mesher's own facet judgement) — a lattice
-    // point placed a few ulps off the boundary makes a sliver leaning up to 90° off.
+    // **And it is the drawing of its b-rep** (`nacre_tess::drawing_faults` — each clause's reason
+    // is there).
     if let Ok(t) = &mesh {
-        let leaning = nacre_tess::leaning_laterals(model, t, cfg.max_angle_deg);
+        let faults = nacre_tess::drawing_faults(model, t, &cfg);
         assert!(
-            leaning.is_empty(),
-            "a boolean built a solid whose mesh leans off a lateral: {leaning:?}"
-        );
-        // And its curves' polylines turn within the budget along themselves (`kinked_edges`) —
-        // nothing else asks: the surface normals a boundary chord keeps say nothing of its curve.
-        let kinked = nacre_tess::kinked_edges(model, t, cfg.max_angle_deg);
-        assert!(
-            kinked.is_empty(),
-            "a boolean built a solid whose curve's polyline kinks past the budget: {kinked:?}"
-        );
-        // And every face of the model is one piece (`split_faces`). A face of two pieces, or
-        // loops touching where neither has a corner, is what STEP calls a broken face; the mesh
-        // refuses the second, and the first where its pieces touch, so the refusal below names
-        // them too.
-        let split = nacre_tess::split_faces(t);
-        assert!(
-            split.is_empty(),
-            "a face of the model is in pieces: {split:?}"
-        );
-        // And each lateral's curves stand their samples on common generators
-        // (`unshared_columns`) — a band between two curves sampled off each other's θs tilts.
-        let unshared = nacre_tess::unshared_columns(model, t);
-        assert!(
-            unshared.is_empty(),
-            "a boolean built a solid whose lateral's curves are sampled off each other's θs: \
-             {unshared:?}"
+            faults.is_empty(),
+            "a boolean built a solid whose mesh is not its drawing: {faults:?}"
         );
     }
     // **The claim is asserted here, where the fact exists — not in a later test.**

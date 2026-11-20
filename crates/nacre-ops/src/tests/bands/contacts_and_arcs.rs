@@ -1480,15 +1480,11 @@ fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
     assert!(issues.is_empty(), "{issues:?}");
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
         .expect("the arcs tessellate");
-    let mut uses: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
-    for (_, tri) in mesh.triangles.iter() {
-        for k in 0..3 {
-            let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-            *uses.entry((a.min(b), a.max(b))).or_default() += 1;
-        }
-    }
-    let open = uses.values().filter(|&&n| n != 2).count();
-    assert_eq!(open, 0, "the mesh is watertight");
+    assert_eq!(
+        nacre_tess::non_watertight(&mesh),
+        0,
+        "the mesh is watertight"
+    );
     nacre_props::mass_props(&m, out[0]).expect("props").volume
 }
 

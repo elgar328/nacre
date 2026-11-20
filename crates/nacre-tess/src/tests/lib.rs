@@ -21,20 +21,6 @@ fn cylinder(base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Model {
     m
 }
 
-/// A closed manifold mesh has every undirected triangle edge shared by
-/// exactly two triangles. Returns the count of edges that are not.
-fn non_watertight_edges(t: &Tessellation) -> usize {
-    let mut counts: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
-    for (_, tri) in t.triangles.iter() {
-        let [a, b, c] = tri.vertices.map(|h| h.index());
-        for (x, y) in [(a, b), (b, c), (c, a)] {
-            let key = (x.min(y), x.max(y));
-            *counts.entry(key).or_default() += 1;
-        }
-    }
-    counts.values().filter(|&&c| c != 2).count()
-}
-
 fn v_lines(obj: &str) -> Vec<&str> {
     obj.lines().filter(|l| l.starts_with("v ")).collect()
 }
@@ -168,7 +154,7 @@ fn cube_tessellates_watertight() {
     .unwrap();
     assert_eq!(t.vertices.len(), 8);
     assert_eq!(t.triangles.len(), 12); // 6 quads × 2
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
     for (_, v) in t.vertices.iter() {
         assert!(matches!(v.origin, TessOrigin::OnVertex(_)));
     }
@@ -181,7 +167,7 @@ fn cylinder_tessellates_watertight() {
     let t = tessellate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0), &cfg).unwrap();
     assert_eq!(t.vertices.len(), 2 * n); // two rim rings, each rim's vertex shared
     assert_eq!(t.triangles.len(), 4 * n - 4); // 2 caps (n−2) + band (2n)
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
 }
 
 #[test]
@@ -534,7 +520,7 @@ proptest! {
         let t = tessellate(&cylinder([0.0, 0.0, 0.0], axis, r, h), &cfg).unwrap();
         prop_assert_eq!(t.vertices.len(), 2 * n);
         prop_assert_eq!(t.triangles.len(), 4 * n - 4);
-        prop_assert_eq!(non_watertight_edges(&t), 0);
+        prop_assert_eq!(crate::non_watertight(&t), 0);
     }
 }
 
@@ -612,7 +598,7 @@ fn a_band_cut_at_both_rims_meshes_as_its_surface() {
             );
             let t = tessellate(&m, &TessConfig::default())
                 .unwrap_or_else(|e| panic!("{built:?} y_min {y_min} holed {holed}: {e:?}"));
-            assert_eq!(non_watertight_edges(&t), 0, "{built:?} {y_min} {holed}");
+            assert_eq!(crate::non_watertight(&t), 0, "{built:?} {y_min} {holed}");
             let area: f64 = t.by_face[&lateral]
                 .iter()
                 .map(|&th| {
@@ -735,7 +721,7 @@ fn a_bore_is_cut_at_its_rims_vertices() {
     );
     let cfg = TessConfig::default();
     let t = tessellate(&m, &cfg).unwrap();
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
     let n = circle_segments(&cfg, 1.0).expect("within the finest");
     let on_lateral: HashSet<_> = t.by_face[&bore]
         .iter()
@@ -832,7 +818,7 @@ fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
         );
         let t = tessellate(&m, &TessConfig::default())
             .unwrap_or_else(|e| panic!("seam {seam_x}: {e:?}"));
-        assert_eq!(non_watertight_edges(&t), 0, "seam {seam_x}");
+        assert_eq!(crate::non_watertight(&t), 0, "seam {seam_x}");
         let want = 2.0 * pi * 4.0 - 2.0 * 0.6f64.asin();
         let area = face_area(&t, new);
         assert!(
@@ -893,7 +879,7 @@ fn a_seamless_lateral_with_a_chain_rim_on_the_seam_is_cut_off_its_corner() {
         "a chain corner at the whole rim's angle ({at:?})"
     );
     let t = tessellate(&m, &TessConfig::default()).unwrap();
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
     let want = 6.0 * pi;
     let area = face_area(&t, new);
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
@@ -981,7 +967,7 @@ fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
         );
     }
     let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
     let want = 2.0 * pi * 4.0 - 4.0 * 2.0 * 0.8f64.asin() * 0.5;
     let area = face_area(&t, new);
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
@@ -1035,7 +1021,7 @@ fn a_seamless_lateral_cut_through_two_windows_splices_both() {
         "the premise: the cut crosses two windows"
     );
     let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
     let want = 8.0 * pi - 4.0 * pi * 0.5;
     let area = face_area(&t, new);
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
@@ -1098,7 +1084,7 @@ fn a_reversed_lateral_is_cut_through_a_window_and_spliced() {
         "the premise: the cut crosses one window"
     );
     let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
-    assert_eq!(non_watertight_edges(&t), 0);
+    assert_eq!(crate::non_watertight(&t), 0);
     let want = 2.0 * pi * 4.0 - 4.0 * 2.0 * 0.8f64.asin() * 0.5;
     let area = face_area(&t, bore);
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
@@ -1654,36 +1640,22 @@ fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
     }
 }
 
-/// A mesh of every live solid in `m` that is drawn right: it exists, it is watertight, no lateral
-/// triangle leans off its cylinder, no planar triangle faces against its face, and it holds the
-/// solids' volume up to what the budget lets sampling cut off a curved face. Returns it.
+/// A mesh of every live solid in `m` that is drawn right: it exists, it is the drawing of its b-rep
+/// ([`crate::drawing_faults`]), and it holds the solids' volume up to what the budget lets sampling
+/// cut off a curved face. Returns it.
 fn drawn_right(m: &Model, name: &str) -> Tessellation {
     let cfg = TessConfig::default();
     let t = tessellate(m, &cfg).unwrap_or_else(|e| panic!("{name}: the mesher refuses it: {e:?}"));
-    assert_eq!(non_watertight_edges(&t), 0, "{name}: the mesh leaks");
-    let leaning = leaning_laterals(m, &t, cfg.max_angle_deg);
-    assert!(leaning.is_empty(), "{name}: {leaning:?}");
+    let faults = crate::drawing_faults(m, &t, &cfg);
+    assert!(faults.is_empty(), "{name}: {faults:?}");
     let mut slack = 0.0;
-    for (&fh, tris) in &t.by_face {
-        let props = nacre_props::face_props(m, fh).expect("a face's props");
-        match (m.surface_cache(m.face(fh).surface), props.normal) {
-            (nacre_topo::SurfaceCache::Plane { .. }, Some(n)) => {
-                for &h in tris {
-                    let p = t.triangles.get(h).vertices.map(|v| t.vertices.get(v).pos);
-                    let facing = (p[1] - p[0]).cross(p[2] - p[0]).dot(n);
-                    assert!(
-                        facing > 0.0,
-                        "{name}: a planar triangle faces away ({facing})"
-                    );
-                }
-            }
-            (nacre_topo::SurfaceCache::Cylinder { cylinder: cyl, .. }, _) => {
-                let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
-                slack += props.area.abs() * cfg.tol.min(cyl.radius() * (1.0 - turn));
-            }
-            (nacre_topo::SurfaceCache::Plane { .. }, None) => {
-                panic!("{name}: a planar face without a normal")
-            }
+    for &fh in t.by_face.keys() {
+        if let nacre_topo::SurfaceCache::Cylinder { cylinder: cyl, .. } =
+            m.surface_cache(m.face(fh).surface)
+        {
+            let area = nacre_props::face_props(m, fh).expect("a face's props").area;
+            let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
+            slack += area.abs() * cfg.tol.min(cyl.radius() * (1.0 - turn));
         }
     }
     let solids: f64 = m
@@ -1744,8 +1716,6 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
             finished > before_cutting(&m),
             "{name}: no arc was cut finer"
         );
-        let unshared = unshared_columns(&m, &t);
-        assert!(unshared.is_empty(), "{name}: {unshared:?}");
     }
 }
 
@@ -1988,10 +1958,8 @@ fn a_band_thin_between_an_arc_and_its_rim_is_drawn() {
             let out = boolean(&mut m, BoolKind::Cut, disk, block).expect("the box cuts");
             let t = tessellate_solids(&m, &out, &cfg)
                 .unwrap_or_else(|e| panic!("r {r}, a band {h} high: {e:?}"));
-            let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
-            assert!(leaning.is_empty(), "r {r}, h {h}: {leaning:?}");
-            let unshared = unshared_columns(&m, &t);
-            assert!(unshared.is_empty(), "r {r}, h {h}: {unshared:?}");
+            let faults = crate::drawing_faults(&m, &t, &cfg);
+            assert!(faults.is_empty(), "r {r}, h {h}: {faults:?}");
         }
     }
 }
@@ -2500,10 +2468,8 @@ fn a_band_thin_between_an_ellipse_and_its_circle_is_drawn() {
         let (m, out) = rod_cut_obliquely(low, high);
         let t = tessellate_solids(&m, &out, &cfg)
             .unwrap_or_else(|e| panic!("cut from {low} to {high}: {e:?}"));
-        let leaning = leaning_laterals(&m, &t, cfg.max_angle_deg);
-        assert!(leaning.is_empty(), "{low}..{high}: {leaning:?}");
-        let unshared = unshared_columns(&m, &t);
-        assert!(unshared.is_empty(), "{low}..{high}: {unshared:?}");
+        let faults = crate::drawing_faults(&m, &t, &cfg);
+        assert!(faults.is_empty(), "{low}..{high}: {faults:?}");
     }
 }
 

@@ -188,15 +188,8 @@ fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
     assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
         .expect("the panels tessellate");
-    let mut uses: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
-    for (_, tri) in mesh.triangles.iter() {
-        for k in 0..3 {
-            let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-            *uses.entry((a.min(b), a.max(b))).or_default() += 1;
-        }
-    }
     assert_eq!(
-        uses.values().filter(|&&n| n != 2).count(),
+        nacre_tess::non_watertight(&mesh),
         0,
         "the mesh is watertight"
     );
@@ -330,16 +323,8 @@ fn a_half_height_boss_builds() {
         );
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
             .expect("the half-height boss tessellates");
-        let mut uses: std::collections::HashMap<(u32, u32), usize> =
-            std::collections::HashMap::new();
-        for (_, tri) in mesh.triangles.iter() {
-            for k in 0..3 {
-                let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-                *uses.entry((a.min(b), a.max(b))).or_default() += 1;
-            }
-        }
         assert_eq!(
-            uses.values().filter(|&&n| n != 2).count(),
+            nacre_tess::non_watertight(&mesh),
             0,
             "{kind:?}: the mesh is watertight"
         );
@@ -378,15 +363,11 @@ fn a_boss_overhanging_the_plates_edge_builds() {
     assert!(issues.is_empty(), "{issues:?}");
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
         .expect("the arcs tessellate");
-    let mut uses: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
-    for (_, tri) in mesh.triangles.iter() {
-        for k in 0..3 {
-            let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-            *uses.entry((a.min(b), a.max(b))).or_default() += 1;
-        }
-    }
-    let open = uses.values().filter(|&&n| n != 2).count();
-    assert_eq!(open, 0, "the mesh is watertight");
+    assert_eq!(
+        nacre_tess::non_watertight(&mesh),
+        0,
+        "the mesh is watertight"
+    );
 }
 
 /// **A boss standing over a bore, its whole outline *inside* the rim.** No segment crosses

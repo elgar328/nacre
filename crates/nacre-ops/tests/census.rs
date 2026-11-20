@@ -503,34 +503,12 @@ fn record(
             "{tag}: a boolean built a solid the mesher refuses: {:?}",
             mesh.err()
         );
-        // And no lateral triangle leans off its cylinder past the budget (worst over this corpus
-        // 0.345°). The `bothrims … slab` rows are where a lattice point on a ruling would make ten
-        // slivers each, leaning 30° to 34° (measured).
+        // And it is the drawing of its b-rep (`nacre_tess::drawing_faults`). Worst lateral lean
+        // over this corpus 0.345°; the `bothrims … slab` rows are where a lattice point on a ruling
+        // would make ten slivers each, leaning 30° to 34° (measured).
         if let Ok(t) = &mesh {
-            let leaning = nacre_tess::leaning_laterals(m, t, cfg.max_angle_deg);
-            assert!(
-                leaning.is_empty(),
-                "{tag}: a mesh that leans off a lateral: {leaning:?}"
-            );
-            // And no curve's polyline kinks past the budget along itself.
-            let kinked = nacre_tess::kinked_edges(m, t, cfg.max_angle_deg);
-            assert!(
-                kinked.is_empty(),
-                "{tag}: a curve's polyline that kinks past the budget: {kinked:?}"
-            );
-            // And the curves of each lateral stand their samples on common generators.
-            let unshared = nacre_tess::unshared_columns(m, t);
-            assert!(
-                unshared.is_empty(),
-                "{tag}: a lateral's curves sampled off each other's θs: {unshared:?}"
-            );
-            // And every face of the model is one piece — the lib suite's exit asserts the same
-            // (`tess_census`), where the reason is written.
-            let split = nacre_tess::split_faces(t);
-            assert!(
-                split.is_empty(),
-                "{tag}: a face of the model in pieces: {split:?}"
-            );
+            let faults = nacre_tess::drawing_faults(m, t, &cfg);
+            assert!(faults.is_empty(), "{tag}: {faults:?}");
         }
     }
     print!("c {tag} in:{inputs} ");

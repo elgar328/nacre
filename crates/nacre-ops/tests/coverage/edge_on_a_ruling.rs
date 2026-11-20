@@ -963,7 +963,9 @@ fn a_body_touching_itself_along_a_ruling_is_refused() {
                         assert!((got - v).abs() < 1e-9, "{at}: volume {got}, want {v}");
                         let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
                             .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
-                        assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
+                        let faults =
+                            nacre_tess::drawing_faults(&m, &t, &nacre_tess::TessConfig::default());
+                        assert!(faults.is_empty(), "{at}: {faults:?}");
                     }
                     (Err(BoolError::Rejected { reason, .. }), None) => assert_eq!(
                         reason,
@@ -1240,7 +1242,8 @@ fn a_pinched_cap_as_an_operand_builds() {
                 assert!(vs.is_empty(), "{at}: {vs:?}");
                 let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
                     .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
-                assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
+                let faults = nacre_tess::drawing_faults(&m, &t, &nacre_tess::TessConfig::default());
+                assert!(faults.is_empty(), "{at}: {faults:?}");
                 six.push(solids.iter().map(|&s| volume(&m, s)).sum());
             }
         }
@@ -1316,7 +1319,9 @@ fn an_outside_corner_as_tall_as_the_cylinder_builds() {
                     assert!(vs.is_empty(), "{at}: {vs:?}");
                     let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
                         .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
-                    assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
+                    let faults =
+                        nacre_tess::drawing_faults(&m, &t, &nacre_tess::TessConfig::default());
+                    assert!(faults.is_empty(), "{at}: {faults:?}");
                     let v: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
                     let (bodies, want) = match i {
                         0 | 1 => (2, tau + b),

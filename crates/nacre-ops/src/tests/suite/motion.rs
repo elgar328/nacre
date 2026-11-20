@@ -196,15 +196,8 @@ fn two_bored_plates_fuse_face_to_face() {
     );
     // And the two bores' rims both survived as holes of the merged caps.
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
-    let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
-    for (_, tri) in mesh.triangles.iter() {
-        for k in 0..3 {
-            let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-            *uses.entry((x.min(y), x.max(y))).or_default() += 1;
-        }
-    }
     assert_eq!(
-        uses.values().filter(|&&n| n != 2).count(),
+        nacre_tess::non_watertight(&mesh),
         0,
         "the mesh is watertight"
     );
@@ -307,15 +300,8 @@ fn two_by_two_grid_fuses(recorded: bool) {
         4.0 * one
     );
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
-    let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
-    for (_, tri) in mesh.triangles.iter() {
-        for k in 0..3 {
-            let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-            *uses.entry((x.min(y), x.max(y))).or_default() += 1;
-        }
-    }
     assert_eq!(
-        uses.values().filter(|&&n| n != 2).count(),
+        nacre_tess::non_watertight(&mesh),
         0,
         "the mesh is watertight"
     );
@@ -403,15 +389,8 @@ fn a_boss_on_any_wall_weighs_the_same() {
         assert_eq!(out.len(), 1, "one solid");
         assert!(nacre_validate::validate(&m).is_empty());
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
-        let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
-        for (_, tri) in mesh.triangles.iter() {
-            for k in 0..3 {
-                let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-                *uses.entry((x.min(y), x.max(y))).or_default() += 1;
-            }
-        }
         assert_eq!(
-            uses.values().filter(|&&n| n != 2).count(),
+            nacre_tess::non_watertight(&mesh),
             0,
             "the mesh is watertight"
         );
@@ -573,15 +552,8 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
         assert_eq!(out.len(), 1, "one solid");
         assert!(nacre_validate::validate(&m).is_empty(), "validate {base:?}");
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
-        let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
-        for (_, tri) in mesh.triangles.iter() {
-            for k in 0..3 {
-                let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
-                *uses.entry((x.min(y), x.max(y))).or_default() += 1;
-            }
-        }
         assert_eq!(
-            uses.values().filter(|&&n| n != 2).count(),
+            nacre_tess::non_watertight(&mesh),
             0,
             "the mesh is watertight {base:?}"
         );

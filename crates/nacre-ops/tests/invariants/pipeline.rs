@@ -101,7 +101,8 @@ use nacre_store::Handle;
 use nacre_tess::{TessConfig, tessellate};
 use nacre_topo::{Face, Model, Shell, Solid};
 
-use crate::fixtures::{boolean_one, datum_frame, mesh_area, mesh_volume, non_watertight, p2};
+use crate::fixtures::{boolean_one, datum_frame, mesh_area, mesh_volume, p2};
+use nacre_tess::non_watertight;
 
 /// What the gate measured. Named fields: four numbers read positionally is one
 /// transposition away from a test that passes for the wrong reason.

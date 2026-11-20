@@ -185,12 +185,8 @@ fn a_rods_oblique_end_meshes() {
         let (m, s) = cut_rod(k);
         let cfg = nacre_tess::TessConfig::default();
         let t = nacre_tess::tessellate(&m, &cfg).expect("the mesh");
-        let leaning = nacre_tess::leaning_laterals(&m, &t, cfg.max_angle_deg);
-        assert!(leaning.is_empty(), "{leaning:?}");
-        let kinked = nacre_tess::kinked_edges(&m, &t, cfg.max_angle_deg);
-        assert!(kinked.is_empty(), "{k}: {kinked:?}");
-        let unshared = nacre_tess::unshared_columns(&m, &t);
-        assert!(unshared.is_empty(), "{k}: {unshared:?}");
+        let faults = nacre_tess::drawing_faults(&m, &t, &cfg);
+        assert!(faults.is_empty(), "{k}: {faults:?}");
         let mut volume = 0.0;
         for f in &m.reachable_from(&[s]).faces {
             for &tri in &t.by_face[f] {
