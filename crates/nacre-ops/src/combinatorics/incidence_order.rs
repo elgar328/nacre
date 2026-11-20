@@ -158,14 +158,54 @@ pub(crate) fn end_on_line(
     Some(PointOn::of((name, pin_for(jd, a, b, name)?)))
 }
 
+/// **Whether the pierce point `n` lies on the line `a ∩ b`** — asked of the two planes, not of the
+/// name: on the line is on both planes. The split-twin subdivision asks it
+/// (`assembly::name_result_vertices`), and it is the premise [`between_on_line`] takes its
+/// candidates under.
+///
+/// **Not the name's pair.** A point on two plane-pair lines has a pierce name per pair, and the one
+/// a ring carries is the alias table's representative, which the class order — the operand order —
+/// picks (`Aliases::rep_rank`). A pair read as «the line the point is on» names one of its lines:
+/// read so, a tangent point a wall and a notch's plane both pass through is cut into the wall's
+/// edge in one operand order and left inside it in the other — a vertex one face lists and its
+/// neighbour across the edge does not.
+///
+/// Each plane answers as [`side_of`]'s pierce arm does, the point solved once per node into
+/// `points` ([`PierceAt`]) — the subdivision asks one point against many lines. A zero is proved
+/// exactly or by the name; a side read off intervals ([`PiercePoint::side`] says where it reads
+/// one) is a sign or nothing, never a zero. So where one side is unproved and the other is no
+/// proved nonzero the point is not known to be on the line (`None`), and the caller leaves the edge
+/// uncut; so does a point that cannot be solved.
+pub(crate) fn pierce_on_line(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    points: &mut HashMap<NodeId, Option<Box<PierceAt>>>,
+    n: NodeId,
+    a: usize,
+    b: usize,
+) -> Option<bool> {
+    let at = points
+        .entry(n)
+        .or_insert_with(|| {
+            let (_, cyl, _) = pierce_name(n)?;
+            PierceAt::of(jd, cyls.get(cyl)?, cyl, n)
+        })
+        .as_deref()?;
+    match (at.side(jd, a), at.side(jd, b)) {
+        (Some(sa), Some(sb)) => Some(sa == 0 && sb == 0),
+        (Some(s), None) | (None, Some(s)) if s != 0 => Some(false),
+        _ => None,
+    }
+}
+
 /// **The candidates lying strictly between two named points of `L = P ∩ Q`, nearer `a` first** —
 /// the order half of the result naming's split-twin subdivision
 /// (`assembly::name_result_vertices`' opening pass), by the one rule [`order_located`].
 ///
 /// **Every point is pinned from its name and the line, candidates included** ([`end_on_line`]).
-/// A candidate is not always named by the line's own pair: a pierce point on a line two classes
-/// share on the cylinder can carry another pair through it, and that name is pinned on `L` by its
-/// other plane, not by the cylinder. Each point is located once and asked many times, as
+/// A candidate is not always named by the line's own pair — it lies on `L` ([`pierce_on_line`]) under
+/// whatever pair its representative carries — and such a name is pinned on `L` by a plane of its
+/// pair that cuts `L`, not by the cylinder. Each point is located once and asked many times, as
 /// [`Located`] argues.
 ///
 /// `None` when an order cannot be formed — an end or a candidate nothing pins on `L`, a missing

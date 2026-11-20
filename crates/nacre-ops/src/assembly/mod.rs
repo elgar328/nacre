@@ -37,8 +37,9 @@ pub(crate) use self_touch::*;
 pub(crate) use topology::*;
 
 /// **Per result node, by name: the coordinate a refusal names as its witness and the reach its cache
-/// proves**, which the sieves read — built once for the result contract's two judgements
-/// ([`self_touch_reject`], [`face_bounds_meet`]), which read it through the methods below.
+/// proves**, which the sieves read — built once for the result naming: its split-twin subdivision
+/// ([`name_result_vertices`]) and the result contract's two judgements ([`self_touch_reject`],
+/// [`face_bounds_meet`]) read it through the methods below.
 #[derive(Default)]
 pub(crate) struct NodeReach(HashMap<NodeId, (Point3, crate::planes::CacheReach)>);
 

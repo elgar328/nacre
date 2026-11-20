@@ -33,74 +33,37 @@ pub(crate) fn name_result_vertices(
     // twin's plane (a result vertex is defined from the planes of the faces whose rings
     // visit it), and the future edge welding has no twins to weld.
     //
-    // An edge's candidates are the pierce nodes whose plane pair *is* its `{own, wall}` — a name
-    // fact, no geometry — and those another pair names on a line two classes share (the shared-line
-    // block below); betweenness is `between_on_line`'s. An edge whose order cannot be formed is
-    // left unsplit (a corner short of a plane, `StraightAngle`): the conservative arm degrades to
-    // the unsplit edge, never to something new.
-    // Identity for every non-arc input: no pierce nodes, no pairs, no rewrite.
-    let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
+    // An edge's candidates are the pierce nodes **on its line** — on both its planes, which
+    // `combinatorics::pierce_on_line` asks of the planes rather than of the node's name: the name a
+    // ring carries is one pair's, picked by the class order, and a point on two lines has a pair per
+    // line (a tangent point a notch's plane also passes through; a prism's edge along a line two
+    // classes share on a cylinder, past the lateral's cap, the keyhole's box taller than the bore,
+    // whose rim point is named by the cap and one of the two). Only the pierce nodes whose proved
+    // box meets the edge's are asked — a point on the segment is in the hull of its ends — since
+    // the exact question is the cost (measured over the census: every node against every line
+    // its faces ride put the serial census +1.7% in instructions). Betweenness is
+    // `between_on_line`'s.
+    // An edge whose order cannot be formed is left unsplit (a corner short of a plane,
+    // `StraightAngle`): the conservative arm degrades to the unsplit edge, never to something new.
+    // Identity for every non-arc input: no pierce nodes, no candidates, no rewrite.
+    let reach = node_reach(seam);
+    let mut pierced: Vec<NodeId> = Vec::new();
     for lf in faces {
         for ring in lf.poly_rings() {
             for &n in ring.iter() {
-                if let Some((pair, _, _)) = combinatorics::pierce_name(n) {
-                    let v = by_pair.entry(pair).or_default();
-                    if !v.contains(&n) {
-                        v.push(n);
-                    }
+                if combinatorics::pierce_name(n).is_some() && !pierced.contains(&n) {
+                    pierced.push(n);
                 }
             }
         }
     }
-    // **And a line two classes share on a cylinder** (`SharedRuling`): its pierce points are
-    // named by a cap and *one* of the two classes, never by the pair itself, so the name fact
-    // above cannot find them there. A prism's edge along that line runs past the lateral's cap
-    // (the keyhole's box taller than the bore), and the lateral's ruling ends at the cap's rim
-    // point while the prism's wall — tangent, so no class split it — carries the edge whole. The
-    // point is on the line when the record holds it (`SharedRuling::holds`, against the point's
-    // own class), so the other class — a sectioned partner has no world statement — is not read.
-    let pierced: Vec<NodeId> = by_pair.values().flatten().copied().collect();
-    for cy in cyls {
-        let m = cy.def.dir();
-        for sr in &cy.shared {
-            let (a, b) = sr.line;
-            // A point named by the pair itself is already under it, by its name.
-            let on_line_of = |n: NodeId| -> Option<bool> {
-                let (pl, ncyl, _) = combinatorics::pierce_name(n)?;
-                if pl == [a, b] {
-                    return Some(false);
-                }
-                let x = if pl.contains(&a) {
-                    a
-                } else if pl.contains(&b) {
-                    b
-                } else {
-                    return Some(false);
-                };
-                let ncy = cyls.get(ncyl)?;
-                let pt = combinatorics::pierce_meet(jd, ncyl, &ncy.def, n)?;
-                let (line, s) = pt.exact()?;
-                sr.holds(&jd.world_rat(x)?, &m, line, s)
-            };
-            let on_line: Vec<NodeId> = pierced
-                .iter()
-                .copied()
-                .filter(|&n| on_line_of(n) == Some(true))
-                .collect();
-            if on_line.is_empty() {
-                continue;
-            }
-            let v = by_pair.entry([a, b]).or_default();
-            for n in on_line {
-                if !v.contains(&n) {
-                    v.push(n);
-                }
-            }
-        }
-    }
-    let subdivided: Option<Vec<LocalFace>> = if by_pair.is_empty() {
+    let subdivided: Option<Vec<LocalFace>> = if pierced.is_empty() {
         None
     } else {
+        // Per line and node, whether it holds the node; per node, its solved point — one point is
+        // asked against every line its faces' edges ride.
+        let mut on_line: HashMap<([usize; 2], NodeId), bool> = HashMap::new();
+        let mut points: HashMap<NodeId, Option<Box<combinatorics::PierceAt>>> = HashMap::new();
         let mut v = faces.to_vec();
         for lf in &mut v {
             let ClassIx::Plane(own) = lf.surf else {
@@ -121,10 +84,24 @@ pub(crate) fn name_result_vertices(
                     };
                     let mut pair = [own, w];
                     pair.sort_unstable();
-                    let Some(cands) = by_pair.get(&pair) else {
+                    let (el, eh) = reach.edge_reach([a, b]);
+                    let cands: Vec<NodeId> = pierced
+                        .iter()
+                        .copied()
+                        .filter(|&n| {
+                            let (nl, nh) = reach.reach(n);
+                            (0..3).all(|i| nl[i] <= eh[i] && nh[i] >= el[i])
+                                && *on_line.entry((pair, n)).or_insert_with(|| {
+                                    combinatorics::pierce_on_line(jd, cyls, &mut points, n, own, w)
+                                        == Some(true)
+                                })
+                        })
+                        .collect();
+                    if cands.is_empty() {
                         continue;
-                    };
-                    if let Some(bet) = combinatorics::between_on_line(jd, cyls, own, w, a, b, cands)
+                    }
+                    if let Some(bet) =
+                        combinatorics::between_on_line(jd, cyls, own, w, a, b, &cands)
                     {
                         for x in bet {
                             nodes.push(x);
@@ -176,7 +153,6 @@ pub(crate) fn name_result_vertices(
     // whichever local derivation happens to fail first on its unnameable corners: a
     // self-touching body's pinch line cannot be honestly named by any face-local rule (its
     // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured).
-    let reach = node_reach(seam);
     {
         let g = &grouping;
         let body_comps: Vec<Vec<usize>> =

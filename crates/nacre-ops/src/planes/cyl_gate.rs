@@ -708,9 +708,9 @@ fn class_meet(
 /// of one solid that is also the line of the other's edge (or of the same solid's flat through
 /// its own axis). Recorded once, here, and read by every road that must say so: the alias seed
 /// (one point, several names), the rulings split (one line, two vocabularies), the chart (one
-/// station, its secant walls in chord order), the result's edge subdivision (the pierce points on
-/// the line), the straight-angle cleaning (a ruling piece and a plane segment, one line) and the
-/// self-touch verdict (an edge along the line inside the solid's own lateral).
+/// station, its secant walls in chord order), the straight-angle cleaning (a ruling piece and a
+/// plane segment, one line) and the self-touch verdict (an edge along the line inside the solid's
+/// own lateral).
 ///
 /// The population is the pairs [`class_meet`] already answered against the cylinder: a class that
 /// cuts it ([`ClassMeet::Cuts`] — two rulings) with another that cuts it, or with a **tangent**

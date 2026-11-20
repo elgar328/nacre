@@ -1115,9 +1115,11 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
 /// an edge on the line `(1, 0)` — a node on the ruling, where the wall's class draws no knife
 /// (`rulings::tangent_knife`; the other two tangent walls draw none either, measured):
 /// `B − A` is refused the same way though its answer is the plain family's three bodies
-/// (todo 「접선에서만 만나는 덩이 — 칼날을 긋지 못하는 선」). The notched `A ∪ B` is refused while
-/// `B ∪ A` builds the one body whose volume the closed form gives
-/// (todo 「노치 난 원통과 L 의 합이 순서에 따라 갈린다」).
+/// (todo 「접선에서만 만나는 덩이 — 칼날을 긋지 못하는 선」). The notched union builds the one body
+/// whose volume the closed form gives in either order: a point where a cap or a wall touches `A`
+/// lies on a plane of the notch as well (`x = 0`, `y = 0`), so it has a pierce name of that plane's
+/// pair too, which in `A ∪ B` is the one the rings carry — the wall's edge is cut there all the
+/// same, the point being on both its planes (`combinatorics::pierce_on_line`).
 ///
 /// Both frames (the world and [`pythagorean_frame`]), both vertex orders, all six booleans, the
 /// volumes in closed form, the faces of each body ([`answer`]), and every body drawn.
@@ -1277,20 +1279,13 @@ enum Twin {
 /// What each boolean of that test answers — the faces of each body, fewest first, or the refusal.
 /// `y0` names the family: `−1` the L, `−1/2` the L whose caps alone are tangent.
 fn answer(y0: f64, twin: Twin, kind: BoolKind, swapped: bool) -> Result<Vec<usize>, RejectReason> {
-    use RejectReason::{OpenResultShell, SelfTouchingResult};
+    use RejectReason::SelfTouchingResult;
     let the_l = y0 == -1.0;
     Ok(match (kind, swapped) {
         (BoolKind::Cut, true) => match twin {
             Twin::Plain => vec![5, 5, 6],
             Twin::Low | Twin::Notched => return Err(SelfTouchingResult),
         },
-        (BoolKind::Fuse, false) if twin == Twin::Notched => {
-            return Err(if the_l {
-                SelfTouchingResult
-            } else {
-                OpenResultShell
-            });
-        }
         (BoolKind::Fuse, _) => match twin {
             Twin::Plain => vec![14],
             Twin::Low => vec![if the_l { 10 } else { 11 }],
