@@ -27,7 +27,7 @@
 //! |---|---|---|---|
 //! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 22,220 |
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 4,616 |
-//! | `n ⊥ m` | `d = r` | **no line** from another solid's plane where its tangency divides nothing; where the operation parts the material along it, the wall's knife — a ruling of `side = 0` with **no chord**; where its face **ends** on a secant wall's ruling, a spoke of that ruling's station ([`Station::tangent`]); the face's **own** tangent wall is a ruling of `side = 0` with **no chord**, where the face ends | 2,062 |
+//! | `n ⊥ m` | `d = r` | **no line** from another solid's plane where its tangency divides nothing; where the operation parts the material along it, the wall's knife — a ruling of `side = 0` with **no chord**, or on a secant wall's ruling, two spokes of that ruling's station ([`Station::tangent_rulings`]); where its face **ends** on a secant wall's ruling, a spoke of that ruling's station ([`Station::tangent`]); the face's **own** tangent wall is a ruling of `side = 0` with **no chord**, where the face ends | 2,062 |
 //! | `n ⊥ m` | `d > r`, or no face reaching the lateral | nothing | 24,661 |
 //! | oblique | — | a **section** — a line of the chart, crossing others, which the class draws on its own arrangement (`CylRecord::Sections`) wherever the plane touches none of the lateral's circles; a cell it bounds on one side only is a face with an elliptical edge | 298 |
 //!
@@ -46,7 +46,8 @@
 //! line stands at no event, so the gate records no crossing and this table's third row is «no
 //! line», not «one vertical» — unless `keep` leaves only the two wedges beside it
 //! (`WorkingCyl::parting`), where the wall's class draws it as a knife and the chart reads it as a
-//! station of `side = 0`, like the face's own tangent wall below. Where another solid's tangent face ends on the line a secant wall draws, it is an
+//! station of `side = 0`, like the face's own tangent wall below — or, where a secant wall's
+//! ruling holds the line, as that ruling's station's two tangent halves. Where another solid's tangent face ends on the line a secant wall draws, it is an
 //! edge there, not a contact: the station of that ruling reads it as one of the half-faces round
 //! the line ([`Station::tangent`], off the gate's record of the pair). The row's other half: a fillet's or a slot's wall is tangent to its **own**
 //! cylinder, and that ruling is not a crossing but the face's edge — a station of `side = 0`
@@ -60,7 +61,10 @@
 //! that tangent ruling — a line two planes and the cylinder share. Its ends have one name (the
 //! alias table's, seeded from the operands, which every name the chart reads already wears), and
 //! the line is stated in the plane vocabulary by both faces that touch it — the tangent wall's run
-//! and the lateral's own graze — so the ruling vocabulary states nothing there. The same holds on
+//! and the lateral's own graze — so the ruling vocabulary states nothing there. Where a tangent
+//! ruling piece and that vertical both stand over one stretch, they are one line under two names:
+//! the tangent piece folds into the vertical's station ([`Station::tangent_rulings`]), its wall's
+//! two halves spokes of the station's star. The same holds on
 //! the *other* solid's tangent wall where the face's own edge lies on its tangent ruling (a half
 //! cylinder's flat edge): the flat and the lateral each state their side of the plane-pair line on
 //! that wall's class (`rulings::lateral_half_of_plane_pair_lines`), and the chart takes nothing
@@ -108,9 +112,11 @@ pub(crate) use read_cell::*;
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
     pub(crate) wall: usize,
-    /// The ruling's side on its wall — `0` a **tangent** station: a line the wall's faces end on
+    /// The ruling's side on its wall — `0` a **tangent** ruling: a line the wall's faces end on
     /// (its own tangent edge, or its knife where the operation parts the material there), with no
-    /// chamber to read behind it, so no `label` (its cells are `beside`).
+    /// chamber to read behind it, so no `label` (its cells are `beside`). Over a stretch a secant
+    /// wall's ruling holds as well it folds into that ruling's station
+    /// ([`Station::tangent_rulings`]) and is no segment of its own.
     pub(crate) side: i8,
     /// The piece's own two pierce nodes: the θ **order** is asked of these
     /// (`circular_order_about_seam` via `combinatorics::theta_groups`), never of a coordinate.
@@ -138,10 +144,11 @@ pub(crate) struct ThetaSeg {
     /// **The half-faces with an edge on this very ruling** — every secant wall through it, in chord
     /// order (the line secant classes share on the cylinder, [`crate::planes::SharedRuling`], is one
     /// station, and the chamber beside the lateral on each side of it is closed by a different one
-    /// of their planes — [`Station::chords`]), and a tangent wall where it ends on the line
-    /// against a lateral face of the other solid ([`Station::tangent`]). `None` exactly at a
-    /// tangent ruling (`side == 0`): no chord runs through it, and [`Chart::slit_at`] reads its
-    /// star (asserted by the chart census).
+    /// of their planes — [`Station::chords`]), a tangent wall where it ends on the line
+    /// against a lateral face of the other solid ([`Station::tangent`]), and a tangent wall whose
+    /// ruling on the line folded in ([`Station::tangent_rulings`]). `None` exactly at a tangent
+    /// ruling (`side == 0`): no chord runs through it, and [`Chart::slit_at`] reads its star
+    /// (asserted by the chart census).
     pub(crate) station: Option<Station>,
 }
 
@@ -169,10 +176,26 @@ pub(crate) struct Station {
     /// [`spokes`]): the line is the face's edge, and the face a spoke of the line's star. Outside
     /// the cylinder it leaves along `±τ`, past the lateral's half on that side (the lateral bends
     /// to the axis) and before every chord's outer half, so it closes the sector beside the lateral
-    /// there. One solid's wall on both sides runs through the line — a contact, which divides
-    /// nothing; the gate states it, the operation judges it (`planes::TangentReading::through`).
-    /// Both entries are set where each of the two solids' walls ends on one side.
+    /// there. One solid's wall on both sides runs through the line, with no edge there unless its
+    /// class draws the line as a knife — and that knife is a folded tangent ruling
+    /// ([`Station::tangent_rulings`]); without it the gate states the contact and the operation
+    /// judges it (`planes::TangentReading::through`). Both entries are set where each of the two
+    /// solids' walls ends on one side.
     pub(crate) tangent: [bool; 2],
+    /// **The tangent rulings on the line over the station's stretch** — a tangent class's ruling
+    /// piece (`side == 0`) of the same two ends, folded in rather than left as a second name for
+    /// the stretch (`events_of` refuses that): the wall class's knife where the operation parts the
+    /// material along the line, or its faces' own edge there. Either way the wall's faces have an
+    /// edge on the line, so its two halves are spokes of the star ([`Chart::slit_at`]).
+    pub(crate) tangent_rulings: Vec<TangentRuling>,
+}
+
+/// One tangent ruling folded into a [`Station`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TangentRuling {
+    pub(crate) wall: usize,
+    /// The wall's two cells beside the line ([`ThetaSeg::beside`]).
+    pub(crate) beside: Option<[Label; 2]>,
 }
 
 /// One secant wall of a [`Station`].
@@ -654,6 +677,9 @@ fn events_of(
 /// in chord order ([`Station::chords`]). Every secant piece is a station, its own wall its only
 /// chord where no partner shares the line; and on every station a tangent wall of a solid other
 /// than the lateral face's is read off the gate's record of the line with it ([`tangent_ends`]).
+/// That record's tangent class folds its own ruling piece of the same two ends in the same way
+/// ([`Station::tangent_rulings`]) — one overlapping without matching is the stages disagreeing —
+/// but as no chord and no member: the station stays a secant piece's.
 ///
 /// The piece kept for the station is the one of the **smallest** class among those folded, so the
 /// station's name ([`Chart::ruling_name`]) does not depend on the order the pieces arrive in.
@@ -704,9 +730,8 @@ fn stations_of_lines(
         }
         let (wall, side) = (theta[i].wall, theta[i].side);
         // A tangent ruling has no chord: the wall's faces end there, and no secant wall runs
-        // through it — a line another class shares states no knife (`rulings::tangent_knife`). Nor
-        // does a two-secant record name its class — a class tangent to the cylinder is no secant of
-        // it.
+        // through it — over a stretch one does, the secant's station folds it in below. Nor does a
+        // two-secant record name its class — a class tangent to the cylinder is no secant of it.
         if side == 0 {
             debug_assert!(
                 records
@@ -741,26 +766,25 @@ fn stations_of_lines(
                 },
             },
         )];
+        // Two pieces on one line overlap where each starts below the other's top, on that generator
+        // — asked only where no piece matches end for end.
+        let overlapping = |on_line: &dyn Fn(usize) -> bool| -> Result<bool, BoolError> {
+            let at =
+                combinatorics::exact_point(jd, k, &cyl.def, theta[i].end[0]).map_err(reject)?;
+            let below = |a: usize, b: usize| -> Result<bool, BoolError> {
+                Ok(height(a, b, &at)? == Ordering::Less)
+            };
+            for j in (0..theta.len()).filter(|&j| on_line(j)) {
+                if below(theta[j].on[0], theta[i].on[1])? && below(theta[i].on[0], theta[j].on[1])?
+                {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        };
         for &(q, qs, _) in &partners {
             let on_line =
                 |j: usize| !gone[j] && j != i && theta[j].wall == q && theta[j].side == qs;
-            // Two pieces on one line overlap where each starts below the other's top, on that
-            // generator — asked only where no piece matches end for end.
-            let overlapping = || -> Result<bool, BoolError> {
-                let at =
-                    combinatorics::exact_point(jd, k, &cyl.def, theta[i].end[0]).map_err(reject)?;
-                let below = |a: usize, b: usize| -> Result<bool, BoolError> {
-                    Ok(height(a, b, &at)? == Ordering::Less)
-                };
-                for j in (0..theta.len()).filter(|&j| on_line(j)) {
-                    if below(theta[j].on[0], theta[i].on[1])?
-                        && below(theta[i].on[0], theta[j].on[1])?
-                    {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            };
             let says = match (0..theta.len()).find(|&j| on_line(j) && theta[j].end == theta[i].end)
             {
                 Some(j) => {
@@ -778,7 +802,7 @@ fn stations_of_lines(
                     ));
                     continue;
                 }
-                None if overlapping()? => {
+                None if overlapping(&on_line)? => {
                     return Err(reject(RejectReason::CylinderStagesDisagree));
                 }
                 None => ChordSays::NoPiece,
@@ -812,17 +836,44 @@ fn stations_of_lines(
         } else {
             ordered = chords;
         }
-        let tangent = tangent_ends(jd, cyls, k, wall, side, theta[i].end)?;
+        // The tangent rulings on this line fold in the same way, by name over the same stretch,
+        // but they are no chords and no members: a station is a secant piece's.
+        let tangents = tangent_records(jd, cyls, k, wall, side)?;
+        let mut tangent_rulings = Vec::new();
+        for &(sr, _) in &tangents {
+            let t = if sr.line.0 == wall {
+                sr.line.1
+            } else {
+                sr.line.0
+            };
+            let on_line = |j: usize| !gone[j] && theta[j].wall == t && theta[j].side == 0;
+            match (0..theta.len()).find(|&j| on_line(j) && theta[j].end == theta[i].end) {
+                Some(j) => {
+                    tangent_rulings.push(TangentRuling {
+                        wall: t,
+                        beside: theta[j].beside,
+                    });
+                    gone[j] = true;
+                }
+                None if overlapping(&on_line)? => {
+                    return Err(reject(RejectReason::CylinderStagesDisagree));
+                }
+                None => {}
+            }
+        }
+        let tangent = tangent_ends(jd, cyls, k, &tangents, theta[i].end)?;
         let keep = *members
             .iter()
             .min_by_key(|&&j| theta[j].wall)
             .expect("the piece itself is a member");
+        debug_assert!(theta[keep].side != 0, "a station kept a tangent ruling");
         for &j in &members {
             gone[j] = j != keep;
         }
         stations[keep] = Some(Station {
             chords: ordered.into_iter().map(|(_, c)| c).collect(),
             tangent,
+            tangent_rulings,
         });
     }
     Ok(theta
@@ -837,9 +888,15 @@ fn stations_of_lines(
         .collect())
 }
 
-/// **[`Station::tangent`] of the piece of `wall`'s ruling `side` between the nodes `end`** — read
-/// off the gate's record of the line with a tangent wall
-/// ([`crate::planes::SharedRuling::tangent_halves`], one entry per solid with wall faces there):
+/// A gate's record of a line with a tangent class, and that record's halves ([`tangent_records`]).
+type TangentRecord<'c> = (
+    &'c crate::planes::SharedRuling,
+    &'c [[Vec<[nacre_exact::QuadVal; 2]>; 2]],
+);
+
+/// **[`Station::tangent`] of the piece between the nodes `end`** — read off the gate's records of
+/// the line with a tangent wall ([`tangent_records`];
+/// [`crate::planes::SharedRuling::tangent_halves`], one entry per solid with wall faces there):
 /// on each side of the line, does **some one solid's** wall have a face over the whole piece and
 /// none on the other side ([`spokes`]). A face side over part of the piece is the stages
 /// disagreeing — the piece ends at every vertex on its line, and a face's end on the line is one.
@@ -847,25 +904,13 @@ fn tangent_ends(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
     k: usize,
-    wall: usize,
-    side: i8,
+    records: &[TangentRecord<'_>],
     end: [combinatorics::NodeId; 2],
 ) -> Result<[bool; 2], BoolError> {
     let cyl = &cyls[k];
     let undecided = || reject(RejectReason::WitnessNotRational);
     let mut out = [false; 2];
-    for sr in &cyl.shared {
-        let Some(halves) = &sr.tangent_halves else {
-            continue;
-        };
-        if sr.stated_by != [wall] {
-            continue;
-        }
-        let on_line = combinatorics::shared_line(jd, cyls, k, sr, wall)
-            .ok_or_else(|| reject(combinatorics::undecided_reason(cyls, &[wall])))?;
-        if on_line.side != side {
-            continue;
-        }
+    for &(_, halves) in records {
         let at =
             |n| combinatorics::axis_param_on_cylinder(jd, cyls, n, &cyl.def).ok_or_else(undecided);
         let (mut lo, mut hi) = (at(end[0])?, at(end[1])?);
@@ -879,10 +924,41 @@ fn tangent_ends(
     Ok(out)
 }
 
+/// **The gate's records of `wall`'s ruling `side` with a tangent class** — the pairs
+/// [`crate::planes::SharedRuling`] writes for a tangent class and each secant class holding the
+/// line (`stated_by` the secant alone), on this side of `wall`. Both readers of a station's tangent
+/// walls take them from here: the wall faces ending on the line ([`tangent_ends`]) and the tangent
+/// rulings folded into the station ([`Station::tangent_rulings`]). Each comes with its
+/// [`crate::planes::SharedRuling::tangent_halves`], which a tangent class's record always has.
+fn tangent_records<'c>(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &'c [WorkingCyl],
+    k: usize,
+    wall: usize,
+    side: i8,
+) -> Result<Vec<TangentRecord<'c>>, BoolError> {
+    let mut out = Vec::new();
+    for sr in &cyls[k].shared {
+        let Some(halves) = &sr.tangent_halves else {
+            continue;
+        };
+        if sr.stated_by != [wall] {
+            continue;
+        }
+        let on_line = combinatorics::shared_line(jd, cyls, k, sr, wall)
+            .ok_or_else(|| reject(combinatorics::undecided_reason(cyls, &[wall])))?;
+        if on_line.side == side {
+            out.push((sr, halves.as_slice()));
+        }
+    }
+    Ok(out)
+}
+
 /// **Which sides of the line a tangent wall ends on over the piece `[lo, hi]`** — the rule of
 /// [`tangent_ends`], over the record's halves (one entry per wall solid). Each solid's faces are
-/// read on their own: one solid covering both sides runs through the line, which divides nothing,
-/// while one solid ending on `+τ` and the other on `−τ` are two spokes — a union of the two would
+/// read on their own: one solid covering both sides runs through the line, which has no edge there
+/// unless its class draws the knife ([`Station::tangent_rulings`] says so), while one solid ending
+/// on `+τ` and the other on `−τ` are two spokes — a union of the two would
 /// read them as one face running through. A face side over part of the piece is the stages
 /// disagreeing (`CylinderStagesDisagree`); `WitnessNotRational` where an end could not be compared.
 fn spokes(

@@ -653,7 +653,8 @@ fn class_meet(
                 // no cell of this plane, nor the chart where the wall's face runs through it — but
                 // where the operation parts the material along it (`WorkingCyl::parting`, read off
                 // the rows below), where the wall's class draws it as a knife — and is the plane's
-                // one station on the cylinder. A face of the wall **ending** on the line
+                // one station on the cylinder, or, where a secant wall's ruling holds the line, two
+                // halves of that ruling's station. A face of the wall **ending** on the line
                 // is an edge there, which the chart's station on a secant wall's ruling reads off the
                 // pair's record (`SharedRuling::tangent_halves`).
                 //
@@ -748,9 +749,11 @@ pub(crate) struct SharedRuling {
     /// — the [`Tangency`] rows' halves of that class and cylinder, gathered for each wall solid
     /// that has rows (closed pieces in the axis parameter, joined), solid `A` first. One side alone
     /// is that solid's face ending on the line, which the line's station reads as a spoke; both
-    /// sides is the face running through it — a contact, which divides nothing. Two solids are
-    /// read apart: `A` ending on one side and `B` on the other are two spokes, which their union
-    /// would read as one face running through. `None` for a pair of secant or sectioned partners.
+    /// sides is the face running through it, which has no edge there unless the wall's class draws
+    /// the line as a knife — the station reads that off the knife, not off this record. Two solids
+    /// are read apart: `A` ending on one side and `B` on the other are two spokes, which their
+    /// union would read as one face running through. `None` for a pair of secant or sectioned
+    /// partners.
     pub(crate) tangent_halves: Option<Vec<[Pieces; 2]>>,
 }
 

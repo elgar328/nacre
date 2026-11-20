@@ -802,7 +802,8 @@ fn a_lateral_cut_at_both_rims_is_an_operand_like_any_other() {
 ///   line, the whole span; below it (`y ∈ [−2, 0]`), on the `−τ` side only — the sign of `±w → ±τ`;
 /// - the same box standing in `z ∈ [1/2, 3/2]`, only there;
 /// - a prism whose wall `x = 1` runs across the line (`y ∈ [−1, 1]`), with its face on `y = 0` off to
-///   the side, on both sides — a contact, which divides nothing.
+///   the side, on both sides — the face running through the line, which the record states as no
+///   spoke.
 #[test]
 fn a_tangent_walls_record_says_which_side_of_the_line_its_faces_lie_on() {
     let halves_of = |quad: &[[f64; 2]], lift: f64, height: f64| {

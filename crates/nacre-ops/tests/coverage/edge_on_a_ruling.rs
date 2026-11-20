@@ -1095,23 +1095,29 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
 /// `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that stretch
 /// the line runs through the cap's interior. One row, two grounds: where the cap ends on the line
 /// `B` has an edge there and the structure judges; where both the cap and `A`'s lateral run through
-/// it, the tangency's three regions are the whole picture and its verdict judges
-/// (`planes::TangentReading::through`). `(1, 0)` is the unit disk's seam and `(−1, 0)` is not, so
-/// the caps read the line once on the seam and once off it.
+/// it, the material parts there in `B − A` alone, and the cap's class draws the line as a knife
+/// (`rulings::tangent_knife`) whose pieces fold into the station of `y = 0`'s ruling
+/// (`cyl_chart::Station::tangent_rulings`) — the lateral is cut there, and the structure judges
+/// that too. `(1, 0)` is the unit disk's seam and `(−1, 0)` is not, so the caps read the line once
+/// on the seam and once off it.
 ///
 /// - **The L** (`y` from `−1`): `B`'s face `y = −1` is tangent to `A` as well. `A − B` is two bodies —
-///   the slab `z ∈ [1/2, 1]` takes the whole disk — and `B − A` is refused: below the corner each
-///   cap keeps the two wedges either side of the lateral, tied by the cap (`SelfTouchingResult`).
-/// - **The L whose caps alone are tangent** (`y` from `−1/2`): `A − B` is one body, `B − A` is
-///   refused the same way. Handed whole to the structure, the row built this `B − A` as one body,
-///   `validate` clean, its volume exact — the cap's wedges touching along the line where nothing
-///   draws it.
+///   the slab `z ∈ [1/2, 1]` takes the whole disk — and `B − A` is three: below the corner each cap
+///   keeps the two wedges either side of the lateral, two lumps of five faces meeting the rest of
+///   `B` on the lines alone (OCCT 7.9 the same: faces `5 + 6 + 5`, the volumes).
+/// - **The L whose caps alone are tangent** (`y` from `−1/2`): `A − B` is one body, `B − A` three as
+///   above.
 ///
-/// Each family has two twins ([`Twin`]): `B`'s lower slab reaching past `A`'s floor, so the wedges
-/// join the rest of `B − A` below `A`; and `A` notched above `B`, so `A`'s lateral has an edge on
-/// the line `(1, 0)` — a node on the ruling, where the wall's class draws no knife
-/// (`rulings::tangent_knife`). The notched `A ∪ B` is refused while `B ∪ A` builds the one body
-/// whose volume the closed form gives (todo 「노치 난 원통과 L 의 합이 순서에 따라 갈린다」).
+/// Each family has two twins ([`Twin`]). `B`'s lower slab reaching past `A`'s floor: the wedges
+/// join the rest of `B − A` below `A`, so the knife ends inside the cap face — the material passes
+/// round its end — and the line is no edge of the result; `B − A` is one body touching itself
+/// along the line, refused (`SelfTouchingResult`). And `A` notched above `B`, so `A`'s lateral has
+/// an edge on the line `(1, 0)` — a node on the ruling, where the wall's class draws no knife
+/// (`rulings::tangent_knife`; the other two tangent walls draw none either, measured):
+/// `B − A` is refused the same way though its answer is the plain family's three bodies
+/// (todo 「접선에서만 만나는 덩이 — 칼날을 긋지 못하는 선」). The notched `A ∪ B` is refused while
+/// `B ∪ A` builds the one body whose volume the closed form gives
+/// (todo 「노치 난 원통과 L 의 합이 순서에 따라 갈린다」).
 ///
 /// Both frames (the world and [`pythagorean_frame`]), both vertex orders, all six booleans, the
 /// volumes in closed form, the faces of each body ([`answer`]), and every body drawn.
@@ -1274,7 +1280,10 @@ fn answer(y0: f64, twin: Twin, kind: BoolKind, swapped: bool) -> Result<Vec<usiz
     use RejectReason::{OpenResultShell, SelfTouchingResult};
     let the_l = y0 == -1.0;
     Ok(match (kind, swapped) {
-        (BoolKind::Cut, true) => return Err(SelfTouchingResult),
+        (BoolKind::Cut, true) => match twin {
+            Twin::Plain => vec![5, 5, 6],
+            Twin::Low | Twin::Notched => return Err(SelfTouchingResult),
+        },
         (BoolKind::Fuse, false) if twin == Twin::Notched => {
             return Err(if the_l {
                 SelfTouchingResult

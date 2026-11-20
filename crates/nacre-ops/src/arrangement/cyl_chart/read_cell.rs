@@ -86,13 +86,13 @@ pub(crate) struct CellRead<'a> {
 impl Chart {
     /// **Whether the lateral ends at ruling `i` on both sides** — where the material the lateral
     /// bounds does not run round the line: a sector between two neighbouring spokes of the line's
-    /// star — the secant walls' chords ([`Station::chords`]) and the tangent walls of a solid other
-    /// than the lateral's where they end on the line ([`Station::tangent`]) — **on the lateral's
-    /// material side**, is not
-    /// in the result. All kept, the material runs across the line and so does the lateral; one not
-    /// kept, what lies on the two sides meets on the line alone. `false` for a station one chord
-    /// alone runs through with no tangent wall ending there — nothing lies between the lateral's
-    /// halves but that chord — and for one with a wall that
+    /// star — the secant walls' chords ([`Station::chords`]), the tangent walls of a solid other
+    /// than the lateral's where they end on the line ([`Station::tangent`]), and the walls whose
+    /// tangent ruling folded in ([`Station::tangent_rulings`]) — **on the lateral's material
+    /// side**, is not in the result. All kept, the material runs across the line and so does the
+    /// lateral; one not kept, what lies on the two sides meets on the line alone. `false` for a
+    /// station one chord alone runs through with no tangent wall's half there — nothing lies
+    /// between the lateral's halves but that chord — and for one with a wall that
     /// draws no piece there ([`ChordSays::NoPiece`]): the line is then the lateral's own edge, and
     /// the lateral ends at it already (the walk refuses a station where it does not —
     /// `regions::walk`).
@@ -110,15 +110,25 @@ impl Chart {
     /// there, outside the box's corner — only the chord next to the tangent half reads the box's
     /// own sector (`edge_on_a_ruling`).
     ///
-    /// **A tangent ruling** (`side == 0`) has no [`Station`] — no chord runs through it — and its
+    /// **A tangent ruling folded into the station** — the wall's knife where the operation parts
+    /// the material along the line, or its faces' own edge — puts both of the wall's halves in the
+    /// star, each sector beyond a half read off the wall's cell beside the line
+    /// (`ThetaSeg::beside`) as well as off the chord next to it. The two disagreeing are labels the
+    /// arrangement wrote disagreeing (`LabelConflict`); the wall's cells do not say which lies on
+    /// `+τ`, so the pairs are compared as sets. The box less the cylinder its caps touch, where its
+    /// wall through the axis holds the line, is three bodies meeting on the lines only where both
+    /// halves are read (`edge_on_a_ruling`).
+    ///
+    /// **A tangent ruling** (`side == 0`) has no [`Station`] — no secant wall's ruling holds the
+    /// line over its stretch, or it would have folded into that ruling's station — and its
     /// star is its wall's two halves, the tangent halves, and beyond each half the plane's far side
     /// as the wall's cell on that side states it (`ThetaSeg::beside`) — each half's own, as a
     /// secant station reads each tangent half's off the chord next to it. The room between the wall
     /// and the lateral is a cusp of no angle, so another plane through the line leaves it on the
     /// far side, between the wall's halves: the chart draws no line for a plane whose face reaches
     /// no lateral, and one spoke stands for them between the two far sectors. What it hides is a
-    /// void between two such planes with the material kept beside both halves — folding the planes
-    /// through the line into a station as chords is todo 「접선에서만 만나는 덩이」's. The lateral's continuing
+    /// void between two such planes with the material kept beside both halves
+    /// (todo 「접선에서만 만나는 덩이 — 칼날을 긋지 못하는 선」). The lateral's continuing
     /// is the conjunction of the two far sectors, so which cell lies on `+τ` is not asked. Two
     /// cusps whose floors and laterals each end on the line from either side meet there alone: the
     /// floors' far side is not kept, and the lateral is cut. A lateral keeping its inside (a
@@ -172,16 +182,15 @@ impl Chart {
         // its inside exactly where the room is not kept — read off one cell, by the premise below.
         if self.theta[i].side == 0 {
             let seg = &self.theta[i];
-            let [even, odd] = seg.beside.ok_or(stages)?;
-            let axis_above = crate::planes::axis_above(jd, seg.wall, def).ok_or(stages)?;
-            let far = |l: &Label| keeps(read_bits(l, !axis_above));
-            let keeps_outside = keeps(read_bits(&even, axis_above));
+            let (cells, axis_above) = wall_beside(jd, def, seg.wall, seg.beside)?;
+            let keeps_outside = keeps(read_bits(&cells[0], axis_above));
             let star = if keeps_outside {
                 let (one_half, unseen, other_half) = (1, 2, 3);
+                let [far_even, far_odd] = far_beside(cells, axis_above, kind);
                 vec![
                     (lateral, true),
-                    (one_half, far(&even)),
-                    (unseen, far(&odd)),
+                    (one_half, far_even),
+                    (unseen, far_odd),
                     (other_half, true),
                     (lateral, false),
                 ]
@@ -237,30 +246,42 @@ impl Chart {
             star.extend((1..=n).zip(between.into_iter().chain([true])));
         } else {
             // Outside, counter-clockwise from the lateral's `+τ` half: the tangent wall's `+τ` half
-            // where it ends on the line, then the chords' outer halves from the last to the first,
-            // then the `−τ` half. Beyond a tangent half lies the sector next to the nearest outer
-            // half — the last chord's on its `τ` side, the first chord's on the other — which that
-            // chord's outside cell states; the sector between the lateral and the tangent half is
-            // the lateral's own, kept by the premise above.
+            // where it has an edge on the line, then the chords' outer halves from the last to the
+            // first, then the `−τ` half. Beyond a tangent half lies the sector next to the nearest
+            // outer half — the last chord's on its `τ` side, the first chord's on the other — which
+            // that chord's outside cell states; the sector between the lateral and the tangent half
+            // is the lateral's own, kept by the premise above.
             let tangent = |at: usize| n + 1 + at;
             let outside = |w: usize, toward_tau: bool| -> Result<bool, RejectReason> {
                 let (_, o, near) = walls[w];
                 Ok(keeps(read_bits(&o.ok_or(stages)?, near == toward_tau)))
             };
-            if st.tangent[0] {
+            // A tangent ruling folded in is both halves of its wall. Each sector beyond a half is
+            // read off the wall's cell beside the line and off the nearest chord's outside cell;
+            // the wall's cells do not say which lies on `+τ`, so the two pairs are compared as
+            // sets.
+            let mut halves = st.tangent;
+            for tr in &st.tangent_rulings {
+                let (cells, axis_above) = wall_beside(jd, def, tr.wall, tr.beside)?;
+                let mut by_wall = far_beside(cells, axis_above, kind);
+                let mut by_chords = [outside(n - 1, true)?, outside(0, false)?];
+                by_wall.sort_unstable();
+                by_chords.sort_unstable();
+                if by_wall != by_chords {
+                    return Err(RejectReason::LabelConflict);
+                }
+                halves = [true, true];
+            }
+            if halves[0] {
                 star.push((tangent(0), outside(n - 1, true)?));
             }
-            let beyond_first = if st.tangent[1] {
-                outside(0, false)?
-            } else {
-                true
-            };
+            let beyond_first = if halves[1] { outside(0, false)? } else { true };
             star.extend(
                 (1..=n)
                     .rev()
                     .zip(between.into_iter().rev().chain([beyond_first])),
             );
-            if st.tangent[1] {
+            if halves[1] {
                 star.push((tangent(1), true));
             }
         }
@@ -538,6 +559,32 @@ pub(crate) fn face_spans(
         }
     }
     Ok(answer.unwrap_or(false))
+}
+
+/// **A tangent ruling's wall beside the line** — the wall's two cells there (`ThetaSeg::beside`)
+/// and whether the cylinder's axis lies above the wall's plane, the side the cells' near bits are
+/// read on. `CylinderStagesDisagree` where either is missing.
+fn wall_beside(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wall: usize,
+    beside: Option<[Label; 2]>,
+) -> Result<([Label; 2], bool), RejectReason> {
+    let stages = RejectReason::CylinderStagesDisagree;
+    let cells = beside.ok_or(stages)?;
+    let axis_above = crate::planes::axis_above(jd, wall, def).ok_or(stages)?;
+    Ok((cells, axis_above))
+}
+
+/// **The sectors beyond a tangent ruling's two halves** — whether `kind` keeps the far side of the
+/// wall's plane in each of the wall's two cells beside the line ([`wall_beside`]), in the cells'
+/// order. Beside the line on each side the plane's far side holds one sector, between that half
+/// and whatever leaves the line beyond it. The cells do not say which side is `+τ`.
+fn far_beside(cells: [Label; 2], axis_above: bool, kind: BoolKind) -> [bool; 2] {
+    cells.map(|l| {
+        let (a, b) = read_bits(&l, !axis_above);
+        crate::draft::keep(kind, a, b)
+    })
 }
 
 /// The one spelling of "which two bits of a label are this cell's chamber": both solids' bits,

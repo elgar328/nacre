@@ -218,8 +218,10 @@ fn sweep_ruling(
 /// ([`sweep_ruling`]): each whole rim, and each arc of a boundary cycle that holds the ruling's
 /// angle strictly inside ([`combinatorics::theta_place`] of the arc's point on it,
 /// [`combinatorics::crossing_on_ruling`]). A boundary that meets the ruling anywhere else — an arc
-/// ending on it, a node on it — or a line another class shares states no knife: the boolean is
-/// then judged with the line no edge (`assembly::tangency_reject`), which refuses it as today.
+/// ending on it, a node on it — states no knife: the boolean is then judged with the line no edge
+/// (`assembly::tangency_reject`). On a line another class shares
+/// ([`crate::planes::SharedRuling`]) the knife's pieces are that line's station's tangent halves
+/// (`cyl_chart::Station::tangent_rulings`).
 #[allow(clippy::too_many_arguments)]
 fn tangent_knife(
     jd: &Judge<'_, WorkingPlane>,
@@ -234,16 +236,6 @@ fn tangent_knife(
     found: &mut Aliases,
 ) -> Result<Vec<RulingTrace>, DeclineKind> {
     use crate::combinatorics::{ThetaPlace, Wall};
-    // A line another plane class shares on this cylinder ([`crate::planes::SharedRuling`] — one of
-    // its classes cuts the lateral there) is a station of the chart already; this wall's halves
-    // belong in that station's star, which no reading states yet.
-    if cyls[k]
-        .shared
-        .iter()
-        .any(|sr| sr.line.0 == wc || sr.line.1 == wc)
-    {
-        return Ok(Vec::new());
-    }
     let at = |c: usize| {
         combinatorics::crossing_on_ruling(jd, def, c, wc, k, 0).map_err(|_| DeclineKind::Ruling)
     };

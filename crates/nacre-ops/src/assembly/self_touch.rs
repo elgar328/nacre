@@ -148,9 +148,8 @@ pub(crate) fn pinch(
 ///   bodies or of one whose edge four faces use. Where the result has no edge on the line over the
 ///   whole ground ([`line_is_an_edge`]) — the knife could not be an edge (it ends inside the wall
 ///   face, and the material passes round its end), the chart could not part the lateral there, the
-///   lateral's boundary meets the line in a way the knife does not read, or the line is another
-///   class's station — one face still ties the wedges into one component of the result, and the
-///   verdict refuses.
+///   lateral's boundary meets the line in a way the knife does not read — one face still ties the
+///   wedges into one component of the result, and the verdict refuses.
 /// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
 ///   and a wall it touches from outside (the truth table in `bands`). The lens is then the
 ///   cylinder's operand's material alone and the far side the wall's alone — two different solids

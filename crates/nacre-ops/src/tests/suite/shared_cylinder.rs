@@ -556,13 +556,12 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[18.0 - PI / 2.0], &[9]),
             none(),
         ],
-        // OCCT builds the union as two bodies of five and six faces; the kernel refuses every
-        // boolean of the pair (todo 「접선에서만 만나는 덩이」).
+        // The two touch along the tangent ruling alone; OCCT builds the union as these two bodies.
         "a cusp beside a plane through the axis" => [
-            refused(RejectReason::CoincidentNodes),
-            refused(RejectReason::CoincidentNodes),
-            refused(RejectReason::CoincidentNodes),
-            refused(RejectReason::CoincidentNodes),
+            counted(&[1.0 - PI / 4.0, 2.0 - PI / 4.0], &[5, 6]),
+            counted(&[1.0 - PI / 4.0], &[5]),
+            counted(&[2.0 - PI / 4.0], &[6]),
+            none(),
         ],
         other => panic!("no answers stated for {other}"),
     }
