@@ -403,12 +403,11 @@ impl Chart {
 /// that gap is simply a cell that keeps nothing — the argument the plane side already makes for its
 /// unbounded cells.
 ///
-/// A cylinder class is one stated cylinder — `planes` interns cylinders by `Handle<Surface>`
-/// (planes by geometry) — and it carries the lateral faces of one operand or of both: the plane
-/// classes the chart is made *of* see both operands, and so does every cell's reading
-/// ([`Chart::read_cell`] — the chamber in the arrangement's `(A, B)` order, existence per solid).
-/// One surface stated under two handles (`same_surface`) is two classes, which the gate refuses as
-/// `CylinderPairContact`.
+/// A cylinder class is one cylinder surface, under however many handles its faces state it
+/// (`planes::plane_classes`), read in its representative's statement; it carries the lateral faces
+/// of one operand or of both: the plane classes the chart is made *of* see both operands, and so
+/// does every cell's reading ([`Chart::read_cell`] — the chamber in the arrangement's `(A, B)`
+/// order, existence per solid).
 pub(crate) fn chart_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],

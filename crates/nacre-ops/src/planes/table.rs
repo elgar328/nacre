@@ -47,6 +47,7 @@ pub(crate) fn collect_planes(
                                 .as_ref()
                                 .map_or(Theta::Whole, |d| lateral_theta_extent(model, face, d)),
                         },
+                        stated: def.clone(),
                         def,
                     }));
                     continue;

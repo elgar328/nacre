@@ -39,6 +39,30 @@ pub(crate) fn frame_faces_up_the_axis(
     Some(plus_t_is_above(plane.world.as_ref().ok()?, def) == (plane.frame_sign > 0))
 }
 
+/// **The statement a handle gives of a class's surface** — `class`'s own for its representative
+/// handle, else the handle's world statement where that states the same surface
+/// ([`nacre_exact::CylinderDef::same_surface`]); `None` for a handle of another surface, or one
+/// with no world statement. A class is a surface and may be stated under several handles; the
+/// model writes a corner's `rank` and an arc's vertex order in the statement of the handle they
+/// name, so a reader that meets a handle asks here for the statement to read them in.
+pub(crate) fn stated_in_class(
+    model: &Model,
+    class: &WorkingCyl,
+    cylinder: Handle<Surface>,
+) -> Option<nacre_topo::CylinderDef> {
+    if cylinder == class.surf {
+        return Some(class.def.clone());
+    }
+    if !matches!(
+        model.surface(cylinder),
+        nacre_topo::Surface::Cylinder { .. }
+    ) {
+        return None;
+    }
+    let own = model.world_cylinder_def(cylinder).ok()?;
+    own.same_surface(&class.def).then_some(own)
+}
+
 /// **Where a plane meets a cylinder's axis, as the axis parameter `t`** —
 /// [`nacre_exact::axis_param_of_plane`] read on the statement's own origin and direction, so the
 /// formula has one spelling for every reader; the readers that want the point itself (a rim's
@@ -444,6 +468,10 @@ impl QuadVec {
 /// its rank, held with its radical — the meet [`pierce_on`] solves, so a corner it cannot read
 /// fails by its cause. One rule for both readers: [`lateral_theta_extent`] folds it to a rational
 /// vector, [`lateral_cover_on_ruling`] reads it as it is.
+///
+/// `def` is the statement of the **face's own handle** ([`CylFaceInfo::stated`]): the corner's
+/// `rank` counts from that statement's seam. The vector is the same whichever statement of the
+/// surface the centre is read in.
 pub(super) fn rim_radial(
     model: &Model,
     face: &nacre_topo::Face,
@@ -469,7 +497,6 @@ pub(super) fn rim_radial(
             if cylinder != face.surface {
                 return Err(CornerFail::Shape);
             }
-            // `def` is this face's own cylinder's world statement.
             let (line, s) = pierce_on(model, planes, def, rank)?;
             let (b, d) = (line.base(), line.dir());
             let (mut r0, mut r1) = ([zero; 3], [zero; 3]);
@@ -561,9 +588,10 @@ pub(super) fn lateral_cover_on_ruling(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
+    stated: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
 ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
-    let read = lateral_stations_on_ruling(model, face, def, foot, None).ok()?;
+    let read = lateral_stations_on_ruling(model, face, def, stated, foot, None).ok()?;
     Some(read.iter().map(|p| [p[0].0, p[1].0]).collect())
 }
 
@@ -580,11 +608,12 @@ pub(super) fn lateral_sides_on_ruling(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
+    stated: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
 ) -> Result<[Vec<[Station; 2]>; 2], RejectReason> {
     Ok([
-        lateral_stations_on_ruling(model, face, def, foot, Some(true))?,
-        lateral_stations_on_ruling(model, face, def, foot, Some(false))?,
+        lateral_stations_on_ruling(model, face, def, stated, foot, Some(true))?,
+        lateral_stations_on_ruling(model, face, def, stated, foot, Some(false))?,
     ])
 }
 
@@ -598,10 +627,20 @@ pub(super) fn lateral_sides_on_ruling(
 /// that is not a plane (in the cover, the face's own seam), a corner it cannot spell, stations that
 /// do not pair, the cover's ruling edge on the line — is the lateral the gate could not read,
 /// [`RejectReason::CylinderGateUndecided`].
+///
+/// Two statements of the one surface come in. `def` is the class's: the stations' heights are its
+/// axis parameters and `beside` turns about its axis. `stated` is the face's own handle's
+/// ([`CylFaceInfo::stated`]): an arc's two vertices run counter-clockwise about **its** axis and
+/// its corners rank from its seam, so each arc is read there, on the side of the line that
+/// `beside` is in that statement. The cover's half-open side is not turned: it is counter-clockwise
+/// about the face's own axis. The two sides differ only for a face that touches the line at one
+/// vertex, its two boundary arcs leaving it the same way — a stretch of no length against none,
+/// which the tangency rows' `on_face` reads (`cyl_gate::tangency_rows`); no fixture has one (todo).
 fn lateral_stations_on_ruling(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
+    stated: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
     beside: Option<bool>,
 ) -> Result<Vec<[Station; 2]>, RejectReason> {
@@ -609,6 +648,8 @@ fn lateral_stations_on_ruling(
     let width = RejectReason::WitnessNotRational;
     let unread = RejectReason::CylinderGateUndecided;
     let (o, m) = (def.origin(), def.dir());
+    let own_m = stated.dir();
+    let own_side = beside.map(|ccw| ccw != axes_oppose(&own_m, &m));
     let zero = Rat::from_int(0);
     // The ruling's radial direction: `foot − o` off the axis.
     let mut w = [zero; 3];
@@ -648,12 +689,18 @@ fn lateral_stations_on_ruling(
             } else {
                 let [va, vb] = e.vertices;
                 let radial = |vh| {
-                    rim_radial(model, face, def, vh, &coeffs)
+                    rim_radial(model, face, stated, vh, &coeffs)
                         .map_err(|f| f.stated_reason().unwrap_or(unread))
                 };
                 let held = va == vb
-                    || arc_holds_beside(&radial(va)?, &radial(vb)?, &x, &m, beside.unwrap_or(true))
-                        .ok_or(width)?;
+                    || arc_holds_beside(
+                        &radial(va)?,
+                        &radial(vb)?,
+                        &x,
+                        &own_m,
+                        own_side.unwrap_or(true),
+                    )
+                    .ok_or(width)?;
                 if held {
                     stations.push((
                         nacre_exact::axis_param_of_plane(&coeffs, &g, &m).ok_or(width)?,

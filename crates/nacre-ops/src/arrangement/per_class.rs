@@ -622,6 +622,7 @@ pub(super) fn split_class_edges(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     wc: usize,
     segs: &[MergedSeg],
     circles: &[MergedCircle],
@@ -724,10 +725,11 @@ pub(super) fn split_class_edges(
             ),
         };
 
-    let (segs3, rulings2) = match split_rulings(jd, cyls, faces, wc, &segs2, rulings, aliases)? {
-        Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
-        None => (segs2, Cow::Borrowed(rulings)),
-    };
+    let (segs3, rulings2) =
+        match split_rulings(jd, cyls, faces, plane_ix, wc, &segs2, rulings, aliases)? {
+            Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
+            None => (segs2, Cow::Borrowed(rulings)),
+        };
     // The knives cut every curve above and are set apart here, last: whether one is an edge of the
     // class's faces is asked of the material beside it (`arrange_class`). A knife is a piece whose
     // mask is zero, whatever curve it lies on — two faces of one solid leaving the plane to one

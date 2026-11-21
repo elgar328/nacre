@@ -33,9 +33,13 @@ pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) 
 /// representative, and with the opposite sign — which only the correspondence has to see: the
 /// rank reads neither the planes' order nor their signs.
 ///
+/// The rank is read in the statement of the handle the vertex names
+/// ([`crate::planes::stated_in_class`]) — it counts from that statement's seam, and a class may hold
+/// handles whose seams differ; the meet line is the two planes' alone, so the place on it names the
+/// same point whichever statement of the surface solved it.
+///
 /// `None` where a handle answers to no candidate (or to both), where the vertex's cylinder is not
-/// this class's surface — the rank reads that surface's `ref_dir`, and one cylinder can be stated
-/// twice with two seams — or where the class meet has no crossing at the rank.
+/// this class's surface, or where the class meet has no crossing at the rank.
 pub(crate) fn pierce_name_from_def(
     model: &Model,
     jd: &Judge<'_, WorkingPlane>,
@@ -52,9 +56,8 @@ pub(crate) fn pierce_name_from_def(
     else {
         return None;
     };
-    if cylinder != class.surf {
-        return None;
-    }
+    // The statement the vertex's `rank` is written in: its own handle's.
+    let own = crate::planes::stated_in_class(model, class, cylinder)?;
     // Which candidate class each stored handle *is*. A proportional statement is the match;
     // its sign no longer matters.
     let mut seen: [Option<usize>; 2] = [None, None];
@@ -80,7 +83,7 @@ pub(crate) fn pierce_name_from_def(
     if k0 == k1 {
         return None;
     }
-    let def = &class.def;
+    let def = &own;
     let (o, m) = (def.origin(), def.dir());
     let meet = nacre_exact::quad::plane_plane_cylinder(
         &jd.world_rat(k0)?,

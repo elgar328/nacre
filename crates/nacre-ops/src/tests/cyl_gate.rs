@@ -372,7 +372,6 @@ fn the_tangent_wall_states_itself_exactly() {
         0,
         &coeffs,
         &def,
-        surf,
         SolidSide::B.bit(), // the cylinder is the second operand; the wall face is the cube's
         &jd,
         &mut Vec::new(),
@@ -626,20 +625,7 @@ fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
 #[test]
 fn an_unusable_face_list_is_one_unbounded_piece() {
     let z = Rat::from_int;
-    let mut m = Model::new();
-    crate::fixtures::cylinder(
-        &mut m,
-        nacre_math::Point3::from_array([0.0, 0.0, 0.0]),
-        nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-        1.0,
-        2.0,
-    );
-    let surf = (0u32..)
-        .map_while(|i| m.face_handle_at(i))
-        .map(|f| m.face(f).surface)
-        .find(|&s| matches!(m.surface(s), Surface::Cylinder { .. }))
-        .expect("a lateral");
-    let pieces = lateral_pieces(&[], surf);
+    let pieces = lateral_pieces(&[], &[], 0);
     assert_eq!(
         pieces,
         vec![Footprint {
@@ -1232,7 +1218,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             .expect("the class x = 1");
         let coeffs = jd.world_rat(c).expect("checked above");
         // The rod's cylinder runs along `z`; the bore that bit the slab runs along `x`.
-        let (ci, surf, def) = cyl_surfs
+        let (ci, _, def) = cyl_surfs
             .iter()
             .enumerate()
             .find_map(|(i, &s)| {
@@ -1246,7 +1232,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             (SolidSide::B, SolidSide::A)
         };
         let order = if rod_first { "rod first" } else { "slab first" };
-        let spans = lateral_spans(&setup.planes, surf);
+        let spans = lateral_spans(&setup.planes, &setup.plane_ix, ci);
         let class_wide = wall_faces_clear(
             &m,
             &setup.planes,
@@ -1281,7 +1267,6 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             ci,
             &coeffs,
             &def,
-            surf,
             rod_side.bit(),
             &jd,
             &mut Vec::new(),
@@ -1325,7 +1310,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
         ([45.0, -30.0, 0.0], [50.0, -10.0, 12.0], -1i8, false),
         ([35.0, -30.0, 0.0], [45.0, -10.0, 12.0], 1, true),
     ] {
-        let (m, setup, c, ci, surf, def) = fillet_against_block(lo, hi);
+        let (m, setup, c, ci, _, def) = fillet_against_block(lo, hi);
         let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
         let coeffs = jd.world_rat(c).expect("narrow");
         let in_class: Vec<usize> = (0..setup.planes.len())
@@ -1364,7 +1349,6 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
                 ci,
                 &coeffs,
                 &def,
-                surf,
                 SolidSide::A.bit(),
                 &jd,
                 &mut Vec::new(),
@@ -1496,6 +1480,12 @@ fn a_tangency_row_refuses_by_its_first_cause() {
     // The rows of an edited setup: the first `steps` edits of the stack, and the axis `dir`.
     let rows = |steps: usize, dir: &nacre_topo::CylinderDef| {
         let mut faces = setup.planes.clone();
+        // The lateral's statement is `dir` in the row as in the class: its corners are read in
+        // the row's own.
+        if let FaceRow::Cylinder(cf) = &mut faces[lateral] {
+            cf.stated = Some(dir.clone());
+            cf.def = Some(dir.clone());
+        }
         let mut geom = setup.geom.clone();
         let mut coeffs = coeffs;
         if steps >= 1
@@ -1536,7 +1526,6 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             ci,
             &coeffs,
             dir,
-            surf,
             SolidSide::A.bit(),
             &jd,
             &mut Vec::new(),
@@ -1578,7 +1567,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
 
     let mut m = Model::new();
     let (rod, slab) = crate::tests::d_rod_on_a_bitten_slab(&mut m);
-    let (setup, c, ci, surf, def) = rod_against(&m, rod, slab);
+    let (setup, c, ci, _, def) = rod_against(&m, rod, slab);
     let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
         .world_rat(c)
         .expect("narrow")
@@ -1595,7 +1584,6 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         ci,
         &coeffs,
         &def,
-        surf,
         SolidSide::A.bit(),
         &jd,
         &mut Vec::new(),
@@ -1668,6 +1656,7 @@ fn a_shared_line_gathers_its_rows_halves() {
     let records = |rows: &[Tangency]| {
         shared_rulings(
             &setup.planes,
+            &setup.plane_ix,
             &class_presence(
                 &setup.plane_ix,
                 setup.n_a,
@@ -1797,7 +1786,7 @@ fn the_line_reader_names_what_stopped_it() {
     let z = Rat::from_int;
     let mut m = Model::new();
     let (rod, slab) = crate::tests::d_rod_on_a_bitten_slab(&mut m);
-    let (setup, c, _, surf, def) = rod_against(&m, rod, slab);
+    let (setup, c, ci, _, def) = rod_against(&m, rod, slab);
     let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
         .world_rat(c)
         .expect("narrow");
@@ -1824,7 +1813,7 @@ fn the_line_reader_names_what_stopped_it() {
         )),
         "the corner reader cannot spell the bitten face"
     );
-    let spans = lateral_spans(&setup.planes, surf);
+    let spans = lateral_spans(&setup.planes, &setup.plane_ix, ci);
     assert!(matches!(
         face_clears_footprint(
             &m,
@@ -1870,7 +1859,7 @@ fn a_lateral_read_stops_for_its_width() {
     let z = Rat::from_int;
     let foot = [Rat::new(i128::MAX, 3).expect("a value"), z(1), z(0)];
     assert_eq!(
-        lateral_sides_on_ruling(&m, m.face(lateral), &def, &foot).err(),
+        lateral_sides_on_ruling(&m, m.face(lateral), &def, &def, &foot).err(),
         Some(RejectReason::WitnessNotRational)
     );
 }
@@ -1885,10 +1874,10 @@ fn a_lateral_read_stops_for_its_width() {
 fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
     let mut m = Model::new();
     let (rod, slab) = crate::tests::d_rod_on_a_split_bitten_slab(&mut m);
-    let (setup, c, ci, surf, def) = rod_against(&m, rod, slab);
+    let (setup, c, ci, _, def) = rod_against(&m, rod, slab);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let coeffs = jd.world_rat(c).expect("narrow");
-    let spans = lateral_spans(&setup.planes, surf);
+    let spans = lateral_spans(&setup.planes, &setup.plane_ix, ci);
     let reads: Vec<_> = (setup.n_a..setup.planes.len())
         .filter(|&i| setup.plane_ix[i] == ClassIx::Plane(c))
         .map(|i| {
@@ -1922,7 +1911,6 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         ci,
         &coeffs,
         &def,
-        surf,
         SolidSide::A.bit(),
         &jd,
         &mut Vec::new(),

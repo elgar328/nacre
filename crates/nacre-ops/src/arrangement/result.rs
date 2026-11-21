@@ -393,6 +393,7 @@ pub(super) fn class_split(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     wc: usize,
     tr: &Trace,
     local: &mut Aliases,
@@ -400,7 +401,9 @@ pub(super) fn class_split(
     let (segs, circles, rulings) = class_skeleton(jd, cyls, wc, tr, local)?;
     timed!(
         C_SPLIT,
-        split_class_edges(jd, cyls, faces, wc, &segs, &circles, &rulings, local)
+        split_class_edges(
+            jd, cyls, faces, plane_ix, wc, &segs, &circles, &rulings, local
+        )
     )
 }
 
@@ -516,7 +519,7 @@ pub(super) fn settle_rounds(
             local
                 .absorb(jd, &std::mem::take(&mut tr.aliases))
                 .map_err(reject)?;
-            let skeleton = class_split(jd, cyls, faces, wc, &tr, &mut local)?;
+            let skeleton = class_split(jd, cyls, faces, plane_ix, wc, &tr, &mut local)?;
             Ok((skeleton, local))
         })
     })

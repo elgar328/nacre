@@ -342,7 +342,7 @@ fn loop_triples(
             Vertex::Pierce { cylinder, .. } => {
                 let k = cyls
                     .iter()
-                    .position(|c| c.surf == cylinder)
+                    .position(|c| crate::planes::stated_in_class(model, c, cylinder).is_some())
                     .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?;
                 if laterals.clone().any(|j| j != k) {
                     return Err(reject(RejectReason::CurvedOperandBoundary));
@@ -568,7 +568,9 @@ pub(crate) fn arc_leaving_side(
 ///
 /// * an **arc** has a stated convention — `derive_edge_curve`'s (Plane, Cylinder) arm: "on a circle
 ///   carrier the vertex *order* says which arc; `[A, B]` is A to B **counter-clockwise about the
-///   axis**". So walking the edge `forward` is walking it CCW. Its `plane` is `near`: on a cap
+///   axis**" — the axis as the edge's own cylinder handle states it. So walking the edge `forward`
+///   is walking it CCW about that statement's axis, and about the class's unless the two are
+///   written opposite ways ([`crate::planes::axes_oppose`]). Its `plane` is `near`: on a cap
 ///   the cap's own class, on a lateral the cap across the edge — the class the lateral roads
 ///   read the arc's station from.
 /// * a **ruling** has none — the same arm says a plane parallel to the axis meets the lateral along
@@ -591,11 +593,22 @@ fn curved_wall(
 ) -> Result<crate::combinatorics::Wall, BoolError> {
     let curved = || reject(RejectReason::CurvedOperandBoundary);
     match model.edge_curve(he.edge) {
-        nacre_geom::Curve::Ellipse(_) => Ok(crate::combinatorics::Wall::Arc {
-            cyl,
-            ccw: he.forward,
-            plane: near,
-        }),
+        nacre_geom::Curve::Ellipse(_) => {
+            // `forward` is counter-clockwise about the axis of the handle the edge rides; the wall
+            // says which way round the class's.
+            let class = cyls.get(cyl).ok_or_else(curved)?;
+            let own = model
+                .edge(he.edge)
+                .surfaces
+                .iter()
+                .find_map(|&s| crate::planes::stated_in_class(model, class, s))
+                .ok_or_else(curved)?;
+            Ok(crate::combinatorics::Wall::Arc {
+                cyl,
+                ccw: he.forward != crate::planes::axes_oppose(&own.dir(), &class.def.dir()),
+                plane: near,
+            })
+        }
         nacre_geom::Curve::Line(_) => {
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
             let at = pierce_meet(jd, cyl, &def, end)

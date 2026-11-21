@@ -281,6 +281,7 @@ fn an_arc_ends_unaliased_second_name_is_recorded_by_the_round() {
             &jd,
             &setup.cyls,
             &setup.planes,
+            &setup.plane_ix,
             top,
             &split,
             std::slice::from_ref(&circle),
@@ -615,6 +616,7 @@ fn the_armed_wall_class_walks_to_closed_cells() {
         &jd,
         &setup.cyls,
         &setup.planes,
+        &setup.plane_ix,
         wc,
         &split,
         &circles,
@@ -670,6 +672,7 @@ fn armed_class_edges(
         jd,
         &setup.cyls,
         &setup.planes,
+        &setup.plane_ix,
         wc,
         &tr,
         &mut Aliases::default(),
@@ -1878,6 +1881,7 @@ fn with_cut_rings(
             &jd,
             &setup.cyls,
             &[],
+            &[],
             wc,
             &split,
             &circles,
@@ -2214,6 +2218,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
             &jd,
             &setup.cyls,
             &[],
+            &[],
             wc,
             &split,
             &circles,
@@ -2395,7 +2400,18 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
     );
 
     let circles = merge_circles(&tr.circles, &Aliases::default()).unwrap();
-    let edges = split_edges(&jd, &cyls, &[], wc, &[], &circles, &[], &Aliases::default()).unwrap();
+    let edges = split_edges(
+        &jd,
+        &cyls,
+        &[],
+        &[],
+        wc,
+        &[],
+        &circles,
+        &[],
+        &Aliases::default(),
+    )
+    .unwrap();
     let edges = ClassEdges::of(&cyls, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
     // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
@@ -2484,6 +2500,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
     let edges = split_edges(
         &jd,
         &setup.cyls,
+        &[],
         &[],
         wc,
         &split,

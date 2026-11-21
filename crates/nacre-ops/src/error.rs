@@ -454,14 +454,13 @@ pub enum RejectReason {
     /// names** — two cylinders that do not meet on a line or a circle the truth states and the
     /// cache cannot build. A backstop.
     EdgeCurveUnderived,
-    /// Two cylinders **may share a face across the operands**: one surface stated twice — the same
-    /// axis line and radius written with another origin on the line, another axis sign or seam
-    /// direction, or carried by another motion — or two cylinders whose side faces could not be
-    /// proved apart — neither apart along a direction the pair states nor one lying inside the
-    /// other cylinder. Where the faces do meet, their intersection is a quartic curve, which the
-    /// kernel does not build. One cylinder stated once is one surface, whichever operands have side
-    /// faces on it — two identical circle prisms, a circle swept both ways, a pin in its own bore —
-    /// and builds.
+    /// Two cylinders **may share a face across the operands**: two cylinders whose side faces could
+    /// not be proved apart — neither apart along a direction the pair states nor one lying inside
+    /// the other cylinder. Where the faces do meet, their intersection is a quartic curve, which
+    /// the kernel does not build. Side faces on one cylinder surface are no pair, whichever
+    /// operands have them and however each states the surface — another origin on the axis line,
+    /// another axis sign or seam direction, a motion that carried it there: two identical circle
+    /// prisms, stacked or not, a circle swept both ways, a pin in its own bore — and build.
     ///
     /// What clears a pair: axes further apart than the two radii (skew or parallel — a drill
     /// crossing a bore with room to spare passes); for parallel axes, one cylinder strictly inside

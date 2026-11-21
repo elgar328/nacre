@@ -21,8 +21,7 @@ use super::*;
 ///
 /// Per cylinder pair, over the faces **of different solids** (two faces of one valid solid keep
 /// apart by construction and are not asked): axes clear of each other (`dist > r₁+r₂`, whatever
-/// their orientation) pass outright; one surface stated under two handles ([`same_surface`]) is
-/// refused as the coincident pair it is; for parallel axes one cylinder strictly inside the other
+/// their orientation) pass outright; for parallel axes one cylinder strictly inside the other
 /// clears outright ([`nacre_exact::cylinders_nested`]); otherwise the pair passes when every
 /// **face** of one class provably misses every face of the other ([`lateral_faces_clear`] — each
 /// face pair apart along a direction, or one face inside the other cylinder, or for parallel axes
@@ -73,9 +72,9 @@ pub(crate) fn cylinder_gate(
         let Some(cache) = model.surface_cache(surf).cylinder() else {
             unreachable!("push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache")
         };
-        // **Whose lateral faces the class carries.** Cylinders intern by their exact statement, so
-        // two operands whose laterals lie on one stated cylinder arrive as one class carrying rows
-        // of both — the cylinder's twin of a coplanar class. Every question below that needs a
+        // **Whose lateral faces the class carries.** A class is a surface, so two operands whose
+        // laterals lie on one cylinder — under one handle or two — arrive as one class carrying
+        // rows of both: the cylinder's twin of a coplanar class. Every question below that needs a
         // solid reads it off the face it asks about.
         let solids = cyl_solids[k];
         // A class is named by some face row; a table with none is the class table and the face
@@ -105,6 +104,15 @@ pub(crate) fn cylinder_gate(
         cyl_surfs.len(),
         "the cylinder class table is index-aligned with the class numbering"
     );
+    // Every row reads in its class's statement ([`restate_in_classes`]) — what lets the questions
+    // below pair a row's ranges with `cyls[k].def`.
+    debug_assert!(
+        faces.iter().zip(plane_ix).all(|(row, ix)| match (row, ix) {
+            (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) => cf.def.as_ref() == Some(&cyls[*k].def),
+            _ => true,
+        }),
+        "a lateral row is not stated in its class's statement"
+    );
 
     // **A class with no world statement is asked first whether the whole cylinder stands on one
     // side of it** (`nameless_stance`) — the question every other arm of `class_meet` asks
@@ -115,14 +123,14 @@ pub(crate) fn cylinder_gate(
     let unstated = geom.iter().any(|wp| wp.world.is_err());
     let mut whole_rims = vec![false; cyls.len()];
     if unstated {
-        for (cyl, whole) in cyls.iter_mut().zip(&mut whole_rims) {
-            let fps = lateral_footprints(faces, cyl.surf);
+        for (k, (cyl, whole)) in cyls.iter_mut().zip(&mut whole_rims).enumerate() {
+            let fps = lateral_footprints(faces, plane_ix, k);
             cyl.boxes = fps
                 .iter()
                 .map(|fp| lateral_box(&cyl.def, fp))
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or_default();
-            *whole = only_whole_rims(model, faces, cyl.surf);
+            *whole = only_whole_rims(model, faces, plane_ix, k);
         }
     }
     let cx = PairCx {
@@ -193,7 +201,8 @@ pub(crate) fn cylinder_gate(
     for (ci, cyl) in cyls.iter().enumerate() {
         let mut pieces: Option<Vec<Footprint>> = None;
         for c in meeting(ci, ClassMeet::Silent(Silence::Sectioned)) {
-            let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
+            let fps: &[Footprint] =
+                pieces.get_or_insert_with(|| lateral_pieces(faces, plane_ix, ci));
             let others = meeting(ci, ClassMeet::Cuts)
                 .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
                 .chain(tangent_walls_of(ci))
@@ -236,7 +245,8 @@ pub(crate) fn cylinder_gate(
         // by the same name (`arrangement::split`) — measured on the same prism with the box's wall
         // face across the tangent point, both orders, all three operations.
         for g in meeting(ci, ClassMeet::Silent(Silence::Grazes)) {
-            let fps: &[Footprint] = pieces.get_or_insert_with(|| lateral_pieces(faces, cyl.surf));
+            let fps: &[Footprint] =
+                pieces.get_or_insert_with(|| lateral_pieces(faces, plane_ix, ci));
             let others = meeting(ci, ClassMeet::Cuts)
                 .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
                 .chain(tangent_walls_of(ci))
@@ -254,7 +264,7 @@ pub(crate) fn cylinder_gate(
                 // The fold reads the faces' ends on the line: a face whose ends are not heights (a
                 // slanted rim) leaves the line's extent unstated, which refuses rather than folding
                 // the names past where the face stops.
-                let spans = lateral_stretches(faces, cyl.surf).ok_or_else(undecided)?;
+                let spans = lateral_stretches(faces, plane_ix, ci).ok_or_else(undecided)?;
                 grazed.push((
                     ci,
                     GrazeLine {
@@ -332,6 +342,10 @@ pub(crate) fn cylinder_gate(
     let mut cyl_pairs: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     for (i, a) in cyls.iter().enumerate() {
         for (j, b) in cyls.iter().enumerate().skip(i + 1) {
+            debug_assert!(
+                !a.def.same_surface(&b.def),
+                "two classes on one cylinder: a class is a surface (`plane_classes`)"
+            );
             if !across(a.solids, b.solids) {
                 continue;
             }
@@ -344,7 +358,6 @@ pub(crate) fn cylinder_gate(
                 b.def.r2(),
             ) {
                 Orient::Positive => true,
-                _ if same_surface(&a.def, &b.def) => false,
                 // Parallel axes with one infinite cylinder strictly inside the other — a pin in a
                 // bore, a boss under a smaller pin — never meet as surfaces either: the second
                 // sufficient condition the distance rule has for parallel pairs.
@@ -359,7 +372,7 @@ pub(crate) fn cylinder_gate(
                 {
                     true
                 }
-                _ => lateral_faces_clear(faces, n_a, a, b),
+                _ => lateral_faces_clear(faces, plane_ix, n_a, (i, a), (j, b)),
             };
             if !clear {
                 cyl_pairs.insert((i, j));
@@ -388,10 +401,19 @@ pub(crate) fn cylinder_gate(
         .into_iter()
         .map(RowDraft::stated)
         .collect::<Result<Vec<_>, _>>()?;
-    for (ci, sr) in shared_rulings(faces, &plane_solids, n_a, jd, &cyls, &meets, &tangencies)
-        .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
-        .into_iter()
-        .chain(hinged)
+    for (ci, sr) in shared_rulings(
+        faces,
+        plane_ix,
+        &plane_solids,
+        n_a,
+        jd,
+        &cyls,
+        &meets,
+        &tangencies,
+    )
+    .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
+    .into_iter()
+    .chain(hinged)
     {
         // Both classes of a shared line hold it as a station of their own arrangements — the
         // readers that fold a class's segments onto the ruling ask only whether the line is on
@@ -572,11 +594,11 @@ fn class_meet(
             // segment of the class crosses it — which the class draws on its own arrangement and
             // the lateral's chart reads as a line, wherever the plane touches none of the lateral's
             // circles ([`ClassMeet::Sections`], [`oblique_section_meet`]).
-            let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
+            let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, plane_ix, ci));
             let meet = if laterals_clear_plane(&cyl.def, fps, &coeffs) {
                 ClassMeet::Clear
             } else {
-                oblique_section_meet(model, faces, cyl, fps, &coeffs)
+                oblique_section_meet(model, faces, plane_ix, ci, cyl, fps, &coeffs)
                     .unwrap_or(ClassMeet::Undrawable)
             };
             return Ok((meet, Vec::new()));
@@ -599,7 +621,7 @@ fn class_meet(
         if clearance != Orient::Positive
             && laterals_clear_plane(
                 &cyl.def,
-                footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf)),
+                footprints.get_or_insert_with(|| lateral_footprints(faces, plane_ix, ci)),
                 &coeffs,
             )
         {
@@ -626,7 +648,7 @@ fn class_meet(
             // frame guard here would refuse every moved class outright and keep a
             // translated body out of the cylinder roads.
             let spans: Vec<[nacre_exact::Rat; 2]> = footprints
-                .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
+                .get_or_insert_with(|| lateral_footprints(faces, plane_ix, ci))
                 .iter()
                 .map(|f| f.span.expect("a listed footprint has a span"))
                 .collect();
@@ -673,8 +695,8 @@ fn class_meet(
                 // read is refused by the gate before anything reads it ([`RowDraft`]).
                 if clearance == Orient::Zero {
                     rows = tangency_rows(
-                        model, faces, plane_ix, n_a, c, ci, &coeffs, &cyl.def, cyl.surf,
-                        cyl.solids, jd, through,
+                        model, faces, plane_ix, n_a, c, ci, &coeffs, &cyl.def, cyl.solids, jd,
+                        through,
                     );
                 } else {
                     return Ok((ClassMeet::Cuts, Vec::new()));
@@ -686,7 +708,7 @@ fn class_meet(
                 // recording on it draws rulings no face has (measured, the rigid-motion
                 // oracle).
                 && !footprints
-                    .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
+                    .get_or_insert_with(|| lateral_footprints(faces, plane_ix, ci))
                     .is_empty()
             {
                 // **The class cuts this lateral face though no face of the other solid touches
@@ -706,7 +728,7 @@ fn class_meet(
     }
     // A plane across the axis touching a slanted rim at a point is the touch the oblique arm
     // refuses: one point of the two sections, no crossing to name it by.
-    if touches_a_boundary(model, faces, cyl, &coeffs) {
+    if touches_a_boundary(model, faces, plane_ix, ci, cyl, &coeffs) {
         return Ok((ClassMeet::Undrawable, Vec::new()));
     }
     Ok((ClassMeet::Across, Vec::new()))
@@ -843,8 +865,10 @@ fn classes_holding_the_line(
 
 /// Build the [`SharedRuling`] record from the gate's own records — see its doc for the
 /// population. `None` is arithmetic that could not answer.
+#[allow(clippy::too_many_arguments)]
 fn shared_rulings(
     faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     plane_solids: &[[bool; 2]],
     n_a: usize,
     jd: &Judge<'_, WorkingPlane>,
@@ -862,7 +886,7 @@ fn shared_rulings(
             .map(|(c, _)| c)
             .collect();
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
-        let fps = lateral_pieces(faces, cyl.surf);
+        let fps = lateral_pieces(faces, plane_ix, ci);
         let on_a_face = |p: &[nacre_exact::Rat; 3]| ruling_on_a_face(&cyl.def, &fps, p);
         for (i, &s) in secants.iter().enumerate() {
             let ws = jd.world_rat(s)?;
@@ -899,8 +923,9 @@ fn shared_rulings(
             // with nothing.
             let Some(against) = pieces_of_rows(lateral_rows_of(
                 faces,
+                plane_ix,
                 n_a,
-                cyl.surf,
+                ci,
                 other_solids(plane_solids[t]),
             )) else {
                 continue;
@@ -1226,7 +1251,6 @@ fn tangency_rows(
     ci: usize,
     coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
-    surf: Handle<Surface>,
     cyl_solids: [bool; 2],
     jd: &Judge<'_, WorkingPlane>,
     through: &mut Vec<LateralThrough>,
@@ -1251,28 +1275,28 @@ fn tangency_rows(
         .map(|w| nacre_exact::plane_residual_sign(&w.name, o))
         .filter(|&s| s != 0);
     // Built **once**, not once per face (the rule `wall_faces_clear`'s doc gives).
-    let spans = lateral_spans(faces, surf);
+    let spans = lateral_spans(faces, plane_ix, ci);
     // The lateral faces of this cylinder (`LateralOnLine`), read once per pair: where each lies
     // on the tangent line depends on the line and the lateral, not on the wall face. A cover that could not be read keeps the face's bounding
     // rectangle.
-    let laterals: Vec<LateralOnLine<'_>> = lateral_rows(faces, surf)
-        .map(|(i, cf)| {
-            let cover = base
-                .as_ref()
-                .zip(cf.face)
-                .and_then(|(b, fh)| lateral_cover_on_ruling(model, model.face(fh), def, b));
-            let stretches = match &cover {
-                Some(c) => Some(c.clone()),
-                None => cf.stretch.map(|sp| vec![sp]),
-            };
-            LateralOnLine {
-                ix: i,
-                cf,
-                cover,
-                stretches,
-            }
-        })
-        .collect();
+    let laterals: Vec<LateralOnLine<'_>> =
+        lateral_rows(faces, plane_ix, ci)
+            .map(|(i, cf)| {
+                let cover = base.as_ref().zip(cf.face).zip(cf.stated.as_ref()).and_then(
+                    |((b, fh), own)| lateral_cover_on_ruling(model, model.face(fh), def, own, b),
+                );
+                let stretches = match &cover {
+                    Some(c) => Some(c.clone()),
+                    None => cf.stretch.map(|sp| vec![sp]),
+                };
+                LateralOnLine {
+                    ix: i,
+                    cf,
+                    cover,
+                    stretches,
+                }
+            })
+            .collect();
     // **Where a row's cylinder solid runs through the line** — that solid's lateral faces on this
     // cylinder holding the generators on both sides of the line (a seam is no boundary); `Err`
     // where a face could not be read, by its cause. The other solid's lateral faces here, if any,
@@ -1287,7 +1311,11 @@ fn tangency_rows(
     let read_face = |l: &LateralOnLine<'_>| -> Result<FaceSides, RejectReason> {
         let b = base.as_ref().ok_or(RejectReason::WitnessNotRational)?;
         let fh = l.cf.face.ok_or(RejectReason::CylinderGateUndecided)?;
-        lateral_sides_on_ruling(model, model.face(fh), def, b)
+        let own =
+            l.cf.stated
+                .as_ref()
+                .ok_or(RejectReason::CylinderGateUndecided)?;
+        lateral_sides_on_ruling(model, model.face(fh), def, own, b)
     };
     let read_lateral_through = |solid: SolidSide,
                                 face_sides: &mut Vec<Option<Result<FaceSides, RejectReason>>>|
@@ -2292,8 +2320,8 @@ fn line_runs_through_face(
 /// face in the table at all, both come back empty and leave the axis unused. The second could be
 /// argued safe (no lateral face, no band, nothing to protect), but that argument rests on the face
 /// table being complete here, which is a separate premise from the one this function is about.
-fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_exact::Rat; 2]> {
-    lateral_footprints(faces, surf)
+fn lateral_spans(faces: &[FaceRow], plane_ix: &[ClassIx], k: usize) -> Vec<[nacre_exact::Rat; 2]> {
+    lateral_footprints(faces, plane_ix, k)
         .into_iter()
         .map(|f| f.span.expect("a listed footprint has a span"))
         .collect()
@@ -2303,9 +2331,10 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_exact::
 /// `None` if any face's range is not a pair of heights.
 fn lateral_stretches(
     faces: &[FaceRow],
-    surf: Handle<Surface>,
+    plane_ix: &[ClassIx],
+    k: usize,
 ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
-    lateral_rows(faces, surf)
+    lateral_rows(faces, plane_ix, k)
         .map(|(_, cf)| cf.stretch)
         .collect()
 }
@@ -2313,35 +2342,37 @@ fn lateral_stretches(
 /// **The footprints of a cylinder class's lateral faces** — [`lateral_spans`]' rule with the
 /// angular extent alongside: empty if any face's span could not be stated, else one
 /// footprint per face.
-fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
-    footprints_of(lateral_rows(faces, surf).map(|(_, cf)| cf))
+fn lateral_footprints(faces: &[FaceRow], plane_ix: &[ClassIx], k: usize) -> Vec<Footprint> {
+    footprints_of(lateral_rows(faces, plane_ix, k).map(|(_, cf)| cf))
 }
 
-/// **A cylinder class's lateral faces** — the face table's rows on `surf`, each with its row index.
-/// Matched by **handle**, not by geometry: two operands may state the same cylinder twice, and each
-/// statement gets its own rows, its own bands clipped to its own spans, and its own turn through
-/// the gate's cylinder loop.
-fn lateral_rows(
-    faces: &[FaceRow],
-    surf: Handle<Surface>,
-) -> impl Iterator<Item = (usize, &CylFaceInfo)> {
+/// **A cylinder class's lateral faces** — the face table's rows of class `k`, each with its row
+/// index. The class table says which rows those are (`plane_ix`): a class is a surface, and its
+/// rows may lie on more than one handle ([`plane_classes`]).
+fn lateral_rows<'a>(
+    faces: &'a [FaceRow],
+    plane_ix: &'a [ClassIx],
+    k: usize,
+) -> impl Iterator<Item = (usize, &'a CylFaceInfo)> {
     faces
         .iter()
+        .zip(plane_ix)
         .enumerate()
-        .filter_map(move |(i, row)| match row {
-            FaceRow::Cylinder(cf) if cf.surf == surf => Some((i, cf)),
+        .filter_map(move |(i, (row, ix))| match (row, ix) {
+            (FaceRow::Cylinder(cf), ClassIx::Cyl(c)) if *c == k => Some((i, cf)),
             _ => None,
         })
 }
 
 /// [`lateral_rows`] of the operands `solids` marks (`[A, B]`, [`class_presence`]'s order).
-fn lateral_rows_of(
-    faces: &[FaceRow],
+fn lateral_rows_of<'a>(
+    faces: &'a [FaceRow],
+    plane_ix: &'a [ClassIx],
     n_a: usize,
-    surf: Handle<Surface>,
+    k: usize,
     solids: [bool; 2],
-) -> impl Iterator<Item = &CylFaceInfo> {
-    lateral_rows(faces, surf)
+) -> impl Iterator<Item = &'a CylFaceInfo> {
+    lateral_rows(faces, plane_ix, k)
         .filter(move |&(i, _)| solids[SolidSide::of_row(i, n_a).ix()])
         .map(|(_, cf)| cf)
 }
@@ -2407,7 +2438,7 @@ fn lateral_reach(
 /// lateral face here is sectioned as if the bore were filled or the boss removed, and every traced
 /// boundary still closes. A disk with a polygon in it would not — the disk's own trace stops before
 /// its holes are read.
-fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> bool {
+fn only_whole_rims(model: &Model, faces: &[FaceRow], plane_ix: &[ClassIx], k: usize) -> bool {
     let whole = |lp: &nacre_topo::Loop| whole_rim(model, lp);
     let loops = |f: &nacre_topo::Face| {
         std::iter::once(&f.outer)
@@ -2416,7 +2447,7 @@ fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> b
             .collect::<Vec<_>>()
     };
     let mut rims = Vec::new();
-    for (_, cf) in lateral_rows(faces, surf) {
+    for (_, cf) in lateral_rows(faces, plane_ix, k) {
         let Some(fh) = cf.face else { return false };
         for lp in loops(model.face(fh)) {
             if !whole(&lp) {
@@ -2864,6 +2895,8 @@ fn whole_rim(model: &Model, lp: &nacre_topo::Loop) -> bool {
 fn oblique_section_meet(
     model: &Model,
     faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    ci: usize,
     cyl: &WorkingCyl,
     fps: &[Footprint],
     coeffs: &[nacre_exact::Rat; 4],
@@ -2873,7 +2906,7 @@ fn oblique_section_meet(
         return None;
     }
     let mut sectioned = false;
-    for (_, cf) in lateral_rows(faces, cyl.surf) {
+    for (_, cf) in lateral_rows(faces, plane_ix, ci) {
         let boundary = lateral_boundary_sections(model, model.face(cf.face?), &cyl.def)?;
         match boundary_stand(&cyl.def, &boundary, coeffs)? {
             BoundaryStand::Touch => return None,
@@ -2896,44 +2929,18 @@ fn oblique_section_meet(
 fn touches_a_boundary(
     model: &Model,
     faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    ci: usize,
     cyl: &WorkingCyl,
     coeffs: &[nacre_exact::Rat; 4],
 ) -> bool {
-    lateral_rows(faces, cyl.surf).any(|(_, cf)| {
+    lateral_rows(faces, plane_ix, ci).any(|(_, cf)| {
         cf.face.is_some_and(|f| {
             lateral_boundary_sections(model, model.face(f), &cyl.def)
                 .and_then(|b| boundary_stand(&cyl.def, &b, coeffs))
                 == Some(BoundaryStand::Touch)
         })
     })
-}
-
-/// **Two statements of one cylinder surface** — parallel axes on one line, one radius — under two
-/// handles: statements that differ in where the axis origin sits on the line (a twin carried there
-/// by `translate`), in the axis's sign or length, in `ref_dir`, or in their motion key. Cylinders
-/// intern by their literal statement, so the class table holds both; the arrangement has no name
-/// for two classes on one surface (their circles would coincide on every ⊥ class), so the pair rule
-/// refuses them as the coincident pair they are. One statement under one handle is one class,
-/// whichever operands' faces it carries. Overflow answers `true` — "not shown
-/// distinct" refuses, it never lets a pair through.
-fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> bool {
-    if !nacre_exact::parallel_rat(&a.dir(), &b.dir()) || a.r2() != b.r2() {
-        return false;
-    }
-    let (oa, ob) = (a.origin(), b.origin());
-    let d: Option<[nacre_exact::Rat; 3]> = (|| {
-        Some([
-            ob[0].checked_sub(oa[0])?,
-            ob[1].checked_sub(oa[1])?,
-            ob[2].checked_sub(oa[2])?,
-        ])
-    })();
-    let Some(d) = d else { return true };
-    let zero = nacre_exact::Rat::from_int(0);
-    match nacre_exact::cross3_rat(&d, &a.dir()) {
-        Some(c) => c.iter().all(|x| *x == zero),
-        None => true,
-    }
 }
 
 /// **The face-level clearance for a cylinder pair**: every lateral face of `a` against every
@@ -2943,16 +2950,22 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
 /// arrangement needs, which the surface distance ([`nacre_exact::cylinders_clear`]) is only one
 /// sufficient condition for. Two faces of one solid are not asked: a valid solid's faces meet only
 /// along their edges.
-fn lateral_faces_clear(faces: &[FaceRow], n_a: usize, a: &WorkingCyl, b: &WorkingCyl) -> bool {
+fn lateral_faces_clear(
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    n_a: usize,
+    (i, a): (usize, &WorkingCyl),
+    (j, b): (usize, &WorkingCyl),
+) -> bool {
     // One solid's lateral faces on a class, as the pieces a clearance asks about — none where the
     // solid has no face there.
-    let of = |surf: Handle<Surface>, side: SolidSide| {
-        pieces_of_rows(lateral_rows_of(faces, n_a, surf, side.bit())).unwrap_or_default()
+    let of = |k: usize, side: SolidSide| {
+        pieces_of_rows(lateral_rows_of(faces, plane_ix, n_a, k, side.bit())).unwrap_or_default()
     };
     [(SolidSide::A, SolidSide::B), (SolidSide::B, SolidSide::A)]
         .into_iter()
         .all(|(sa, sb)| {
-            let (fa, fb) = (of(a.surf, sa), of(b.surf, sb));
+            let (fa, fb) = (of(i, sa), of(j, sb));
             fa.iter()
                 .all(|x| fb.iter().all(|y| pieces_clear(&a.def, x, &b.def, y)))
         })
@@ -2966,8 +2979,8 @@ fn lateral_faces_clear(faces: &[FaceRow], n_a: usize, a: &WorkingCyl, b: &Workin
 /// decline on an unusable list (the oblique arm, `faces_apart`, the cut record) read
 /// [`lateral_footprints`] and keep that. Built where it is asked, not with the class — the gate's
 /// own footprints are lazy for the reason [`wall_faces_clear`] gives.
-pub(crate) fn lateral_pieces(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
-    pieces_of_rows(lateral_rows(faces, surf).map(|(_, cf)| cf))
+pub(crate) fn lateral_pieces(faces: &[FaceRow], plane_ix: &[ClassIx], k: usize) -> Vec<Footprint> {
+    pieces_of_rows(lateral_rows(faces, plane_ix, k).map(|(_, cf)| cf))
         .unwrap_or_else(|| pieces_of(Vec::new()))
 }
 

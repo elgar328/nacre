@@ -793,10 +793,12 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// [`nacre_exact::QuadVal::cmp_value`] on the canonical meet line; along a ruling, the same
 /// comparator on the **axis coordinate** (`m · x`, evaluated exactly from each node's re-solved
 /// name).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn split_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     wc: usize,
     segs: &[MergedSeg],
     rulings: &[MergedRuling],
@@ -857,7 +859,7 @@ pub(super) fn split_rulings(
                 || combinatorics::line_along(&shared_here, sg.wall)
                     .map_err(reject)?
                     .is_some_and(|l| l.cyl == cyl);
-            let pieces = || crate::planes::lateral_pieces(faces, cyls[cyl].surf);
+            let pieces = || crate::planes::lateral_pieces(faces, plane_ix, cyl);
             let Some(xs) = lateral_crossings(jd, wc, cyl, &cyls[cyl].def, sg, shared, pieces)?
             else {
                 return Err(reject(combinatorics::undecided_reason(cyls, &[wc])));

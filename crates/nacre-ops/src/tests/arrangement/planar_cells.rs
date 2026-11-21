@@ -758,6 +758,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         &jd,
         &crossing,
         &[],
+        &[],
         wc,
         &split,
         std::slice::from_ref(&circle),
@@ -798,6 +799,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
                 &jd,
                 &clear_table,
                 &[],
+                &[],
                 wc,
                 &split,
                 std::slice::from_ref(&clear),
@@ -827,7 +829,18 @@ fn the_cross_arrangement_has_six_cells() {
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
-    let edges = split_edges(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges = split_edges(
+        &jd,
+        NO_CYLS,
+        &[],
+        &[],
+        wc,
+        &split,
+        &[],
+        &[],
+        &Aliases::default(),
+    )
+    .unwrap();
     let edges = ClassEdges::of(NO_CYLS, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
 
@@ -937,7 +950,18 @@ fn cell_labels_propagate_and_match_footprints() {
     let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let edges = split_edges(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges = split_edges(
+        &jd,
+        NO_CYLS,
+        &[],
+        &[],
+        wc,
+        &split,
+        &[],
+        &[],
+        &Aliases::default(),
+    )
+    .unwrap();
     let edges = ClassEdges::of(NO_CYLS, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
     let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
@@ -995,7 +1019,18 @@ fn a_straddle_drives_the_above_bit_and_seated_wins() {
     let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let edges = split_edges(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges = split_edges(
+        &jd,
+        NO_CYLS,
+        &[],
+        &[],
+        wc,
+        &split,
+        &[],
+        &[],
+        &Aliases::default(),
+    )
+    .unwrap();
     let edges = ClassEdges::of(NO_CYLS, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
     let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
@@ -1031,7 +1066,18 @@ fn boolean_keep_and_result_faces_on_the_cross() {
     let tr = trace_on_class_of(&m, a, b, wc, &jd, &[], &setup);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default()).expect("merge");
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let edges = split_edges(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges = split_edges(
+        &jd,
+        NO_CYLS,
+        &[],
+        &[],
+        wc,
+        &split,
+        &[],
+        &[],
+        &Aliases::default(),
+    )
+    .unwrap();
     let edges = ClassEdges::of(NO_CYLS, wc, &edges);
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
     let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();

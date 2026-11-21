@@ -11,9 +11,9 @@ pub(crate) fn dense_planes(
     planes: &[FaceRow],
     canon: &[usize],
 ) -> (Vec<WorkingPlane>, Vec<ClassIx>, Vec<Handle<Surface>>) {
-    // Plane classes densify from the union-find roots; cylinder rows never entered the
-    // union-find (their identity question is the cylinder class table's), so here they
-    // number by first-seen surface — the index space exists before the table does.
+    // Both kinds densify from the union-find roots: plane classes in root order, cylinder
+    // classes by first-seen root — the order their handles were first seen in, since a class's
+    // root is its lowest row.
     let mut roots: Vec<usize> = canon
         .iter()
         .enumerate()
@@ -22,7 +22,7 @@ pub(crate) fn dense_planes(
         .collect();
     roots.sort_unstable();
     roots.dedup();
-    let mut cyl_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
+    let mut cyl_ix: HashMap<usize, usize> = HashMap::new();
     let plane_ix = canon
         .iter()
         .enumerate()
@@ -32,9 +32,9 @@ pub(crate) fn dense_planes(
                     .binary_search(c)
                     .expect("a class root is in the root set"),
             ),
-            FaceRow::Cylinder(cf) => {
+            FaceRow::Cylinder(_) => {
                 let n = cyl_ix.len();
-                ClassIx::Cyl(*cyl_ix.entry(cf.surf).or_insert(n))
+                ClassIx::Cyl(*cyl_ix.entry(*c).or_insert(n))
             }
         })
         .collect();
@@ -66,11 +66,43 @@ pub(crate) fn dense_planes(
             }
         })
         .collect();
-    // The cylinder surfaces in `ClassIx::Cyl` numbering order (first seen) — rebuilt from the
-    // same map so the two cannot drift.
-    let mut cyls: Vec<(usize, Handle<Surface>)> = cyl_ix.into_iter().map(|(s, k)| (k, s)).collect();
+    // Each cylinder class's representative surface — its root row's — in `ClassIx::Cyl` numbering
+    // order, rebuilt from the same map so the two cannot drift.
+    let mut cyls: Vec<(usize, Handle<Surface>)> = cyl_ix
+        .into_iter()
+        .map(|(root, k)| match &planes[root] {
+            FaceRow::Cylinder(cf) => (k, cf.surf),
+            FaceRow::Plane(_) => unreachable!("a cylinder row's root is a cylinder row"),
+        })
+        .collect();
     cyls.sort_unstable_by_key(|&(k, _)| k);
     (geom, plane_ix, cyls.into_iter().map(|(_, s)| s).collect())
+}
+
+/// **Every lateral row read in its class's statement** — a row whose class root is another row
+/// (another handle stating the same surface) is restated in the root's statement
+/// ([`CylFaceInfo::restated_in`]); a class on one handle is left as it was collected.
+pub(crate) fn restate_in_classes(planes: &mut [FaceRow], canon: &[usize]) {
+    for i in 0..planes.len() {
+        let root = canon[i];
+        if root == i {
+            continue;
+        }
+        let (FaceRow::Cylinder(row), FaceRow::Cylinder(top)) = (&planes[i], &planes[root]) else {
+            continue;
+        };
+        if row.surf == top.surf {
+            continue;
+        }
+        let class = top
+            .stated
+            .clone()
+            .expect("rows class across handles by their statements");
+        let FaceRow::Cylinder(row) = &mut planes[i] else {
+            unreachable!()
+        };
+        row.restated_in(&class);
+    }
 }
 
 /// Whether three `WitnessPoint` are **exactly collinear** (zero-area triangle), decided on their
@@ -174,7 +206,7 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
     r
 }
 
-/// Canonicalize the combined plane table by coplanarity: two planes that are the same plane are
+/// Canonicalize the combined face table by surface: two planes that are the same plane are
 /// merged into one class, so a wall of `a` coplanar with a wall of `b` names a **single line** in
 /// a shared plane π. Without it a wall and its coplanar twin order against each other as one
 /// (`order_along(R, R) == 0`); canonicalizing turns that self-comparison into a real order.
@@ -185,13 +217,15 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
 /// else the exact definitions). The caches — the plane cache's coefficients, the face corners'
 /// coordinates — are rounded images, so two different planes can share one exactly, and a merge
 /// they vouched for put one solid's wall on another's plane. O(n²) over distinct surfaces.
+///
+/// Cylinder rows class the same way: a shared handle, then one surface under two statements
+/// ([`nacre_exact::CylinderDef::same_surface`] on the rows' own world statements) — the origin's
+/// place on the axis, the axis's sign and length and the seam are the statement's, not the
+/// surface's. A row with no world statement classes with its own handle alone.
 pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
     let planes = jd.planes;
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
-    // Cylinder rows stay self-rooted: their identity question belongs to the cylinder class
-    // table, not the coplanarity union-find — they simply never enter `reps` below.
-
     // **Merge by `Surface` handle first, then compare only one face per distinct surface.**
     //
     // Coplanarity is an equivalence, and a shared handle *is* the same plane — exactly, by
@@ -223,6 +257,25 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
             None => {
                 rep.insert(p.surf, i);
                 reps.push(i);
+            }
+        }
+    }
+
+    // Cylinders: the same two steps. A plane and a cylinder never share a handle, so one map
+    // serves both kinds; the pairs asked are cylinder against cylinder.
+    let mut cyl_reps: Vec<(usize, &nacre_topo::CylinderDef)> = Vec::new();
+    for (i, row) in planes.iter().enumerate() {
+        let FaceRow::Cylinder(cf) = row else { continue };
+        match rep.get(&cf.surf) {
+            Some(&r) => parent[i] = r,
+            None => {
+                rep.insert(cf.surf, i);
+                let Some(own) = &cf.stated else { continue };
+                if let Some(&(r, _)) = cyl_reps.iter().find(|(_, d)| d.same_surface(own)) {
+                    parent[i] = r;
+                } else {
+                    cyl_reps.push((i, own));
+                }
             }
         }
     }

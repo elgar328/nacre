@@ -108,6 +108,7 @@ pub(crate) fn plane_index_setup_inner(
     t.charge(Sub::Classes);
     let t = Watch::new();
     let (geom, plane_ix, cyl_surfs) = dense_planes(&planes, &canon);
+    restate_in_classes(&mut planes, &canon);
     // The premise a class with no world statement is read by (`Judge::stored_hp`): the
     // witness triangle turned by `frame_sign` faces the way the stored normal does. Checked on
     // every class that can be checked — the ones whose world statement says it independently.

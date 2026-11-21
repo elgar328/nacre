@@ -80,8 +80,8 @@ impl FaceRow {
 
 /// A cylinder face's table row: what `collect_planes` can state about a lateral face
 /// without pretending it has a plane's four-piece description (`plane`/`tri`/`n_out`/`tri_pt3`
-/// are constant-normal vocabulary — a dummy would be the type lying). The class index and the
-/// exact def live in the cylinder class table (`ClassIx::Cyl`).
+/// are constant-normal vocabulary — a dummy would be the type lying). The class index lives in
+/// the class numbering (`ClassIx::Cyl`); the row carries its class's statement beside its own.
 #[derive(Clone, Debug)]
 pub(crate) struct CylFaceInfo {
     pub(crate) surf: Handle<Surface>,
@@ -92,12 +92,21 @@ pub(crate) struct CylFaceInfo {
     pub(crate) orient_sign: i8,
     /// The motion-history leaf of the cylinder's truth, `None` for a constructed one.
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
-    /// The cylinder's exact statement **in the world** — cloned here so the tracer (which works
-    /// off the face table, never the `Model`) can ask ⊥-ness and axis parameters. `None` when the
-    /// truth is written in a frame its chain's fold does not carry out exactly (a turn off the
-    /// quarters, a circle off a frame's origin along an irrational axis length, or overflow); consumers decline by their own names, and the population gate
-    /// refuses such a boolean before the arrangement runs. See
-    /// [`nacre_topo::Model::world_cylinder_def`].
+    /// **This row's own statement of its cylinder, in the world** — what `surf` states, carried out
+    /// by its chain ([`nacre_topo::Model::world_cylinder_def`]). The model writes this face's
+    /// corners and arcs in it: a pierce corner's `rank` counts from its seam, an arc's vertices
+    /// run counter-clockwise about its axis. A reader of those reads them here, and restates
+    /// what it read about the class's axis ([`RimArc::about`]). `None` when the truth is written
+    /// in a frame its chain's fold does not carry out exactly (a turn off the quarters, a circle
+    /// off a frame's origin along an irrational axis length, or overflow).
+    pub(crate) stated: Option<nacre_topo::CylinderDef>,
+    /// **The class's statement of this row's surface, in the world** — the class representative's,
+    /// which is `stated` unless another handle states the same surface on a lower row
+    /// ([`CylFaceInfo::restated_in`]). Every reading below it is in this statement, and so is every
+    /// question the gate and the arrangement ask: the tracer (which works off the face table,
+    /// never the `Model`) asks ⊥-ness and axis parameters of it. `None` where `stated` is;
+    /// consumers decline by their own names, and the population gate refuses such a boolean before
+    /// the arrangement runs.
     pub(crate) def: Option<nacre_topo::CylinderDef>,
     /// This lateral **face**'s range in the axis parameter `t` (of the raw `def.dir()`) **where every
     /// boundary section is a circle** — the least and greatest height of its rims, `t = −(n·o + d)/(n·m)`
@@ -121,6 +130,48 @@ pub(crate) struct CylFaceInfo {
     /// where every section is a circle — and its angular extent. The population gate's rectangle
     /// reads it (`lateral_spans`): a wider rectangle only refuses more.
     pub(crate) footprint: Footprint,
+}
+
+impl CylFaceInfo {
+    /// **This row's readings moved into `class`'s statement of its surface** — the same surface
+    /// (`stated.same_surface(class)`), so the two axes are one line: `m_own = λ·m_class` and
+    /// `o_own − o_class = μ·m_class`, and a point at the own parameter `t` stands at the class
+    /// parameter `λt + μ`. The axis ranges go through that map (their ends exchanged where
+    /// `λ < 0`; an outward-rounded range stays outward), the angular extent turns about the
+    /// class's axis ([`RimArc::about`]), and `def` becomes `class`. Arithmetic that runs out
+    /// leaves a reading unstated (`None`, the whole circle is never narrower), as a face whose
+    /// reading could not be made has it.
+    pub(crate) fn restated_in(&mut self, class: &nacre_topo::CylinderDef) {
+        use nacre_exact::dot3_rat;
+        let Some(own) = self.stated.clone() else {
+            return;
+        };
+        let (m, mc) = (own.dir(), class.dir());
+        let map = (|| {
+            let mm = dot3_rat(&mc, &mc)?;
+            let inv = nacre_exact::Rat::new(mm.denom(), mm.numer())?;
+            let lambda = dot3_rat(&m, &mc)?.checked_mul(inv)?;
+            let (o, oc) = (own.origin(), class.origin());
+            let w = [
+                o[0].checked_sub(oc[0])?,
+                o[1].checked_sub(oc[1])?,
+                o[2].checked_sub(oc[2])?,
+            ];
+            Some((lambda, dot3_rat(&w, &mc)?.checked_mul(inv)?))
+        })();
+        let moved = |range: Option<[nacre_exact::Rat; 2]>| {
+            let ([lo, hi], (lambda, mu)) = (range?, map?);
+            let at = |t: nacre_exact::Rat| lambda.checked_mul(t)?.checked_add(mu);
+            let (a, b) = (at(lo)?, at(hi)?);
+            Some(if a <= b { [a, b] } else { [b, a] })
+        };
+        self.stretch = moved(self.stretch);
+        self.footprint.span = moved(self.footprint.span);
+        if let Theta::Arc(arc) = self.footprint.theta {
+            self.footprint.theta = Theta::Arc(arc.about(&m, &mc));
+        }
+        self.def = Some(class.clone());
+    }
 }
 
 /// **A lateral face's footprint on its own chart `(t, θ)`** — the bounding rectangle of
@@ -197,7 +248,7 @@ impl RimArc {
         own: &[nacre_exact::Rat; 3],
         other: &[nacre_exact::Rat; 3],
     ) -> RimArc {
-        if nacre_exact::dot_sign_rat(own, other) == nacre_exact::Orient::Negative {
+        if axes_oppose(own, other) {
             RimArc {
                 from: self.to,
                 to: self.from,
@@ -206,6 +257,12 @@ impl RimArc {
             self
         }
     }
+}
+
+/// **Are two parallel axis directions written opposite ways?** — then «counter-clockwise about the
+/// axis» in the one is clockwise in the other.
+pub(crate) fn axes_oppose(a: &[nacre_exact::Rat; 3], b: &[nacre_exact::Rat; 3]) -> bool {
+    nacre_exact::dot_sign_rat(a, b) == nacre_exact::Orient::Negative
 }
 
 /// `(u × v)·m`: positive when `v` is counter-clockwise of `u` about `m` by less than a half turn,
@@ -595,14 +652,19 @@ impl ClassIx {
 /// about, beside its f64 cache. One entry per distinct lateral surface, in [`ClassIx::Cyl`]
 /// numbering order.
 pub(crate) struct WorkingCyl {
+    /// The class's representative handle — its lowest face row's. The class may hold faces on
+    /// other handles stating the same surface (`plane_classes`); the result's faces and vertices
+    /// name this one.
     pub(crate) surf: Handle<Surface>,
+    /// The representative's world statement, which every row of the class is read in
+    /// ([`CylFaceInfo::def`]).
     pub(crate) def: nacre_topo::CylinderDef,
     /// The f64 twin of `def` — its realization, what a construction figure reads (the rim table
     /// solves a seam vertex's figure on it), while every decision reads `def`. Not a cache of the
     /// model: it lives for one operation, like `WitnessPoint::coord_iv`.
     pub(crate) realized: nacre_geom::Cylinder,
-    /// Which operands have a lateral face on this stated cylinder, `[A, B]` ([`class_presence`]) —
-    /// both where two operands state one cylinder, the cylinder's twin of a coplanar class. It
+    /// Which operands have a lateral face on this cylinder, `[A, B]` ([`class_presence`]) —
+    /// both where two operands' faces lie on it, the cylinder's twin of a coplanar class. It
     /// answers only whether a face here can meet a face of another solid ([`across`]); every answer
     /// that needs a face's solid reads it off the face — the face table's row.
     pub(crate) solids: [bool; 2],

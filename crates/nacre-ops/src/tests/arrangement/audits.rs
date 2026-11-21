@@ -814,7 +814,7 @@ pub(crate) fn frame_audit(
                 // the end and report `failed_at: None` for an input the boolean refuses —
                 // *"the worst possible time to be lying"* (`decline_to_reject`). The arc fence
                 // in `bands.rs` locks the two together as «both succeed».
-                let split = class_split(&jd, &cyls, &faces_tab, wc, &tr, &mut local)?;
+                let split = class_split(&jd, &cyls, &faces_tab, &plane_ix, wc, &tr, &mut local)?;
                 let staged = arrange_class(&jd, &cyls, kind, wc, &split);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s

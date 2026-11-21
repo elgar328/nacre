@@ -56,8 +56,8 @@ use nacre_exact::Rat;
 
 /// **One lateral face**, as the band pass reads it.
 ///
-/// **The row is a face, not a class.** A cylinder *class* is one lateral `Surface` handle
-/// (`planes`' `cyl_ix.entry(cf.surf)`), and one surface can carry **several faces of one
+/// **The row is a face, not a class.** A cylinder *class* is one lateral surface
+/// (`planes::plane_classes`), and one surface can carry **several faces of one
 /// solid** — bore a plate through and then cut away the middle of the bore, and its wall becomes
 /// two disjoint bands. "Which parts survive" is a question about a face; the class only says which
 /// surface that face lies on.
@@ -83,7 +83,7 @@ pub(crate) struct CylRow {
 /// so sorting by `(class, reach[0])` keeps each solid's bands in ascending `t`; with one face per
 /// class it *is* class-index order.
 ///
-/// **Two faces of one class can share a `t`**: the two operands' faces on one stated cylinder
+/// **Two faces of one class can share a `t`**: the two operands' faces on one cylinder
 /// (two identical prisms), and one solid's where a lateral face is not a band — the tracer states
 /// a panel and a chain rim too (`arrangement::lateral_shape`). The tie falls to the stable sort's
 /// face order — still deterministic.
