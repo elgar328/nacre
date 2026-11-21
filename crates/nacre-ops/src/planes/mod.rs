@@ -186,6 +186,28 @@ pub(crate) struct RimArc {
     pub(crate) to: [nacre_exact::Rat; 3],
 }
 
+impl RimArc {
+    /// **This arc — counter-clockwise about `own` — as the arc counter-clockwise about `other`**, a
+    /// direction parallel to `own`: the same set of radial directions, its ends exchanged where the
+    /// two point opposite ways. An arc is stated about the axis of the cylinder whose rim it is, and
+    /// two statements of parallel axes may write them opposite ways; a reader that lays an arc in
+    /// another statement's frame reads it through this.
+    pub(crate) fn about(
+        self,
+        own: &[nacre_exact::Rat; 3],
+        other: &[nacre_exact::Rat; 3],
+    ) -> RimArc {
+        if nacre_exact::dot_sign_rat(own, other) == nacre_exact::Orient::Negative {
+            RimArc {
+                from: self.to,
+                to: self.from,
+            }
+        } else {
+            self
+        }
+    }
+}
+
 /// `(u × v)·m`: positive when `v` is counter-clockwise of `u` about `m` by less than a half turn,
 /// `0` when the two are parallel.
 fn turn(

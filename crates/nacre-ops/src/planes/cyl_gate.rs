@@ -3188,7 +3188,8 @@ fn separated(
 /// on a world frame), else `None`. Each face's arc is its angular extent, or the whole circle
 /// when none is stated; the question is [`nacre_geom::mixed::arcs_share_a_point`]'s, and a
 /// touch is not clear. Sound for any face of the class because the extent is the footprint's
-/// bounding arc: wider than a notched face, never narrower.
+/// bounding arc: wider than a notched face, never narrower. `b`'s arc runs about `b`'s axis, which
+/// may be written the other way along the common direction ([`RimArc::about`]).
 fn cross_sections_clear(
     a: &nacre_topo::CylinderDef,
     x: &Footprint,
@@ -3242,22 +3243,26 @@ fn cross_sections_clear(
             // One direction is no arc of this court ([`ArcSpec`]'s `start == end` is the whole
             // circle); it names its own separating direction ([`separating_dirs`]).
             Theta::At(_) => return None,
-            Theta::Arc(arc) => (
-                add2(
-                    centre,
-                    [
-                        nacre_exact::dot3_rat(&arc.from, &u1)?,
-                        nacre_exact::dot3_rat(&arc.from, &u2)?,
-                    ],
-                )?,
-                add2(
-                    centre,
-                    [
-                        nacre_exact::dot3_rat(&arc.to, &u1)?,
-                        nacre_exact::dot3_rat(&arc.to, &u2)?,
-                    ],
-                )?,
-            ),
+            // The chart turns about `a`'s axis; an arc of `b` is stated about `b`'s.
+            Theta::Arc(arc) => {
+                let arc = arc.about(&c.dir(), &m);
+                (
+                    add2(
+                        centre,
+                        [
+                            nacre_exact::dot3_rat(&arc.from, &u1)?,
+                            nacre_exact::dot3_rat(&arc.from, &u2)?,
+                        ],
+                    )?,
+                    add2(
+                        centre,
+                        [
+                            nacre_exact::dot3_rat(&arc.to, &u1)?,
+                            nacre_exact::dot3_rat(&arc.to, &u2)?,
+                        ],
+                    )?,
+                )
+            }
             Theta::Whole => {
                 // A whole circle's seam, `centre + (r, 0)`, is a rational point only for a
                 // rational radius; without one this pair is not judged here (`None`, the

@@ -279,6 +279,111 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
     }
 }
 
+/// **Two parallel cylinders whose arcs meet are refused whichever way each axis is written** — a
+/// plate `[0, 4] × [0, 2]` with its `(4, 0)` corner rounded by the unit circle about `(3, 1)`, and
+/// the half disk `y ≥ 0` of the unit circle about `(4.5, 0)`, both over `z ∈ [0, 2]`. The two
+/// circles cross twice on the fillet's quarter and on the half disk's arc, so the two lateral faces
+/// meet. The half disk is swept up from `z = 0`, and again down from a datum at `z = 2` facing
+/// `−ẑ` — the same solid on a cylinder whose axis is written the other way, so its rim arcs run
+/// the other way round the common direction. Read about the plate's axis without that turn, the
+/// half disk's arc is its complement, which misses the fillet: the pair passed, the union came out
+/// as two bodies and the intersection empty.
+#[test]
+fn parallel_cylinders_whose_arcs_meet_are_refused_whichever_way_an_axis_is_written() {
+    let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let profile = |edges| stated(edges).expect("a profile").remove(0);
+    let plate = || {
+        profile(vec![
+            line(p(0.0, 0.0), p(3.0, 0.0)),
+            arc_turns(p(3.0, 1.0), p(3.0, 0.0), 1),
+            line(p(4.0, 1.0), p(4.0, 2.0)),
+            line(p(4.0, 2.0), p(0.0, 2.0)),
+            line(p(0.0, 2.0), p(0.0, 0.0)),
+        ])
+    };
+    let half_about = |cx: f64| {
+        profile(vec![
+            line(p(cx - 1.0, 0.0), p(cx + 1.0, 0.0)),
+            arc_turns(p(cx, 0.0), p(cx + 1.0, 0.0), 2),
+        ])
+    };
+    let extrude = |m: &mut Model, frame: SketchFrame, profile: Profile2d| {
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 2.0,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
+        };
+        solid
+    };
+    for down in [false, true] {
+        for (kind, swap) in [
+            (BoolKind::Fuse, false),
+            (BoolKind::Cut, false),
+            (BoolKind::Cut, true),
+            (BoolKind::Common, false),
+        ] {
+            let mut m = Model::new();
+            let frame = SketchFrame::world(&m, Axis::Z);
+            let a = extrude(&mut m, frame, plate());
+            let b = if down {
+                // The frame of a plane facing `−ẑ` has `+u = −x̂`: the centre is written `−4.5`.
+                let plane = SketchPlane::from_origin_normal(
+                    nacre_math::Point3::from_array([0.0, 0.0, 2.0]),
+                    nacre_math::Vector3::from_array([0.0, 0.0, -1.0]),
+                )
+                .expect("a plane");
+                let OpOutput::DatumPlane { frame, .. } = apply(
+                    &mut m,
+                    &Operation::DatumPlane {
+                        def: DatumDef::Stated(plane),
+                    },
+                )
+                .expect("the datum") else {
+                    unreachable!()
+                };
+                extrude(&mut m, frame, half_about(-4.5))
+            } else {
+                let frame = SketchFrame::world(&m, Axis::Z);
+                extrude(&mut m, frame, half_about(4.5))
+            };
+            // The same half disk either way: its volume, where it stands along `x`, and its
+            // centroid — the box alone cannot tell the half from its mirror, as an arc grows it by
+            // its whole circle (`nacre_props::bounds`).
+            let vol = nacre_props::mass_props(&m, b).expect("props").volume;
+            assert!(
+                (vol - std::f64::consts::PI).abs() < 1e-9,
+                "down {down}: {vol}"
+            );
+            let (lo, hi) = nacre_props::bounds(&m, b).expect("bounds");
+            assert_eq!((lo[0], hi[0]), (3.5, 5.5), "down {down}");
+            let c = nacre_props::centroid(&m, b).expect("centroid").as_array();
+            let want = [4.5, 4.0 / (3.0 * std::f64::consts::PI), 1.0];
+            assert!(
+                (0..3).all(|k| (c[k] - want[k]).abs() < 1e-9),
+                "down {down}: centroid {c:?}"
+            );
+            let (x, y) = if swap { (b, a) } else { (a, b) };
+            let out = boolean(&mut m, kind, x, y);
+            assert!(
+                matches!(
+                    out,
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::CylinderPairContact,
+                        ..
+                    })
+                ),
+                "down {down} {kind:?} swap {swap}: {out:?}"
+            );
+        }
+    }
+}
+
 /// **A boss or pocket whose circle touches its flat's edge rulings is refused by the pair rule** —
 /// the d 30 cylinder about `z` (height 30) flatted at `x = ±12`, whose flat `x = 12` ends on the
 /// rulings `y = ±9`, and a d 18 circle on that flat about `(12, 0, 15)` (its frame is `u = ŷ`,
