@@ -2210,8 +2210,8 @@ pad·pocket 은 커널 연산이 아니라 편의 레이어(kit)의 조합이다
 기준은 OCCT 의 거동이다: 엣지로만 만나는 두 박스의 `Fuse`, 막대를 가르는 `Cut` — OCCT 는 둘 다 **COMPOUND of 2 SOLIDs**(checkshape valid, STEP `2× MANIFOLD_SOLID_BREP`, non-manifold 엔티티 0)로 낸다. 엣지 접촉 Fuse 는 접촉 엣지 + 2 정점을 **공유**하되(V16→14, E24→23) 각 솔리드는 깨끗한 manifold 박스다.
 
 - **불리언은 `Vec<Handle<Solid>>` 를 낸다.** 「Cut 두 동강」「엣지 접촉 Fuse」는 전부 정상 결과다. 양수 성분 전부를 각각 솔리드로 방출하고, `Model` 의 `live_solids` 가 그것들을 든다.
-- **manifold 는 솔리드별 판정이다 — 두 솔리드가 경계 요소를 공유해도 각각은 manifold 다.** 공유 엣지가 compound 수준에서 4면에 닿는 것은 각 솔리드가 2면씩이라 위반이 아니다. 각 솔리드 안의 manifold 전제(엣지당 면 2·Euler)는 그대로다.
-- **non-manifold 솔리드는 지원하지 않는다 — 불필요하다.** OCCT 도 만들지 않는다(엔티티 이름부터 MANIFOLD).
+- **manifold 는 솔리드별 판정이다.** 두 솔리드가 공유한 엣지가 compound 수준에서 4면에 닿는 것은 각 솔리드가 2면씩이라 위반이 아니다. 각 솔리드 안의 manifold 전제(엣지당 면 2·Euler)는 그대로다.
+- **non-manifold 솔리드는 지원하지 않는다** — 한 솔리드가 간선 하나를 셋 이상의 면에 쓰면 `NonManifoldResultEdge`(방향은 「불리언 엔진」의 결과 계약). OCCT 는 그 꼴을 한 `MANIFOLD_SOLID_BREP` 으로 짓는다(`tangent_junction.rs` 의 노치 막대).
 - **솔리드 간 경계 요소 공유는 허용되고 필요하다.** 솔리드들이 정점·엣지·면 Handle 을 공유할 수 있다. 그 공유는 **불리언이 명시적으로 만든다**(전역 자동병합이 아니다) — 아래 「명시 공유」와 같은 메커니즘이다.
 
 ## 회전 지원의 확정 결정

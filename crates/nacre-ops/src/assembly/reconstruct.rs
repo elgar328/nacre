@@ -598,9 +598,11 @@ pub(crate) fn reconstruct(
     // property transform and replay stand on (`transform::foreign_named_vertex`). It is a shipped
     // check, not a debug_assert: a vertex whose definition names a surface no face at it lies on
     // is a wrong name with the right volume, which a release build would otherwise ship silently
-    // (no input in the suite or the census reaches it — the coplanar merge dissolves such
-    // corners, the straight-angle cleaning reads one line's two spellings as one, and the naming
-    // restates the rest; a planted vertex reaches it). ops cannot lean on `validate`, so the check
+    // (the suite reaches it on the tangent-junction scoreboard's coaxial rods, whole or notched,
+    // where a point of a tangent line stays a straight corner of one ring — todo «접선에서만
+    // 만나는 덩이 — 마디가 어긋나는 칼날»; elsewhere the coplanar merge dissolves such corners,
+    // the straight-angle cleaning reads one line's two spellings as one, and the naming restates
+    // the rest, and the census reaches it nowhere). ops cannot lean on `validate`, so the check
     // is here. The garbage-solid residue is the same class every late reject leaves (see the
     // raise above).
     if let Ok(solids) = &out {
