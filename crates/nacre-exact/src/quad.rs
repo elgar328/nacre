@@ -1463,6 +1463,13 @@ fn radial_dist2_int(p: &V3, origin: &V3, dir: &V3) -> (BigInt, BigInt) {
     (&ww * &mm - &wm * &wm, &mm * (&dw * &dw))
 }
 
+/// **Is `p` on the line through `origin` along `dir`?** — [`radial_dist2_int`]'s numerator at zero:
+/// exact and total, the difference never formed in `Rat`.
+pub(crate) fn on_axis(p: &V3, origin: &V3, dir: &V3) -> bool {
+    use num_traits::Zero;
+    radial_dist2_int(p, origin, dir).0.is_zero()
+}
+
 fn sign_of(x: &BigInt) -> Orient {
     match x.sign() {
         num_bigint::Sign::Minus => Orient::Negative,

@@ -802,6 +802,16 @@ impl CylinderDef {
         &self.r2
     }
 
+    /// **Are these two statements one surface?** — one axis line and one squared radius, whatever
+    /// else the statements say: where the origin sits on the line, the axis's sign and length,
+    /// the seam direction. Exact and total — a pair is one surface or it is proved not to be, for
+    /// numbers of any width.
+    pub fn same_surface(&self, other: &CylinderDef) -> bool {
+        self.r2 == other.r2
+            && parallel_rat(&self.dir, &other.dir)
+            && crate::quad::on_axis(&other.origin, &self.origin, &self.dir)
+    }
+
     /// The radius as an exact rational, when the squared radius has one — true of every radius a
     /// caller stated as a number, and of any arc through rational points whose `|start − centre|²`
     /// is a rational's square. `None` is not a refusal: the cylinder is as well-defined as any

@@ -1739,3 +1739,67 @@ proptest::proptest! {
         }
     }
 }
+
+/// **One surface, however it is stated** — [`crate::CylinderDef::same_surface`] holds through the
+/// origin slid along the axis, the axis scaled (and reversed), the seam turned; a step off the
+/// axis, a tilt or another radius is another surface. The last pair is one whose origins differ
+/// by more than `Rat` can state — a checked subtraction would have run out — and it is answered.
+#[test]
+fn two_statements_of_one_cylinder_are_one_surface() {
+    let def = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3], r2: i128| {
+        crate::CylinderDef::new(o, m, e, big(r2)).expect("a cylinder")
+    };
+    let (o, m, e) = (
+        [ri(1), ri(2), ri(3)],
+        [ri(1), ri(2), ri(2)],
+        [ri(0), ri(1), ri(0)],
+    );
+    let base = def(o, m, e, 2);
+    let along = |t: Rat| -> [Rat; 3] {
+        core::array::from_fn(|k| o[k].checked_add(t.checked_mul(m[k]).unwrap()).unwrap())
+    };
+    let scaled = |k: Rat| m.map(|c| c.checked_mul(k).unwrap());
+    for (twin, what) in [
+        (
+            def(along(r(7, 3)), m, e, 2),
+            "the origin slid along the axis",
+        ),
+        (def(o, scaled(r(5, 2)), e, 2), "the axis scaled"),
+        (def(o, scaled(ri(-1)), e, 2), "the axis reversed"),
+        (def(o, m, [ri(1), ri(0), ri(0)], 2), "another seam"),
+        (
+            def(along(ri(-4)), scaled(r(-1, 3)), [ri(3), ri(1), ri(1)], 2),
+            "all three",
+        ),
+    ] {
+        assert!(base.same_surface(&twin), "{what}");
+        assert!(twin.same_surface(&base), "{what}, asked the other way");
+    }
+    for (other, what) in [
+        (
+            def([ri(1), ri(2), r(7, 2)], m, e, 2),
+            "an origin off the axis",
+        ),
+        (def(o, [ri(1), ri(2), ri(3)], e, 2), "another direction"),
+        (def(o, m, e, 3), "another radius"),
+    ] {
+        assert!(!base.same_surface(&other), "{what}");
+        assert!(!other.same_surface(&base), "{what}, asked the other way");
+    }
+    // Origins `2¹²⁶` either side of zero on the axis: their difference is past `i128`.
+    let far = Rat::from_int(1i128 << 126);
+    let z = [ri(0), ri(0), ri(1)];
+    let (lo, hi) = (
+        def([ri(0), ri(0), Rat::from_int(-(1i128 << 126))], z, e, 2),
+        def([ri(0), ri(0), far], z, e, 2),
+    );
+    assert!(
+        lo.same_surface(&hi),
+        "one axis, origins too far apart to subtract"
+    );
+    let off = def([ri(1), ri(0), far], z, e, 2);
+    assert!(
+        !lo.same_surface(&off),
+        "a parallel axis one off, as far along"
+    );
+}
