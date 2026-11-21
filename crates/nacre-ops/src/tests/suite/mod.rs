@@ -356,13 +356,25 @@ fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
 ///
 /// The mesh-covers-the-faces oracle, shared: a face's triangles against
 /// [`nacre_props::face_props`] and the solid's against [`nacre_props::mass_props`], at the derived
-/// relative budget (see [`the_mesh_covers_the_faces_it_approximates`]). Any test that meshes a
+/// budgets below (the relative one is [`the_mesh_covers_the_faces_it_approximates`]'). Any test that meshes a
 /// solid for the first time calls this — it is the only reading in the workspace that asks
 /// whether the triangles lie on the face they claim.
+///
+/// **A plane face's budget is its curved edges' chords**, not a share of its area: all a plane
+/// face's mesh can miss is the ground between each chord of a curved edge and its arc, which lies
+/// in the triangle the arc's two end tangents make on the chord — for a chord of length `c` on an
+/// arc turning at most `Δ` (the mesh's `max_angle_deg`), at most `c²·tan(Δ/2)/4`. A share of the
+/// area undercounts it for a face thin beside its arcs: the sliver between a rod's arc and the
+/// wall tangent to it (`tangent_junction`), `0.0217` of area and `5.3e-5` of chord ground, every
+/// digit of it the 2° segments of its 30° arc. A curved face's mesh misses by its facets' sag
+/// across the surface, a share of its area: the relative budget, which the solid's volume is
+/// held to as well.
 pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>]) {
     // 5 × the derived worst case (2.0e-4, a full disk at the angular budget).
     const BUDGET: f64 = 1e-3;
-    let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("tess");
+    let config = nacre_tess::TessConfig::default();
+    let half_turn = (0.5 * config.max_angle_deg.to_radians()).tan();
+    let mesh = nacre_tess::tessellate(m, &config).expect("tess");
     for &s in solids {
         let sol = m.solid(s).clone();
         let mut mesh_volume = 0.0f64;
@@ -388,9 +400,40 @@ pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>])
                         + a[2] * (b[0] * c[1] - b[1] * c[0]))
                         / 6.0;
                 }
+                let face = m.face(fh);
+                let budget = if matches!(m.surface(face.surface), nacre_topo::Surface::Plane { .. })
+                {
+                    let mut chords = 0.0f64;
+                    let mut edges: Vec<_> = std::iter::once(&face.outer)
+                        .chain(face.inner.iter())
+                        .flat_map(|lp| lp.half_edges.iter().map(|he| he.edge))
+                        .collect();
+                    edges.sort_unstable();
+                    edges.dedup();
+                    for e in edges {
+                        if matches!(m.edge_curve(e), nacre_geom::Curve::Line(_)) {
+                            continue;
+                        }
+                        let line = mesh.by_edge.get(&e).map(|v| v.as_slice()).unwrap_or(&[]);
+                        // A closed curve's polyline does not repeat its first sample
+                        // (`nacre_tess::Tessellation`'s doc): its closing chord is one more.
+                        let ends = m.edge(e).vertices;
+                        let closing = (ends[0] == ends[1])
+                            .then(|| line.last().zip(line.first()))
+                            .flatten();
+                        for (a, b) in line.windows(2).map(|w| (&w[0], &w[1])).chain(closing) {
+                            let c = (mesh.vertices.get(*b).pos - mesh.vertices.get(*a).pos).norm();
+                            chords += c * c * half_turn / 4.0;
+                        }
+                    }
+                    // Rounding on the straight edges' sums.
+                    chords + 1e-12 * exact
+                } else {
+                    BUDGET * exact
+                };
                 assert!(
-                    (area - exact).abs() <= BUDGET * exact,
-                    "{name}: a face's mesh area {area} is not its own {exact}"
+                    (area - exact).abs() <= budget,
+                    "{name}: a face's mesh area {area} is not its own {exact} (budget {budget})"
                 );
             }
         }
