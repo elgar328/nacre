@@ -29,8 +29,13 @@
 
 use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
+use crate::{Edge2d, Ring2d};
+use nacre_exact::Rat;
 
-type Build = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
+type Build = fn(&mut Model, Says) -> (Handle<Solid>, Handle<Solid>);
+
+/// A twin pair: the first operand as written, the second stating the first's cylinder again.
+type Twins = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
 
 fn p(x: f64, y: f64) -> nacre_math::Point2 {
     nacre_math::Point2::from_array([x, y])
@@ -40,20 +45,127 @@ fn profile(edges: Vec<Stated>) -> Profile2d {
     stated(edges).unwrap().remove(0)
 }
 
-fn sweep(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
-    let frame = SketchFrame::world(m, Axis::Z);
-    let OpOutput::Extrude { solid, .. } = apply(
-        m,
-        &Operation::Extrude {
-            frame,
-            profile,
-            dist,
-        },
-    )
-    .expect("the profile extrudes") else {
-        unreachable!()
+/// **How a family's solids state their cylinders** — one solid, four statements of it. Every sweep
+/// of a family writes the same points of the world; what differs is the sketch frame the circle is
+/// written in, and so the cylinder's statement: its seam direction, the place of its origin on the
+/// axis, or the way its axis points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Says {
+    /// The world frame on `z = 0`: axis `+ẑ`, seam `+x̂`, origin on `z = 0`.
+    Plain,
+    /// The frame `+u = ŷ` on `z = 0`, the profile written a quarter turn back: seam `+ŷ`.
+    Seam,
+    /// A datum at the far end, swept back: the origin at the other end of the sweep.
+    Origin,
+    /// The plane `z = 0` facing `−ẑ` with `+u = x̂`, the profile written mirrored in `y`: axis
+    /// `−ẑ`, seam and origin as [`Says::Plain`].
+    Reversed,
+}
+
+const RESTATED: [Says; 3] = [Says::Seam, Says::Origin, Says::Reversed];
+
+/// `profile` under the map `at` of the frame's coordinates — a turn (`mirrored: false`) or a
+/// mirror. A whole circle keeps its seam on its frame's `+u` side: its one vertex moves with the
+/// centre and is not turned about it, so the circle's world seam turns with the frame. A mirror
+/// reverses a ring's sense, so the ring is written the other way round.
+fn mapped(profile: &Profile2d, at: impl Fn([Rat; 2]) -> [Rat; 2], mirrored: bool) -> Profile2d {
+    let ring = |r: &Ring2d| {
+        let n = r.len();
+        let arc = |e: &Edge2d| match *e {
+            Edge2d::Line => Edge2d::Line,
+            Edge2d::Arc { center, r2, ccw } => Edge2d::Arc {
+                center: at(center),
+                r2,
+                ccw,
+            },
+        };
+        if n == 1 {
+            let Edge2d::Arc { center, .. } = r.edges()[0] else {
+                unreachable!("a one-vertex ring is a circle")
+            };
+            let (v, c) = (r.vertices()[0], at(center));
+            let seam = [
+                c[0].checked_add(v[0].checked_sub(center[0]).unwrap())
+                    .unwrap(),
+                c[1].checked_add(v[1].checked_sub(center[1]).unwrap())
+                    .unwrap(),
+            ];
+            return Ring2d::normalized(vec![seam], vec![arc(&r.edges()[0])]);
+        }
+        let vs: Vec<[Rat; 2]> = r.vertices().iter().map(|&v| at(v)).collect();
+        if !mirrored {
+            return Ring2d::normalized(vs, r.edges().iter().map(arc).collect());
+        }
+        // The ring the other way round from its first vertex: step `j` is the mirrored step
+        // `n − j − 1` walked backwards, which turns the way the original did.
+        let order = |j: usize| (n - j) % n;
+        Ring2d::normalized(
+            (0..n).map(|j| vs[order(j)]).collect(),
+            (0..n).map(|j| arc(&r.edges()[n - j - 1])).collect(),
+        )
     };
-    solid
+    Profile2d::from_normalized_rings(
+        ring(profile.outer()),
+        profile.holes().iter().map(ring).collect(),
+    )
+}
+
+/// `profile` written on the world's `z = 0` and swept `dist` along `+ẑ`, as `says` states it.
+fn sweep(m: &mut Model, says: Says, profile: Profile2d, dist: f64) -> Handle<Solid> {
+    let neg = |x: Rat| Rat::from_int(0).checked_sub(x).unwrap();
+    let (frame, profile, dist) = match says {
+        Says::Plain => (SketchFrame::world(m, Axis::Z), profile, dist),
+        Says::Seam => {
+            let plane = m.seeded_plane(Axis::Z);
+            let frame = SketchFrame::named(
+                m,
+                plane,
+                Point3::origin(),
+                Vector3::from_array([0.0, 1.0, 0.0]),
+            )
+            .expect("the frame");
+            // `+u = ŷ`, `+v = −x̂`: the world's `(x, y)` is the frame's `(y, −x)`.
+            (frame, mapped(&profile, |q| [q[1], neg(q[0])], false), dist)
+        }
+        Says::Origin => (datum(m, [0.0, 0.0, dist], [0.0, 0.0, 1.0]), profile, -dist),
+        Says::Reversed => {
+            let plane = SketchPlane::from_axes(
+                Point3::origin(),
+                Vector3::from_array([1.0, 0.0, 0.0]),
+                Vector3::from_array([0.0, -1.0, 0.0]),
+            );
+            let OpOutput::DatumPlane { frame, .. } = apply(
+                m,
+                &Operation::DatumPlane {
+                    def: DatumDef::Stated(plane),
+                },
+            )
+            .expect("the datum") else {
+                unreachable!()
+            };
+            // `+u = x̂`, `+v = −ŷ`: the world's `(x, y)` is the frame's `(x, −y)`.
+            (frame, mapped(&profile, |q| [q[0], neg(q[1])], true), -dist)
+        }
+    };
+    extrude_in(m, frame, profile, dist)
+}
+
+/// The unit cylinder from `base` up `height` along `+ẑ` on a stated datum, as `says` states it.
+fn upright(m: &mut Model, says: Says, base: [f64; 3], height: f64) -> Handle<Solid> {
+    let (z, x, y) = (
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
+    );
+    let at = Point3::from_array(base);
+    let top = Point3::from_array([base[0], base[1], base[2] + height]);
+    match says {
+        Says::Plain => crate::fixtures::cylinder(m, at, z, 1.0, height),
+        Says::Seam => crate::fixtures::cylinder_with_seam(m, at, z, y, 1.0, height),
+        Says::Origin => crate::fixtures::cylinder(m, top, z, 1.0, -height),
+        Says::Reversed => crate::fixtures::cylinder_with_seam(m, at, z * -1.0, x, 1.0, -height),
+    }
+    .solid
 }
 
 /// The unit circle about the origin.
@@ -99,39 +211,39 @@ fn filleted_left() -> Profile2d {
     ])
 }
 
-fn identical(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    (sweep(m, disk(), 2.0), sweep(m, disk(), 2.0))
+fn identical(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    (sweep(m, s, disk(), 2.0), sweep(m, s, disk(), 2.0))
 }
 
-fn swept_both_ways(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    (sweep(m, disk(), 2.0), sweep(m, disk(), -2.0))
+fn swept_both_ways(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    (sweep(m, s, disk(), 2.0), sweep(m, s, disk(), -2.0))
 }
 
 /// A `4 × 4 × 2` plate bored by the unit circle, and the circle's pin of the plate's height.
-fn bore_and_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn bore_and_pin(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     let square =
         Profile2d::polygon(vec![p(-2.0, -2.0), p(2.0, -2.0), p(2.0, 2.0), p(-2.0, 2.0)]).unwrap();
-    let plate = sweep(m, square, 2.0);
-    let tool = sweep(m, disk(), 2.0);
+    let plate = sweep(m, s, square, 2.0);
+    let tool = sweep(m, s, disk(), 2.0);
     let bored = crate::boolean(m, BoolKind::Cut, plate, tool).expect("the bore")[0];
-    (bored, sweep(m, disk(), 2.0))
+    (bored, sweep(m, s, disk(), 2.0))
 }
 
-fn short_and_tall(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    (sweep(m, disk(), 2.0), sweep(m, disk(), 3.0))
+fn short_and_tall(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    (sweep(m, s, disk(), 2.0), sweep(m, s, disk(), 3.0))
 }
 
-fn half_and_whole(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    (sweep(m, upper_half(), 2.0), sweep(m, disk(), 2.0))
+fn half_and_whole(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    (sweep(m, s, upper_half(), 2.0), sweep(m, s, disk(), 2.0))
 }
 
-fn short_half_and_tall_whole(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    (sweep(m, upper_half(), 2.0), sweep(m, disk(), 3.0))
+fn short_half_and_tall_whole(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    (sweep(m, s, upper_half(), 2.0), sweep(m, s, disk(), 3.0))
 }
 
 /// `[−2, 2] × [0, 2]` notched by the upper half disk, and the lower half disk's pin: the shared
 /// lateral is the notch's on `y > 0` (material outside) and the pin's on `y < 0` (material inside).
-fn notch_and_half_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn notch_and_half_pin(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     let notched = profile(vec![
         line(p(-2.0, 0.0), p(-1.0, 0.0)),
         arc_turns(p(0.0, 0.0), p(-1.0, 0.0), -2),
@@ -140,52 +252,55 @@ fn notch_and_half_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
         line(p(2.0, 2.0), p(-2.0, 2.0)),
         line(p(-2.0, 2.0), p(-2.0, 0.0)),
     ]);
-    (sweep(m, notched, 2.0), sweep(m, lower_half(), 2.0))
+    (sweep(m, s, notched, 2.0), sweep(m, s, lower_half(), 2.0))
 }
 
 /// A `4 × 4 × 2` block on `z ∈ [2, 4]` bored through by the unit circle swept from `z = 0`, and
 /// the circle's pin on `z ∈ [0, 2]` below it: the shared lateral keeps the material outside above
 /// the rim at `z = 2` and inside below it, and four faces meet on that circle.
-fn bore_above_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn bore_above_pin(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     let block = crate::fixtures::cuboid(m, [-2.0, -2.0, 2.0], [2.0, 2.0, 4.0]);
-    let tool = sweep(m, disk(), 4.0);
+    let tool = sweep(m, s, disk(), 4.0);
     let bored = crate::boolean(m, BoolKind::Cut, block, tool).expect("the bore")[0];
-    (bored, sweep(m, disk(), 2.0))
+    (bored, sweep(m, s, disk(), 2.0))
 }
 
 /// The unit disk's two halves: one lateral across the two stations of the diameter, and the two
 /// flats on it facing each other.
-fn two_halves(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    (sweep(m, upper_half(), 2.0), sweep(m, lower_half(), 2.0))
+fn two_halves(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        sweep(m, s, upper_half(), 2.0),
+        sweep(m, s, lower_half(), 2.0),
+    )
 }
 
-fn fillet_swept_both_ways(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn fillet_swept_both_ways(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     (
-        sweep(m, filleted_right(), 2.0),
-        sweep(m, filleted_right(), -2.0),
+        sweep(m, s, filleted_right(), 2.0),
+        sweep(m, s, filleted_right(), -2.0),
     )
 }
 
 /// The filleted plate and a pin on its fillet's circle, taller than the plate: the plate's two
 /// walls are tangent to the pin's lateral.
-fn fillet_and_its_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn fillet_and_its_pin(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     (
-        sweep(m, filleted_right(), 2.0),
-        sweep(m, circle_profile([3.0, 1.0], 1.0), 3.0),
+        sweep(m, s, filleted_right(), 2.0),
+        sweep(m, s, circle_profile([3.0, 1.0], 1.0), 3.0),
     )
 }
 
-fn opposite_quarters(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn opposite_quarters(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     (
-        sweep(m, filleted_right(), 2.0),
-        sweep(m, filleted_left(), 2.0),
+        sweep(m, s, filleted_right(), 2.0),
+        sweep(m, s, filleted_left(), 2.0),
     )
 }
 
 /// The unit disk's segment beyond the chord `x + y = 1` and its segment beyond `x − y = 1`: the
 /// two chords meet on the ruling `(1, 0)`, where one lateral face ends from `+θ` and the other's
 /// from `−θ`, each against its own chord.
-fn two_chord_segments(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn two_chord_segments(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     let upper = profile(vec![
         arc_turns(p(0.0, 0.0), p(1.0, 0.0), 1),
         line(p(0.0, 1.0), p(1.0, 0.0)),
@@ -194,21 +309,12 @@ fn two_chord_segments(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
         arc_turns(p(0.0, 0.0), p(0.0, -1.0), 1),
         line(p(1.0, 0.0), p(0.0, -1.0)),
     ]);
-    (sweep(m, upper, 2.0), sweep(m, lower, 2.0))
+    (sweep(m, s, upper, 2.0), sweep(m, s, lower, 2.0))
 }
 
 /// Two identical cylinders on a stated datum plane — the other frame road.
-fn identical_on_a_datum(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let on_datum = |m: &mut Model| {
-        crate::fixtures::cylinder(
-            m,
-            Point3::origin(),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            1.0,
-            2.0,
-        )
-        .solid
-    };
+fn identical_on_a_datum(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    let on_datum = |m: &mut Model| upright(m, s, [0.0, 0.0, 0.0], 2.0);
     (on_datum(m), on_datum(m))
 }
 
@@ -223,40 +329,48 @@ fn trimmed(m: &mut Model, mut solid: Handle<Solid>, lo: f64, hi: f64) -> Handle<
 
 /// The upper half disk on `z ∈ [0, 2]` and on `z ∈ [1, 3]`: the two statements of each ruling of
 /// the diameter overlap on `[1, 2]`.
-fn halves_overlapping(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let low = sweep(m, upper_half(), 2.0);
-    let high = sweep(m, upper_half(), 3.0);
+fn halves_overlapping(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    let low = sweep(m, s, upper_half(), 2.0);
+    let high = sweep(m, s, upper_half(), 3.0);
     (low, trimmed(m, high, 1.0, 3.0))
 }
 
 /// The upper half disk on `z ∈ [0, 3]` and on `z ∈ [1, 2]`: one statement of each ruling lies
 /// inside the other, both its ends inside.
-fn half_around_half(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let tall = sweep(m, upper_half(), 3.0);
-    let inner = sweep(m, upper_half(), 3.0);
+fn half_around_half(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    let tall = sweep(m, s, upper_half(), 3.0);
+    let inner = sweep(m, s, upper_half(), 3.0);
     (tall, trimmed(m, inner, 1.0, 2.0))
 }
 
 /// A `4 × 4 × 2` block on `z ∈ [−4, −2]` bored through by the unit circle swept down from `z = 0`,
 /// and the circle's pin on `z ∈ [−2, 0]` above it — [`bore_above_pin`] the other way up, so each
 /// face meets the rim at `z = −2` from the other side.
-fn bore_below_pin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn bore_below_pin(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     let block = crate::fixtures::cuboid(m, [-2.0, -2.0, -4.0], [2.0, 2.0, -2.0]);
-    let tool = sweep(m, disk(), -4.0);
+    let tool = sweep(m, s, disk(), -4.0);
     let bored = crate::boolean(m, BoolKind::Cut, block, tool).expect("the bore")[0];
-    (bored, sweep(m, disk(), -2.0))
+    (bored, sweep(m, s, disk(), -2.0))
 }
 
 /// The block from `min` to `max` less the unit cylinder about the axis line `x = 1, y = 1` on
 /// `z ∈ [lo, lo + len]` — one statement wherever it is written, so the bites of one family share
 /// its handle.
-fn bitten(m: &mut Model, min: [f64; 3], max: [f64; 3], lo: f64, len: f64) -> Handle<Solid> {
-    bitten_about(m, 1.0, min, max, lo, len)
+fn bitten(
+    m: &mut Model,
+    s: Says,
+    min: [f64; 3],
+    max: [f64; 3],
+    lo: f64,
+    len: f64,
+) -> Handle<Solid> {
+    bitten_about(m, s, 1.0, min, max, lo, len)
 }
 
 /// [`bitten`] about the axis line `x = 1, y = axis_y`.
 fn bitten_about(
     m: &mut Model,
+    s: Says,
     axis_y: f64,
     min: [f64; 3],
     max: [f64; 3],
@@ -264,34 +378,30 @@ fn bitten_about(
     len: f64,
 ) -> Handle<Solid> {
     let block = crate::fixtures::cuboid(m, min, max);
-    let tool = crate::fixtures::cylinder(
-        m,
-        Point3::from_array([1.0, axis_y, lo]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        1.0,
-        len,
-    )
-    .solid;
+    let tool = upright(m, s, [1.0, axis_y, lo], len);
     crate::boolean(m, BoolKind::Cut, block, tool).expect("the bite")[0]
 }
 
 /// The unit cube and the next one along `x`, each less the circle about `(1, 1)`: two cusps whose
 /// floors `y = 0` and laterals end on the tangent ruling `(1, 0)` from either side, meeting there
 /// alone.
-fn two_cusps(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn two_cusps(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten(m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], -1.0, 3.0),
-        bitten(m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
     )
 }
 
 /// [`two_cusps`] mirrored across `y = 0` — the floor's axis side the other way — and two high, the
 /// second raised by one: the cusps meet on the tangent ruling `(1, 0)` over `z ∈ [1, 2]` only, and
 /// each runs on along the line alone beyond it.
-fn two_cusps_under_the_axis_offset_along_it(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn two_cusps_under_the_axis_offset_along_it(
+    m: &mut Model,
+    s: Says,
+) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten_about(m, -1.0, [0.0, -1.0, 0.0], [1.0, 0.0, 2.0], -1.0, 5.0),
-        bitten_about(m, -1.0, [1.0, -1.0, 1.0], [2.0, 0.0, 3.0], -1.0, 5.0),
+        bitten_about(m, s, -1.0, [0.0, -1.0, 0.0], [1.0, 0.0, 2.0], -1.0, 5.0),
+        bitten_about(m, s, -1.0, [1.0, -1.0, 1.0], [2.0, 0.0, 3.0], -1.0, 5.0),
     )
 }
 
@@ -299,10 +409,10 @@ fn two_cusps_under_the_axis_offset_along_it(m: &mut Model) -> (Handle<Solid>, Ha
 /// cusps meet on the tangent ruling `(1, 0)` and the blocks share the face `x = 1` above the
 /// circle — one body round a bore tangent to its floor, whose boundary touches itself along the
 /// line.
-fn two_cusps_joined_round_the_bore(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn two_cusps_joined_round_the_bore(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten(m, [-1.0, 0.0, 0.0], [1.0, 3.0, 1.0], -1.0, 3.0),
-        bitten(m, [1.0, 0.0, 0.0], [3.0, 3.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [-1.0, 0.0, 0.0], [1.0, 3.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [1.0, 0.0, 0.0], [3.0, 3.0, 1.0], -1.0, 3.0),
     )
 }
 
@@ -310,19 +420,12 @@ fn two_cusps_joined_round_the_bore(m: &mut Model) -> (Handle<Solid>, Handle<Soli
 /// `[−1, 1] × [0, 1]` notched out under its top and the circle bitten on `z ∈ [−1, 1]`: the cusps
 /// meet on the tangent ruling `(1, 0)` below `z = 1`, and the two floors `y = 0` meet again along
 /// `z = 1` beside it — one body round a bore tangent to its floor, the floor one face of its plane.
-fn two_cusps_joined_on_their_floor(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let first = bitten(m, [-1.0, 0.0, 0.0], [1.0, 3.0, 1.0], -1.0, 3.0);
+fn two_cusps_joined_on_their_floor(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
+    let first = bitten(m, s, [-1.0, 0.0, 0.0], [1.0, 3.0, 1.0], -1.0, 3.0);
     let block = crate::fixtures::cuboid(m, [-1.0, 0.0, 0.0], [3.0, 3.0, 2.0]);
     let notch = crate::fixtures::cuboid(m, [-2.0, -1.0, -1.0], [1.0, 4.0, 1.0]);
     let stepped = crate::boolean(m, BoolKind::Cut, block, notch).expect("the notch")[0];
-    let tool = crate::fixtures::cylinder(
-        m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        1.0,
-        2.0,
-    )
-    .solid;
+    let tool = upright(m, s, [1.0, 1.0, -1.0], 2.0);
     let second = crate::boolean(m, BoolKind::Cut, stepped, tool).expect("the bite")[0];
     (first, second)
 }
@@ -330,27 +433,23 @@ fn two_cusps_joined_on_their_floor(m: &mut Model) -> (Handle<Solid>, Handle<Soli
 /// The first cusp of [`two_cusps`] and the block `[1, 2] × [−1, 1]` less the same circle: the
 /// second's face `x = 1` runs through the axis and ends on the tangent ruling `(1, 0)` from below,
 /// where its lateral ends too.
-fn a_cusp_beside_a_plane_through_the_axis(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn a_cusp_beside_a_plane_through_the_axis(
+    m: &mut Model,
+    s: Says,
+) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten(m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], -1.0, 3.0),
-        bitten(m, [1.0, -1.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [1.0, -1.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
     )
 }
 
 /// The prism over `pts`, one tall, less the circle about `(1, 1)` — the bite [`bitten`] takes, so a
 /// family's prisms and blocks share its handle.
-fn bitten_prism(m: &mut Model, pts: &[[f64; 2]]) -> Handle<Solid> {
+fn bitten_prism(m: &mut Model, s: Says, pts: &[[f64; 2]]) -> Handle<Solid> {
     let outline =
         Profile2d::polygon(pts.iter().map(|q| p(q[0], q[1])).collect()).expect("a polygon");
-    let prism = sweep(m, outline, 1.0);
-    let tool = crate::fixtures::cylinder(
-        m,
-        Point3::from_array([1.0, 1.0, -1.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        1.0,
-        3.0,
-    )
-    .solid;
+    let prism = sweep(m, s, outline, 1.0);
+    let tool = upright(m, s, [1.0, 1.0, -1.0], 3.0);
     crate::boolean(m, BoolKind::Cut, prism, tool).expect("the bite")[0]
 }
 
@@ -358,11 +457,15 @@ fn bitten_prism(m: &mut Model, pts: &[[f64; 2]]) -> Handle<Solid> {
 /// the L `[−1, 3] × [−1, 0] ∪ [−1, 1] × [0, 1]` less the same circle: the first cusp and everything
 /// beyond the floor's plane, its face `y = 0` on `x ≥ 1` ending on the line where its lateral does.
 /// Around the line the union is the cylinder's outside whole.
-fn a_cusp_and_the_block_bitten_beyond_its_floor(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn a_cusp_and_the_block_bitten_beyond_its_floor(
+    m: &mut Model,
+    s: Says,
+) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten(m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
+        bitten(m, s, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
         bitten_prism(
             m,
+            s,
             &[
                 [-1.0, -1.0],
                 [3.0, -1.0],
@@ -380,10 +483,10 @@ fn a_cusp_and_the_block_bitten_beyond_its_floor(m: &mut Model) -> (Handle<Solid>
 /// the walls there the right-angled wedge `y ≤ −|x − 1|` is empty. Above the line the walls lie in
 /// the disk up to `(0, 1)` and `(2, 1)`, where they meet the circle again on the triangles' top
 /// corners.
-fn two_blocks_bitten_into_a_wedges_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+fn two_blocks_bitten_into_a_wedges_walls(m: &mut Model, s: Says) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten_prism(m, &[[0.0, 1.0], [3.0, -2.0], [3.0, 1.0]]),
-        bitten_prism(m, &[[-1.0, 1.0], [-1.0, -2.0], [2.0, 1.0]]),
+        bitten_prism(m, s, &[[0.0, 1.0], [3.0, -2.0], [3.0, 1.0]]),
+        bitten_prism(m, s, &[[-1.0, 1.0], [-1.0, -2.0], [2.0, 1.0]]),
     )
 }
 
@@ -391,10 +494,11 @@ fn two_blocks_bitten_into_a_wedges_walls(m: &mut Model) -> (Handle<Solid>, Handl
 /// and their union is one body round the bore touching itself along the line.
 fn two_blocks_bitten_into_a_wedges_walls_joined_above_the_bore(
     m: &mut Model,
+    s: Says,
 ) -> (Handle<Solid>, Handle<Solid>) {
     (
-        bitten_prism(m, &[[3.0, -2.0], [3.0, 3.0], [-1.0, 3.0], [-1.0, 2.0]]),
-        bitten_prism(m, &[[-1.0, -2.0], [3.0, 2.0], [3.0, 3.0], [-1.0, 3.0]]),
+        bitten_prism(m, s, &[[3.0, -2.0], [3.0, 3.0], [-1.0, 3.0], [-1.0, 2.0]]),
+        bitten_prism(m, s, &[[-1.0, -2.0], [3.0, 2.0], [3.0, 3.0], [-1.0, 3.0]]),
     )
 }
 
@@ -473,7 +577,7 @@ fn lateral_surfaces(m: &Model, s: Handle<Solid>) -> Vec<Handle<Surface>> {
 fn each_familys_operands_share_one_cylinder_handle() {
     for (name, build) in FAMILIES {
         let mut m = Model::new();
-        let (a, b) = build(&mut m);
+        let (a, b) = build(&mut m, Says::Plain);
         let (la, lb) = (lateral_surfaces(&m, a), lateral_surfaces(&m, b));
         assert!(
             la.iter().any(|h| lb.contains(h)),
@@ -678,7 +782,7 @@ fn a_cylinder_shared_by_two_solids_reads_both_solids() {
     for (name, build) in FAMILIES {
         for (op, want) in OPS.into_iter().zip(wants(name)) {
             let mut m = Model::new();
-            let (a, b) = build(&mut m);
+            let (a, b) = build(&mut m, Says::Plain);
             let got = run(&mut m, op, a, b);
             check(&format!("{name} {op:?}"), &m, got, &want);
         }
@@ -736,14 +840,14 @@ fn lift(dz: i128) -> nacre_exact::Isometry {
 /// The unit circle swept `2` up from `z = 0`, and its twin swept `2` from the same plane stated
 /// facing down — the same cylinder, its axis written `−ẑ`.
 fn twin_with_the_axis_reversed(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 2.0);
+    let a = sweep(m, Says::Plain, disk(), 2.0);
     let down = datum(m, [0.0, 0.0, 0.0], [0.0, 0.0, -1.0]);
     (a, extrude_in(m, down, disk(), 2.0))
 }
 
 /// The twin sketched with its `+u` along `ŷ` — another seam direction.
 fn twin_with_another_seam(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 2.0);
+    let a = sweep(m, Says::Plain, disk(), 2.0);
     let plane = m.seeded_plane(Axis::Z);
     let frame = SketchFrame::named(
         m,
@@ -757,39 +861,86 @@ fn twin_with_another_seam(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
 
 /// A prism on `z ∈ [0, 4]` and a twin sketched on the datum `z = 2` — another origin on the line.
 fn twin_on_another_origin(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 4.0);
+    let a = sweep(m, Says::Plain, disk(), 4.0);
     let up = datum(m, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0]);
     (a, extrude_in(m, up, disk(), 2.0))
 }
 
 /// A prism on `z ∈ [0, 4]` and a twin moved up `2` — another origin, carried by a motion.
 fn twin_moved_up(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 4.0);
-    let b = sweep(m, disk(), 2.0);
+    let a = sweep(m, Says::Plain, disk(), 4.0);
+    let b = sweep(m, Says::Plain, disk(), 2.0);
     (a, moved(m, b, lift(2)))
 }
 
 /// The twin turned a quarter about the axis — a motion that turns the seam.
 fn twin_turned_a_quarter(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 2.0);
-    let b = sweep(m, disk(), 2.0);
+    let a = sweep(m, Says::Plain, disk(), 2.0);
+    let b = sweep(m, Says::Plain, disk(), 2.0);
     (a, moved(m, b, super::rot_iso(Axis::Z, 90)))
 }
 
 /// The twin moved up `1` and back down.
 fn twin_moved_there_and_back(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 2.0);
-    let b = sweep(m, disk(), 2.0);
+    let a = sweep(m, Says::Plain, disk(), 2.0);
+    let b = sweep(m, Says::Plain, disk(), 2.0);
     let b = moved(m, b, lift(1));
     (a, moved(m, b, lift(-1)))
 }
 
 /// The twin turned a quarter and then three quarters about the axis — a whole turn.
 fn twin_turned_a_whole_turn(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
-    let a = sweep(m, disk(), 2.0);
-    let b = sweep(m, disk(), 2.0);
+    let a = sweep(m, Says::Plain, disk(), 2.0);
+    let b = sweep(m, Says::Plain, disk(), 2.0);
     let b = moved(m, b, super::rot_iso(Axis::Z, 90));
     (a, moved(m, b, super::rot_iso(Axis::Z, 270)))
+}
+
+/// The upper half disk and its twin sketched with `+u` along `ŷ` — the half on `x ≤ 0`, its
+/// corners ranked about another seam.
+fn half_twin_with_another_seam(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let a = sweep(m, Says::Plain, upper_half(), 2.0);
+    let plane = m.seeded_plane(Axis::Z);
+    let frame = SketchFrame::named(
+        m,
+        plane,
+        Point3::origin(),
+        Vector3::from_array([0.0, 1.0, 0.0]),
+    )
+    .expect("the frame");
+    (a, extrude_in(m, frame, upper_half(), 2.0))
+}
+
+/// The upper half disk on `z ∈ [0, 2]` and its twin swept down from the datum `z = 1` facing
+/// `−ẑ` — the same half on `z ∈ [−1, 1]`, its axis written the other way.
+fn half_twin_with_the_axis_reversed(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let a = sweep(m, Says::Plain, upper_half(), 2.0);
+    let down = datum(m, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]);
+    (a, extrude_in(m, down, upper_half(), 2.0))
+}
+
+/// The whole disk on `z ∈ [0, 2]` and the half on `x ≤ 0` over `z ∈ [−1, 2]`, sketched with `+u`
+/// along `ŷ` and moved down `1`.
+fn whole_and_half_twin_with_another_seam(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let a = sweep(m, Says::Plain, disk(), 2.0);
+    let plane = m.seeded_plane(Axis::Z);
+    let frame = SketchFrame::named(
+        m,
+        plane,
+        Point3::origin(),
+        Vector3::from_array([0.0, 1.0, 0.0]),
+    )
+    .expect("the frame");
+    let b = extrude_in(m, frame, upper_half(), 3.0);
+    (a, moved(m, b, lift(-1)))
+}
+
+/// The upper half disk and its twin turned a quarter about the axis — the half on `x ≤ 0`, its
+/// seam turned by a motion.
+fn half_twin_turned_a_quarter(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let a = sweep(m, Says::Plain, upper_half(), 2.0);
+    let b = sweep(m, Says::Plain, upper_half(), 2.0);
+    (a, moved(m, b, super::rot_iso(Axis::Z, 90)))
 }
 
 /// **One cylinder under two handles is refused by name** — the pair rule's `same_surface`
@@ -798,12 +949,22 @@ fn twin_turned_a_whole_turn(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
 /// statement only, and each lands on a handle of its own.
 #[test]
 fn one_cylinder_under_two_handles_is_refused() {
-    let twins: [(&str, Build); 5] = [
+    let twins: [(&str, Twins); 9] = [
         ("the axis reversed", twin_with_the_axis_reversed),
         ("another seam", twin_with_another_seam),
         ("another origin", twin_on_another_origin),
         ("moved up", twin_moved_up),
         ("turned a quarter", twin_turned_a_quarter),
+        ("a half, another seam", half_twin_with_another_seam),
+        (
+            "a half, the axis reversed",
+            half_twin_with_the_axis_reversed,
+        ),
+        (
+            "a whole and a half, another seam",
+            whole_and_half_twin_with_another_seam,
+        ),
+        ("a half turned a quarter", half_twin_turned_a_quarter),
     ];
     for (name, build) in twins {
         for op in OPS {
@@ -832,7 +993,7 @@ fn one_cylinder_under_two_handles_is_refused() {
 /// prisms do.
 #[test]
 fn a_motion_folded_back_states_the_cylinder_once() {
-    let twins: [(&str, Build); 2] = [
+    let twins: [(&str, Twins); 2] = [
         ("moved there and back", twin_moved_there_and_back),
         ("turned a whole turn", twin_turned_a_whole_turn),
     ];
@@ -847,6 +1008,84 @@ fn a_motion_folded_back_states_the_cylinder_once() {
             );
             let got = run(&mut m, op, a, b);
             check(&format!("{name} {op:?}"), &m, got, &want);
+        }
+    }
+}
+
+/// A family's first operand as written and its second as `says` states it — the same two solids,
+/// the second's cylinders under statements of their own.
+fn restated(m: &mut Model, build: Build, says: Says) -> (Handle<Solid>, Handle<Solid>) {
+    let (a, _) = build(m, Says::Plain);
+    let (_, b) = build(m, says);
+    (a, b)
+}
+
+/// **Every restated family is the same two solids, the second's cylinder under a handle of its
+/// own** — the population the restated scoreboard is about, checked before its answers are read:
+/// the second operand fills the same volume and box as it does written plainly, shares no cylinder
+/// handle with the first, and its statement differs from the plain one in the part `says` names
+/// and in no other.
+#[test]
+fn each_restated_family_states_the_same_solids_under_two_handles() {
+    for (name, build) in FAMILIES {
+        for says in RESTATED {
+            let label = format!("{name} {says:?}");
+            let mut m = Model::new();
+            let (_, plain) = build(&mut m, Says::Plain);
+            let (a, b) = restated(&mut m, build, says);
+            let props = |s| {
+                let volume = nacre_props::mass_props(&m, s).expect("props").volume;
+                let (lo, hi) = nacre_props::bounds(&m, s).expect("bounds");
+                (volume, lo.as_array(), hi.as_array())
+            };
+            let ((pv, plo, phi), (bv, blo, bhi)) = (props(plain), props(b));
+            assert!((pv - bv).abs() < 1e-9, "{label}: {pv} and {bv}");
+            assert_eq!((plo, phi), (blo, bhi), "{label}");
+            let (la, lb) = (lateral_surfaces(&m, a), lateral_surfaces(&m, b));
+            assert!(lb.iter().all(|h| !la.contains(h)), "{label}: {la:?} {lb:?}");
+            let def = |s| {
+                let [h] = lateral_surfaces(&m, s)[..] else {
+                    panic!("{label}: one cylinder a solid")
+                };
+                m.world_cylinder_def(h).expect("a world statement")
+            };
+            let (p, r) = (def(plain), def(b));
+            let flipped = p.dir().map(|x| Rat::from_int(0).checked_sub(x).unwrap());
+            let same = [
+                p.origin() == r.origin(),
+                p.dir() == r.dir(),
+                p.ref_dir() == r.ref_dir(),
+            ];
+            match says {
+                Says::Plain => unreachable!(),
+                Says::Seam => assert_eq!(same, [true, true, false], "{label}"),
+                Says::Origin => assert_eq!(same, [false, true, true], "{label}"),
+                Says::Reversed => {
+                    assert_eq!(same, [true, false, true], "{label}");
+                    assert_eq!(r.dir(), flipped, "{label}");
+                }
+            }
+        }
+    }
+}
+
+/// **A family whose second operand states the cylinder again is refused by name** — every
+/// family, every restatement, every boolean, by the pair rule's `same_surface`.
+#[test]
+fn a_cylinder_restated_under_a_second_handle_is_refused() {
+    for (name, build) in FAMILIES {
+        for says in RESTATED {
+            for op in OPS {
+                let mut m = Model::new();
+                let (a, b) = restated(&mut m, build, says);
+                let got = run(&mut m, op, a, b);
+                check(
+                    &format!("{name} {says:?} {op:?}"),
+                    &m,
+                    got,
+                    &refused(RejectReason::CylinderPairContact),
+                );
+            }
         }
     }
 }
