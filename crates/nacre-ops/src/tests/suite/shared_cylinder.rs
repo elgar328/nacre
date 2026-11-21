@@ -14,7 +14,10 @@
 //! ends inside (the rulings cut at each other's ends), a bored block below the bore's pin (the
 //! rim joined the other way round), two blocks bitten by one circle into cusps that meet on its
 //! tangent ruling — alone, mirrored and offset along it, joined round the bore, joined on their
-//! floor, and beside a plane through the axis. Every family is run as Fuse, both Cuts and Common.
+//! floor, and beside a plane through the axis — a cusp and the block bitten beyond its floor (the
+//! union the cylinder's outside whole round that ruling), and two blocks bitten into the walls of a
+//! wedge that is empty below the ruling, apart and joined above the bore. Every family is run as
+//! Fuse, both Cuts and Common.
 //!
 //! The class carries both operands' lateral faces, and the chart reads its cells for both — the
 //! inside chamber off the arrangement's labels, and the outside as the inside with every solid
@@ -334,7 +337,68 @@ fn a_cusp_beside_a_plane_through_the_axis(m: &mut Model) -> (Handle<Solid>, Hand
     )
 }
 
-const FAMILIES: [(&str, Build); 22] = [
+/// The prism over `pts`, one tall, less the circle about `(1, 1)` — the bite [`bitten`] takes, so a
+/// family's prisms and blocks share its handle.
+fn bitten_prism(m: &mut Model, pts: &[[f64; 2]]) -> Handle<Solid> {
+    let outline =
+        Profile2d::polygon(pts.iter().map(|q| p(q[0], q[1])).collect()).expect("a polygon");
+    let prism = sweep(m, outline, 1.0);
+    let tool = crate::fixtures::cylinder(
+        m,
+        Point3::from_array([1.0, 1.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        3.0,
+    )
+    .solid;
+    crate::boolean(m, BoolKind::Cut, prism, tool).expect("the bite")[0]
+}
+
+/// The second cusp of [`two_cusps`], its floor `y = 0` ending on the tangent ruling `(1, 0)`, and
+/// the L `[−1, 3] × [−1, 0] ∪ [−1, 1] × [0, 1]` less the same circle: the first cusp and everything
+/// beyond the floor's plane, its face `y = 0` on `x ≥ 1` ending on the line where its lateral does.
+/// Around the line the union is the cylinder's outside whole.
+fn a_cusp_and_the_block_bitten_beyond_its_floor(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bitten(m, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], -1.0, 3.0),
+        bitten_prism(
+            m,
+            &[
+                [-1.0, -1.0],
+                [3.0, -1.0],
+                [3.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [-1.0, 1.0],
+            ],
+        ),
+    )
+}
+
+/// The triangles `x + y ≥ 1` and `x − y ≤ 1` of `[−1, 3] × [−2, 1]` less the circle: each lateral
+/// ends on the tangent ruling `(1, 0)` on its own wall, which runs on below the line, and between
+/// the walls there the right-angled wedge `y ≤ −|x − 1|` is empty. Above the line the walls lie in
+/// the disk up to `(0, 1)` and `(2, 1)`, where they meet the circle again on the triangles' top
+/// corners.
+fn two_blocks_bitten_into_a_wedges_walls(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bitten_prism(m, &[[0.0, 1.0], [3.0, -2.0], [3.0, 1.0]]),
+        bitten_prism(m, &[[-1.0, 1.0], [-1.0, -2.0], [2.0, 1.0]]),
+    )
+}
+
+/// [`two_blocks_bitten_into_a_wedges_walls`] up to `y = 3`: above the disk the two blocks overlap,
+/// and their union is one body round the bore touching itself along the line.
+fn two_blocks_bitten_into_a_wedges_walls_joined_above_the_bore(
+    m: &mut Model,
+) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bitten_prism(m, &[[3.0, -2.0], [3.0, 3.0], [-1.0, 3.0], [-1.0, 2.0]]),
+        bitten_prism(m, &[[-1.0, -2.0], [3.0, 2.0], [3.0, 3.0], [-1.0, 3.0]]),
+    )
+}
+
+const FAMILIES: [(&str, Build); 25] = [
     ("two identical prisms", identical),
     ("one circle swept both ways", swept_both_ways),
     ("a bored plate and the bore's pin", bore_and_pin),
@@ -374,6 +438,18 @@ const FAMILIES: [(&str, Build); 22] = [
     (
         "a cusp beside a plane through the axis",
         a_cusp_beside_a_plane_through_the_axis,
+    ),
+    (
+        "a cusp and the block bitten beyond its floor",
+        a_cusp_and_the_block_bitten_beyond_its_floor,
+    ),
+    (
+        "two blocks bitten into a wedge's walls",
+        two_blocks_bitten_into_a_wedges_walls,
+    ),
+    (
+        "two blocks bitten into a wedge's walls, joined above the bore",
+        two_blocks_bitten_into_a_wedges_walls_joined_above_the_bore,
     ),
 ];
 
@@ -562,6 +638,34 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[1.0 - PI / 4.0], &[5]),
             counted(&[2.0 - PI / 4.0], &[6]),
             none(),
+        ],
+        // Round the tangent ruling the union is the cylinder's outside whole: one body whose lateral
+        // runs across the line as one face — the line's star with both sectors beyond the floor
+        // kept (`Chart::slit_at`). OCCT 7.9 gives the same volumes, the union in twelve faces and
+        // the second less the first in nine.
+        "a cusp and the block bitten beyond its floor" => [
+            counted(&[7.0 - PI / 2.0], &[9]),
+            counted(&[1.0 - PI / 4.0], &[5]),
+            counted(&[6.0 - PI / 4.0], &[8]),
+            none(),
+        ],
+        // Each lateral ends on the tangent ruling at its own wall, and between the walls below the
+        // line the wedge is empty: two bodies touching along the line, the chamber between the
+        // station's two chords not kept. OCCT 7.9: the same volume, twelve faces.
+        "two blocks bitten into a wedge's walls" => [
+            counted(&[4.0 - PI / 4.0, 4.0 - PI / 4.0], &[6, 6]),
+            counted(&[4.0 - PI / 4.0], &[6]),
+            counted(&[4.0 - PI / 4.0], &[6]),
+            none(),
+        ],
+        // Joined above the bore, the union is one body touching itself along the line, which four
+        // of its faces use (OCCT 7.9 builds it, in sixteen faces); the cuts and the common as OCCT
+        // builds them.
+        "two blocks bitten into a wedge's walls, joined above the bore" => [
+            refused(RejectReason::NonManifoldResultEdge),
+            counted(&[4.5 - PI / 4.0], &[6]),
+            counted(&[4.5 - PI / 4.0], &[6]),
+            counted(&[7.0 - PI / 2.0], &[8]),
         ],
         other => panic!("no answers stated for {other}"),
     }

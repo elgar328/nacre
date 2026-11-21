@@ -12,7 +12,12 @@
 //!   body touching itself along the line;
 //! - a slab less a rod tangent to two opposite walls and longer than the slab: two lumps, the lines
 //!   ending where the slab's faces end while the rod runs on. In its union the slab's top less the
-//!   rod's disk is two faces meeting at the two points of contact, and so is its bottom.
+//!   rod's disk is two faces meeting at the two points of contact, and so is its bottom;
+//! - a block bored by a pin tangent to the plane `y = 0`, less a slab beyond that plane under the
+//!   block's lower half — the slab's face there ending on the line — with or without a wedge on the
+//!   slab whose walls run from the line: above the slab the plane has no face on the line, and the
+//!   wedge's walls are a station's chords there. The block's top joins the line's two sides over
+//!   the bore, so it touches itself; notched to the axis's height, with the wedge it is two bodies.
 
 use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
@@ -116,7 +121,50 @@ fn stepped_plate_and_pin_on_three_walls(m: &mut Model) -> (Handle<Solid>, Handle
     )
 }
 
-const FAMILIES: [(&str, Build); 4] = [
+/// The block `[−1, 3] × [−2, top]`, two tall, less the unit pin about `(1, 1)` — tangent to the
+/// plane `y = 0` along `(1, 0)` — and beyond that plane the slab `[−2, 4] × [−3, 0]` on
+/// `z ∈ [−1, 1]`, with the wedge `(1, 0), (0, −3), (2, −3)` on `z ∈ [1, 3]` fused on it where
+/// `wedge`: its walls `3x ± y = 3` run from the line down through the block's floor `y = −2`. The
+/// block less the slab keeps the two cusps beside the line below `z = 1`, and the slab's face
+/// `y = 0` ends there; above it the wall's plane has no face on the line, and the wedge empties a
+/// room between its walls below it.
+fn bored_block_and_slab(m: &mut Model, top: f64, wedge: bool) -> (Handle<Solid>, Handle<Solid>) {
+    let block = sweep_from(m, rect(-1.0, -2.0, 3.0, top), 0.0, 2.0);
+    let pin = sweep_from(m, circle_profile([1.0, 1.0], 1.0), -1.0, 4.0);
+    let bored = crate::boolean(m, BoolKind::Cut, block, pin).expect("the bore")[0];
+    let slab = sweep_from(m, rect(-2.0, -3.0, 4.0, 0.0), -1.0, 2.0);
+    if !wedge {
+        return (bored, slab);
+    }
+    let walls = Profile2d::polygon(vec![p(1.0, 0.0), p(0.0, -3.0), p(2.0, -3.0)]).expect("a wedge");
+    let w = sweep_from(m, walls, 1.0, 2.0);
+    let wedged = crate::boolean(m, BoolKind::Fuse, slab, w).expect("the wedge")[0];
+    (bored, wedged)
+}
+
+/// [`bored_block_and_slab`] three high with the wedge: the block's top joins the two sides of the
+/// line over the bore.
+fn bored_block_and_slab_with_a_wedge(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    bored_block_and_slab(m, 3.0, true)
+}
+
+/// [`bored_block_and_slab`] three high without the wedge.
+fn bored_block_and_slab_alone(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    bored_block_and_slab(m, 3.0, false)
+}
+
+/// [`bored_block_and_slab`] up to the axis's height with the wedge: the pin notches the block's
+/// top, and nothing joins the two sides of the line above it.
+fn notched_block_and_slab_with_a_wedge(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    bored_block_and_slab(m, 1.0, true)
+}
+
+/// [`bored_block_and_slab`] up to the axis's height without the wedge.
+fn notched_block_and_slab_alone(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    bored_block_and_slab(m, 1.0, false)
+}
+
+const FAMILIES: [(&str, Build); 8] = [
     (
         "a lidded plate and the pin on three of its walls",
         lidded_plate_and_pin_on_three_walls,
@@ -132,6 +180,22 @@ const FAMILIES: [(&str, Build); 4] = [
     (
         "a plate and the pin on one of its walls",
         plate_and_pin_on_one_wall,
+    ),
+    (
+        "a bored block and a slab with a wedge beyond its tangent wall",
+        bored_block_and_slab_with_a_wedge,
+    ),
+    (
+        "a bored block and a slab beyond its tangent wall",
+        bored_block_and_slab_alone,
+    ),
+    (
+        "a notched block and a slab with a wedge beyond its tangent wall",
+        notched_block_and_slab_with_a_wedge,
+    ),
+    (
+        "a notched block and a slab beyond its tangent wall",
+        notched_block_and_slab_alone,
     ),
 ];
 
@@ -173,6 +237,49 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[2.0 - PI / 2.0, 2.0 - PI / 2.0, 10.0 - PI], &[5, 5, 8]),
             none(),
             counted(&[2.0 * PI], &[3]),
+        ],
+        // The block less the slab and the wedge parts along the line, below the slab's top by the
+        // knife and above it by the wedge's walls, and joins over the bore: one body touching
+        // itself along the line, which four of its faces use. OCCT 7.9 gives the same volumes for
+        // the other three booleans and builds the cut.
+        "a bored block and a slab with a wedge beyond its tangent wall" => [
+            counted(&[82.0 - 2.0 * PI - 28.0 / 3.0], &[18]),
+            refused(RejectReason::NonManifoldResultEdge),
+            counted(&[98.0 / 3.0], &[15]),
+            counted(&[28.0 / 3.0], &[10]),
+        ],
+        // Without the wedge the cusps the slab leaves beside the line join round the bore and above
+        // the slab: one body touching itself along the line. OCCT 7.9 gives the same volumes for
+        // the other three booleans and builds the cut.
+        "a bored block and a slab beyond its tangent wall" => [
+            counted(&[68.0 - 2.0 * PI], &[13]),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[28.0], &[10]),
+            counted(&[8.0], &[6]),
+        ],
+        // Notched to the axis's height, nothing joins the line's two sides above it, and the knife
+        // below the slab's top and the wedge's station above it cut the lateral along the whole
+        // line: two bodies. OCCT 7.9: the same volume, eighteen faces.
+        "a notched block and a slab with a wedge beyond its tangent wall" => [
+            counted(&[66.0 - PI - 28.0 / 3.0], &[21]),
+            counted(
+                &[
+                    (24.0 - PI - 28.0 / 3.0) / 2.0,
+                    (24.0 - PI - 28.0 / 3.0) / 2.0,
+                ],
+                &[9, 9],
+            ),
+            counted(&[98.0 / 3.0], &[15]),
+            counted(&[28.0 / 3.0], &[10]),
+        ],
+        // Without the wedge the block runs on round the line above the slab, joining the two sides
+        // the slab's cut leaves beside it: one body touching itself along the line. OCCT 7.9 gives
+        // the same volumes for the other three booleans and builds the cut.
+        "a notched block and a slab beyond its tangent wall" => [
+            counted(&[52.0 - PI], &[15]),
+            refused(RejectReason::NonManifoldResultEdge),
+            counted(&[28.0], &[10]),
+            counted(&[8.0], &[6]),
         ],
         other => panic!("no answers stated for {other}"),
     }

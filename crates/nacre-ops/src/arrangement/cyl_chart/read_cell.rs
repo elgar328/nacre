@@ -125,18 +125,28 @@ impl Chart {
     /// as the wall's cell on that side states it (`ThetaSeg::beside`) — each half's own, as a
     /// secant station reads each tangent half's off the chord next to it. The room between the wall
     /// and the lateral is a cusp of no angle, so another plane through the line leaves it on the
-    /// far side, between the wall's halves: the chart draws no line for a plane whose face reaches
-    /// no lateral, and one spoke stands for them between the two far sectors. What it hides is a
-    /// void between two such planes with the material kept beside both halves (todo
-    /// 「접선에서만 만나는 덩이 — 마디가 어긋나는 칼날, 빈 방을 숨기는 스포크」). The lateral's
-    /// continuing is the conjunction of the two far sectors, so which cell lies on `+τ` is not
-    /// asked. Two
-    /// cusps whose floors and laterals each end on the line from either side meet there alone: the
-    /// floors' far side is not kept, and the lateral is cut. A lateral keeping its inside (a
-    /// fillet, a boss) bounds one chamber between its halves and runs on. A wall running through
-    /// the line where the operation parts the material along it — its class's knife
-    /// (`rulings::tangent_knife`) — is read the same way: its two halves are the line's two
-    /// spokes on that side, ending there in the result.
+    /// far side, between the wall's halves: a plane the gate draws no ruling of on this cylinder
+    /// puts no line on the chart, and one spoke stands for every such plane between the two far
+    /// sectors. It hides no void. Both far sectors are kept only where the ruling is a wall face's
+    /// own edge: a knife stays only where it parts the kept material on the wall's plane
+    /// (`per_class::knife_parts`), a face there ending on the line with the room's side kept, so
+    /// the far side beside it is not. Around the line each operand is one sector (the front door
+    /// refuses pinched profiles, and a result touching itself along a line is refused). With the
+    /// room kept on both sides and a void beyond the wall between two kept sectors, the kept
+    /// material is two components, and in a union, common or cut each operand's sector holds one
+    /// whole or both with the wall's half-lines inside it, so no operand has a face of the wall on
+    /// the line. A void beyond the wall where it has no face meets no tangent ruling: there its
+    /// planes are a station's chords, which cut the lateral (`tangent_lumps.rs`'s wedge families).
+    /// Measured, the two far sectors are both kept on 172 suite calls, 36 census and 20 kit calls,
+    /// each of the suite's on a wall face's own edge; another plane holds the line on 8 of the
+    /// suite's, its faces meeting the stretch at its end alone. The lateral's continuing is the
+    /// conjunction of the two far sectors, so which cell lies on `+τ` is not asked. Two cusps whose
+    /// floors and laterals each end on the line from either side meet there alone: the floors' far
+    /// side is not kept, and the lateral is cut. A lateral keeping its inside (a fillet, a boss)
+    /// bounds one chamber between its halves and runs on. A wall running through the line where the
+    /// operation parts the material along it — its class's knife (`rulings::tangent_knife`) — is
+    /// read the same way: its two halves are the line's two spokes on that side, ending there in
+    /// the result.
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber
