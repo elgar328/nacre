@@ -558,8 +558,6 @@ pub(crate) fn arc_leaving_side(
 // here either.
 // ---------------------------------------------------------------------------
 
-/// A plane class's exact description, or `None` where it has none to give (a rotated class'
-/// realized coefficients are not its truth, so they are refused rather than read).
 /// **The carrier of a ring edge that rides a cylinder** — an arc or a ruling, filled or refused.
 ///
 /// **The direction bits do not come from `edge_at`.** That convention ("even half-edge = CCW /
