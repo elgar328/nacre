@@ -200,6 +200,11 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsErro
 /// silently too small. A full circle of radius `r` and normal `n̂` extends
 /// `±r·√(1 − (n̂·e)²)` along each axis `e`, which is exact; a cylinder band is
 /// bounded by its two rim circles, so walking every edge covers it.
+///
+/// **An arc counts as its whole circle** (or ellipse), so a solid with arcs can get
+/// a box wider than itself, never a narrower one: the unit half disk `y ≥ 0` swept
+/// along `z` gets `y ∈ [−1, 1]`. Where the side matters, ask [`centroid`] or the
+/// faces ([`face_props`]).
 pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), PropsError> {
     let solid = model.solid(solid);
     let mut lo = [f64::INFINITY; 3];
@@ -219,10 +224,8 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
                 match edge_curve(model, he) {
                     Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
                     Curve::Ellipse(curve) => {
-                        // The **whole** curve's extent, whatever the edge's endpoints say — so
-                        // an arc grows the box too much, never too little. A bound that
-                        // errs outward stays a bound, which is why this one needs no change when
-                        // arcs arrive; `sample_curve` in `nacre-tess` is the one that would not.
+                        // The whole curve's extent, not the arc's span: a bound that errs outward
+                        // is still a bound.
                         grow(curve.center(), curve.half_extent());
                     }
                 }
