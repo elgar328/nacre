@@ -44,12 +44,7 @@ pub(crate) fn cylinder_gate(
     use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
-    // Which operands have faces in each class, plane and cylinder alike — what «can a face here
-    // meet a face of the other solid» is asked of (`across`).
-    let plane_solids = class_presence(plane_ix, n_a, geom.len(), |ci| match ci {
-        ClassIx::Plane(c) => Some(c),
-        ClassIx::Cyl(_) => None,
-    });
+    // Which operands have faces in each cylinder class.
     let cyl_solids = class_presence(plane_ix, n_a, cyl_surfs.len(), |ci| match ci {
         ClassIx::Cyl(k) => Some(k),
         ClassIx::Plane(_) => None,
@@ -137,7 +132,6 @@ pub(crate) fn cylinder_gate(
         model,
         faces,
         plane_ix,
-        plane_solids: &plane_solids,
         n_a,
         jd,
         whole_rims: &whole_rims,
@@ -159,9 +153,8 @@ pub(crate) fn cylinder_gate(
         meets.push(row);
         throughs.push(through);
     }
-    // The classes whose answer about cylinder `ci` is `want`, and the tangent ones carrying a face
-    // of a solid other than one with a lateral face here (`ClassMeet::Tangent`'s `crosses`),
-    // whether or not its faces wrote rows.
+    // The classes whose answer about cylinder `ci` is `want`, and the tangent ones, whether or not
+    // their faces wrote rows.
     let meeting = |ci: usize, want: ClassMeet| {
         meets[ci]
             .iter()
@@ -173,7 +166,7 @@ pub(crate) fn cylinder_gate(
         meets[ci]
             .iter()
             .enumerate()
-            .filter(|(_, meet)| matches!(meet, ClassMeet::Tangent { crosses: true, .. }))
+            .filter(|(_, meet)| matches!(meet, ClassMeet::Tangent { .. }))
             .map(|(c, _)| c)
     };
 
@@ -401,19 +394,10 @@ pub(crate) fn cylinder_gate(
         .into_iter()
         .map(RowDraft::stated)
         .collect::<Result<Vec<_>, _>>()?;
-    for (ci, sr) in shared_rulings(
-        faces,
-        plane_ix,
-        &plane_solids,
-        n_a,
-        jd,
-        &cyls,
-        &meets,
-        &tangencies,
-    )
-    .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
-    .into_iter()
-    .chain(hinged)
+    for (ci, sr) in shared_rulings(faces, plane_ix, jd, &cyls, &meets, &tangencies)
+        .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
+        .into_iter()
+        .chain(hinged)
     {
         // Both classes of a shared line hold it as a station of their own arrangements — the
         // readers that fold a class's segments onto the ruling ask only whether the line is on
@@ -445,11 +429,9 @@ enum ClassMeet {
     /// The plane runs within the radius and cuts a lateral face: two rulings, drawn on the class.
     Cuts,
     /// The plane stands exactly `r` from the axis: one grazing line. `holders` are the classes
-    /// holding that line ([`classes_holding_the_line`]); `crosses` says the class carries a
-    /// face of a solid other than one with a lateral face on the cylinder ([`across`]) —
-    /// such a tangent class is half of [`SharedRuling`]'s population, and a record the sectioned
-    /// settlement weighs.
-    Tangent { holders: Vec<usize>, crosses: bool },
+    /// holding that line ([`classes_holding_the_line`]); with a cutting holder the line is half of
+    /// [`SharedRuling`]'s population.
+    Tangent { holders: Vec<usize> },
     /// A class with no world statement, silent about the cylinder. `Sectioned` is a candidate
     /// until [`cylinder_gate`] settles it.
     Silent(Silence),
@@ -470,8 +452,6 @@ struct PairCx<'a, 'j> {
     model: &'a Model,
     faces: &'a [FaceRow],
     plane_ix: &'a [ClassIx],
-    /// Which operands have faces in each plane class ([`class_presence`]).
-    plane_solids: &'a [[bool; 2]],
     n_a: usize,
     jd: &'a Judge<'j, WorkingPlane>,
     whole_rims: &'a [bool],
@@ -524,7 +504,6 @@ fn class_meet(
         model,
         faces,
         plane_ix,
-        plane_solids,
         n_a,
         jd,
         whole_rims,
@@ -637,7 +616,7 @@ fn class_meet(
             let Some(h) = classes_holding_the_line(jd, c, &coeffs, &cyl.def) else {
                 return Err(reject(RejectReason::WitnessNotRational));
             };
-            Some((h, across(plane_solids[c], cyl.solids)))
+            Some(h)
         } else {
             None
         };
@@ -722,7 +701,7 @@ fn class_meet(
             }
         }
         return Ok(match holders {
-            Some((holders, crosses)) => (ClassMeet::Tangent { holders, crosses }, rows),
+            Some(holders) => (ClassMeet::Tangent { holders }, rows),
             None => (ClassMeet::Clear, Vec::new()),
         });
     }
@@ -744,11 +723,16 @@ fn class_meet(
 ///
 /// The population is the pairs [`class_meet`] already answered against the cylinder: a class that
 /// cuts it ([`ClassMeet::Cuts`] — two rulings) with another that cuts it, or with a **tangent**
-/// class that carries a face of a solid other than one with a lateral face on the cylinder
-/// ([`ClassMeet::Tangent`]'s `crosses`). A wall face tangent to its own solid's lateral is that
-/// solid's smooth edge — a fillet — and says nothing here: a valid solid's faces do not meet. So
-/// the halves the record carries are the [`Tangency`] rows', which pair a wall face with a lateral
-/// face of the other solid only. And a class with no world statement that
+/// class ([`ClassMeet::Tangent`]) — whichever solids carry the faces. A wall face tangent to its
+/// own solid's lateral is that solid's smooth edge, and a face of the same solid through the axis
+/// holding that line makes it a line two classes hold all the same (a box fused to a rod along its
+/// edge, the `tangent_junction` scoreboard). The halves the record carries are the [`Tangency`]
+/// rows', which pair a wall face with a lateral face of the other solid only, so a solid whose wall
+/// meets only its own lateral on the line has no entry. A station reading such a record finds no
+/// spoke in it (132 readings in the suite, none in the census or the kit), and none is missing: a wall face ending on the
+/// line over a station's stretch ends against the lateral crossing there — its own solid's, which
+/// a valid solid forbids (a third face on the edge), or the other solid's, which writes a row. And
+/// a class with no world statement that
 /// sections the cylinder ([`Silence::Sectioned`]) with a cutting class, where the line is the
 /// sectioned class's hinge ([`hinge_ruling`]) — written by the sectioned settlement in
 /// [`cylinder_gate`], since [`shared_rulings`] reads world coefficients.
@@ -865,12 +849,9 @@ fn classes_holding_the_line(
 
 /// Build the [`SharedRuling`] record from the gate's own records — see its doc for the
 /// population. `None` is arithmetic that could not answer.
-#[allow(clippy::too_many_arguments)]
 fn shared_rulings(
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
-    plane_solids: &[[bool; 2]],
-    n_a: usize,
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
     meets: &[Vec<ClassMeet>],
@@ -909,28 +890,15 @@ fn shared_rulings(
             }
         }
         for (t, meet) in meets[ci].iter().enumerate() {
-            let ClassMeet::Tangent {
-                holders,
-                crosses: true,
-            } = meet
-            else {
+            let ClassMeet::Tangent { holders } = meet else {
                 continue;
             };
             let tc = jd.world_rat(t)?;
             let foot = nacre_exact::axis_plane_meet(&tc, &o, &[tc[0], tc[1], tc[2]])?;
-            // The line must lie on a lateral face **of a solid other than a wall face's** of this
-            // class: a wall tangent to its own solid's lateral is that solid's smooth edge and pairs
-            // with nothing.
-            let Some(against) = pieces_of_rows(lateral_rows_of(
-                faces,
-                plane_ix,
-                n_a,
-                ci,
-                other_solids(plane_solids[t]),
-            )) else {
-                continue;
-            };
-            if !ruling_on_a_face(&cyl.def, &against, &foot)? {
+            // The line must lie on a lateral face — of either solid: a wall tangent to its own
+            // solid's lateral ends there as that solid's smooth edge, and a plane through the
+            // axis of the same solid holding the line makes it a line two classes hold all the same.
+            if !ruling_on_a_face(&cyl.def, &fps, &foot)? {
                 continue;
             }
             // Every row of this class on this cylinder — one per wall face and lateral face that

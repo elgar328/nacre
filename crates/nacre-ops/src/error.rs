@@ -789,8 +789,8 @@ pub enum RejectReason {
     ///
     /// What raises it are **shapes the rulings split does not arrange**: a segment lying on the
     /// lateral along a line the gate did not record (it records the lines of two secant classes, of
-    /// a secant and a tangent one of the other solid, or of a secant and a sectioned class whose
-    /// hinge it is, that lie on a lateral face), or on planes that degenerate against the cylinder
+    /// a secant and a tangent one, or of a secant and a sectioned class whose hinge it is, that lie
+    /// on a lateral face), or on planes that degenerate against the cylinder
     /// there; a recorded line's segment that shares a stretch with a ruling piece without matching one end
     /// for end. And a lateral region whose boundary needs a vertical line at a θ the chart has none
     /// for over that interval — an event where a rim is cut but no ruling stands. Where the walk or

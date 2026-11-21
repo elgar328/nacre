@@ -520,13 +520,12 @@ fn nameless_classes_beside_world_cylinders() {
         // `x = 40` turned 37° about that ruling still holds it, runs along the axis within the
         // radius (the axis is `5·sin 37° ≈ 3.0` from it), and every face of the class stands far
         // from the plate — sectioned; the other three walls clear the fillet's box. The plate's own
-        // wall `y = −25` ends on that ruling and touches the fillet there (`CylRecord::Touches`),
-        // but the sectioned class's settlement meets only another solid's tangent walls, so the gate
-        // has no other record to meet. Downstream, on the plate's top
-        // and bottom, the split pass asks whether the class's line reaches the wall's segment
-        // there: the crossing `{cap, class, y = −25}` against the segment's end, the fillet's
-        // tangent point (a pierce name, root `Double`) — one point, two names, which the interval
-        // containment cannot order — and refuses by the gate's name.
+        // wall `y = −25` ends on that ruling and touches the fillet there (`CylRecord::Touches`):
+        // the sectioned class meets that tangent record in the ruling, on the fillet's face, and a
+        // tangent partner is no cutting class whose hinge the gate could record — so the gate
+        // refuses it by name. Past the gate the same shape is refused by the same name (the split
+        // pass cannot order the crossing `{cap, class, y = −25}` against the wall segment's end,
+        // the fillet's tangent point — one point, two names).
         Family {
             name: "one-fillet plate, a wall plane holding the fillet's tangent ruling",
             build: |m| {
@@ -534,7 +533,7 @@ fn nameless_classes_beside_world_cylinders() {
                 let b = cuboid(m, [35.0, -80.0, 0.0], [40.0, -75.0, 10.0]);
                 (plate, turn(m, b, Axis::Z, 37, [40, -25, 0]))
             },
-            gate: Ok((3, 0, 1, 0)),
+            gate: Err(Undecided),
             want: refused,
         },
         // The operands the other way round: the box first. `B − A` is now the box less the plate,

@@ -1646,7 +1646,6 @@ fn a_shared_line_gathers_its_rows_halves() {
                     _ if k == holders[0] => ClassMeet::Cuts,
                     _ if k == t => ClassMeet::Tangent {
                         holders: holders.clone(),
-                        crosses: true,
                     },
                     _ => ClassMeet::Across,
                 })
@@ -1657,16 +1656,6 @@ fn a_shared_line_gathers_its_rows_halves() {
         shared_rulings(
             &setup.planes,
             &setup.plane_ix,
-            &class_presence(
-                &setup.plane_ix,
-                setup.n_a,
-                setup.geom.len(),
-                |ci| match ci {
-                    ClassIx::Plane(c) => Some(c),
-                    ClassIx::Cyl(_) => None,
-                },
-            ),
-            setup.n_a,
             &jd,
             &setup.cyls,
             &meets,

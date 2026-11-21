@@ -22,9 +22,9 @@
 //! `z ∈ [3/5, 6/5]`. The volumes are closed forms (`volumes`), and OCCT 7.9 builds every boolean
 //! of the unmirrored box and slot with them (`the_junctions_closed_forms_are_occts`).
 //!
-//! Every cell is refused today, by the name `wants` gives it.
+//! The answers and names are `wants`'.
 
-use super::scoreboard::{OPS, Want, check, refused, run};
+use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
 use std::f64::consts::PI;
 
@@ -157,24 +157,40 @@ enum Cell {
     Declines(crate::DeclineKind),
 }
 
-fn wants(cz: [f64; 2], mirrored: bool, t: Tool) -> [Cell; 4] {
+fn wants(cz: [f64; 2], t: Tool) -> [Cell; 4] {
     let is = |w: Want| Cell::Is(w);
+    let (u, tv, c) = volumes(cz, t);
     match (cz == U9, t) {
         // The boundary runs along a line `x = ±1` holds, leaving it on the other side: the walk
-        // against `y = 0` has no event for it. Mirrored, the split meets the unrecorded line
-        // first, except against the rod's own cylinder.
-        (true, Tool::Coaxial) => {
-            core::array::from_fn(|_| Cell::Declines(crate::DeclineKind::CylHoleFeature))
-        }
-        (true, _) if mirrored => {
-            core::array::from_fn(|_| is(refused(RejectReason::RulingBoundNotYet)))
-        }
+        // against `y = 0` has no event for it.
         (true, _) => core::array::from_fn(|_| Cell::Declines(crate::DeclineKind::CylHoleFeature)),
         (false, Tool::Coaxial) => {
             core::array::from_fn(|_| is(refused(RejectReason::CylinderStagesDisagree)))
         }
-        // The box's edge on the line lies on the lateral, a line no record states.
-        (false, _) => core::array::from_fn(|_| is(refused(RejectReason::RulingBoundNotYet))),
+        // Far apart: the union is the two, each cut leaves its first operand, nothing in common.
+        (false, Tool::Far) => [
+            is(counted(&[tv, u], &[6, 10])),
+            is(counted(&[u], &[10])),
+            is(counted(&[tv], &[6])),
+            is(counted(&[], &[])),
+        ],
+        (false, Tool::Across) => [
+            is(counted(&[u + tv - c], &[16])),
+            is(counted(&[u - c], &[13])),
+            is(counted(&[tv - c], &[14])),
+            is(counted(&[c], &[11])),
+        ],
+        // The slot parts the rod's half beyond `y = −1/4` from the rest: its segment of the disk
+        // over the rod's half height, four faces.
+        (false, Tool::Slot) => {
+            let part = chord_area(-1.0, -0.25);
+            [
+                is(counted(&[u + tv - c], &[17])),
+                is(counted(&[part, u - c - part], &[4, 10])),
+                is(counted(&[tv - c], &[15])),
+                is(counted(&[c], &[12])),
+            ]
+        }
     }
 }
 
@@ -183,7 +199,7 @@ fn a_box_joined_to_a_cylinder_along_its_tangent_line() {
     for cz in [U9, U10] {
         for mirrored in [false, true] {
             for t in TOOLS {
-                for (op, want) in OPS.into_iter().zip(wants(cz, mirrored, t)) {
+                for (op, want) in OPS.into_iter().zip(wants(cz, t)) {
                     let mut m = Model::new();
                     let u = junction(&mut m, cz, mirrored);
                     let b = tool(&mut m, t);

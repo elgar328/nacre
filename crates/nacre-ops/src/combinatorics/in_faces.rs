@@ -861,7 +861,8 @@ pub(crate) fn lateral_face_crossings(
 /// face, which is the proposition whole. So the ends' heights must be exact — they are read
 /// where a plane of each end's name crosses **this ruling**, not the axis (a plane naming the end
 /// may be slanted, and where it meets the axis says nothing of the end; ☐ no input names one so —
-/// over the suite's 1,108 ends the two readings agree, and the census asks none) — while the cut heights,
+/// over the suite's 3,706 ends, two per call, the two readings agree, and the census's two and the
+/// ignored sweep's ten as well) — while the cut heights,
 /// the face's rims and arcs read off their planes where they cross this ruling, only
 /// decide which points are asked:
 /// wrong there, a touch can be missed, never invented. ☐ No input yet where the cut changes the
