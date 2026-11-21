@@ -607,6 +607,27 @@ pub(crate) struct WorkingCyl {
     /// walls whose row leaves the two wedges alone. That line is an edge of the result where it can
     /// be one: the wall's class draws it as a knife (`arrangement::rulings_on_class`).
     pub(crate) parting: Vec<usize>,
+    /// **Where each lateral face runs through a tangent line** — the gate's record, one entry per
+    /// (wall class, lateral face) for every wall class tangent here whose pair writes a row
+    /// ([`LateralThrough`]). The knife a parting wall draws on a face is these stretches, read
+    /// rather than decided again on the arrangement's rings.
+    pub(crate) through: Vec<LateralThrough>,
+}
+
+/// **Where one lateral face runs through a tangent wall's line** — an entry of
+/// [`WorkingCyl::through`]: the stretches over which the face holds the generators on both sides
+/// of the line (`cyl_geom::lateral_sides_on_ruling`, the two sides met), or why the face could not
+/// be read there. Each stretch end is the plane classes whose section of the cylinder stands at
+/// that height on the line — every one names the point, with the wall, by the pair's tangent root;
+/// a station where an arc ends on the line is on one side only, so an end can carry a plane from
+/// either side.
+#[derive(Clone, Debug)]
+pub(crate) struct LateralThrough {
+    /// The tangent wall's plane class.
+    pub(crate) wall: usize,
+    /// The lateral face's row in the face table.
+    pub(crate) face: usize,
+    pub(crate) read: Result<Vec<[Vec<usize>; 2]>, RejectReason>,
 }
 
 /// **What the gate tells the arrangement about one plane class and a cylinder** — an entry of

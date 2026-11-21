@@ -93,6 +93,7 @@ pub(crate) fn cylinder_gate(
             records: Vec::new(),
             boxes: Vec::new(),
             parting: Vec::new(),
+            through: Vec::new(),
         });
     }
 
@@ -134,18 +135,21 @@ pub(crate) fn cylinder_gate(
         whole_rims: &whole_rims,
     };
     let mut meets: Vec<Vec<ClassMeet>> = Vec::with_capacity(cyls.len());
+    let mut throughs: Vec<Vec<LateralThrough>> = Vec::with_capacity(cyls.len());
     for (ci, cyl) in cyls.iter().enumerate() {
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
         // not depend on the plane class the loop below walks, but almost no boolean ever asks for
         // it — the plane-level test decides first (`wall_faces_clear`'s doc has the measurement).
         let mut footprints: Option<Vec<Footprint>> = None;
         let mut row = Vec::with_capacity(geom.len());
+        let mut through = Vec::new();
         for c in 0..geom.len() {
-            let (meet, rows) = class_meet(&cx, c, ci, cyl, &mut footprints)?;
+            let (meet, rows) = class_meet(&cx, c, ci, cyl, &mut footprints, &mut through)?;
             tangencies.extend(rows);
             row.push(meet);
         }
         meets.push(row);
+        throughs.push(through);
     }
     // The classes whose answer about cylinder `ci` is `want`, and the tangent ones carrying a face
     // of a solid other than one with a lateral face here (`ClassMeet::Tangent`'s `crosses`),
@@ -261,6 +265,9 @@ pub(crate) fn cylinder_gate(
                 ));
             }
         }
+    }
+    for (cyl, through) in cyls.iter_mut().zip(throughs) {
+        cyl.through = through;
     }
     for (cyl, row) in cyls.iter_mut().zip(&meets) {
         cyl.records = row
@@ -489,6 +496,7 @@ fn class_meet(
     ci: usize,
     cyl: &WorkingCyl,
     footprints: &mut Option<Vec<Footprint>>,
+    through: &mut Vec<LateralThrough>,
 ) -> Result<(ClassMeet, Vec<RowDraft>), BoolError> {
     let PairCx {
         model,
@@ -666,7 +674,7 @@ fn class_meet(
                 if clearance == Orient::Zero {
                     rows = tangency_rows(
                         model, faces, plane_ix, n_a, c, ci, &coeffs, &cyl.def, cyl.surf,
-                        cyl.solids, jd,
+                        cyl.solids, jd, through,
                     );
                 } else {
                     return Ok((ClassMeet::Cuts, Vec::new()));
@@ -1221,6 +1229,7 @@ fn tangency_rows(
     surf: Handle<Surface>,
     cyl_solids: [bool; 2],
     jd: &Judge<'_, WorkingPlane>,
+    through: &mut Vec<LateralThrough>,
 ) -> Vec<RowDraft> {
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let side_of = |i: usize| SolidSide::of_row(i, n_a);
@@ -1270,17 +1279,28 @@ fn tangency_rows(
     // are not its material. Read once per solid, and only for a pair that writes a row: most
     // tangent pairs' wall faces clear the footprint, and reading every lateral here cost the census
     // 1.1% of its instructions.
-    let read_lateral_through = |solid: SolidSide| -> Result<Pieces, RejectReason> {
+    //
+    // Each lateral face's two sides are read once (`face_sides`, by `laterals`' index) — the
+    // solid's reading here and the faces' own through-stretches the knife reads
+    // ([`WorkingCyl::through`]) are that one reading.
+    let mut face_sides: Vec<Option<Result<FaceSides, RejectReason>>> = vec![None; laterals.len()];
+    let read_face = |l: &LateralOnLine<'_>| -> Result<FaceSides, RejectReason> {
         let b = base.as_ref().ok_or(RejectReason::WitnessNotRational)?;
+        let fh = l.cf.face.ok_or(RejectReason::CylinderGateUndecided)?;
+        lateral_sides_on_ruling(model, model.face(fh), def, b)
+    };
+    let read_lateral_through = |solid: SolidSide,
+                                face_sides: &mut Vec<Option<Result<FaceSides, RejectReason>>>|
+     -> Result<Pieces, RejectReason> {
+        base.as_ref().ok_or(RejectReason::WitnessNotRational)?;
         let mut sides: [Pieces; 2] = [Vec::new(), Vec::new()];
-        for cf in lateral_rows_of(faces, n_a, surf, solid.bit()) {
-            let fh = cf.face.ok_or(RejectReason::CylinderGateUndecided)?;
-            let read = lateral_sides_on_ruling(model, model.face(fh), def, b)?;
-            for (to, from) in sides.iter_mut().zip(read) {
-                to.extend(
-                    from.into_iter()
-                        .map(|sp| sp.map(nacre_exact::QuadVal::from_rat)),
-                );
+        for (li, l) in laterals.iter().enumerate() {
+            if side_of(l.ix) != solid {
+                continue;
+            }
+            let read = face_sides[li].get_or_insert_with(|| read_face(l)).clone()?;
+            for (to, from) in sides.iter_mut().zip(&read) {
+                to.extend(station_pieces(from));
             }
         }
         meet_unions(&sides[0], &sides[1]).ok_or(RejectReason::WitnessNotRational)
@@ -1505,7 +1525,7 @@ fn tangency_rows(
             // stretches through the line rest on them. `Err` where a face could not be read.
             let cyl_solid = side_of(*cy_ix);
             let lateral_through = lateral_through[cyl_solid.ix()]
-                .get_or_insert_with(|| read_lateral_through(cyl_solid));
+                .get_or_insert_with(|| read_lateral_through(cyl_solid, &mut face_sides));
             let wall_sides = wall_sides_of[li]
                 .get_or_insert_with(|| read_wall_sides(stretches, side_of(fi_ix)))
                 .clone();
@@ -1604,7 +1624,106 @@ fn tangency_rows(
             });
         }
     }
+    // **Where each lateral face runs through the line** — written where the pair writes a row, for
+    // every lateral face on the cylinder (both operands): the operation may part the material
+    // here, and the wall's class then draws the line as a knife over these stretches
+    // ([`WorkingCyl::through`]).
+    if !out.is_empty() {
+        let class_of: HashMap<Handle<Surface>, usize> = faces
+            .iter()
+            .zip(plane_ix)
+            .filter_map(|(row, ix)| match (row, ix) {
+                (FaceRow::Plane(p), ClassIx::Plane(k)) => Some((p.surf, *k)),
+                _ => None,
+            })
+            .collect();
+        for (li, l) in laterals.iter().enumerate() {
+            let read = face_sides[li]
+                .get_or_insert_with(|| read_face(l))
+                .clone()
+                .and_then(|sides| face_through(&sides, &class_of));
+            through.push(LateralThrough {
+                wall: c,
+                face: l.ix,
+                read,
+            });
+        }
+        // A solid runs through the line where one of its faces does: two lateral faces of one
+        // solid on one cylinder never share an edge (`push_edge` refuses an edge whose two
+        // carriers are one cylinder), so no stretch holds one side by one face and the other
+        // side by another.
+        #[cfg(debug_assertions)]
+        for (solid, whole) in [SolidSide::A, SolidSide::B]
+            .into_iter()
+            .zip(&lateral_through)
+        {
+            let Some(Ok(whole)) = whole else { continue };
+            let mut each: Pieces = Vec::new();
+            for (li, l) in laterals.iter().enumerate() {
+                if side_of(l.ix) == solid
+                    && let Some(Ok(sides)) = &face_sides[li]
+                {
+                    each.extend(
+                        meet_unions(&station_pieces(&sides[0]), &station_pieces(&sides[1]))
+                            .unwrap_or_default(),
+                    );
+                }
+            }
+            let same = joined(each).is_some_and(|each| {
+                each.len() == whole.len()
+                    && each.iter().zip(whole).all(|(x, y)| {
+                        (0..2).all(|i| x[i].cmp_value(&y[i]) == Some(core::cmp::Ordering::Equal))
+                    })
+            });
+            debug_assert!(
+                same,
+                "a solid runs through the line where one of its faces does"
+            );
+        }
+    }
     out
+}
+
+/// A lateral face's stations on each side of a tangent line, `[ccw, cw]`
+/// ([`lateral_sides_on_ruling`]).
+type FaceSides = [Vec<[Station; 2]>; 2];
+
+/// Paired stations as closed pieces of the line.
+fn station_pieces(stations: &[[Station; 2]]) -> Pieces {
+    stations
+        .iter()
+        .map(|sp| sp.map(|(h, _)| nacre_exact::QuadVal::from_rat(h)))
+        .collect()
+}
+
+/// **Where one lateral face runs through the line** — its two sides met, each piece's end the
+/// plane classes whose sections stand there ([`LateralThrough::read`]). `Err` by width, or a
+/// section plane with no class (`CylinderGateUndecided` — a face's boundary plane is a face row of
+/// its own solid, so none is expected).
+fn face_through(
+    sides: &FaceSides,
+    class_of: &HashMap<Handle<Surface>, usize>,
+) -> Result<Vec<[Vec<usize>; 2]>, RejectReason> {
+    let width = RejectReason::WitnessNotRational;
+    let met = meet_unions(&station_pieces(&sides[0]), &station_pieces(&sides[1])).ok_or(width)?;
+    // A met end is an end of the pieces met, so a station stands at it.
+    let end = |at: &nacre_exact::QuadVal| -> Result<Vec<usize>, RejectReason> {
+        let height = at.as_rat().ok_or(width)?;
+        let mut planes: Vec<usize> = Vec::new();
+        for &(h, surf) in sides.iter().flatten().flatten() {
+            if h == height {
+                let k = *class_of
+                    .get(&surf)
+                    .ok_or(RejectReason::CylinderGateUndecided)?;
+                if !planes.contains(&k) {
+                    planes.push(k);
+                }
+            }
+        }
+        debug_assert!(!planes.is_empty(), "a met end is a station's height");
+        Ok(planes)
+    };
+    met.iter().map(|p| Ok([end(&p[0])?, end(&p[1])?])).collect()
 }
 
 /// **What the tangent line meets of one wall face, over one lateral face's axis span** — the

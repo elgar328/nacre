@@ -375,6 +375,7 @@ fn the_tangent_wall_states_itself_exactly() {
         surf,
         SolidSide::B.bit(), // the cylinder is the second operand; the wall face is the cube's
         &jd,
+        &mut Vec::new(),
     );
     assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
     let t = &rows[0];
@@ -1283,6 +1284,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             surf,
             rod_side.bit(),
             &jd,
+            &mut Vec::new(),
         );
         assert_eq!(rows.len(), 1, "{order}: {rows:?}");
         let t = &rows[0];
@@ -1365,6 +1367,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
                 surf,
                 SolidSide::A.bit(),
                 &jd,
+                &mut Vec::new(),
             )
         };
         let built = rows_of(&setup.planes);
@@ -1536,6 +1539,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             surf,
             SolidSide::A.bit(),
             &jd,
+            &mut Vec::new(),
         )
         .into_iter()
         .map(|t| t.reading.map(|r| r.witness))
@@ -1594,6 +1598,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         surf,
         SolidSide::A.bit(),
         &jd,
+        &mut Vec::new(),
     )
     .into_iter()
     .map(|t| t.reading.map(|r| r.witness))
@@ -1920,6 +1925,7 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         surf,
         SolidSide::A.bit(),
         &jd,
+        &mut Vec::new(),
     );
     assert_eq!(rows.len(), 2, "one row per slab face: {rows:?}");
     for t in &rows {

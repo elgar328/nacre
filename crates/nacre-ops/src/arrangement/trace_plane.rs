@@ -593,6 +593,7 @@ pub(super) fn trace_one(
                 Ok(_) => match rulings_on_class(
                     jd,
                     cf,
+                    fp,
                     fl,
                     wc,
                     k,

@@ -1154,6 +1154,7 @@ fn a_segment_meets_a_cap_disk_across_its_chord_or_at_its_tangent_point() {
         records: Vec::new(),
         boxes: Vec::new(),
         parting: Vec::new(),
+        through: Vec::new(),
     }];
     let disk = CompFace {
         surf: CompSurf::Plane(0),
@@ -1234,6 +1235,7 @@ fn an_arc_leaving_a_line_along_it_lies_on_its_centres_side() {
         records: Vec::new(),
         boxes: Vec::new(),
         parting: Vec::new(),
+        through: Vec::new(),
     }];
     let mut m = Model::new();
     let block = crate::fixtures::cuboid(&mut m, [-1.0, -2.0, 1.0], [1.0, 2.0, 3.0]);
@@ -1324,6 +1326,7 @@ fn a_pierce_named_point_is_read_against_a_disk_by_its_name_and_a_polygon_by_its_
         records: Vec::new(),
         boxes: Vec::new(),
         parting: Vec::new(),
+        through: Vec::new(),
     }];
     let mut m = Model::new();
     let low = crate::fixtures::cuboid(&mut m, [0.5, -2.0, 1.0], [3.0, 2.0, 2.0]);

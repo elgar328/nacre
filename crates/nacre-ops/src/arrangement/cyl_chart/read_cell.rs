@@ -127,9 +127,10 @@ impl Chart {
     /// and the lateral is a cusp of no angle, so another plane through the line leaves it on the
     /// far side, between the wall's halves: the chart draws no line for a plane whose face reaches
     /// no lateral, and one spoke stands for them between the two far sectors. What it hides is a
-    /// void between two such planes with the material kept beside both halves
-    /// (todo 「접선에서만 만나는 덩이 — 칼날을 긋지 못하는 선」). The lateral's continuing
-    /// is the conjunction of the two far sectors, so which cell lies on `+τ` is not asked. Two
+    /// void between two such planes with the material kept beside both halves (todo
+    /// 「접선에서만 만나는 덩이 — 마디가 어긋나는 칼날, 빈 방을 숨기는 스포크」). The lateral's
+    /// continuing is the conjunction of the two far sectors, so which cell lies on `+τ` is not
+    /// asked. Two
     /// cusps whose floors and laterals each end on the line from either side meet there alone: the
     /// floors' far side is not kept, and the lateral is cut. A lateral keeping its inside (a
     /// fillet, a boss) bounds one chamber between its halves and runs on. A wall running through

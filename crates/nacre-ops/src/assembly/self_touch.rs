@@ -147,9 +147,10 @@ pub(crate) fn pinch(
 ///   and an edge on the line is the structure's to judge: the wedges are then separate faces, of two
 ///   bodies or of one whose edge four faces use. Where the result has no edge on the line over the
 ///   whole ground ([`line_is_an_edge`]) — the knife could not be an edge (it ends inside the wall
-///   face, and the material passes round its end), the chart could not part the lateral there, the
-///   lateral's boundary meets the line in a way the knife does not read — one face still ties the
-///   wedges into one component of the result, and the verdict refuses.
+///   face, and the material passes round its end), or the chart could not part the lateral there
+///   — one face still ties the wedges into one component of the result, and the verdict refuses.
+///   The knife runs wherever the lateral runs through the line, the gate's reading the ground lies
+///   in (`WorkingCyl::through`); a face that reading misses declines the trace instead.
 /// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
 ///   and a wall it touches from outside (the truth table in `bands`). The lens is then the
 ///   cylinder's operand's material alone and the far side the wall's alone — two different solids

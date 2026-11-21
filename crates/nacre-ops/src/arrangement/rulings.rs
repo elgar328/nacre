@@ -21,6 +21,7 @@ use super::*;
 pub(super) fn rulings_on_class(
     jd: &Judge<'_, WorkingPlane>,
     cf: &crate::planes::CylFaceInfo,
+    fp: usize,
     fl: &combinatorics::FaceLoops,
     wc: usize,
     k: usize,
@@ -70,7 +71,7 @@ pub(super) fn rulings_on_class(
             )?;
         }
         let knife = if cyls[k].parting.contains(&wc) {
-            tangent_knife(jd, cf, def, wc, k, which, above, &shape, cyls, found)?
+            tangent_knife(jd, cf, def, fp, wc, k, which, above, cyls, found)?
         } else {
             Vec::new()
         };
@@ -214,71 +215,58 @@ fn sweep_ruling(
 /// one side, which is a knife ([`is_knife`]). Whether it is an edge of the class's faces is the
 /// knife's rule (`arrange_class`), and the chart reads the cells beside it only where it is.
 ///
-/// The stretches are where the face's boundary crosses the ruling, swept along it
-/// ([`sweep_ruling`]): each whole rim, and each arc of a boundary cycle that holds the ruling's
-/// angle strictly inside ([`combinatorics::theta_place`] of the arc's point on it,
-/// [`combinatorics::crossing_on_ruling`]). A boundary that meets the ruling anywhere else — an arc
-/// ending on it, a node on it — states no knife: the boolean is then judged with the line no edge
-/// (`assembly::tangency_reject`). On a line another class shares
-/// ([`crate::planes::SharedRuling`]) the knife's pieces are that line's station's tangent halves
-/// (`cyl_chart::Station::tangent_rulings`).
+/// **The stretches are the gate's reading** ([`crate::planes::WorkingCyl::through`]), not this
+/// road's: where the face holds the generators on both sides of the line is a question about
+/// sides **about the axis**, and the plane-side walk the secant rulings read a ring by
+/// ([`combinatorics::ring_against_plane`]) cannot ask it of a tangent wall — the whole cylinder
+/// lies on one side of it, and the plane through the axis that tells a secant wall's two rulings
+/// apart holds the opposite generator too. Each end is named by every plane standing there with
+/// the wall ([`combinatorics::crossing_on_ruling`], the section plane first), one point under
+/// those names, recorded so for the next round. On a line another class shares
+/// ([`crate::planes::SharedRuling`]) the knife's pieces fold into that line's station's tangent
+/// halves (`cyl_chart::Station::tangent_rulings`).
+///
+/// A face the gate wrote nothing for, or could not read, declines (`Ruling`): every face on a
+/// cylinder whose pair writes a row is read, and `parting` comes from those rows.
 #[allow(clippy::too_many_arguments)]
 fn tangent_knife(
     jd: &Judge<'_, WorkingPlane>,
     cf: &crate::planes::CylFaceInfo,
     def: &nacre_topo::CylinderDef,
+    fp: usize,
     wc: usize,
     k: usize,
     which: SolidSide,
     above: bool,
-    shape: &LateralShape,
     cyls: &[crate::planes::WorkingCyl],
     found: &mut Aliases,
 ) -> Result<Vec<RulingTrace>, DeclineKind> {
-    use crate::combinatorics::{ThetaPlace, Wall};
-    let at = |c: usize| {
-        combinatorics::crossing_on_ruling(jd, def, c, wc, k, 0).map_err(|_| DeclineKind::Ruling)
-    };
-    let mut stations: Vec<(LineEvent, NodeId)> = Vec::new();
-    for &(c, _) in &shape.rims {
-        stations.push((LineEvent::Toggle, at(c)?));
-    }
-    for (_, ring) in &shape.cycles {
-        let Some(nr) = ring.poly() else {
-            return Ok(Vec::new());
-        };
-        let n = nr.triples.len();
-        for i in 0..n {
-            let a = nr.triples[i];
-            // A node on the ruling (`0`), or one this cannot place, is a boundary meeting it
-            // otherwise than by an arc across it.
-            if !matches!(
-                combinatorics::node_ruling_side(jd, def, wc, a),
-                Some(1 | -1)
-            ) {
-                return Ok(Vec::new());
-            }
-            let Wall::Arc { ccw, plane: c, .. } = nr.walls[i] else {
-                continue;
-            };
-            let b = nr.triples[(i + 1) % n];
-            let (lo, hi) = if ccw { (a, b) } else { (b, a) };
-            let x = at(c)?;
-            match combinatorics::theta_place(jd, k, def, lo, hi, x) {
-                Some(ThetaPlace::Inside) => stations.push((LineEvent::Toggle, x)),
-                Some(ThetaPlace::Outside) => {}
-                Some(ThetaPlace::At(_)) | None => return Ok(Vec::new()),
+    #[cfg(not(test))]
+    let _ = cf;
+    let pieces = cyls[k]
+        .through
+        .iter()
+        .find(|t| t.wall == wc && t.face == fp)
+        .ok_or(DeclineKind::Ruling)?
+        .read
+        .as_ref()
+        .map_err(|_| DeclineKind::Ruling)?;
+    let mut name = |planes: &[usize]| -> Result<NodeId, DeclineKind> {
+        let mut names = planes.iter().map(|&c| {
+            combinatorics::crossing_on_ruling(jd, def, c, wc, k, 0).map_err(|_| DeclineKind::Ruling)
+        });
+        let first = names.next().ok_or(DeclineKind::Ruling)??;
+        for other in names {
+            let other = other?;
+            if other != first {
+                found.record_same_point_traced(jd, cyls, first, other)?;
             }
         }
-    }
-    let mat = SegKind::Transversal {
-        mat: cf.orient_sign,
+        Ok(first)
     };
-    let mut out = Vec::new();
-    for (end, kind) in sweep_ruling(jd, def, k, &mut stations, mat, cyls, found)? {
-        if !matches!(kind, SegKind::Transversal { .. }) {
-            continue;
-        }
+    let mut out = Vec::with_capacity(2 * pieces.len());
+    for [lo, hi] in pieces {
+        let end = [name(lo)?, name(hi)?];
         for _ in 0..2 {
             out.push(RulingTrace {
                 cyl: k,

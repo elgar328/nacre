@@ -1111,11 +1111,12 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
 /// Each family has two twins ([`Twin`]). `B`'s lower slab reaching past `A`'s floor: the wedges
 /// join the rest of `B − A` below `A`, so the knife ends inside the cap face — the material passes
 /// round its end — and the line is no edge of the result; `B − A` is one body touching itself
-/// along the line, refused (`SelfTouchingResult`). And `A` notched above `B`, so `A`'s lateral has
-/// an edge on the line `(1, 0)` — a node on the ruling, where the wall's class draws no knife
-/// (`rulings::tangent_knife`; the other two tangent walls draw none either, measured):
-/// `B − A` is refused the same way though its answer is the plain family's three bodies
-/// (todo 「접선에서만 만나는 덩이 — 칼날을 긋지 못하는 선」). The notched union builds the one body
+/// along the line, refused (`SelfTouchingResult`). And `A` notched above `B`: `A`'s lateral has an
+/// edge and a node on the line `(1, 0)` above `B`, and the notch's wall `x = 0` holds the line
+/// `(0, −1)`. `B − A` is the plain
+/// family's three bodies (OCCT 7.9 the same: faces `5 + 6 + 5`, the volumes) — each knife runs
+/// over the stretch where the lateral runs through its line, as the gate reads it
+/// (`WorkingCyl::through`). The notched union builds the one body
 /// whose volume the closed form gives in either order: a point where a cap or a wall touches `A`
 /// lies on a plane of the notch as well (`x = 0`, `y = 0`), so it has a pierce name of that plane's
 /// pair too, which in `A ∪ B` is the one the rings carry — the wall's edge is cut there all the
@@ -1283,8 +1284,8 @@ fn answer(y0: f64, twin: Twin, kind: BoolKind, swapped: bool) -> Result<Vec<usiz
     let the_l = y0 == -1.0;
     Ok(match (kind, swapped) {
         (BoolKind::Cut, true) => match twin {
-            Twin::Plain => vec![5, 5, 6],
-            Twin::Low | Twin::Notched => return Err(SelfTouchingResult),
+            Twin::Plain | Twin::Notched => vec![5, 5, 6],
+            Twin::Low => return Err(SelfTouchingResult),
         },
         (BoolKind::Fuse, _) => match twin {
             Twin::Plain => vec![14],

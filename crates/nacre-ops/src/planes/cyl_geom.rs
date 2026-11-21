@@ -538,6 +538,10 @@ fn arc_holds_beside(
     Some(held && !out)
 }
 
+/// A station of a lateral face on one ruling — the axis parameter where a boundary section stands
+/// on the generator, and the plane of that section.
+pub(crate) type Station = (nacre_exact::Rat, Handle<Surface>);
+
 /// **Where a lateral face lies on one ruling** — the axis-parameter intervals the ruling through
 /// `foot` (a point on the cylinder) shares with the face, in the parameter
 /// [`axis_param_of_plane`] gives a station.
@@ -559,13 +563,15 @@ pub(super) fn lateral_cover_on_ruling(
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
 ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
-    lateral_stations_on_ruling(model, face, def, foot, None).ok()
+    let read = lateral_stations_on_ruling(model, face, def, foot, None).ok()?;
+    Some(read.iter().map(|p| [p[0].0, p[1].0]).collect())
 }
 
 /// **Where a lateral face lies on each side of one ruling** — `[ccw, cw]`: the axis-parameter
 /// intervals over which the face holds the generators just counter-clockwise of the ruling through
-/// `foot` (about the axis), and just clockwise of it. Both sides together are where the face runs
-/// through the line; one side alone is where the line is the face's edge. The stations are
+/// `foot` (about the axis), and just clockwise of it, each end the [`Station`] it is. Both sides
+/// together are where the face runs through the line (the knife's stretches,
+/// [`super::LateralThrough`]); one side alone is where the line is the face's edge. The stations are
 /// [`lateral_cover_on_ruling`]'s, each arc counted on the side it lies ([`arc_holds_beside`]); a
 /// ruling edge on the line is the face's boundary there and a seam on it is no boundary at all, so
 /// neither is a station. `Err` is a face this cannot read, by its cause
@@ -575,7 +581,7 @@ pub(super) fn lateral_sides_on_ruling(
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
-) -> Result<[Vec<[nacre_exact::Rat; 2]>; 2], RejectReason> {
+) -> Result<[Vec<[Station; 2]>; 2], RejectReason> {
     Ok([
         lateral_stations_on_ruling(model, face, def, foot, Some(true))?,
         lateral_stations_on_ruling(model, face, def, foot, Some(false))?,
@@ -598,7 +604,7 @@ fn lateral_stations_on_ruling(
     def: &nacre_topo::CylinderDef,
     foot: &[nacre_exact::Rat; 3],
     beside: Option<bool>,
-) -> Result<Vec<[nacre_exact::Rat; 2]>, RejectReason> {
+) -> Result<Vec<[Station; 2]>, RejectReason> {
     use nacre_exact::Rat;
     let width = RejectReason::WitnessNotRational;
     let unread = RejectReason::CylinderGateUndecided;
@@ -616,7 +622,7 @@ fn lateral_stations_on_ruling(
     for k in 0..3 {
         g[k] = o[k].checked_add(x[k]).ok_or(width)?;
     }
-    let mut stations: Vec<Rat> = Vec::new();
+    let mut stations: Vec<Station> = Vec::new();
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for he in &lp.half_edges {
             let e = model.edge(he.edge);
@@ -649,7 +655,10 @@ fn lateral_stations_on_ruling(
                     || arc_holds_beside(&radial(va)?, &radial(vb)?, &x, &m, beside.unwrap_or(true))
                         .ok_or(width)?;
                 if held {
-                    stations.push(nacre_exact::axis_param_of_plane(&coeffs, &g, &m).ok_or(width)?);
+                    stations.push((
+                        nacre_exact::axis_param_of_plane(&coeffs, &g, &m).ok_or(width)?,
+                        other,
+                    ));
                 }
             }
         }
@@ -657,7 +666,7 @@ fn lateral_stations_on_ruling(
     if stations.len() % 2 != 0 {
         return Err(unread);
     }
-    stations.sort_unstable();
+    stations.sort_unstable_by_key(|&(h, _)| h);
     Ok(stations.chunks(2).map(|p| [p[0], p[1]]).collect())
 }
 

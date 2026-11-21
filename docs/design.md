@@ -1805,7 +1805,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 게이트는 (평면 클래스, 원통) 쌍마다 생성기 하나(`cyl_gate::class_meet` → `ClassMeet`)로 답하고, 모든 쌍에 답한 뒤 그 답을
 읽어 짓지 못하는 것을 이름으로 거절하며(`ObliqueCylinderCut`·`CylinderPairContact`, 기하는
 `CylinderGateUndecided`, 폭은 `WitnessNotRational`), 남은 것을 기록으로 넘긴다(`CylRecord`·`Silence`, `SharedRuling`,
-`GrazeLine`, `Tangency`). 갈래와 거절 이름은 `cylinder_gate`·`class_meet` 의 doc(비스듬한 평면은 `laterals_clear_plane`·
+`GrazeLine`, `Tangency`·`LateralThrough`). 갈래와 거절 이름은 `cylinder_gate`·`class_meet` 의 doc(비스듬한 평면은 `laterals_clear_plane`·
 `oblique_section_meet`, 경계 단면 대 평면의 판정은 `boundary_stand` 하나). 조각끼리의 물음은 `pieces_clear` 하나
 (`Footprint`, `separating_dirs`, `lateral_reach`, `lateral_box`)이고, 면의 경계 조각은 `planes::corners::corner_of` 가 읽는다.
 
@@ -2059,8 +2059,9 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 거절한다, `RowDraft`) 연산이 `keep` 으로 읽는다(`Tangencies::pinches`).
 
 - **접선(선)은 재료가 갈라지는 곳에서만 긋는다.** 게이트는 접선 쌍을 거절하지 않고, 배열은 연산이 쐐기 둘만 남기는 행의 선만
-  벽 클래스의 칼날로 긋는다(`WorkingCyl::parting` — 차트는 실린 칼날을 정거장으로, 다른 평면이 품은 선이면 그 정거장의 두 반쪽으로). 접**점**은 자른다(`split_circles`) — 두
-  원통의 곡선끼리는 자르지 않고 쌍 규칙이 먼저 거절한다(`per_class.rs` 의 «uncut pairs» 주석,
+  벽 클래스의 칼날로 긋는다(`WorkingCyl::parting` — 차트는 실린 칼날을 정거장으로, 다른 평면이 품은 선이면 그 정거장의 두 반쪽으로).
+  칼날의 구간은 옆면이 그 선을 양쪽으로 관통하는 곳이고 게이트가 면마다 읽어 넘긴다(`WorkingCyl::through`). 접**점**은
+  자른다(`split_circles`) — 두 원통의 곡선끼리는 자르지 않고 쌍 규칙이 먼저 거절한다(`per_class.rs` 의 «uncut pairs» 주석,
   `a_boss_touching_its_flats_rulings_is_refused_by_the_pair_rule`).
   선에서 **끝나는** 접선 면은 접촉이 아니라 간선이다 — 정거장의 스포크(「룰링」).
 - **«갈라진다»가 곧 결함은 아니다** — 판정은 «두 덩이 ∧ 한 출력 솔리드»(`tangency_reject`, `SelfTouchingResult`).
