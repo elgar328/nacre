@@ -20,9 +20,16 @@
 //! `[1/2, 3/2] × [−1/2, 1/2] × [0, 2]` across the line `(1, 0)`; the slot
 //! `[−2, 2] × [−1/4, 1/4] × [1/5, 9/10]` across both lines; and the rod's own cylinder over
 //! `z ∈ [3/5, 6/5]`. The volumes are closed forms (`volumes`), and OCCT 7.9 builds every boolean
-//! of the unmirrored box and slot with them (`the_junctions_closed_forms_are_occts`).
+//! of the unmirrored box and slot with them (`the_junctions_closed_forms_are_occts`). Its face
+//! counts are these but in two places: each union with the box across has two more, as the
+//! unstaggered slot's union does (which builds here too); and `U9`'s box across less `U`, and their
+//! common part, have one more.
+//! In those two the box's top keeps a sliver between the rod's arc and the wall tangent to it,
+//! whose mesh the plane faces' chord budget holds (`mesh_covers_faces`).
 //!
-//! The answers and names are `wants`'.
+//! The rod's own cylinder is refused: the tangent fold finds a tangent piece overlapping a station
+//! without matching it (`cyl_chart::stations_of_lines`, todo «접선에서만 만나는 덩이 — 마디가
+//! 어긋나는 칼날»).
 
 use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
@@ -150,47 +157,42 @@ fn volumes(cz: [f64; 2], t: Tool) -> (f64, f64, f64) {
     (u, tv, c)
 }
 
-/// What a cell answers: a [`Want`], or a trace decline by its kind (the face it names is a
-/// witness, not a lock).
-enum Cell {
-    Is(Want),
-    Declines(crate::DeclineKind),
-}
-
-fn wants(cz: [f64; 2], t: Tool) -> [Cell; 4] {
-    let is = |w: Want| Cell::Is(w);
+fn wants(cz: [f64; 2], t: Tool) -> [Want; 4] {
     let (u, tv, c) = volumes(cz, t);
-    match (cz == U9, t) {
-        // The boundary runs along a line `x = ±1` holds, leaving it on the other side: the walk
-        // against `y = 0` has no event for it.
-        (true, _) => core::array::from_fn(|_| Cell::Declines(crate::DeclineKind::CylHoleFeature)),
-        (false, Tool::Coaxial) => {
-            core::array::from_fn(|_| is(refused(RejectReason::CylinderStagesDisagree)))
-        }
+    // Faces per body: U9's, U10's.
+    let f = |u9: usize, u10: usize| if cz == U9 { u9 } else { u10 };
+    match t {
+        Tool::Coaxial => core::array::from_fn(|_| refused(RejectReason::CylinderStagesDisagree)),
         // Far apart: the union is the two, each cut leaves its first operand, nothing in common.
-        (false, Tool::Far) => [
-            is(counted(&[tv, u], &[6, 10])),
-            is(counted(&[u], &[10])),
-            is(counted(&[tv], &[6])),
-            is(counted(&[], &[])),
+        Tool::Far => [
+            counted(&[tv, u], &[6, f(9, 10)]),
+            counted(&[u], &[f(9, 10)]),
+            counted(&[tv], &[6]),
+            counted(&[], &[]),
         ],
-        (false, Tool::Across) => [
-            is(counted(&[u + tv - c], &[16])),
-            is(counted(&[u - c], &[13])),
-            is(counted(&[tv - c], &[14])),
-            is(counted(&[c], &[11])),
+        Tool::Across => [
+            counted(&[u + tv - c], &[f(15, 16)]),
+            counted(&[u - c], &[f(12, 13)]),
+            counted(&[tv - c], &[f(13, 14)]),
+            counted(&[c], &[f(10, 11)]),
         ],
-        // The slot parts the rod's half beyond `y = −1/4` from the rest: its segment of the disk
-        // over the rod's half height, four faces.
-        (false, Tool::Slot) => {
+        // In `U10` the slot parts the rod's half beyond `y = −1/4` from the rest: its segment of
+        // the disk over the rod's half height, four faces.
+        Tool::Slot if cz == U10 => {
             let part = chord_area(-1.0, -0.25);
             [
-                is(counted(&[u + tv - c], &[17])),
-                is(counted(&[part, u - c - part], &[4, 10])),
-                is(counted(&[tv - c], &[15])),
-                is(counted(&[c], &[12])),
+                counted(&[u + tv - c], &[17]),
+                counted(&[part, u - c - part], &[4, 10]),
+                counted(&[tv - c], &[15]),
+                counted(&[c], &[12]),
             ]
         }
+        Tool::Slot => [
+            counted(&[u + tv - c], &[17]),
+            counted(&[u - c], &[13]),
+            counted(&[tv - c], &[14]),
+            counted(&[c], &[10]),
+        ],
     }
 }
 
@@ -205,19 +207,7 @@ fn a_box_joined_to_a_cylinder_along_its_tangent_line() {
                     let b = tool(&mut m, t);
                     let got = run(&mut m, op, u, b);
                     let label = format!("rod {cz:?}, mirrored = {mirrored}, {t:?}, {op:?}");
-                    match want {
-                        Cell::Is(want) => check(&label, &m, got, &want),
-                        Cell::Declines(kind) => assert!(
-                            matches!(
-                                &got,
-                                Err(BoolError::Rejected {
-                                    reason: RejectReason::TraceDeclined { kind: k, .. },
-                                    ..
-                                }) if *k == kind
-                            ),
-                            "{label}: {got:?}"
-                        ),
-                    }
+                    check(&label, &m, got, &want);
                 }
             }
         }

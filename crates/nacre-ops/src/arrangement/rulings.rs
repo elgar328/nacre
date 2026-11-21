@@ -331,14 +331,19 @@ struct ArcMeet {
 ///   a chain's arrive from the outer half and leave into the inner (toggle: transversal below,
 ///   absent above); a band's notch hole has both on the hole's side (no toggle);
 /// - a **run** held by another plane `t` is the plane pair `wc ∩ t`, which `t`'s own trace states
-///   as a graze run on this class: no station, and its edges go out as `quiet` for the lateral's
-///   half in the plane vocabulary.
+///   as a graze run on this class: its edges go out as `quiet` for the lateral's half in the plane
+///   vocabulary, and it toggles the face exactly when its flanks differ — at the end whose
+///   off-line neighbour lies on the side the face does not hold along the run, past which the
+///   face holds both (a box's edge on its own rod's tangent line, the rod's lateral climbing it
+///   from one side to the other: the `tangent_junction` scoreboard).
+///
+/// Every feature, then, toggles the face exactly when its flanks differ; who holds a run says only
+/// who states its line.
 ///
 /// Declined by name: wherever a point, an order or a side cannot be formed exactly — an arc's
 /// meeting with a ruling, a node's ruling, two points on a generator or about the axis — and a
 /// cycle the walk cannot read or that lies wholly in the class (`Ruling`); a run whose nodes stand
-/// on two rulings, whose edges mix the two holders, of no length, or held by another plane with
-/// flanks that differ — what the sweep's events cannot say over that extent (`CylHoleFeature`).
+/// on two rulings, whose edges mix the two holders, or of no length (`CylHoleFeature`).
 #[allow(clippy::too_many_arguments)]
 fn cycle_on_wall(
     jd: &Judge<'_, WorkingPlane>,
@@ -494,6 +499,7 @@ fn cycle_on_wall(
                 first,
                 len,
                 flanks_differ,
+                flank,
                 ..
             } => {
                 let edges: Vec<usize> = (0..len - 1).map(|j| (first + j) % n).collect();
@@ -529,7 +535,26 @@ fn cycle_on_wall(
                         n_hi,
                     ));
                     run_ends.extend([(side, start), (side, end)]);
-                } else if edges.iter().any(|&i| held(i)) || flanks_differ {
+                } else if flanks_differ && !edges.iter().any(|&i| held(i)) {
+                    // Another plane holds the run, and the face crosses the line there: it holds one
+                    // side along the run, neither past one end and both past the other. The run is
+                    // that plane's line (`quiet`), and the face toggles at the end whose off-line
+                    // neighbour lies on the side it does not hold. `flank` is the neighbour before
+                    // the run in the walk's frame, the root face's outward; `body_above` is about
+                    // the class's stored normal, `frame_sign` apart. A tangent class has the whole
+                    // cylinder on one side, so its runs' flanks never differ.
+                    let side = run_side(&nodes)?;
+                    let (_, body_above) = body_side(jd, cf, def, wc, k, side, start, end)?;
+                    let before_above = flank * jd.planes[wc].frame_sign > 0;
+                    let at = if before_above == body_above {
+                        end
+                    } else {
+                        start
+                    };
+                    read.stations.push((side, LineEvent::Toggle, at));
+                    read.quiet.extend(edges.iter().map(|&i| (side, i)));
+                    run_ends.extend([(side, start), (side, end)]);
+                } else if edges.iter().any(|&i| held(i)) {
                     return Err(DeclineKind::CylHoleFeature);
                 } else {
                     let side = if tangent { 0 } else { run_side(&nodes)? };
