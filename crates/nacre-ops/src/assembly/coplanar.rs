@@ -639,10 +639,11 @@ fn merge_component(
 /// which is sound only while every vertex lies on exactly three planes. The walls say it
 /// outright — equal walls, or one line in two spellings ([`combinatorics::SharedLines`]: a ruling
 /// piece along a lateral and a plane segment past its cap, where the gate recorded the plane pair's
-/// line on that cylinder). Measured over the `nacre-ops` suite and the census, counted per pass:
-/// the two spellings meet at a node 249 times — 176 in the whole result's pass, 73 in the
-/// per-solid one — and the node drops 241 times (the other 8 a third neighbour or another face's
-/// bend keeps); the census meets none.
+/// line on that cylinder; on a lateral face, a chart station's ruling and the tangent wall's own).
+/// Measured over the `nacre-ops` suite, per call and node: two spellings meet at a node 1,455 times
+/// — 1,239 in the whole result's pass (120 of them two rulings on a lateral), 216 in the
+/// per-solid one — and the node drops 702 times (the rest a third neighbour or another face's bend
+/// keeps); the census meets them once, and keeps the node.
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
@@ -820,7 +821,9 @@ pub(crate) fn dissolve_straight_angles(
                 // Edges `i` up to the next kept node are one edge now, on one line or one arc.
                 // Where one line is spelled both ways — a ruling piece along the lateral and a
                 // plane segment past its cap — the merged edge is spelled by the plane pair: that
-                // spelling is true of the whole line, the ruling's only where the lateral is.
+                // spelling is true of the whole line, the ruling's only where the lateral is. Two
+                // rulings of one line on a lateral keep the first — both name that one line of
+                // the cylinder.
                 let next = kept[(t + 1) % kept.len()];
                 let mut wall = ring.walls[i];
                 let mut j = (i + 1) % k;

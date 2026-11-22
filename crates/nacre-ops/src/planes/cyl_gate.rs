@@ -729,7 +729,7 @@ fn class_meet(
 /// edge, the `tangent_junction` scoreboard). The halves the record carries are the [`Tangency`]
 /// rows', which pair a wall face with a lateral face of the other solid only, so a solid whose wall
 /// meets only its own lateral on the line has no entry. A station reading such a record finds no
-/// spoke in it (132 readings in the suite, none in the census or the kit), and none is missing: a wall face ending on the
+/// spoke in it (540 readings in the suite, none in the census or the kit), and none is missing: a wall face ending on the
 /// line over a station's stretch ends against the lateral crossing there — its own solid's, which
 /// a valid solid forbids (a third face on the edge), or the other solid's, which writes a row. And
 /// a class with no world statement that

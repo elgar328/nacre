@@ -366,6 +366,68 @@ fn an_extent_whose_ends_are_one_point_is_refused_whatever_the_table_knows() {
     );
 }
 
+/// **A segment along a recorded line is cut at the ends of the ruling pieces on that line**
+/// ([`cut_lines_at_their_vertices`]). The class `x = 40` of [`armed_boss_at`]`(5.0, 5.0, 10.0)`: the
+/// boss's ruling at `y = 0` runs `z` 5..15 inside the plate's edge on `y = 0` (`z` 0..20). The boss's
+/// cap chords, which would cut that edge at the same two points, are taken off the trace, so the
+/// ruling's ends are the only thing that can. With the line recorded the edge comes out in three
+/// pieces, the middle one the ruling's end for end; control: without the record it stays whole.
+#[test]
+fn a_segment_along_a_recorded_line_is_cut_at_the_ruling_pieces_ends() {
+    let (m, plate, boss, mut setup, x40) = armed_boss_at(5.0, 5.0, 10.0);
+    let class = |setup: &crate::arrangement::PlaneSetup, axis: usize, at: f64| {
+        setup
+            .geom
+            .iter()
+            .position(|p| {
+                p.witness_coords()
+                    .iter()
+                    .all(|q| (q.as_array()[axis] - at).abs() < 1e-12)
+            })
+            .expect("a class of the fixture")
+    };
+    let (y0, caps) = (
+        class(&setup, 1, 0.0),
+        [class(&setup, 2, 5.0), class(&setup, 2, 15.0)],
+    );
+    let on_y0 = |setup: &crate::arrangement::PlaneSetup| {
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let mut tr = trace_on_class_of(&m, plate, boss, x40, &jd, &setup.cyls, setup);
+        tr.segs.retain(|s| !caps.contains(&s.wall));
+        let mut table = Aliases::default();
+        let (segs, _, rulings) =
+            class_skeleton(&jd, &setup.cyls, x40, &tr, &mut table).expect("the class's skeleton");
+        let ends = |e: [combinatorics::NodeId; 2]| {
+            let mut e = e.map(|n| table.canon_point(n));
+            e.sort_unstable();
+            e
+        };
+        let pieces: Vec<_> = segs
+            .iter()
+            .filter(|s| s.wall == y0)
+            .map(|s| ends(s.end))
+            .collect();
+        let rulings: Vec<_> = rulings.iter().map(|r| ends(r.end)).collect();
+        (pieces, rulings)
+    };
+    let (whole, _) = on_y0(&setup);
+    assert_eq!(whole.len(), 1, "no record: the plate's edge stays whole");
+    let at = |v: i128| nacre_exact::Rat::from_int(v);
+    setup.cyls[0].shared.push(crate::planes::SharedRuling {
+        line: (x40.min(y0), x40.max(y0)),
+        stated_by: vec![x40],
+        at: [at(40), at(0), at(0)],
+        tangent_halves: None,
+    });
+    let (pieces, rulings) = on_y0(&setup);
+    assert_eq!(pieces.len(), 3, "the edge is cut at the ruling's two ends");
+    assert_eq!(
+        pieces.iter().filter(|p| rulings.contains(p)).count(),
+        1,
+        "the middle piece is the ruling piece end for end"
+    );
+}
+
 /// **A segment whose two ends are one point is refused by the overlay, whatever the table knows**
 /// ([`split_at_crossings`]). The plate's top class of [`armed_boss_at`]`(5.0, ..)` with one more
 /// segment on the wall `x = 40`: the plate's corner `{top, y = 0, x = 40}` is one point with the

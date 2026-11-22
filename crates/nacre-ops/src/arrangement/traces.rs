@@ -198,7 +198,7 @@ pub(crate) struct RulingTrace {
 /// **Each ruling trace as a piece of its own** — one contribution, its ends canonical (see
 /// [`merge_circles`]: the merge layer is where names become canonical). Two statements of one
 /// ruling stay two pieces here; the arrangement cuts them at each other's ends
-/// (`crossings::cut_rulings_at_their_ends`) and [`merge_rulings`] folds what then coincides.
+/// (`crossings::cut_lines_at_their_vertices`) and [`merge_rulings`] folds what then coincides.
 pub(super) fn ruling_pieces(rulings: &[RulingTrace], aliases: &Aliases) -> Vec<MergedRuling> {
     rulings
         .iter()
@@ -217,13 +217,17 @@ pub(super) fn ruling_pieces(rulings: &[RulingTrace], aliases: &Aliases) -> Vec<M
 /// with the same `(cyl, side, end)` become one, their contributions collected. Deterministic
 /// order: `(cyl, side descending, end)` — a fixed rule, ascending cyl with the `+1` ruling first.
 ///
-/// The pieces come in already cut at each other's ends (`crossings::cut_rulings_at_their_ends`),
+/// The pieces come in already cut at each other's ends (`crossings::cut_lines_at_their_vertices`),
+/// and their ends are read under the table first — that cut can learn a tie after naming a piece —
 /// so two statements of one stretch of the line — two operands whose lateral faces lie on one
 /// cylinder, at different heights — have equal ends wherever they overlap. **The extent is part of
 /// the key**: the fold is adjacency-based, and a sort on `(cyl, side)` alone would leave one
 /// operand's pieces before the other's, so the two statements of one piece would not be adjacent
 /// and each would become its own `MergedRuling` — one edge appearing twice.
-pub(super) fn merge_rulings(mut pieces: Vec<MergedRuling>) -> Vec<MergedRuling> {
+pub(super) fn merge_rulings(mut pieces: Vec<MergedRuling>, aliases: &Aliases) -> Vec<MergedRuling> {
+    for r in &mut pieces {
+        r.end = r.end.map(|n| aliases.canon_point(n));
+    }
     pieces.sort_by_key(|r| (r.cyl, -r.side, r.end));
     let mut out: Vec<MergedRuling> = Vec::new();
     for r in pieces {
@@ -249,6 +253,11 @@ pub(crate) struct Trace {
     pub circles: Vec<CircleTrace>,
     /// The rulings beside them — see [`RulingTrace`].
     pub rulings: Vec<RulingTrace>,
+    /// `(cylinder, point)` where a lateral face's boundary meets the one ruling of a cylinder this
+    /// class touches — a rim, or an arc inside or at its end. Each is a vertex of that line, and
+    /// every statement of the line the class holds is cut there (`class_skeleton`): the class sees
+    /// no trace of a cap that touches its plane at that point alone.
+    pub tangent_points: Vec<(usize, NodeId)>,
     /// Names this trace found to denote one feature — see [`Aliases`].
     pub aliases: Aliases,
     /// `(face index, reason)` for every face this brick could not trace.

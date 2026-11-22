@@ -776,7 +776,7 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// **Cut every ruling a segment crosses into pieces, and the segments with it** — the straight
 /// twin of [`split_circles`](fn@split_circles), run after it, over every segment, knives included.
 /// The ends of the segments lying *along* a ruling, which meet it at no crossing, have cut it
-/// already ([`cut_rulings_along_segments`], pass A); a knife among those is then dropped, not
+/// already ([`cut_lines_at_their_vertices`], pass A); a knife among those is then dropped, not
 /// folded onto the ruling.
 ///
 /// **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
@@ -810,8 +810,8 @@ pub(super) fn split_rulings(
         return Ok(None);
     }
     // **Every node of a ruling piece is a pierce name of the piece's own cylinder**, as the chart
-    // reads it (`cyl_chart::ruling_side_of`, the same refusal) — asked of the pieces the cut along
-    // segments made and below of the nodes this split cuts at. An early round's name for a point can
+    // reads it (`cyl_chart::ruling_side_of`, the same refusal) — asked of the pieces the cut at the
+    // line's vertices made and below of the nodes this split cuts at. An early round's name for a point can
     // be one the settled table reads otherwise; the refusal stands because a round's refusal is
     // read only where the table stopped growing (`fixed_point`).
     let pierce_of = |n: NodeId, cyl: usize| {
@@ -892,7 +892,7 @@ pub(super) fn split_rulings(
                 match place {
                     // Strictly inside: the ruling splits here, and the segment with it. Pieces on
                     // one side do not overlap, so at most one holds the point inside.
-                    OnRuling::Inside => {
+                    OnPiece::Inside => {
                         debug_assert!(cut.is_none(), "two ruling pieces on one side overlap");
                         cut = Some(ri);
                         landed = true;
@@ -900,7 +900,7 @@ pub(super) fn split_rulings(
                     // On an end: the T-junction. One point — the axis coordinates are exact where
                     // they meet — so a crossing named otherwise than the ruling's end is that end
                     // under a second name, recorded for the next round.
-                    OnRuling::End(e) => {
+                    OnPiece::End(e) => {
                         if !al.one_point(rulings[ri].end[e], n) {
                             ties.push((rulings[ri].end[e], n));
                         }
@@ -943,14 +943,14 @@ pub(super) fn split_rulings(
         jd,
         cyls,
         rulings,
-        &ruling_ends,
+        |ri| ruling_ends[ri].clone(),
         on_ruling,
         &undecided,
         aliases,
     )?;
     let out_segs = if folds {
         // **A knife along a lateral's ruling is no edge of this class, and it is not folded.** Its
-        // ends already cut the ruling pieces (`cut_rulings_along_segments`) — that is all it says
+        // ends already cut the ruling pieces (`cut_lines_at_their_vertices`) — that is all it says
         // about the line. Folding its grazes onto the ruling piece instead takes two exceptions
         // downstream (design's «가지 말 것», the knife-on-a-ruling row).
         let mut kept = Vec::with_capacity(out_segs.len());
@@ -969,139 +969,189 @@ pub(super) fn split_rulings(
     Ok(Some((out_segs, out_rulings)))
 }
 
-/// **Pass A's cut: each ruling piece of class `wc` at the ends of the segments lying along it** —
-/// [`cut_rulings`] with the vertices only the segments along a line know. `segs` are the class's
-/// segments, knives included ([`is_knife`]): a knife edge of the other solid along a lateral's
-/// ruling flips no label and is no edge here ([`split_rulings`] drops it), yet its ends are where
-/// that solid's faces meet the line, and the other classes through the line put them in their
-/// rings. A class whose records cannot be read is left uncut — the ruling split refuses it by name
-/// ([`split_rulings`]).
-pub(super) fn cut_rulings_along_segments(
+/// **Every line of class `wc` is cut at every vertex on it.** A line `(cyl, side)` has for vertices
+/// the ends of its statements — its ruling pieces, and the segments along it where the gate
+/// recorded it ([`combinatorics::line_along`]), knives included: a knife's ends are where the other
+/// solid's faces meet the line, and the other classes through the line put them in their rings —
+/// and the points a lateral face's boundary meets it at (`touches`, [`Trace::tangent_points`]).
+///
+/// Each vertex is placed on the ruling pieces of its line; a ruling piece's end and a touch are
+/// placed on its segments too. Strictly inside a statement it cuts it there; on an end the two
+/// names are one point (the axis coordinates are exact where they meet), recorded for the next
+/// round ([`Aliases::record_same_point`]). **A segment's end is not placed on another segment**:
+/// two segments on one wall are the overlay's ([`split_at_crossings`]), and two walls are one line
+/// to it only where the alias table has learnt the pencil, which the gate's record does not teach.
+/// A knife is cut like any segment — with no ruling piece on the class [`split_rulings`] returns
+/// before dropping it and it reaches [`split_class_edges`].
+///
+/// Which statements a vertex is asked of is settled on the names as they came in, so what this step
+/// asks does not hang on the order its ties are recorded in; a coordinate is asked only of a point
+/// placed on a statement it does not end, and of a statement something is placed on. The cuts read
+/// the table after every tie is in. A class whose records cannot be read (`shared` is `None`) has
+/// no segment on a line here — the ruling split refuses it by name.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn cut_lines_at_their_vertices(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
-    segs: &[MergedSeg],
+    segs: Vec<MergedSeg>,
     rulings: Vec<MergedRuling>,
+    touches: &[(usize, NodeId)],
+    shared: Option<&[combinatorics::SharedLine]>,
     aliases: &mut Aliases,
-) -> Result<Vec<MergedRuling>, BoolError> {
+) -> Result<(Vec<MergedSeg>, Vec<MergedRuling>), BoolError> {
+    /// One point of a line, and whether it is placed on the line's segments.
+    struct Vertex {
+        node: NodeId,
+        line: (usize, i8),
+        on_segs: bool,
+    }
+    /// A statement of a line a vertex is placed on.
+    enum Statement {
+        Ruling(usize),
+        Seg(usize),
+    }
+    fn asked<T>(
+        slot: &mut Option<T>,
+        ask: impl FnOnce() -> Result<T, BoolError>,
+    ) -> Result<&T, BoolError> {
+        if slot.is_none() {
+            *slot = Some(ask()?);
+        }
+        Ok(slot.as_ref().expect("filled above"))
+    }
     let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
-    if rulings.is_empty() {
-        return Ok(rulings);
-    }
-    let Some(shared) = combinatorics::shared_lines_of(jd, cyls, wc) else {
-        return Ok(rulings);
-    };
-    if shared.is_empty() {
-        return Ok(rulings);
-    }
-    let ends = ruling_ends(jd, cyls, &rulings, &undecided)?;
-    let mut points = Vec::new();
-    for sg in segs {
-        let Some(l) = combinatorics::line_along(&shared, sg.wall).map_err(reject)? else {
-            continue;
-        };
-        if !rulings.iter().any(|r| r.cyl == l.cyl && r.side == l.side) {
-            continue;
-        }
-        for &n in &sg.end {
-            let c = AxisCoord::of(jd, cyls, l.cyl, n).ok_or_else(undecided)?;
-            points.push(PointOnLine {
-                node: n,
-                at: c,
-                cyl: l.cyl,
-                side: l.side,
-            });
-        }
-    }
-    cut_at_points(jd, cyls, &rulings, &ends, &points, &undecided, aliases)
-}
-
-/// **The statements of one ruling, cut at each other's ends** — [`cut_rulings`] with the vertices
-/// the pieces themselves know. A line is cut at every vertex on it, and a piece's end is one: where
-/// the two operands' lateral faces on one cylinder hold one ruling over different heights, each
-/// statement is cut where the other ends, so the stretch they share is one piece in both and
-/// [`merge_rulings`] folds it. Asked only where one `(cyl, side)` carries more than one piece; an
-/// end on another piece's end cuts nothing and, under another name, is recorded as one point
-/// ([`cut_at_points`]).
-pub(super) fn cut_rulings_at_their_ends(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc: usize,
-    rulings: Vec<MergedRuling>,
-    aliases: &mut Aliases,
-) -> Result<Vec<MergedRuling>, BoolError> {
-    let shares_a_line = rulings.iter().enumerate().any(|(i, r)| {
-        rulings[i + 1..]
+    let seg_line: Vec<Option<(usize, i8)>> = match shared {
+        Some(lines) => segs
             .iter()
-            .any(|q| q.cyl == r.cyl && q.side == r.side)
-    });
-    if !shares_a_line {
-        return Ok(rulings);
-    }
-    let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
-    let ends = ruling_ends(jd, cyls, &rulings, &undecided)?;
-    let points: Vec<PointOnLine> = rulings
-        .iter()
-        .zip(&ends)
-        .flat_map(|(r, at)| {
-            r.end.iter().zip(at).map(|(&node, at)| PointOnLine {
-                node,
-                at: at.clone(),
-                cyl: r.cyl,
-                side: r.side,
+            .map(|sg| {
+                Ok(combinatorics::line_along(lines, sg.wall)
+                    .map_err(reject)?
+                    .map(|l| (l.cyl, l.side)))
             })
-        })
-        .collect();
-    cut_at_points(jd, cyls, &rulings, &ends, &points, &undecided, aliases)
-}
-
-/// A named point on the line of ruling `side` of cylinder `cyl`, at axis coordinate `at`.
-struct PointOnLine {
-    node: NodeId,
-    at: AxisCoord,
-    cyl: usize,
-    side: i8,
-}
-
-/// **The ruling pieces cut at the points on their lines** — the one rule both ruling cuts read
-/// ([`cut_rulings_along_segments`], [`cut_rulings_at_their_ends`]). Each point is placed on the
-/// pieces of its line ([`place_on_rulings`]): strictly inside cuts the piece there; on an end there
-/// is nothing to cut — the two names there are one point (the axis coordinates are exact where
-/// they meet), recorded for the next round ([`Aliases::record_same_point`]). A piece's own end
-/// lands on itself under one name and records nothing.
-fn cut_at_points(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    rulings: &[MergedRuling],
-    ends: &[[AxisCoord; 2]],
-    points: &[PointOnLine],
-    undecided: &impl Fn() -> BoolError,
-    aliases: &mut Aliases,
-) -> Result<Vec<MergedRuling>, BoolError> {
-    let mut cuts: Vec<Vec<NodeId>> = vec![Vec::new(); rulings.len()];
-    for p in points {
-        let def = &cyls[p.cyl].def;
-        let places =
-            place_on_rulings(jd, def, &p.at, p.cyl, p.side, rulings, ends).ok_or_else(undecided)?;
-        for (ri, place) in places {
-            match place {
-                OnRuling::Inside => cuts[ri].push(aliases.canon_point(p.node)),
-                OnRuling::End(e) => {
-                    let end = rulings[ri].end[e];
-                    if !aliases.one_point(p.node, end) {
-                        aliases
-                            .record_same_point(jd, cyls, p.node, end)
-                            .map_err(reject)?;
-                    }
+            .collect::<Result<_, BoolError>>()?,
+        None => vec![None; segs.len()],
+    };
+    let ruled = |line: (usize, i8)| rulings.iter().any(|r| (r.cyl, r.side) == line);
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut add = |node: NodeId, line: (usize, i8), on_segs: bool, table: &Aliases| match vertices
+        .iter_mut()
+        .find(|v| v.line == line && table.one_point(v.node, node))
+    {
+        Some(v) => v.on_segs |= on_segs,
+        None => vertices.push(Vertex {
+            node,
+            line,
+            on_segs,
+        }),
+    };
+    for r in &rulings {
+        for &n in &r.end {
+            add(n, (r.cyl, r.side), true, aliases);
+        }
+    }
+    for (sg, line) in segs.iter().zip(&seg_line) {
+        if let Some(line) = line.filter(|&l| ruled(l)) {
+            for &n in &sg.end {
+                add(n, line, false, aliases);
+            }
+        }
+    }
+    for &(cyl, n) in touches {
+        let line = (cyl, 0);
+        if ruled(line) || seg_line.contains(&Some(line)) {
+            add(n, line, true, aliases);
+        }
+    }
+    let ends_it =
+        |n: NodeId, end: [NodeId; 2]| aliases.one_point(n, end[0]) || aliases.one_point(n, end[1]);
+    let mut visits: Vec<(usize, Statement)> = Vec::new();
+    for (vi, v) in vertices.iter().enumerate() {
+        for (ri, r) in rulings.iter().enumerate() {
+            if (r.cyl, r.side) == v.line && !ends_it(v.node, r.end) {
+                visits.push((vi, Statement::Ruling(ri)));
+            }
+        }
+        if v.on_segs {
+            for (si, sg) in segs.iter().enumerate() {
+                if seg_line[si] == Some(v.line) && !ends_it(v.node, sg.end) {
+                    visits.push((vi, Statement::Seg(si)));
                 }
             }
         }
     }
-    cut_rulings(jd, cyls, rulings, ends, cuts, undecided, aliases)
+    let mut at: Vec<Option<AxisCoord>> = vec![None; vertices.len()];
+    let mut ruling_extent: Vec<Option<[AxisCoord; 2]>> = vec![None; rulings.len()];
+    let mut seg_extent: Vec<Option<([AxisCoord; 2], [NodeId; 2])>> = vec![None; segs.len()];
+    let mut on_ruling: Vec<Vec<NodeId>> = vec![Vec::new(); rulings.len()];
+    let mut on_seg: Vec<Vec<NodeId>> = vec![Vec::new(); segs.len()];
+    for (vi, statement) in visits {
+        let Vertex {
+            node,
+            line: (cyl, _),
+            ..
+        } = vertices[vi];
+        let def = &cyls[cyl].def;
+        let coord = |n| AxisCoord::of(jd, cyls, cyl, n).ok_or_else(undecided);
+        let c = asked(&mut at[vi], || coord(node))?;
+        let (extent, end, cuts) = match statement {
+            Statement::Ruling(ri) => {
+                let r = &rulings[ri];
+                // A ruling piece's ends ascend its axis.
+                let extent = asked(&mut ruling_extent[ri], || {
+                    Ok([coord(r.end[0])?, coord(r.end[1])?])
+                })?;
+                (extent, r.end, &mut on_ruling[ri])
+            }
+            Statement::Seg(si) => {
+                let sg = &segs[si];
+                let (extent, end) = asked(&mut seg_extent[si], || {
+                    let (a, b) = (coord(sg.end[0])?, coord(sg.end[1])?);
+                    Ok(match a.cmp(&b, jd, def).ok_or_else(undecided)? {
+                        core::cmp::Ordering::Greater => ([b, a], [sg.end[1], sg.end[0]]),
+                        _ => ([a, b], sg.end),
+                    })
+                })?;
+                (extent, *end, &mut on_seg[si])
+            }
+        };
+        match on_extent(jd, def, c, extent).ok_or_else(undecided)? {
+            Some(OnPiece::Inside) => cuts.push(node),
+            Some(OnPiece::End(e)) if !aliases.one_point(node, end[e]) => {
+                aliases
+                    .record_same_point(jd, cyls, node, end[e])
+                    .map_err(reject)?;
+            }
+            _ => {}
+        }
+    }
+    let segs = if on_seg.iter().all(Vec::is_empty) {
+        segs
+    } else {
+        for n in on_seg.iter_mut().flatten() {
+            *n = aliases.canon_point(*n);
+        }
+        split_segments_at(jd, cyls, wc, &segs, &mut on_seg, aliases)?
+    };
+    let rulings = if on_ruling.iter().all(Vec::is_empty) {
+        rulings
+    } else {
+        for n in on_ruling.iter_mut().flatten() {
+            *n = aliases.canon_point(*n);
+        }
+        let ends = |ri: usize| {
+            ruling_extent[ri]
+                .clone()
+                .expect("a piece with a point inside was asked its extent")
+        };
+        cut_rulings(jd, cyls, &rulings, ends, on_ruling, &undecided, aliases)?
+    };
+    Ok((segs, rulings))
 }
 
-/// Where a point lies on one ruling piece it touches.
-enum OnRuling {
+/// Where a point lies on one piece of its line it touches — a ruling piece, or a segment along the
+/// line ([`on_extent`]).
+enum OnPiece {
     /// Strictly between the piece's ends.
     Inside,
     /// On end `e` of the piece (`end[e]`).
@@ -1109,11 +1159,8 @@ enum OnRuling {
 }
 
 /// **Where a point at axis coordinate `c` lands on class's ruling pieces of cylinder `cyl`, side
-/// `side`** — every piece it touches, by the closed extent of the axis coordinate; beyond every
-/// piece is the empty list. The one placement both ruling cuts read (at the ends of the segments
-/// along a line, and at the crossings): the coordinates alone, never the names — a point on an end
-/// is that end by this same comparison, a tie recorded for the round's table. `None` is a
-/// comparison that could not answer. The upper end is asked only of a point past the lower.
+/// `side`** — every piece it touches ([`on_extent`]); beyond every piece is the empty list. The
+/// crossings' placement (`split_rulings`). `None` is a comparison that could not answer.
 fn place_on_rulings(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -1122,25 +1169,39 @@ fn place_on_rulings(
     side: i8,
     rulings: &[MergedRuling],
     ends: &[[AxisCoord; 2]],
-) -> Option<Vec<(usize, OnRuling)>> {
-    use core::cmp::Ordering::{Equal, Greater, Less};
+) -> Option<Vec<(usize, OnPiece)>> {
     let mut out = Vec::new();
     for (ri, r) in rulings.iter().enumerate() {
         if r.cyl != cyl || r.side != side {
             continue;
         }
-        let [lo, hi] = &ends[ri];
-        match c.cmp(lo, jd, def)? {
-            Less => {}
-            Equal => out.push((ri, OnRuling::End(0))),
-            Greater => match c.cmp(hi, jd, def)? {
-                Less => out.push((ri, OnRuling::Inside)),
-                Equal => out.push((ri, OnRuling::End(1))),
-                Greater => {} // beyond this piece: the surface continues, the face does not
-            },
+        if let Some(place) = on_extent(jd, def, c, &ends[ri])? {
+            out.push((ri, place));
         }
     }
     Some(out)
+}
+
+/// **Where axis coordinate `c` lies on the closed extent `[lo, hi]`** (ascending) of one piece of a
+/// line — `Some(None)` off it (beyond a piece the surface continues, the face does not), `None` a
+/// comparison that could not answer. The coordinates alone, never the names: a point on an end is
+/// that end by this comparison. The upper end is asked only of a point past the lower.
+fn on_extent(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    c: &AxisCoord,
+    [lo, hi]: &[AxisCoord; 2],
+) -> Option<Option<OnPiece>> {
+    use core::cmp::Ordering::{Equal, Greater, Less};
+    Some(match c.cmp(lo, jd, def)? {
+        Less => None,
+        Equal => Some(OnPiece::End(0)),
+        Greater => match c.cmp(hi, jd, def)? {
+            Less => Some(OnPiece::Inside),
+            Equal => Some(OnPiece::End(1)),
+            Greater => None,
+        },
+    })
 }
 
 /// Each ruling piece's two end coordinates along its axis, re-solved from the names.
@@ -1164,15 +1225,14 @@ fn ruling_ends(
 
 /// **A line is cut at every vertex on it** — each ruling piece at the nodes in `cuts[i]` (strictly
 /// inside it), into pieces in axis order. The one cut both ruling steps make, at the vertices each
-/// knows: at the ends of the segments lying along the line (`class_skeleton` — a knife edge's ends
-/// are vertices of the line all the same), and where a segment crosses it (`split_rulings`, knives
-/// included). Both run inside the alias rounds, so a tie is recorded.
+/// knows: the vertices of the line ([`cut_lines_at_their_vertices`]) and where a segment crosses it
+/// (`split_rulings`, knives included). Both run inside the alias rounds, so a tie is recorded.
 /// OCCT's extra paves: an edge is split at every vertex any interference puts on it.
 fn cut_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     rulings: &[MergedRuling],
-    ends: &[[AxisCoord; 2]],
+    ends: impl Fn(usize) -> [AxisCoord; 2],
     mut cuts: Vec<Vec<NodeId>>,
     undecided: &impl Fn() -> BoolError,
     aliases: &mut Aliases,
@@ -1190,7 +1250,7 @@ fn cut_rulings(
         for &n in &nodes {
             keyed.push((AxisCoord::of(jd, cyls, r.cyl, n).ok_or_else(undecided)?, n));
         }
-        let [lo, hi] = ends[ri].clone();
+        let [lo, hi] = ends(ri);
         keyed.push((lo, r.end[0]));
         keyed.push((hi, r.end[1]));
         let cmp = |i: usize, j: usize| keyed[i].0.cmp(&keyed[j].0, jd, &cyls[r.cyl].def);
@@ -1224,9 +1284,11 @@ fn cut_rulings(
 /// station has to be there; stated as a plane segment as well, one line would reach the walk as
 /// two edges.
 ///
-/// The splits above cut both at every point the other crosses, and pass A cut every ruling piece
-/// at the ends of the segments along it, so a piece either matches a ruling piece end for end or
-/// shares no stretch with one. No stretch shared is a segment off the
+/// The splits above cut both at every point the other crosses, and pass A cut each at the other's
+/// ends and both where a lateral's boundary meets a tangent line
+/// ([`cut_lines_at_their_vertices`]), so a piece either matches a ruling piece end for end or
+/// shares no stretch with one — but for a ruling piece another wall's segment cut: two walls on one
+/// line do not cut each other's segments there. No stretch shared is a segment off the
 /// lateral — past its cap, or where the ruling is silent because the line is the lateral face's
 /// own edge (`cycle_on_wall`'s `quiet` runs: there the plane vocabulary states it, the other half
 /// of the one rule) — and it stays a segment. A stretch shared without a match is a shape the

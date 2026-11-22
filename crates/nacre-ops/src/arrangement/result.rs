@@ -411,8 +411,10 @@ pub(super) fn class_split(
 /// where coincident ([`merge_coincident`]) and cut at their crossings ([`split_at_crossings`],
 /// which learns aliases into `local`), their masks asked ([`edge_mask`] — ahead of the walk, so a
 /// conflict (`EdgeOccupancyConflict`) surfaces before any walk-stage reject, nearer its cause), the
-/// circles and rulings merged, and the ruling pieces cut at the ends of **every** segment along
-/// them ([`cut_rulings_along_segments`] — a knife's ends are vertices of the line it lies on). The
+/// circles merged, every line cut at every vertex on it ([`cut_lines_at_their_vertices`] — a
+/// knife's ends are vertices of the line it lies on, and so is a point a lateral face's boundary
+/// meets a tangent line at, where the class sees no trace of a cap that touches its plane at that
+/// point alone), and the ruling pieces that then coincide folded ([`merge_rulings`]). The
 /// knives stay among the segments: the curve splits after this one cut at every vertex a segment
 /// puts on a curve, a knife's included, and only the last of them sets the knives apart
 /// ([`split_class_edges`], [`is_knife`]). One function because the audit and tests that run a
@@ -432,10 +434,24 @@ pub(super) fn class_skeleton(
         edge_mask(&s.merged)?;
     }
     let circles = merge_circles(&tr.circles, local)?;
-    let rulings =
-        cut_rulings_at_their_ends(jd, cyls, wc, ruling_pieces(&tr.rulings, local), local)?;
-    let rulings = merge_rulings(rulings);
-    let rulings = cut_rulings_along_segments(jd, cyls, wc, &split, rulings, local)?;
+    // A class with neither ruling pieces nor touch points has no vertex to place on a line: a
+    // segment's end is placed on ruling pieces alone.
+    let shared = if tr.rulings.is_empty() && tr.tangent_points.is_empty() {
+        None
+    } else {
+        combinatorics::shared_lines_of(jd, cyls, wc)
+    };
+    let (split, rulings) = cut_lines_at_their_vertices(
+        jd,
+        cyls,
+        wc,
+        split,
+        ruling_pieces(&tr.rulings, local),
+        &tr.tangent_points,
+        shared.as_deref(),
+        local,
+    )?;
+    let rulings = merge_rulings(rulings, local);
     Ok((split, circles, rulings))
 }
 

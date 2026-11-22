@@ -1926,8 +1926,8 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   교점은 절단점으로 남는다 — 호 밖이면 정점 하나가 늘 뿐이지만, 호 위의 교점을 빼면 정점을 잃는다.
 - **룰링이면서 평면 쌍 선인 선은 «옆면이 거기서 끝나는가»가 어휘를 정한다** — 끝나면 평면 어휘
   (`rulings::lateral_half_of_plane_pair_lines`; 접하는 클래스는 `CylRecord::Touches`), 가로지르면 룰링 어휘
-  (`split_rulings` 의 접기). **선은 그 위의 모든 꼭짓점에서 잘린다**(`cut_rulings` — 선을 따르는 선분의 끝은
-  `cut_rulings_along_segments`).
+  (`split_rulings` 의 접기). **선은 그 위의 모든 꼭짓점에서 잘린다**(`cut_lines_at_their_vertices` — 꼭짓점은 그 선의 진술의
+  끝과 옆면 경계가 접선 선에 닿는 점; 선분끼리는 겹침 분할이 같은 벽에서 자른다).
 - 그 밖의 이름 자리: «어느 룰링인가»는 점과 벽의 함수(`ruling_side_signed`), 직선 간선의 열쇠는 두 끝이고 담체는
   쓰는 두 면의 곡면(`EdgeKey::Line`·`NodeEdge::Line` — `assembly::reconstruct` 의 그 자리 주석; 한 직선의 두 철자는
   `dissolve_straight_angles`), 결과 정점은 닿는 면들의 곡면으로 짓는다 — 관통 정점도(`assembly::naming` 의 결과 정점
@@ -1992,7 +1992,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   `combinatorics::line_order`·`ChartPoint::order`), θ 순서 `circular_order_about_seam`(두 점을 같은 원 위에서 받지 않으므로 다른 벽의 룰링도,
   위치가 무리수(`√(r²−d²)`)인 오프셋 벽(`0 < d < r`)의 룰링도 같은 산술로 비교한다), 코너의 각
   순서 `departure_key`. 비스듬한 단면 선을 따라 끝나는 칸은 결과에 타원 간선을 남긴다(「원·호·조각」).
-- **한 룰링의 진술들은 서로의 끝에서 잘린 뒤 같은 조각끼리 접힌다**(`cut_rulings_at_their_ends`, `merge_rulings`) — 두
+- **한 룰링의 진술들은 서로의 끝에서 잘린 뒤 같은 조각끼리 접힌다**(`cut_lines_at_their_vertices`, `merge_rulings`) — 두
   피연산자가 한 룰링을 다른 높이로 진술해도 겹치는 구간은 한 간선이다.
 - 룰링의 끝은 언제나 선 위이고(`ThetaSeg::on`), 셀은 slab × 틈이다. 룰링 구간은 `rulings_on_class` 가 정하고 차트는
   다시 계산하지 않는다. 이름은 `Chart::ruling_name` 한 번, 동일성은 `ruling_side`(`RulingCarrier::side`)다.
@@ -2803,6 +2803,7 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 통째 림을 그 림을 쓰는 면이 정확히 둘일 때만 잇기(노드 모서리의 규칙을 림에 그대로) | 두 몸체가 한 원에서 만나 네 면이 쓰는 림은 아무것도 잇지 않는다 — 구멍 난 블록 아래 그 구멍의 핀(한 원통 핸들)을 Fuse 하면 핀이 윗면 하나짜리 바깥 셸과 아래·옆면의 빈 공간 셸로 나와 부피(2π)도 `validate` 도 통과했다. 이 규칙으로 되돌리면 점수판 면 수가 [3, 7] → [1, 7]. 한 면은 둘레에서 재료 쪽 다음 면과 잇고(`circle_star`), 셸마다 닫힘(`OpenResultShell`·`EdgeAcrossShells`)이 남는 갈림을 잡는다 | — |
 | 정거장 선 위의 접선 룰링 조각을 끝끝 맞춤 없이 — 게이트가 그 접선 클래스와 할선의 공유 선을 기록했으면 모두 — 접기 | 같은 선 위 다른 높이의 제 접선 간선(정거장 조각이 없는 구간)까지 지워 차트가 그 면의 끝을 잃었다 — 스위트 `RulingBoundNotYet` 네 시험(`user_models` 둘, 필렛 판에 붙은 slab, 커스프 벽 너머 프리즘)과 메시 누출 하나(`shared_cylinder`). 정거장 조각과 같은 두 끝의 조각만 접고, 겹치되 안 맞으면 단계 불일치다(`stations_of_lines`) | 스파이크 |
 | 다른 평면이 든 run 을 공유 선이 기록됐으면 양옆과 무관하게 스침 조각으로 읽기(`cycle_on_wall`) | 양옆이 같은 run 까지 스침 조각이 되어 스위트 12 시험이 거절로 바뀌었다(`edge_on_a_ruling` 여섯, `shared_cylinder` 다섯, `contact_faces` 하나 — 자기 솔리드 접선 벽의 기록을 함께 넓힌 트리에서). 규칙은 «모든 특징은 양옆이 다를 때만 면을 토글하고, run 의 선은 든 쪽이 진술한다» — 다른 평면이 든 run 은 조용한 간선이고 토글은 그 끝에 선다 | 스파이크 |
+| 접선 선의 꼭짓점을 게이트의 옆면 정거장(`WorkingCyl::through`)에서 읽기 | «옆면 경계가 클래스의 룰링을 만나는 점»의 둘째 철자다 — 할선은 배열이 `cycle_on_wall`·림으로 읽는다. 게이트는 접선 행을 쓰는 쌍에만 적어(행 없는 쌍에도 적으면 스위트 선분 자르기 105 회 더) 숨은 조건이 되고, 행 조건을 걷으면 필렛 쌍의 옆면 하나를 못 읽을 때 오늘 서는 불리언을 거절한다. 같은 함수를 접선 룰링(`side = 0`)에도 돌린 점은 게이트의 점을 모두 포함한다(스위트·census·kit·무시 스윕에서 게이트에만 있는 점 0) | 스파이크 |
 
 ### 검증·오라클
 

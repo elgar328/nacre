@@ -574,8 +574,8 @@ pub(crate) fn shared_lines_of(
 
 /// **The recorded line a segment on wall `wall` lies along, among one class's `lines`** — `None`
 /// when the pair is no recorded line. The one lookup every reader of a segment's line makes (pass
-/// A's cut at the ends of the segments along a ruling, and the ruling split's crossings, its fold
-/// and the test of whether it folds at all). A wall whose line with the class is a ruling of
+/// A's cut of a line at its vertices, and the ruling split's crossings, its fold and the test of
+/// whether it folds at all). A wall whose line with the class is a ruling of
 /// **two** cylinders puts two laterals on that line, which is two cylinders meeting:
 /// [`RejectReason::CylinderPairContact`], the gate's name for it (measured: no such pair reaches
 /// the arrangement in the suite, the census or the ignored sweep).
@@ -599,7 +599,11 @@ pub(crate) fn line_along(
 /// chart needs the station there) and stays a plane segment past the lateral's cap, so one
 /// straight edge of a prism taller than the cylinder arrives as `Wall::Ruling` below the rim and
 /// `Wall::Plane` above it. Compared as values the two are a bend, and the point between them
-/// stays a vertex that only the other solid's surfaces name.
+/// stays a vertex that only the other solid's surfaces name. On a lateral face one line is two
+/// rulings the same way: a chart station is spelled by the smallest wall of the pieces it folds,
+/// stretch by stretch, so where a secant wall's piece ends and the tangent wall's own piece goes
+/// on, the face's ring names the line by the secant below the point and by the tangent wall
+/// above it.
 ///
 /// A record a class cannot read is left out, and a pair it would have joined reads as a bend —
 /// the vertex stays, never a wrong answer.
@@ -623,14 +627,41 @@ impl SharedLines {
     /// **Do walls `a` and `b` of one face on `own` run along one line?** Equal walls do. A plane
     /// wall and a ruling piece do when the plane pair is a line the gate recorded on that
     /// cylinder and the ruling is that line on `own` (same cylinder, same side): the plane wall
-    /// has no direction, so the ruling's `up` is not asked. Two ruling pieces compare as values —
-    /// `up` too, so a ruling walked back is a cusp, not a straight run.
+    /// has no direction, so the ruling's `up` is not asked. Two ruling pieces on a lateral face do
+    /// when they are one line in two spellings — `(plane, side)` against each of the two classes
+    /// of one record on that cylinder (a chart station's wall, and the tangent wall a piece holds
+    /// alone): each class reads its own side of the record, and a plane pair meets in one line.
+    /// They run one way only with the same `up`, so a ruling walked back is a cusp, not a straight
+    /// run.
     pub(crate) fn one_line(&self, own: ClassIx, a: Wall, b: Wall) -> bool {
         if a == b {
             return true;
         }
         let ClassIx::Plane(own) = own else {
-            return false;
+            let (
+                Wall::Ruling {
+                    cyl: ka,
+                    side: sa,
+                    up: ua,
+                    plane: pa,
+                },
+                Wall::Ruling {
+                    cyl: kb,
+                    side: sb,
+                    up: ub,
+                    plane: pb,
+                },
+            ) = (a, b)
+            else {
+                return false;
+            };
+            let reads = |p: usize, other: usize, side: i8| {
+                self.by_class.get(&p).is_some_and(|ls| {
+                    ls.iter()
+                        .any(|l| l.other == other && l.cyl == ka && l.side == side)
+                })
+            };
+            return ka == kb && ua == ub && reads(pa, pb, sa) && reads(pb, pa, sb);
         };
         let along = |w: usize, cyl: usize, side: i8| {
             self.by_class.get(&own).is_some_and(|ls| {

@@ -6,8 +6,10 @@ use super::*;
 /// Asked only after the circle road answered "no circle"; **empty** (silently) unless the gate
 /// **recorded** the pair — the wall within the radius (through the axis or offset from it), or
 /// touching the cylinder along one ruling, where the face states its half of a plane-pair line on
-/// it ([`lateral_half_of_plane_pair_lines`]) and, where the operation parts the material along that
-/// ruling, the knife it leaves there ([`tangent_knife`]) — and declining rather than contributing
+/// it ([`lateral_half_of_plane_pair_lines`]), the points its boundary meets that ruling at (its
+/// whole rims' and its arcs' — [`rim_points`], [`WallCycle::touches`]) and, where the operation
+/// parts the material along that ruling, the knife it leaves there ([`tangent_knife`]) — and
+/// declining rather than contributing
 /// *partially* when it does but a piece cannot be stated — a half-contributed rectangle would
 /// leave the class's 1-skeleton dangling, which is a worse lie than an honest incomplete-trace
 /// mark.
@@ -29,7 +31,7 @@ pub(super) fn rulings_on_class(
     cyls: &[crate::planes::WorkingCyl],
     aliases: &Aliases,
     found: &mut Aliases,
-) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
+) -> Result<OnWall, DeclineKind> {
     // **The gate's answer, first** — a class touching the cylinder
     // ([`WorkingCyl::touches`](crate::planes::WorkingCyl::touches)) gets the lateral's half of a
     // plane-pair line and no rectangle (below); otherwise
@@ -52,6 +54,7 @@ pub(super) fn rulings_on_class(
         let shape = lateral_shape(jd, fl, def, k)?;
         let above = axis_above(jd, wc, def).ok_or(DeclineKind::Ruling)?;
         let mut grazes = Vec::new();
+        let mut touches = rim_points(jd, def, &shape.rims, wc, k, 0)?;
         for (inner, ring) in &shape.cycles {
             // A loop on another lateral states no plane-pair line (two laterals meeting are the
             // gate's to refuse, by name).
@@ -59,6 +62,7 @@ pub(super) fn rulings_on_class(
                 continue;
             };
             let read = cycle_on_wall(jd, cf, def, wc, k, true, *inner, nr, aliases, cyls, found)?;
+            touches.extend(&read.touches);
             let edges: Vec<usize> = read.quiet.iter().map(|&(_, i)| i).collect();
             lateral_half_of_plane_pair_lines(
                 jd,
@@ -75,10 +79,10 @@ pub(super) fn rulings_on_class(
         } else {
             Vec::new()
         };
-        return Ok((knife, grazes));
+        return Ok((knife, grazes, touches));
     }
     if !cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc)) {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
     }
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
@@ -115,12 +119,10 @@ pub(super) fn rulings_on_class(
     let mut out = Vec::with_capacity(2);
     let mut grazes = Vec::new();
     for side in [1i8, -1i8] {
-        let mut stations: Vec<(LineEvent, NodeId)> = Vec::new();
-        for &(c, _) in &rims {
-            let node = combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
-                .map_err(|_| DeclineKind::Ruling)?;
-            stations.push((LineEvent::Toggle, node));
-        }
+        let mut stations: Vec<(LineEvent, NodeId)> = rim_points(jd, def, &rims, wc, k, side)?
+            .into_iter()
+            .map(|node| (LineEvent::Toggle, node))
+            .collect();
         for (nr, r) in &read {
             // **The lateral's half of a plane-pair line** on this ruling is stated in the plane
             // vocabulary; its side is read exactly as a run's on this ruling is (`body_side`): the
@@ -173,7 +175,27 @@ pub(super) fn rulings_on_class(
             });
         }
     }
-    Ok((out, grazes))
+    Ok((out, grazes, Vec::new()))
+}
+
+/// **Where a lateral face's whole rims meet ruling `side` of class `wc`** — one point per rim, its
+/// section's crossing with the ruling ([`combinatorics::crossing_on_ruling`]): a whole rim goes all
+/// the way round, so it meets every ruling. A secant class's sweep toggles the face there; on a
+/// tangent class (`side = 0`) they are vertices of its one ruling.
+fn rim_points(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    rims: &[(usize, bool)],
+    wc: usize,
+    k: usize,
+    side: i8,
+) -> Result<Vec<NodeId>, DeclineKind> {
+    rims.iter()
+        .map(|&(c, _)| {
+            combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
+                .map_err(|_| DeclineKind::Ruling)
+        })
+        .collect()
 }
 
 /// **The pieces of a ruling the lateral covers, swept over its stations** — the stations put in
@@ -227,7 +249,8 @@ fn sweep_ruling(
 /// halves (`cyl_chart::Station::tangent_rulings`).
 ///
 /// A face the gate wrote nothing for, or could not read, declines (`Ruling`): every face on a
-/// cylinder whose pair writes a row is read, and `parting` comes from those rows.
+/// cylinder whose pair writes a row is read, and `parting` comes from those rows. No face declines
+/// so in the suite, the ignored sweep, the census or the kit.
 #[allow(clippy::too_many_arguments)]
 fn tangent_knife(
     jd: &Judge<'_, WorkingPlane>,
@@ -282,6 +305,11 @@ fn tangent_knife(
     Ok(out)
 }
 
+/// What a lateral face leaves on a wall class ([`rulings_on_class`]): its ruling pieces, its halves
+/// of the plane-pair lines it ends on, and on a class touching the cylinder the points its boundary
+/// meets that class's ruling at.
+type OnWall = (Vec<RulingTrace>, Vec<Seg>, Vec<NodeId>);
+
 /// What one boundary cycle of a lateral leaves on a wall class ([`cycle_on_wall`]).
 struct WallCycle {
     /// Stations on the class's rulings, `(side, event, name)` — `side` the ruling's identity
@@ -290,6 +318,9 @@ struct WallCycle {
     /// The cycle's edges lying on a ruling of the class with another plane across them, `(side,
     /// edge)` — plane-pair lines the lateral ends on ([`lateral_half_of_plane_pair_lines`]).
     quiet: Vec<(i8, usize)>,
+    /// On a tangent class, where the cycle's arcs meet its one ruling — inside an arc or at its
+    /// end: points of the line every statement of it is cut at (`Trace::tangent_points`).
+    touches: Vec<NodeId>,
 }
 
 /// Where an arc of a cycle meets a wall class's rulings: the points strictly inside it, and the
@@ -318,8 +349,10 @@ struct ArcMeet {
 /// is one point under two names, an exact proof recorded for the next round
 /// ([`Aliases::record_same_point`]). The walk counts an arc's crossings off this reading — an end
 /// is never inside, so the count needs no end the walk found — and a `Crossing` is named by it. A
-/// tangent class meets each section's plane in a line that touches the cylinder or misses it, so
-/// no arc crosses it and nothing is read.
+/// tangent class meets each section's plane in a line that touches the cylinder, at the one point
+/// of its one ruling (`side = 0`, the double root): the same reading places it on the arc, but an
+/// arc holding it touches the class there and crosses nothing, so the walk counts no crossing and
+/// the point goes out as a vertex of the ruling ([`WallCycle::touches`]).
 ///
 /// The walk's features become stations on the ruling they lie on ([`combinatorics::node_ruling_side`]):
 /// - a **crossing** inside an arc toggles the face there;
@@ -371,45 +404,53 @@ fn cycle_on_wall(
     let same =
         |found: &Aliases, x: NodeId, y: NodeId| aliases.one_point(x, y) || found.one_point(x, y);
     let mut meets: Vec<ArcMeet> = vec![ArcMeet::default(); n];
-    if !tangent {
-        for (i, meet) in meets.iter_mut().enumerate() {
-            let Wall::Arc {
-                ccw: nu, plane: c, ..
-            } = nr.walls[i]
-            else {
-                continue;
-            };
-            let (a, b) = (ring[i], ring[(i + 1) % n]);
-            let (lo, hi) = if nu { (a, b) } else { (b, a) };
-            for side in [1i8, -1i8] {
-                let node = combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
-                    .map_err(|_| DeclineKind::Ruling)?;
-                let end = if same(found, node, a) {
-                    Some(a)
-                } else if same(found, node, b) {
-                    Some(b)
-                } else {
-                    match combinatorics::theta_place(jd, k, def, lo, hi, node)
-                        .ok_or(DeclineKind::Ruling)?
-                    {
-                        ThetaPlace::At(e) => {
-                            found.record_same_point_traced(jd, cyls, [lo, hi][e], node)?;
-                            Some([lo, hi][e])
-                        }
-                        ThetaPlace::Inside => {
-                            meet.inside.push((side, node));
-                            None
-                        }
-                        ThetaPlace::Outside => None,
+    let mut touches: Vec<NodeId> = Vec::new();
+    let sides: &[i8] = if tangent { &[0] } else { &[1, -1] };
+    for (i, meet) in meets.iter_mut().enumerate() {
+        let Wall::Arc {
+            ccw: nu, plane: c, ..
+        } = nr.walls[i]
+        else {
+            continue;
+        };
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        let (lo, hi) = if nu { (a, b) } else { (b, a) };
+        for &side in sides {
+            let node = combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
+                .map_err(|_| DeclineKind::Ruling)?;
+            let (end, inside) = if same(found, node, a) {
+                (Some(a), false)
+            } else if same(found, node, b) {
+                (Some(b), false)
+            } else {
+                match combinatorics::theta_place(jd, k, def, lo, hi, node)
+                    .ok_or(DeclineKind::Ruling)?
+                {
+                    ThetaPlace::At(e) => {
+                        found.record_same_point_traced(jd, cyls, [lo, hi][e], node)?;
+                        (Some([lo, hi][e]), false)
                     }
-                };
-                // A closed arc's two ends are one node.
-                if end == Some(a) {
-                    meet.at[0] = Some((side, node));
+                    ThetaPlace::Inside => (None, true),
+                    ThetaPlace::Outside => (None, false),
                 }
-                if end == Some(b) {
-                    meet.at[1] = Some((side, node));
+            };
+            // A touch is no crossing: the walk's count and the run ends read `meets` alone.
+            if tangent {
+                if inside {
+                    touches.push(node);
                 }
+                touches.extend(end);
+                continue;
+            }
+            if inside {
+                meet.inside.push((side, node));
+            }
+            // A closed arc's two ends are one node.
+            if end == Some(a) {
+                meet.at[0] = Some((side, node));
+            }
+            if end == Some(b) {
+                meet.at[1] = Some((side, node));
             }
         }
     }
@@ -452,6 +493,7 @@ fn cycle_on_wall(
     let mut read = WallCycle {
         stations: Vec::new(),
         quiet: Vec::new(),
+        touches,
     };
     let mut run_ends: Vec<(i8, NodeId)> = Vec::new();
     for f in features {

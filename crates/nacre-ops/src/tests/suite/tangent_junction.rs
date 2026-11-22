@@ -44,12 +44,15 @@
 //! arc `z = 1` on the box's side and the material runs round through the notch's flat. OCCT builds
 //! that as one solid whose arc four faces use; here it is `NonManifoldResultEdge`.
 //!
-//! Where a rim of the coaxial rod, or an end arc of the notched one, meets a tangent line inside a
-//! piece the tangent wall's class states, that class does not cut the piece there: the tangent fold
-//! finds the piece overlapping a station without matching it (`CylinderStagesDisagree`,
-//! `cyl_chart::stations_of_lines`), or the plane face's ring keeps the point as a straight corner
-//! of three neighbours and the result's vertex names a surface no face at it lies on
-//! (`VertexNamesAbsentSurface`) — todo «접선에서만 만나는 덩이 — 마디가 어긋나는 칼날».
+//! OCCT's face counts for the coaxial rows are these in the cuts but four (one more each); in the
+//! unions they are these in one row and up to four more in the rest, in the commons these in two
+//! rows and up to two more in the rest.
+//!
+//! A rim of the coaxial rod, or an end arc of the notched one, meets a tangent line inside a piece
+//! the tangent wall's class states — the wall's own edge, or the plane through the axis's segment
+//! along it — and the cap that bears it touches that class's plane at the point alone. The class
+//! cuts the piece there all the same: a lateral face's boundary meeting the line is a vertex of it
+//! (`Trace::tangent_points`).
 
 use super::scoreboard::{OPS, Op, Want, check, counted, refused, run};
 use super::*;
@@ -252,8 +255,6 @@ enum Answer {
     Refused(RejectReason),
 }
 
-const STAGES: Answer = Answer::Refused(RejectReason::CylinderStagesDisagree);
-const ABSENT: Answer = Answer::Refused(RejectReason::VertexNamesAbsentSurface);
 const NON_MANIFOLD: Answer = Answer::Refused(RejectReason::NonManifoldResultEdge);
 
 const fn f(faces: &'static [usize]) -> Answer {
@@ -277,29 +278,41 @@ type CoaxialRow = [Answer; 6];
 /// rod, the rod less `U`, Common, and then the union and the common with the rod first. The
 /// mirrored junction answers as the unmirrored one.
 const COAXIAL: [(Span, [CoaxialRow; 2]); 8] = [
-    ((6, 12), [[STAGES; 6], [STAGES; 6]]),
+    (
+        (6, 12),
+        [
+            [f(&[9]), f(&[3, 10]), f(&[]), f(&[3]), f(&[9]), f(&[3])],
+            [f(&[9]), f(&[10]), f(&[5]), f(&[5]), f(&[9]), f(&[5])],
+        ],
+    ),
     (
         (4, 12),
         [
-            [ABSENT, f(&[3, 8]), f(&[4]), f(&[5]), ABSENT, f(&[5])],
-            [STAGES; 6],
+            [f(&[9]), f(&[3, 8]), f(&[4]), f(&[5]), f(&[9]), f(&[5])],
+            [f(&[9]), f(&[10]), f(&[5]), f(&[5]), f(&[9]), f(&[5])],
         ],
     ),
     (
         (5, 10),
         [
             [f(&[9]), f(&[3, 8]), f(&[]), f(&[3]), f(&[9]), f(&[3])],
-            [STAGES; 6],
+            [f(&[8]), f(&[10]), f(&[4]), f(&[5]), f(&[8]), f(&[5])],
         ],
     ),
     (
         (2, 8),
         [
-            [STAGES; 6],
-            [ABSENT, ABSENT, f(&[4, 4]), f(&[7]), ABSENT, f(&[7])],
+            [f(&[9]), f(&[11]), f(&[4]), f(&[5]), f(&[9]), f(&[5])],
+            [f(&[10]), f(&[10]), f(&[4, 4]), f(&[7]), f(&[10]), f(&[7])],
         ],
     ),
-    ((6, 9), [[STAGES; 6], [STAGES; 6]]),
+    (
+        (6, 9),
+        [
+            [f(&[9]), f(&[13]), f(&[]), f(&[3]), f(&[9]), f(&[3])],
+            [f(&[10]), f(&[12]), f(&[4]), f(&[5]), f(&[10]), f(&[5])],
+        ],
+    ),
     (
         (0, 20),
         [
@@ -310,8 +323,8 @@ const COAXIAL: [(Span, [CoaxialRow; 2]); 8] = [
     (
         (3, 5),
         [
-            [ABSENT, f(&[11]), f(&[4]), f(&[4]), ABSENT, f(&[4])],
-            [STAGES; 6],
+            [f(&[9]), f(&[11]), f(&[4]), f(&[4]), f(&[9]), f(&[4])],
+            [f(&[10]), f(&[14]), f(&[]), f(&[3]), f(&[10]), f(&[3])],
         ],
     ),
     (
@@ -325,29 +338,41 @@ const COAXIAL: [(Span, [CoaxialRow; 2]); 8] = [
 
 /// The notched rows: as [`COAXIAL`], with the rod's cylinder less its side `x < −1/2`.
 const NOTCHED: [(Span, [CoaxialRow; 2]); 8] = [
-    ((6, 12), [[STAGES; 6], [STAGES; 6]]),
+    (
+        (6, 12),
+        [
+            [f(&[9]), f(&[13]), f(&[]), f(&[4]), f(&[9]), f(&[4])],
+            [f(&[12]), f(&[13]), f(&[6]), f(&[6]), f(&[12]), f(&[6])],
+        ],
+    ),
     (
         (4, 12),
         [
-            [ABSENT, ABSENT, f(&[5]), f(&[6]), ABSENT, f(&[6])],
-            [STAGES; 6],
+            [f(&[11]), f(&[13]), f(&[5]), f(&[6]), f(&[11]), f(&[6])],
+            [f(&[12]), f(&[13]), f(&[6]), f(&[6]), f(&[12]), f(&[6])],
         ],
     ),
     (
         (5, 10),
         [
             [f(&[9]), NON_MANIFOLD, f(&[]), f(&[4]), f(&[9]), f(&[4])],
-            [STAGES; 6],
+            [f(&[11]), f(&[13]), f(&[5]), f(&[6]), f(&[11]), f(&[6])],
         ],
     ),
     (
         (2, 8),
         [
-            [STAGES; 6],
-            [ABSENT, ABSENT, f(&[5, 5]), f(&[8]), ABSENT, f(&[8])],
+            [f(&[11]), f(&[13]), f(&[5]), f(&[6]), f(&[11]), f(&[6])],
+            [f(&[14]), f(&[14]), f(&[5, 5]), f(&[8]), f(&[14]), f(&[8])],
         ],
     ),
-    ((6, 9), [[STAGES; 6], [STAGES; 6]]),
+    (
+        (6, 9),
+        [
+            [f(&[9]), f(&[13]), f(&[]), f(&[4]), f(&[9]), f(&[4])],
+            [f(&[12]), f(&[14]), f(&[5]), f(&[6]), f(&[12]), f(&[6])],
+        ],
+    ),
     (
         (0, 20),
         [
@@ -358,8 +383,8 @@ const NOTCHED: [(Span, [CoaxialRow; 2]); 8] = [
     (
         (3, 5),
         [
-            [ABSENT, f(&[12]), f(&[5]), f(&[5]), ABSENT, f(&[5])],
-            [STAGES; 6],
+            [f(&[11]), f(&[12]), f(&[5]), f(&[5]), f(&[11]), f(&[5])],
+            [f(&[10]), f(&[14]), f(&[]), f(&[4]), f(&[10]), f(&[4])],
         ],
     ),
     (
@@ -494,12 +519,12 @@ fn a_coaxial_rod_answers_as_the_first_operand_too() {
 /// The fillet rows: per span (tenths) of the fillet's rod, the answers as Fuse, the rounded box
 /// less the rod, the rod less the box, Common.
 const FILLET: [(Span, [Answer; 4]); 6] = [
-    ((6, 14), [f(&[7]), STAGES, f(&[]), f(&[3])]),
-    ((-4, 12), [f(&[8]), STAGES, f(&[3]), f(&[3])]),
-    ((12, 28), [f(&[8]), STAGES, f(&[3]), f(&[3])]),
+    ((6, 14), [f(&[7]), f(&[11]), f(&[]), f(&[3])]),
+    ((-4, 12), [f(&[8]), f(&[9]), f(&[3]), f(&[3])]),
+    ((12, 28), [f(&[8]), f(&[9]), f(&[3]), f(&[3])]),
     ((0, 20), [f(&[7]), f(&[7]), f(&[]), f(&[3])]),
     ((-4, 28), [f(&[9]), f(&[7]), f(&[3, 3]), f(&[3])]),
-    ((0, 12), [f(&[7]), STAGES, f(&[]), f(&[3])]),
+    ((0, 12), [f(&[7]), f(&[9]), f(&[]), f(&[3])]),
 ];
 
 /// The square `[0, 4]²`, two tall, its `(4, 0)` corner rounded by the unit circle about `(3, 1)`.

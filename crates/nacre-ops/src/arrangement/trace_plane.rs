@@ -587,7 +587,8 @@ pub(super) fn trace_one(
                 }
                 // No circle: a wall class **within the radius** leaves two rulings instead (the
                 // rulings road, through the axis or offset from it), and one touching the cylinder
-                // leaves only the lateral's half of a plane-pair line on its tangent ruling; any
+                // leaves the lateral's half of a plane-pair line on its tangent ruling and the
+                // points its boundary meets that ruling at (`Trace::tangent_points`); any
                 // other class along or oblique to the axis still leaves nothing, silently — the
                 // population gate names those interactions.
                 Ok(_) => match rulings_on_class(
@@ -602,10 +603,12 @@ pub(super) fn trace_one(
                     aliases,
                     &mut out.aliases,
                 ) {
-                    Ok((v, grazes)) => {
+                    Ok((v, grazes, touches)) => {
                         out.rulings.extend(v);
                         // The lateral's side of a plane-pair line it touches.
                         out.segs.extend(grazes);
+                        out.tangent_points
+                            .extend(touches.into_iter().map(|n| (k, n)));
                     }
                     Err(kind) => out.declined.push((fp, kind)),
                 },
