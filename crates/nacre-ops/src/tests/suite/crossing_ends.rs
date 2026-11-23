@@ -322,13 +322,9 @@ fn tools() -> [Tool; 9] {
 /// (`arrangement::rulings`' `cycle_on_wall`).
 ///
 /// What still refuses, and why (each name's face measured):
-/// - `z = 4.5` against the roof's slanted faces, and `z = 5.5` against the valley's, cross their
-///   elliptical edges: the planar face's scan cannot name a point on an edge riding the cylinder
-///   (`CurvedRingWall`);
-/// - the steep valley: a slant's trace runs along its own arc from the valley's bottom corner,
-///   where it goes on inside the face, to the cap's corner, where it goes on outside — a run whose
-///   flanks differ, which `cycle_on_class` declines (measured at that arm; `ObliqueCylinderCut`);
-///   with the tool first, `z ≥ 5.5` names its own refusal before it;
+/// - `z = 4.5` against the roof's slanted faces, and `z = 5.5` against the valley's and the steep
+///   valley's, cross their elliptical edges: the planar face's scan cannot name a point on an edge
+///   riding the cylinder (`CurvedRingWall`);
 /// - the gate: the off-axis ridge's `z = 4.5`, `z = 5.5` and the prism's floor touch its
 ///   slanted sections, and the steep valley's pin.
 fn wants() -> [[[Want; 2]; 9]; 5] {
@@ -369,15 +365,15 @@ fn wants() -> [[[Want; 2]; 9]; 5] {
         ],
         // steep valley
         [
+            apart,
+            one,
+            one,
+            both(built([1, 1, 2])),
+            both(ring_wall),
+            one,
+            one,
             both(oblique),
-            both(oblique),
-            both(oblique),
-            both(oblique),
-            [oblique, ring_wall],
-            both(oblique),
-            both(oblique),
-            both(oblique),
-            both(oblique),
+            one,
         ],
         // ridge off the axis
         [

@@ -983,12 +983,12 @@ pub enum DeclineKind {
     ///
     /// Distinct from [`Self::CylFaceHole`], whose proposition is "the hole could not be *read*":
     /// here the ring walked and its features came back, and it is turning one of them into a
-    /// counter-clockwise extent that fails — a rim run the hole continues straight through (an
-    /// extent and a parity toggle at once), a crossing on a carrier that is not a ruling, an odd
-    /// number of crossings, two holes claiming one extent, or boundaries that do not alternate
-    /// around the circle. On a wall's ruling it says the same of a cycle's run of edges along the
-    /// ruling: an edge of no length, nodes on two rulings, or edges held by the class and by
-    /// another plane at once. Every one of them is a fact about the *shape*.
+    /// counter-clockwise extent that fails — a run of arcs that turns back, a crossing on a carrier
+    /// that is not a ruling, an odd number of crossings, two holes claiming one extent, or
+    /// boundaries that do not alternate around the circle. On a wall's ruling it says the same of a
+    /// cycle's run of edges along the ruling: an edge of no length, nodes on two rulings, or edges
+    /// held by the class and by another plane at once. Every one of them is a fact about the
+    /// *shape*.
     CylHoleFeature,
     // Not its population: a class plane that holds a **tangent ruling** together with the wall
     // tangent there — a gusset's side plane exactly through a fillet's axis (`arcwalls p1p3`), or a

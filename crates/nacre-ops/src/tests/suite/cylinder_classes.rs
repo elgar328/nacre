@@ -426,11 +426,13 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
 /// fused across the bored plate ([`walled_bore`]) opens two windows in the bore's lateral, one on
 /// either side of the axis, from `z = 5` up to the plate's top, and the lateral's boundary around
 /// them is one cycle. `cycle_on_class` reads it against each ⊥ class: on `z = 10` and on `z = 5` it
-/// lays two arcs (the run arm), and a box standing on `z = 8` — far from the bore, there only for
-/// its plane — crosses its four rulings, two stretches, one per window (the crossing arm).
+/// lays two arcs and the stretches past the ends where the face stops (the run arm), and a box
+/// standing on `z = 8` — far from the bore, there only for its plane — crosses its four rulings,
+/// two stretches, one per window (the crossing arm).
 ///
-/// Measured by dropping the last extent of a call that carved two or more: with only the arcs'
-/// or only the stretches' dropped, every operation here is refused (`LabelConflict`). The
+/// Measured by dropping the last extent of a call that carved two or more: the fuse is refused as
+/// `CylSpan` with an arc dropped, and as `RingOrientation` with a stretch dropped, also where only
+/// a class with no run loses one. The
 /// `nth ≥ 1` rows are the fixture's premise rather than a claim about the kernel — a change that
 /// rightly read this cycle in one extent per class would turn them red without anything being
 /// wrong, and then this case needs another fixture.
@@ -455,15 +457,26 @@ fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
         );
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - want).abs() <= 1e-9 * want, "{kind:?}: {v} vs {want}");
-        let second: Vec<bool> = crate::arrangement::arc_probe::MIDS
+        let second: Vec<(bool, f64)> = crate::arrangement::arc_probe::MIDS
             .mine_since(from)
             .iter()
             .filter(|mid| mid.inner && mid.origin == [10.0, 10.0, -1.0] && mid.nth >= 1)
-            .map(|mid| mid.grazes)
+            .map(|mid| (mid.grazes, mid.start[2]))
             .collect();
-        for (arm, grazes) in [("an arc", true), ("a crossed stretch", false)] {
+        // The stretches of `z = 8` alone are the crossing arm's: a run's ends on `z = 5` and
+        // `z = 10` carve stretches too.
+        let reached = [
+            ("an arc", second.iter().any(|&(grazes, _)| grazes)),
+            (
+                "a crossed stretch",
+                second
+                    .iter()
+                    .any(|&(grazes, z)| !grazes && (z - 8.0).abs() < 1e-9),
+            ),
+        ];
+        for (arm, carved) in reached {
             assert!(
-                second.contains(&grazes),
+                carved,
                 "{kind:?}: no cycle carved {arm} as its second extent on a class — the fixture no \
                  longer reaches the case it locks"
             );

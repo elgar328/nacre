@@ -32,6 +32,8 @@ pub(crate) struct Mid {
     /// Whether the extent is one of the cycle's own arcs on the class (the face grazes there) rather
     /// than a stretch the class crosses the cycle's interior over.
     pub grazes: bool,
+    /// The extent's first end, realized — what says which class carved it.
+    pub start: [f64; 3],
 }
 
 /// Record the newest extent of `this_call` — what one cycle has carved on one class so far.
@@ -89,5 +91,6 @@ pub(super) fn record(
         origin: o,
         nth: this_call.len() - 1,
         grazes: carved.on.is_some(),
+        start: pa,
     });
 }

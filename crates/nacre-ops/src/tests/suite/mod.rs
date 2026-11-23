@@ -1202,6 +1202,7 @@ mod extrude;
 mod face_bounds;
 mod frame_chains;
 mod frames;
+mod hole_runs;
 mod loop_nesting;
 mod motion;
 mod naming;

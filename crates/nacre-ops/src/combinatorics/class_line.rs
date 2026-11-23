@@ -65,12 +65,7 @@ impl From<&Carrier> for LineCarrier {
 /// a fourth plane through a run's node). Naming every crossing up front would change which refusal
 /// comes first.
 ///
-/// **An arc's crossings are solved once per edge**, so the count the walk read and the point a
-/// road names cannot disagree. The walk asks an edge only where its ends cannot say, with the end
-/// on the line where there is one (that end's own root is not counted); an edge the walk did not
-/// ask (ends on opposite sides) is solved on naming, with no end on the line. Nothing is allocated
-/// until an edge is asked — most rings a ray walks carry no arc, and a ray builds one reading per
-/// line it casts.
+/// An arc's crossings are solved once per edge ([`ArcRootsOnce`]).
 pub(crate) struct ClassLine<'a, C> {
     jd: &'a Judge<'a, WorkingPlane>,
     cyls: &'a [crate::planes::WorkingCyl],
@@ -81,7 +76,38 @@ pub(crate) struct ClassLine<'a, C> {
     cut: usize,
     nodes: &'a [NodeId],
     carrier: C,
-    arcs: std::cell::RefCell<Vec<Option<Option<Vec<NodeId>>>>>,
+    arcs: ArcRootsOnce,
+}
+
+/// **Where a ring's arcs cross a line, solved once per edge**, so the count a ring walk read and the
+/// point a road then names cannot disagree. The walk asks an edge only where its ends cannot say,
+/// with the end on the line where there is one (that end's own root is not counted), and every later
+/// ask takes that answer; an edge the walk did not ask (ends on opposite sides) is solved on naming,
+/// with no end on the line. Nothing is allocated until an edge is asked — most rings a ray walks
+/// carry no arc, and a ray builds one reading per line it casts.
+#[derive(Default)]
+pub(crate) struct ArcRootsOnce(std::cell::RefCell<Vec<Option<Option<Vec<NodeId>>>>>);
+
+impl ArcRootsOnce {
+    /// Edge `i` of a ring of `n`: the first answer, or `solve`'s if this is the first ask.
+    #[inline]
+    pub(crate) fn of(
+        &self,
+        i: usize,
+        n: usize,
+        solve: impl FnOnce() -> Option<Vec<NodeId>>,
+    ) -> Option<Vec<NodeId>> {
+        if let Some(Some(got)) = self.0.borrow().get(i) {
+            return got.clone();
+        }
+        let got = solve();
+        let mut asked = self.0.borrow_mut();
+        if asked.is_empty() {
+            asked.resize(n, None);
+        }
+        asked[i] = Some(got.clone());
+        got
+    }
 }
 
 impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
@@ -102,7 +128,7 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
             cut,
             nodes,
             carrier,
-            arcs: std::cell::RefCell::new(Vec::new()),
+            arcs: ArcRootsOnce::default(),
         }
     }
 
@@ -165,11 +191,8 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
     /// later ask passes.
     #[inline]
     fn arc_roots(&self, i: usize, on_end: Option<usize>) -> Option<Vec<NodeId>> {
-        if let Some(Some(got)) = self.arcs.borrow().get(i) {
-            return got.clone();
-        }
         let n = self.nodes.len();
-        let got = match (self.carrier)(i) {
+        self.arcs.of(i, n, || match (self.carrier)(i) {
             LineCarrier::Arc { cyl, ccw } => arc_crossings_of(
                 self.jd,
                 self.cyls,
@@ -181,12 +204,6 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
                 on_end.map(|k| self.nodes[k]),
             ),
             LineCarrier::Plane(_) | LineCarrier::Ruling { .. } => Some(Vec::new()),
-        };
-        let mut memo = self.arcs.borrow_mut();
-        if memo.is_empty() {
-            memo.resize(n, None);
-        }
-        memo[i] = Some(got.clone());
-        got
+        })
     }
 }

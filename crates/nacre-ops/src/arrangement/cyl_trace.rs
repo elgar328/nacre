@@ -266,9 +266,10 @@ fn lateral_loops(
 /// Every simple closed curve on a cylinder cuts it in two, so a lateral face is the meet of its
 /// boundary loops' material sides. Carving took away, at every loop the trace crosses, the trace's
 /// part on that loop's other side, and laid the runs along a loop as grazes; a touch takes nothing
-/// and changes no side, and a run whose flanks differ is declined before this. So every point the
-/// carving left is on the material side of each loop the trace crossed, and on one side — the same
-/// along the whole trace — of each loop it did not: **the uncarved part is all in the face or all
+/// and changes no side, and past a run's end where the face holds neither side the trace is carved
+/// too ([`combinatorics::past_run_ends`]). So every point the carving left is on the material side
+/// of each loop the trace crossed or ran along, and on one side — the same along the whole trace —
+/// of each loop it did not: **the uncarved part is all in the face or all
 /// out of it**, and one point of it says which, by the rule every lateral point is read by
 /// ([`combinatorics::loop_parity`]).
 ///
@@ -836,9 +837,11 @@ pub(super) fn corner_on_section(
 ///   ([`material_theta_sign`]), so the **hole** lies along `+σ·τ·θ̂`: the hole runs
 ///   counter-clockwise from the crossing exactly when `σ·τ = +1`.
 /// - **An arc edge lying on the class** (one of the hole's own rims) travels `ν·θ̂`. Material lies
-///   along `(σ·r̂) × (ν·θ̂) = σ·ν·m̂`, so `ν = σ·μ` where `μ` is the axis direction the face occupies
-///   — which is the opposite of the side the run's flanks sit on. That fixes the rim arc's CCW
-///   orientation without reading a coordinate.
+///   along `(σ·r̂) × (ν·θ̂) = σ·ν·m̂`, so `ν = σ·μ` where `μ` is the axis direction the face occupies.
+///   That fixes the rim arc's CCW orientation without reading a coordinate. Past an end of the run
+///   where the face holds neither side ([`combinatorics::past_run_ends`]) the hole starts at that
+///   end and runs away from the arc: clockwise from its first node when `ν = +1`, counter-clockwise
+///   from its last.
 /// - **An arc edge crossing the trace** travels `ν·θ̂` too, so material lies along
 ///   `σ·ν·m̂`; the section, going counter-clockwise from the crossing, climbs along `m̂` by the sign
 ///   of its tangent's axial part ([`climb_over`]) — into the material when the two agree, so the
@@ -885,15 +888,19 @@ fn cycle_on_class(
     // edge, `0` inside. An end on the class is a corner on the trace, the root under the end's own
     // name, which the arc does not cross again there.
     //
-    // The walk's count and the `Crossing` arm's node are one question — asked twice, the second
-    // asking without the end would meet the end's root as one point under two names and refuse.
+    // The walk's count and the `Crossing` arm's node are one question, solved once per edge
+    // ([`combinatorics::ArcRootsOnce`]): asked again without the end, the arc would meet the end's
+    // root as one point under two names and refuse.
     let arc_ends = |i: usize| [ring[i], ring[(i + 1) % n]];
-    let arc_roots = |i: usize, on_end: Option<NodeId>| match nr.walls[i] {
-        Wall::Arc { cyl: c, ccw, plane } => {
-            let def = &cyls.get(c)?.def;
-            combinatorics::arc_crossings(jd, def, wc, plane, c, ccw, arc_ends(i), on_end)
-        }
-        Wall::Ruling { .. } | Wall::Plane(_) => None,
+    let asked = combinatorics::ArcRootsOnce::default();
+    let arc_roots = |i: usize, on_end: Option<NodeId>| {
+        asked.of(i, n, || match nr.walls[i] {
+            Wall::Arc { cyl: c, ccw, plane } => {
+                let def = &cyls.get(c)?.def;
+                combinatorics::arc_crossings(jd, def, wc, plane, c, ccw, arc_ends(i), on_end)
+            }
+            Wall::Ruling { .. } | Wall::Plane(_) => None,
+        })
     };
     let features = match combinatorics::ring_against_plane(
         jd,
@@ -924,17 +931,13 @@ fn cycle_on_class(
         }
     };
     let sigma = i32::from(cf.orient_sign);
-    // The nodes on the class: an arc crossing the trace with one of them as an end was counted with
-    // that end (`arc_roots`).
-    let on_class: Vec<usize> = features
-        .iter()
-        .filter_map(|f| match *f {
-            combinatorics::Feature::Run { first, .. } => Some(first),
-            combinatorics::Feature::Crossing { .. } => None,
-        })
-        .collect();
-    contacts.extend(on_class.iter().map(|&i| ring[i]));
-    // Crossings, each with the direction the hole runs in from it. Paired below, after the θ sort.
+    contacts.extend(features.iter().filter_map(|f| match *f {
+        combinatorics::Feature::Run { first, .. } => Some(ring[first]),
+        combinatorics::Feature::Crossing { .. } => None,
+    }));
+    // Where the trace passes out of the face — crossings, and run ends past which the face holds
+    // neither side — each with the direction the hole runs in from it. Paired below, after the θ
+    // sort.
     let mut cuts: Vec<(NodeId, bool)> = Vec::new();
     for f in features {
         match f {
@@ -982,42 +985,31 @@ fn cycle_on_class(
                 first,
                 len,
                 flanks_differ,
-                ..
+                flank,
             } => {
-                // A run whose flanks differ is a rim the hole continues *through* — it is both an
-                // extent and a parity toggle, and no fixture makes one. Declined and counted
-                // rather than guessed at.
-                if flanks_differ {
+                let Wall::Arc { ccw: nu, .. } = nr.walls[first] else {
                     return Err(DeclineKind::CylHoleFeature);
-                }
+                };
                 // **Which way the arc runs, and so which side the face is on, is the
-                // producer's to say — not the flank's.** The flank (the side the ring's
-                // off-class neighbours sit on) gives the ring's *interior* side — right for a
-                // convex hole and wrong for a wrapping rim, whose highest arc has both
-                // neighbours below it and the face below too. The arc's own direction about the
-                // axis (`Wall::Arc`'s `ccw`, the
-                // producer's convention) settles both: walked with sense `ν`, material lies
-                // along `σ·ν·m̂`, so the face is above the class exactly when that agrees with
-                // the class's stored normal (`up`), and the carved extent is the arc as walked.
-                // Measured: this reading and the flank's are equal on every on-class arc of
-                // today's holes (50 of 50).
+                // producer's to say — not the flank's.** The ring's off-class neighbours may leave
+                // the run to either side, so they do not say which side the face holds. The arc's
+                // own direction about the axis (`Wall::Arc`'s `ccw`, the producer's convention)
+                // does: walked with sense `ν`, material lies along `σ·ν·m̂`, so the face is above
+                // the class exactly when that agrees with the class's stored normal (`up`), and the
+                // carved extent is the arc as walked.
+                let body_above = (sigma * if nu { 1 } else { -1 } > 0) == up;
                 for k in 0..len - 1 {
-                    // **"Both ends on the class" is not "the edge is on the trace."** The walk
-                    // reads a run off its *nodes*; on a plane the edge between two on-line nodes
-                    // follows, and on a **cylinder** it does not — an arc of another section can
-                    // meet this class at both ends without lying on it. Taking that for an arc of
-                    // the trace would state an extent along a curve that is not there. The carrier
-                    // says it directly: an edge on the trace is an arc whose section's plane is that
-                    // class. The check belongs here, per edge, where the answer is used.
+                    // The walk keeps an edge in a run only when it is `On` — here an arc of this
+                    // class's own section — and breaks the run at any other.
                     let edge = (first + k) % n;
-                    let crate::combinatorics::Wall::Arc { ccw: nu, plane, .. } = nr.walls[edge]
-                    else {
+                    let Wall::Arc { ccw, .. } = nr.walls[edge] else {
                         return Err(DeclineKind::CylHoleFeature);
                     };
-                    if plane != wc {
+                    // The run's two ends are read in one sense below, so a run that turned back on
+                    // its section would state them wrong.
+                    if ccw != nu {
                         return Err(DeclineKind::CylHoleFeature);
                     }
-                    let body_above = (sigma * if nu { 1 } else { -1 } > 0) == up;
                     let a = ring[edge];
                     let b = ring[(edge + 1) % n];
                     let arc = if nu { [a, b] } else { [b, a] };
@@ -1027,6 +1019,17 @@ fn cycle_on_class(
                     });
                     #[cfg(test)]
                     arc_probe::record(jd, cyl, def, inner, &out[start..]);
+                }
+                // Past an end where the face holds neither side, the trace is out of the face
+                // and the absent stretch starts there, running away from the run.
+                let frame_sign = jd.planes[wc].frame_sign;
+                let [before, after] =
+                    combinatorics::past_run_ends(body_above, flank, frame_sign, flanks_differ);
+                if before == combinatorics::PastRun::Neither {
+                    cuts.push((ring[first], !nu));
+                }
+                if after == combinatorics::PastRun::Neither {
+                    cuts.push((ring[(first + len - 1) % n], nu));
                 }
             }
             combinatorics::Feature::Crossing { edge, nth, .. } => {
@@ -1047,11 +1050,7 @@ fn cycle_on_class(
                     if c != cyl {
                         return Err(DeclineKind::CylHoleFeature);
                     }
-                    let end = [edge, (edge + 1) % n]
-                        .into_iter()
-                        .find(|k| on_class.contains(k))
-                        .map(|k| ring[k]);
-                    let cut = arc_roots(edge, end)
+                    let cut = arc_roots(edge, None)
                         .and_then(|roots| roots.get(usize::from(nth)).copied())
                         .ok_or(DeclineKind::CylHoleFeature)?;
                     let mu = sigma * if ccw { 1 } else { -1 };
@@ -1100,11 +1099,12 @@ fn cycle_on_class(
     Ok(())
 }
 
-/// **Pair one closed boundary's crossings of the trace into the extents it takes away** — `cuts`
-/// is each crossing with whether the absent side runs counter-clockwise from it. A closed boundary
-/// enters and leaves the trace equally often and the crossings alternate in θ, so sorting them and
-/// pairing each "absent ahead" with the next is the whole assignment — the circle twin of the sweep
-/// along a line ([`sweep_line`]).
+/// **Pair the points where one closed boundary takes the trace out of the face and back into the
+/// extents it takes away** — `cuts` is each such point (a crossing, or the end of a run past which
+/// the face holds neither side) with whether the absent side runs counter-clockwise from it. A
+/// closed boundary leaves the face's side as often as it returns and the points alternate in θ, so
+/// sorting them and pairing each "absent ahead" with the next is the whole assignment — the circle
+/// twin of the sweep along a line ([`sweep_line`]).
 fn carve_between(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,

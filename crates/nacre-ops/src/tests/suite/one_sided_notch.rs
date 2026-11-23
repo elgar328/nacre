@@ -30,7 +30,7 @@ fn off_inward(v: [f64; 2]) -> f64 {
 }
 
 /// The prism over the polygon `pts` from height `z` for `h`.
-fn prism(m: &mut Model, pts: &[[f64; 2]], z: f64, h: f64) -> Handle<Solid> {
+pub(super) fn prism(m: &mut Model, pts: &[[f64; 2]], z: f64, h: f64) -> Handle<Solid> {
     let frame = datum_frame(
         m,
         SketchPlane::from_axes(
@@ -147,7 +147,7 @@ const SPANS: [[f64; 2]; 4] = [[0.5, 1.5], [1.25, 1.75], [2.25, 2.75], [1.5, 3.5]
 
 /// One boolean against its closed-form volume: the number of bodies, or `None` for a result that
 /// touches itself along the line, the one refusal these bodies may answer with.
-fn scored(
+pub(super) fn scored(
     label: &str,
     m: &mut Model,
     op: Op,
@@ -176,7 +176,7 @@ fn scored(
 }
 
 /// The four volumes of `A ∪ B`, `A − B`, `B − A`, `A ∩ B`.
-fn four(a: f64, b: f64, common: f64) -> [f64; 4] {
+pub(super) fn four(a: f64, b: f64, common: f64) -> [f64; 4] {
     [a + b - common, a - common, b - common, common]
 }
 
