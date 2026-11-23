@@ -392,7 +392,7 @@ fn cycle_on_wall(
     cyls: &[crate::planes::WorkingCyl],
     found: &mut Aliases,
 ) -> Result<WallCycle, DeclineKind> {
-    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ThetaPlace, Wall};
+    use crate::combinatorics::{EdgeMeet, Feature, PastRun, RingWalk, ThetaPlace, Wall};
     #[cfg(not(test))]
     let _ = inner;
     let ring = &nr.triples;
@@ -581,20 +581,22 @@ fn cycle_on_wall(
                 } else if edges.iter().any(|&i| held(i)) {
                     return Err(DeclineKind::CylHoleFeature);
                 } else {
-                    // Another plane holds the run: it is that plane's line (`quiet`). Along it the
-                    // face holds one side; past an end it holds both where the off-line neighbour
-                    // lies on the side it does not hold, and neither where it lies on the side it
-                    // holds, so it toggles at each end of the first kind. `flank` is the neighbour
-                    // before the run in the walk's frame, the root face's outward; `body_above` is
-                    // about the class's stored normal, `frame_sign` apart. A tangent class reads
-                    // none of a cycle's stations, only its `quiet` edges and `touches`.
+                    // Another plane holds the run: it is that plane's line (`quiet`). The face
+                    // toggles at each end past which it holds both sides
+                    // ([`combinatorics::past_run_ends`]). A tangent class reads none of a cycle's
+                    // stations, only its `quiet` edges and `touches`.
                     let side = if tangent { 0 } else { run_side(&nodes)? };
                     if !tangent {
                         let (_, body_above) = body_side(jd, cf, def, wc, k, side, start, end)?;
-                        let before_above = flank * jd.planes[wc].frame_sign > 0;
-                        let after_above = before_above != flanks_differ;
-                        for (above, at) in [(before_above, start), (after_above, end)] {
-                            if above != body_above {
+                        let frame_sign = jd.planes[wc].frame_sign;
+                        let past = combinatorics::past_run_ends(
+                            body_above,
+                            flank,
+                            frame_sign,
+                            flanks_differ,
+                        );
+                        for (past, at) in past.into_iter().zip([start, end]) {
+                            if past == PastRun::Both {
                                 read.stations.push((side, LineEvent::Toggle, at));
                             }
                         }

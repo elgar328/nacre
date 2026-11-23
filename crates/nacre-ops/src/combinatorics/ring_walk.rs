@@ -146,6 +146,42 @@ pub(crate) enum EdgeMeet {
     Departs { side: i8, tangent: bool },
 }
 
+/// What a face holds just past one end of a [`Feature::Run`], on the line the run lies along
+/// ([`past_run_ends`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PastRun {
+    /// The face lies on both sides of the line there.
+    Both,
+    /// The face lies on neither side of it.
+    Neither,
+}
+
+/// **What a face holds past each end of a run**, `[before, after]` in the walk's order.
+///
+/// Along a run the face holds one side of the line, `body_above` in the frame of the class's stored
+/// normal. At an end the boundary leaves the line: toward the side the face holds, it closes the
+/// face off and the line goes on outside it; toward the other side, the face opens round the end and
+/// the line goes on inside it. Each end is read alone, so a run has no case of its own for equal or
+/// differing flanks: they are how many ends of each kind it has.
+///
+/// `flank` and `flanks_differ` are the run's ([`Feature::Run`]); `frame_sign` takes the walk's side
+/// to the stored normal's frame.
+pub(crate) fn past_run_ends(
+    body_above: bool,
+    flank: i8,
+    frame_sign: i8,
+    flanks_differ: bool,
+) -> [PastRun; 2] {
+    let before_above = flank * frame_sign > 0;
+    [before_above, before_above != flanks_differ].map(|neighbour_above| {
+        if neighbour_above == body_above {
+            PastRun::Neither
+        } else {
+            PastRun::Both
+        }
+    })
+}
+
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
 /// **One walk for every line road.** `arrangement::trace_transversal_face` clips a face's ring
