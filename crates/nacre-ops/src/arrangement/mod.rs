@@ -124,7 +124,8 @@ enum LineEvent {
     /// of the line (the run's flanks differ): the face is present on one side of the run's end and
     /// not the other.
     GrazeEnd { toggle: bool },
-    /// The boundary crosses the line here.
+    /// The face starts or stops holding both sides of the line here: the boundary crosses it, or
+    /// leaves a run another plane holds to the side the face does not.
     Toggle,
     /// An on-line run starts here; along it the face lies on the `body_above` side of the class.
     GrazeStart { body_above: bool },

@@ -17,7 +17,7 @@ use super::*;
 /// the station one name (`Aliases::record_same_point`), so two names reaching here are refused
 /// (`CoincidentFeatures`) — this is no place to decide it.
 ///
-/// Refused by name, besides: a run's end with no run open, a crossing or a second run inside an
+/// Refused by name, besides: a run's end with no run open, a toggle or a second run inside an
 /// open run (`RunSplit` — the run is not one interval of the boundary), and a face still present
 /// or a run still open past the last station (`OddParity` — a closed boundary leaves the line as
 /// often as it enters).
