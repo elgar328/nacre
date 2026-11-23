@@ -79,15 +79,16 @@ fn the_chart_census_is_running() {
 /// 84**. The chart reads those strips as uniform: the walls crossing them change nothing at the
 /// lateral there.
 ///
-/// Beside it, over **450 alive-ruling observations** — a piece counts once per interval it spans,
-/// so this is **not** a count of pieces: **122 whose wall does change the material** (so the
-/// counter has a population), **61 intervals** carrying at least one, **12 whose every mark is a
-/// graze** — the existence question is not empty either — and **201 intervals closing, 0 not**.
+/// Beside it, over the lib suite's **89,747 alive-ruling observations** — a piece counts once per
+/// interval it spans, so this is **not** a count of pieces: **26,734 whose wall does change the
+/// material** (so the counter has a population), **12,653 intervals** carrying at least one,
+/// **14,487 whose every mark is a graze** — the existence question is not empty either — and
+/// **18,924 intervals closing, 0 not**.
 ///
 /// **Asking whether a ruling's mark list is *empty* would be vacuous**: a `MergedRuling` exists
 /// only because a lateral traced it, so that counter would read `0` because nothing is being looked
 /// at. The signal `face_spans` actually reads is the **kind** (`Graze` = the face stops here), and
-/// that has 12.
+/// that has 14,487.
 #[test]
 fn the_charts_vertical_answers_close() {
     let mut m = Model::new();

@@ -43,9 +43,9 @@ pub(crate) mod rulings {
         /// Intervals whose walk around the circle returns to where it started — `label_cells`'
         /// final verification, stated on the chart and asserted for every paired interval.
         pub(crate) closes: usize,
-        /// Intervals where some wall is crossed an odd number of times (a panel's or a
-        /// chain's wall with one ruling in the interval): the walk has an open end there and
-        /// the closure is not asserted.
+        /// Intervals where a plane that can change the material on the walk has no ruling to say
+        /// so (a wall through the cylinder where no lateral runs, a panel's wall with one ruling
+        /// here): the walk has an open end there and the closure is not asserted.
         pub(crate) unpaired: usize,
         /// Rulings whose every mark is a **graze** — the face stops at the line rather than
         /// crossing it, so whether it reaches the interval is `face_spans`' question and not a

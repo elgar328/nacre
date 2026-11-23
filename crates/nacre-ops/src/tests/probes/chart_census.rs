@@ -407,18 +407,41 @@ pub(crate) fn census(
                 odd_k += 1;
             }
             rulings += n;
-            // **A wall's rulings need not come in pairs.** A band's lateral reaches both rulings of
-            // every through-axis wall, so the walk below crosses each such wall twice; a panel's or
-            // a chain's boundary may run along one ruling of a wall while the other is no face's
-            // edge at all (a quarter boss on a corner). Around such an interval the walk crosses
-            // that wall once and cannot return to its start — not a contradiction, a walk with an
-            // open end — so the closure is asserted only where every wall is crossed an even number
-            // of times, and the rest are counted (`unpaired`).
-            let paired = {
-                let mut walls: Vec<usize> = alive.iter().map(|t| t.wall).collect();
-                walls.sort_unstable();
-                walls.chunk_by(|a, b| a == b).all(|c| c.len() % 2 == 0)
-            };
+            // **The walk closes only over every plane that can change the material on it.** It reads
+            // the rulings this chart holds, and a chart holds a wall's ruling only where a lateral
+            // traced it: a wall through the cylinder where no lateral runs changes the material
+            // at that generator with no ruling to say so, and one with a single ruling here leaves
+            // the walk an open end. So the closure is asserted only where every plane along the
+            // axis within the radius stands here on both of its rulings, every oblique plane is a
+            // line of the chart or has its section wholly below the band's lower line or above its
+            // upper one, and every class has a world statement to ask; the rest are counted
+            // (`unpaired`). A plane across the axis needs no asking: within a face's span it is a
+            // line, so none lies inside a band a ruling crosses.
+            let paired = (0..jd.planes.len()).all(|j| {
+                let Some(w) = jd.world_rat(j) else {
+                    return false;
+                };
+                match nacre_exact::axis_relation(&[w[0], w[1], w[2]], &def.dir()) {
+                    nacre_exact::AxisRelation::Across => true,
+                    nacre_exact::AxisRelation::Oblique => {
+                        use nacre_exact::quad::{SectionOrder, Toward, section_height_order};
+                        let beyond = |line: usize, side| {
+                            jd.world_rat(chart.lines[line]).is_some_and(|l| {
+                                section_height_order(&w, &l, def, None, Toward::At)
+                                    == Some(SectionOrder::Ordered(side))
+                            })
+                        };
+                        chart.lines.contains(&j)
+                            || beyond(pair[0], core::cmp::Ordering::Less)
+                            || beyond(pair[1], core::cmp::Ordering::Greater)
+                    }
+                    nacre_exact::AxisRelation::Along => {
+                        nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2())
+                            != nacre_exact::Orient::Negative
+                            || alive.iter().filter(|t| t.wall == j).count() == 2
+                    }
+                }
+            });
             // Does crossing this wall change the material at the lateral? `Label` is
             // `[A_above, A_below, B_above, B_below]`, so the two sides are the even/odd halves.
             let flip = |l: crate::arrangement::Label| [l[0] != l[1], l[2] != l[3]];
@@ -436,8 +459,8 @@ pub(crate) fn census(
                 // `face_spans` actually reads is the **kind**: a face running through says
                 // `Transversal`, one whose boundary stops at the line says `Graze` and may not
                 // reach the interval at all.
-                // Measured over the lib suite: 12,247 rulings with a mark that is not `Graze`, **1,552
-                // all `Graze`** — not empty.
+                // Measured over the lib suite, per interval a ruling spans: 75,260 with a mark that
+                // is not `Graze`, **14,487 all `Graze`** — not empty.
                 if t.marks
                     .iter()
                     .all(|(_, k)| matches!(k, crate::arrangement::SegKind::Graze { .. }))
@@ -468,7 +491,7 @@ pub(crate) fn census(
                 // side ends its labelling by checking every edge's flip relation and calling a
                 // failure `LabelConflict`; this is that check, stated where no orientation is
                 // needed — walk the circle, XOR what each wall changes, and come back to where you
-                // started. Measured 201 intervals, **none** failing to close.
+                // started.
                 // It is asserted (not merely counted) because a failure would mean the chart's
                 // own labels contradict each other, which is a defect on this side and not a
                 // disagreement with today's road.
