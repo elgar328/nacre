@@ -2022,7 +2022,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
   (`Chart::read_cell`). 사건은 `Chart::events`(`combinatorics::theta_groups`), 닫힌 간선 `[v, v]` 는 한 바퀴로
   읽는다(`ring_floor`·`arc_span`·`Model::derive_edge_curve`). 원을 극점에서 단조 조각으로 자르지 않는다(「가지 말
   것」의 seam 엣지 행).
-- **호의 원판 쪽 반간선은 `axis_up · frame_sign` 으로 유도하고, 셀의 유리 코너가 감시한다**(`disk_side_probe`) —
+- **호의 원판 쪽 반간선은 `axis_up · frame_sign` 으로 유도하고, 호 바로 옆의 두 점이 감시한다**(`disk_side_probe`) —
   `arrangement::emit` 의 호 라벨 주석.
 - 옆면의 패리티는 모든 루프에 대한 `loop_parity` 이고, 광선과 옆면의 교차는 근마다 면에게 묻는다
   (`lateral_face_crossings`; 면의 각을 읽지 않는 갈래는 todo 「광선이 원통 위 선으로 옆면을 스치면 면의 각을 읽지
@@ -2811,3 +2811,4 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 하지 말 것 | 이유 | 커밋 |
 |---|---|---|
 | OCCT 의 STEP 읽기 수리를 통째로 끄고(`FromSTEP.exec.op` 비우기) 방향을 검사하기 | 곡면 위 면이 늘 무효로 읽힌다 — 파일에 PCURVE 가 없다(원통 r=2.5·h=7: 부피 137.445 → 68.72, valid 0; seam 을 넣은 원통도 같다). seam 없는 옆면은 그 위에 수리의 `FixMissingSeam` 에도 기댄다. 그래서 평면 형상만 검사할 수 있었다. 방향 수리 셋만 끄면 같은 카나리(면·모든 면·간선·경계·void)를 평면과 곡면 모두에서 잡고, 정상 형상은 곡면까지 유효하다 | — |
+| 일부만 그려진 원에서 셀의 먼 꼭짓점으로 원의 안팎을 읽기 | 닫힌 곡선만 평면을 가른다 — 셀이 호의 끝을 돌아 반대쪽까지 이어져 먼 꼭짓점이 다른 쪽을 말한다. 불리언 스윕의 경보 138건이 모두 이 꼴이고, 호 30,926개의 라벨은 CSG 기준과 전부 일치했다. 호 중점 바로 옆 두 점을 호의 두 윤곽에 묻는다 — `disk_side_probe::witness` | — |

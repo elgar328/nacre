@@ -1115,7 +1115,7 @@ fn a_closed_arc_tangent_to_the_line_touches_it_once() {
     });
 }
 
-/// **The disk-side rule is derived, and the cells watch it** — the counterpart of the assertions in
+/// **The disk-side rule is derived, and the figure beside the arc watches it** — the counterpart of the assertions in
 /// `arrangement::disk_side_probe`, which fire where the fact is made and so see every chart in the
 /// binary. Those say the geometry never contradicts the rule; what a test adds is the other half:
 /// that the population is large, that the geometry actually speaks for most of it, and that the
@@ -1125,7 +1125,7 @@ fn a_closed_arc_tangent_to_the_line_touches_it_once() {
 /// Read as floors, not literals: the shape of the population is held, not its size, which moves
 /// with the boss corpus.
 #[test]
-fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
+fn the_disk_side_rule_is_derived_and_the_figure_beside_the_arc_watches_it() {
     // **The test builds the population it measures**, and owns it: the very row this needs is a
     // `Reversed` root face — the **notch** a half boss leaves, whose ceiling class carries
     // `frame_sign = -1` — and a proportion read off the binary's rows would be diluted by
@@ -1149,19 +1149,16 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
         "the fixture produced no arc labels at all"
     );
     let checked = rows.iter().filter(|r| r.checked).count();
-    let both = rows.iter().filter(|r| r.both_spoke).count();
+    let both = rows.iter().filter(|r| r.both_bounded).count();
     let frame_neg = rows.iter().filter(|r| r.frame_negative).count();
     // The geometry watches most of the population, so the agreement assertion is not a formality.
     assert!(
         checked * 2 > rows.len(),
-        "the cells named the side for only {checked} of {} arcs",
+        "the figure named the side for only {checked} of {} arcs",
         rows.len()
     );
-    // An arc whose two cells both name a side is where "never the same side" is really tested.
-    assert!(
-        both > 0,
-        "no arc had a witness on both sides — that premise check never ran"
-    );
+    // Two bounded cells each on their own side read no area, the other form of the figure.
+    assert!(both > 0, "no arc lay between two bounded cells");
     // The factor must decide some arcs, or this corpus cannot tell the rule from one without
     // it.
     assert!(

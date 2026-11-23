@@ -471,8 +471,8 @@ fn ruling_line_turn(
 /// | the canonical→stored turn | use [`Judge::world_rat`] | **locked** — one class in the corpus
 /// disagrees, and that class's walk merges four cells into one 8-half-edge orbit. The contour
 /// count passes it; `arrangement::walk_cells`' Euler condition is what refuses it |
-/// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
-/// | `frame_sign` | drop it | **locked** — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
+/// | `axis_up` | drop it | **locked** — the unmoved corpus already: 138 lib tests turn red, on the walk's own refusals (`UnorderedEdges`, `RingOrientation`) or at the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the figure beside the arc disagree"*) |
+/// | `frame_sign` | drop it | **locked** — the commuting oracle's always-on subset turns red on 126 of 432 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), 48 at the same watcher and 78 as `RingOrientation` |
 ///
 /// The last two are derived, not guessed (the algebra is above). Both rows read
 /// «unexercised — `+1`/`true` on every class reached» without a fixture made for them: a face

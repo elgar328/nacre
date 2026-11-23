@@ -141,11 +141,10 @@ pub(super) fn emit_faces(
     // can be. Over the lib suite the factor decides **112** of some 4,300 arcs, and without it
     // every one of them is wrong silently — the only consumer is the chart's `read_cell`.
     //
-    // **The geometry watches it** ([`disk_side_probe`]): where a cell's rational corners agree on a
-    // side of the circle — and the arc's two cells do not claim the same one — that side must agree
-    // with this rule; a convex arc, whose cells' corners can all fall outside, goes unchecked.
-    // Measured 3,260 of 3,260 on the census corpus. That check is what makes this a *derivation*
-    // rather than a third guess.
+    // **The geometry watches it** ([`disk_side_probe`]): the two points just off the arc's middle,
+    // asked of the arc's two contours, say which cell is on the disk side without reading a sign of
+    // the walk or the frame (`disk_side_probe::witness`). That check is what makes this a
+    // *derivation* rather than a third guess.
     // Arcs are split only on a class with a world statement — `split_circles` reads the class's
     // world coefficients before it cuts a circle (`circle_crossings`) — so every arc below has one.
     let arc_labels = edges
@@ -165,14 +164,7 @@ pub(super) fn emit_faces(
             let he = even + usize::from(!up);
             #[cfg(test)]
             disk_side_probe::record(
-                cells
-                    .iter()
-                    .position(|q| q.half_edges.contains(&even))
-                    .and_then(|cx| cell_side(jd, edges, &cells[cx], def)),
-                cells
-                    .iter()
-                    .position(|q| q.half_edges.contains(&(even + 1)))
-                    .and_then(|cx| cell_side(jd, edges, &cells[cx], def)),
+                disk_side_probe::witness(jd, edges, cells, even, wc),
                 he == even,
                 jd.planes[wc].frame_sign,
             );
