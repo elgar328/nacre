@@ -1917,7 +1917,7 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 - **이름의 같음은 수렴한 표에서만 묻는다.** 배열이 정점 열쇠로 쓰는 이름은 모두 라운드 안에서 태어난다(원·룰링
   분할 `split_class_edges` 도 라운드의 걸음). 정확히 증명된 동점은 기록하고(`Aliases::record_same_point`), 거절하는
   것은 같음이 아닌 것뿐이다 — 한 쌍의 두 근, 두 원통의 곡면 위의 점(`Aliases::join_points`), 한 간선의 두 끝, 한
-  경계가 한 점을 두 번 자름(`cyl_trace` 의 `CylHoleFeature`). 그 거절도 표가 멈춘 라운드에서만 읽힌다(`fixed_point`).
+  경계가 한 점을 두 번 자름(`cyl_trace` 의 `CylHoleFeature`). 그 거절도 표가 멈춘 라운드에서 읽힌다 — 표를 합칠 때(`absorb`)의 두 원통 거절만 바로 끝낸다(`fixed_point`).
 - **핀은 (이름, 선)의 함수다**(`combinatorics::pin_for`; 관통 이름은 제 짝의 두 평면이 다 품는 선에서만
   위치자다 — `names_the_line`). 피연산자의 관통 코너는 방문이 아니라 제 정의로 이름 짓는다
   (`pierce_name_from_def`). 대표 이름이 다른 쌍의 관통 이름인 점(공유 룰링 위)은 세 평면의 교점이라 유리수이고,

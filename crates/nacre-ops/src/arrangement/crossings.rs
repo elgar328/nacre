@@ -1286,9 +1286,12 @@ fn cut_rulings(
 ///
 /// The splits above cut both at every point the other crosses, and pass A cut each at the other's
 /// ends and both where a lateral's boundary meets a tangent line
-/// ([`cut_lines_at_their_vertices`]), so a piece either matches a ruling piece end for end or
-/// shares no stretch with one — but for a ruling piece another wall's segment cut: two walls on one
-/// line do not cut each other's segments there. No stretch shared is a segment off the
+/// ([`cut_lines_at_their_vertices`]). With the line's walls one wall ([`Aliases::canon_wall`]) the
+/// overlay has cut their segments at each other's ends, so a piece either matches a ruling piece
+/// end for end or shares no stretch with one. Two walls the table holds apart can share a stretch
+/// unmatched: a ruling piece is cut at both walls' ends, neither wall's segment at the other's (on
+/// the settled table no such pair in the suite; the census, ignored sweep and kit have no two
+/// recorded walls on one line). No stretch shared is a segment off the
 /// lateral — past its cap, or where the ruling is silent because the line is the lateral face's
 /// own edge (`cycle_on_wall`'s `quiet` runs: there the plane vocabulary states it, the other half
 /// of the one rule) — and it stays a segment. A stretch shared without a match is a shape the

@@ -182,11 +182,11 @@ impl From<TwoCylinders> for RejectReason {
 ///
 /// The table has **two sources**. The operands seed it before any class is traced
 /// ([`seed_from_operands`] — every vertex with four or more incident plane classes, which the
-/// operand's own topology knows), and the tracer adds what it discovers (`{wc} ∪ t` at a run
-/// vertex, a wall family's line). Among plane names the representative is
-/// [`combinatorics::canonical_triple`]'s answer, which is also the name the operand's ring
-/// already gave the point; with four planes through a point every record is the whole set, so the
-/// two sources land in one component.
+/// operand's own topology knows), and each round adds what its traces and splits prove
+/// (`{wc} ∪ t` at a run vertex, a tie on a line, a wall family's line). Among plane names the
+/// representative is [`combinatorics::canonical_triple`]'s answer, which is also the name the
+/// operand's ring already gave the point; with four planes through a point every record is the
+/// whole set, so the two sources land in one component.
 ///
 /// A point of the table need not be a plane name at all. The seed also learns every
 /// **pierce corner** an operand carries that some further class passes through

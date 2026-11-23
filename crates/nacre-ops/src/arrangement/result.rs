@@ -560,9 +560,10 @@ pub(super) fn settle_rounds(
 /// in the same round. A refusal carries no table, so only what succeeded is absorbed — a record can
 /// fail half-made ([`Aliases::record_same_point`] joins the names before the concurrency that
 /// refuses a point on two cylinders), and absorbing the half would grow the table, close the record
-/// behind `one_point` next round, and lose the refusal. A class loses only what its own refused
-/// steps had learnt, which it learns again. `absorb`'s own refusal ends the rounds at once: two
-/// cylinders' components joined is a fact about the geometry that no round undoes.
+/// behind `one_point` next round, and lose the refusal. A class loses what its own refused steps
+/// had learnt; while the refusal stands it learns it again only to lose it, so what only a
+/// refusing class can teach never reaches the table. `absorb`'s own refusal ends the rounds at
+/// once: two cylinders' components joined is a fact about the geometry that no round undoes.
 fn fixed_point<S>(
     mut aliases: Aliases,
     absorb: impl Fn(&mut Aliases, &Aliases) -> Result<(), BoolError>,

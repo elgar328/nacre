@@ -162,7 +162,7 @@ pub(super) fn direction_partition(
 /// two ends at one place and is refused (`CoincidentNodes`). A clean arrangement — no same-wall
 /// overlap — has exactly one segment covering each sub-interval, so the output is identical to the
 /// naive per-segment split. No re-merge is needed: each `(wall, sub-interval)` is emitted once with
-/// its full union, so no two outputs can coincide.
+/// its full union, so no two outputs on one wall coincide.
 ///
 /// `Err` (honest reject) when an end or a crossing cannot be located on its line or ordered there
 /// (named by [`combinatorics::undecided_reason`] — the gate's or the arithmetic's; locating a
