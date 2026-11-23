@@ -156,13 +156,13 @@ fn an_arcs_reach_is_its_own_and_not_its_complements() {
 /// Two faces sharing an edge list the same vertices along it, so a pad that covers part of a
 /// face leaves the neighbouring walls with points strung along one line. Those points cannot
 /// be removed — that would leave a T-vertex — so the population is every partially-covering
-/// pad, and `outer_tri` has to survive it.
+/// pad, and the winding has to survive it.
 ///
 /// **Turned coordinates are the whole difficulty.** Axis-aligned collinear points cancel to
 /// exactly `0.0`, which a "first corner that is not flat" rule skips correctly. Turned, the
 /// cancellation leaves ~2⁻⁵³ — not zero, so that rule takes it, and the direction that comes
-/// back is rounding: measured 90° off its own plane, which is `orient_sign`, the winding of the
-/// witness triangle every predicate borrows, and which side of the plane holds material.
+/// back is rounding: measured 90° off its own plane. The loop's area vector ([`outer_area`]) has
+/// no corner to take.
 ///
 /// Asserted on `collect_planes`' own output rather than through `debug_assert`, so it is a
 /// measurement in release too. `tests/probes/collinear_loop_points.rs` sweeps the same proposition
@@ -234,34 +234,31 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
         "no face carries a split edge — the fixture stopped reaching the population"
     );
     // The lock is on the *winding* side: `n_out` is read off the stored orientation, so
-    // `plane.normal()·n_out` is ±1 by construction and asserts nothing. What the widest-corner rule
-    // still owns is the triangle — with `outer_tri` reading the first non-flat corner the cross
-    // below would be rounding noise, failing this in release.
+    // `plane.normal()·n_out` is ±1 by construction and asserts nothing; the loop is the other
+    // source of «which way is out».
     for row in &faces {
         let f = row.plane();
-        let (tri, _) = outer_tri(&m, m.face(f.face.expect("a model face"))).expect("a corner");
         let n_out = f.plane.normal() * f64::from(f.orient_sign);
-        let cos = (tri[1] - tri[0])
-            .cross(tri[2] - tri[0])
+        let cos = outer_area(&m, m.face(f.face.expect("a model face")))
             .normalize()
-            .expect("a widest corner spans area")
+            .expect("a face has area")
             .dot(n_out);
         assert!(
             cos > 0.5,
-            "a face's outer triangle is {cos:.3} of the way to perpendicular against its \
-                 stated outward"
+            "a face's outer loop is {cos:.3} of the way to perpendicular against its stated \
+             outward"
         );
     }
 }
 
-/// **A pinched cap's outer triangle faces out.** The wedge fused onto the cylinder past its top
+/// **A pinched cap's outer loop winds out.** The wedge fused onto the cylinder past its top
 /// leaves the top cap one loop: the closed rim from the groove's tip back to itself, then the
 /// groove's three sides ([`crate::fixtures::wedge_on_a_rim`]). Its chords alone are the groove's
 /// triangle, wound against the cap; only the rim's whole turn (`Δθ = τ` for a closed edge) turns
-/// the Newell sum the cap's way. Read with the closed edge's ends instead (`Δθ = 0`), the
-/// triangle comes back facing in — what a later boolean's plane table would be built on.
+/// the Newell sum the cap's way. Read with the closed edge's ends instead (`Δθ = 0`), the loop
+/// comes back winding in.
 #[test]
-fn a_pinched_caps_outer_triangle_faces_out() {
+fn a_pinched_caps_outer_loop_winds_out() {
     let mut m = Model::new();
     let s =
         crate::fixtures::wedge_on_a_rim(&mut m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
@@ -285,16 +282,11 @@ fn a_pinched_caps_outer_triangle_faces_out() {
         panic!("a cap is planar");
     };
     let out = plane.normal() * f64::from(face.orientation.sign());
-    let (tri, _) = outer_tri(&m, face).expect("a corner");
-    let cos = (tri[1] - tri[0])
-        .cross(tri[2] - tri[0])
+    let cos = outer_area(&m, face)
         .normalize()
-        .expect("a corner spans area")
+        .expect("a cap has area")
         .dot(out);
-    assert!(
-        cos > 0.5,
-        "the pinched cap's outer triangle faces {cos:.3} of out"
-    );
+    assert!(cos > 0.5, "the pinched cap's loop winds {cos:.3} of out");
 }
 
 /// **A judgement's headroom is relative to its model, not carved out of a shared ceiling.**
@@ -517,4 +509,78 @@ fn a_proved_side_is_the_judges_side() {
         }
     }
     assert_eq!(asked, 32);
+}
+
+/// **A half-disk whose chord carries vertices has a winding.** The rod is notched so the plane
+/// `y = 0` holds the notch's walls, then cut by a slanted prism standing on that plane: the prism's
+/// roof leaves a half-ellipse whose chord holds four collinear vertices at coordinates `f64` rounds,
+/// so its corners span only rounding. The loop's area vector is its arc's.
+#[test]
+fn a_half_disk_whose_chord_carries_vertices_reads_its_winding() {
+    use nacre_math::{Point2, Point3, Vector3};
+    let mut m = Model::new();
+    let rod = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        1.0,
+        5.0,
+    )
+    .solid;
+    let notch = crate::fixtures::cuboid(&mut m, [-0.25, -3.0, 2.0], [0.5, 0.0, 3.0]);
+    let a = crate::boolean(&mut m, crate::BoolKind::Cut, rod, notch).expect("the notch")[0];
+    let pts =
+        [(2.0, -1.5), (1.0, 1.5), (2.5, 1.5), (3.0, -1.5)].map(|(u, v)| Point2::from_array([u, v]));
+    let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a polygon");
+    let profile = crate::from_paths(vec![ring]).expect("a profile").remove(0);
+    let frame = crate::SketchFrame::world(&m, nacre_exact::Axis::Y);
+    let crate::OpOutput::Extrude { solid: roof, .. } = crate::apply(
+        &mut m,
+        &crate::Operation::Extrude {
+            frame,
+            profile,
+            dist: 6.0,
+        },
+    )
+    .expect("the prism") else {
+        unreachable!()
+    };
+    let body = crate::boolean(&mut m, crate::BoolKind::Cut, a, roof).expect("the roof")[0];
+    let faces = m.shell(m.solid(body).outer).faces.clone();
+    let mut corners_lie = false;
+    for &fh in &faces {
+        let face = m.face(fh);
+        let Some(plane) = m.surface_cache(face.surface).plane() else {
+            continue;
+        };
+        let out = plane.normal() * f64::from(face.orientation.sign());
+        let wound = outer_area(&m, face).normalize().expect("a face has area");
+        assert!(wound.dot(out) > 0.5, "{fh:?} winds against its outward");
+        // The widest corner of the loop, which is all a triangle of its points could offer.
+        let pts: Vec<_> = face
+            .outer
+            .half_edges
+            .iter()
+            .map(|&he| m.vertex_point(m.he_start(he)))
+            .collect();
+        let widest = (0..pts.len())
+            .map(|i| {
+                let (a, b, c) = (pts[i], pts[(i + 1) % pts.len()], pts[(i + 2) % pts.len()]);
+                (b - a).cross(c - a)
+            })
+            .max_by(|p, q| p.norm().total_cmp(&q.norm()));
+        if pts.len() >= 3 && widest.is_some_and(|v| v.norm() > 0.0) {
+            corners_lie |= widest
+                .and_then(|v| v.normalize())
+                .is_none_or(|w| w.dot(out).abs() <= 0.5);
+        }
+    }
+    assert!(
+        corners_lie,
+        "no face's corners span only rounding: the fixture has moved"
+    );
+    // The table asserts the winding of every operand face, in debug, before it answers.
+    let far = crate::fixtures::cuboid(&mut m, [5.0; 3], [6.0; 3]);
+    let _ = crate::boolean(&mut m, crate::BoolKind::Cut, body, far);
 }

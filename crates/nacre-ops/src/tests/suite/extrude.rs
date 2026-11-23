@@ -74,7 +74,7 @@ fn concave_l_profile_is_valid() {
 /// on every face of every solid.
 ///
 /// `n_out` reads the second source (the stored orientation), so what this pins is
-/// the first: the witness triangle `outer_tri` picks must span the ring's winding.
+/// the first: the loop's area vector (`outer_area`) must run with the outward.
 /// The turn at the first non-collinear corner is the winding **only when that corner
 /// is convex**, and the four fixtures below would pass that reading by accident —
 /// none starts its cap loop one vertex before a reflex corner. `rotated_l_prism`
@@ -132,17 +132,14 @@ fn outward_normals_agree_with_their_orientation() {
             let crate::planes::FaceRow::Plane(pi) = row else {
                 continue;
             };
-            let (tri, _) = crate::planes::outer_tri(m, m.face(pi.face.expect("a model face")))
-                .expect("a corner");
             let n_out = pi.plane.normal() * f64::from(pi.orient_sign);
-            let cos = (tri[1] - tri[0])
-                .cross(tri[2] - tri[0])
+            let cos = crate::planes::outer_area(m, m.face(pi.face.expect("a model face")))
                 .normalize()
-                .expect("a widest corner spans area")
+                .expect("a face has area")
                 .dot(n_out);
             assert!(
                 cos > 0.5,
-                "{name}: the witness triangle does not span its face's stated outward"
+                "{name}: the loop does not wind about its face's stated outward"
             );
         }
     }

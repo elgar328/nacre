@@ -438,70 +438,36 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
         .collect()
 }
 
-/// Three **well-spread** points of a face's outer loop — with the **vertex handle** each
-/// point came from — ordered so their right-hand normal points **out** of the solid: the way the
-/// whole loop winds, its arcs read with its chords (see the fold below).
-/// No production consumer reads the handles (the toleranced predicates take their
-/// witnesses from the surface truth, `tri_pt3`); every caller keeps the coordinates only, and
-/// the `None` of a loop that spreads no three points is answered by the caller — the plane's
-/// truth points for a circle-bounded face (`collect_planes`).
+/// **Twice the area vector of a face's outer loop** — which way the loop winds about the plane it
+/// lies in, the one reading of that here.
 ///
-/// "Well spread" rather than "non-collinear" is the whole contract: the triangle is what states
-/// the face's area — `collect_planes` refuses a loop that spreads none (`DegenerateFace`) and
-/// checks the face's winding against it — so a nearly-flat one is not a lesser answer but a wrong
-/// one. See the corner choice below.
-pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
-    let verts: Vec<Handle<Vertex>> = face
+/// A corner cannot say. At a *reflex* corner the local turn opposes the loop's winding; three
+/// consecutive points on one straight line span only rounding, in a direction that is not the
+/// plane's (measured 90° off it); and a half-disk's chord spans nothing however many vertices it
+/// carries. The Newell sum has no single corner to be fooled by.
+///
+/// **And its arcs have to be read, or an arc fools it the way a corner fools a turn.** The chord
+/// polygon alone winds backwards when an arc dominates the loop — a 270° sector's cap is three
+/// points whose triangle turns the other way round, the region between the chords and the long arc
+/// lying on the chords' other side. So every circle half-edge adds its **circular segment**'s area
+/// vector: `Ellipse::segment_area` about its plane's normal, `Δθ` from the edge's stored `[from, to]`
+/// order (counter-clockwise about the axis, the arc convention; `Ellipse::angle_of` is the one
+/// spelling of the angle), signed by which way this loop walks it. The numbers are `nacre-geom`'s;
+/// the fold is the one `nacre-validate`'s winding witness and `nacre-props`' integrals make on their
+/// own, independently of this kernel — with their premise: an arc near zero length whose angle
+/// difference rounds below zero reads as nearly a whole turn.
+pub(crate) fn outer_area(model: &Model, face: &Face) -> Vector3 {
+    let pts: Vec<Point3> = face
         .outer
         .half_edges
         .iter()
-        .map(|&he| he_start(model, he))
+        .map(|&he| model.vertex_point(he_start(model, he)))
         .collect();
-    let pts: Vec<Point3> = verts.iter().map(|&vh| model.vertex_point(vh)).collect();
     let n = pts.len();
-    // **The widest corner, not the first non-flat one.** A loop carries vertices that do not
-    // turn: two faces sharing an edge must list the same vertices along it, so a pad that splits a
-    // neighbour's face leaves this loop with points strung along one straight line. Three of those
-    // span **exactly** zero area — but only in exact arithmetic. On rotated coordinates the f64
-    // cancellation leaves ~2⁻⁵³ instead, which passes a `> 0.0` gate and `normalize`, and the
-    // direction that comes back is the rounding, not the plane: measured 90° off its own surface.
-    //
-    // **`0.0` is not a threshold in floating point** — "not zero" is not "well conditioned". The
-    // sibling that answers this same question already says so: `construct::Swept::cap_points` takes "the
-    // widest turn ... so a nearly-collinear pair is not chosen when a better one exists", and
-    // records there why the f64 realization is the right instrument for a *selection* (the points
-    // kept are exact; only "which three are spread out" is being asked, and answering it in
-    // rationals would risk an `i128` overflow for nothing).
-    //
-    // `None` when every corner is degenerate, exactly as before — that is `DegenerateFace`.
-    let (i, best) = (0..n).fold((0usize, 0.0f64), |acc, i| {
-        let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
-        let spread = (b - a).cross(c - a).norm();
-        if spread > acc.1 { (i, spread) } else { acc }
-    });
-    if best <= 0.0 {
-        return None;
-    }
-    // The turn at one corner does not know which way the ring winds. Every b-rep loop is
-    // CCW about its face's outward normal, but at a *reflex* corner the local turn
-    // opposes the global winding, so three consecutive points can hand back an inward
-    // normal. The Newell sum has no single corner to be fooled by.
-    //
-    // **And its arcs have to be read, or an arc fools it the way a corner fools a turn.** The
-    // chord polygon alone winds backwards when an arc dominates the loop — a 270° sector's cap is
-    // three points whose triangle turns the other way round, the region between the chords and the
-    // long arc lying on the chords' other side. So every circle half-edge adds its **circular
-    // segment**'s area vector: `Ellipse::segment_area` about its plane's normal, `Δθ` from the
-    // edge's stored `[from, to]` order (counter-clockwise about the axis, the arc convention;
-    // `Ellipse::angle_of` is the one spelling of the angle), signed by which way this loop walks it.
-    // The numbers are `nacre-geom`'s; the fold is the one `nacre-validate`'s winding witness and
-    // `nacre-props`' integrals make on their own, independently of this kernel — with their
-    // premise: an arc near zero length whose angle difference rounds below zero reads as nearly a
-    // whole turn.
     let chords = (0..n).fold(Vector3::zero(), |acc, i| {
         acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
     });
-    let newell = face.outer.half_edges.iter().fold(chords, |acc, he| {
+    face.outer.half_edges.iter().fold(chords, |acc, he| {
         let nacre_geom::Curve::Ellipse(c) = model.edge_curve(he.edge) else {
             return acc;
         };
@@ -516,14 +482,24 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
         let sign = if he.forward { 1.0 } else { -1.0 };
         // The Newell fold is twice the area vector; the segment is scaled to match.
         acc + c.plane_normal() * (2.0 * sign * c.segment_area(dt))
-    });
-    let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
-    let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
-    // Same b/c swap for coords and handles, so the k-th point and the k-th handle stay aligned.
-    Some(if (b - a).cross(c - a).dot(newell) < 0.0 {
-        ([a, c, b], [verts[i0], verts[i2], verts[i1]])
-    } else {
-        ([a, b, c], [verts[i0], verts[i1], verts[i2]])
+    })
+}
+
+/// **Whether any three consecutive points of a face's outer loop turn** in `f64` — the gate
+/// `collect_planes` reads before it refuses a loop as `DegenerateFace`. Rounding can make three
+/// points on one line pass it, so nothing reads a direction from it: the winding is
+/// [`outer_area`]'s.
+pub(crate) fn outer_loop_turns(model: &Model, face: &Face) -> bool {
+    let pts: Vec<Point3> = face
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| model.vertex_point(he_start(model, he)))
+        .collect();
+    let n = pts.len();
+    (0..n).any(|i| {
+        let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+        (b - a).cross(c - a).norm() > 0.0
     })
 }
 

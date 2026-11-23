@@ -1,6 +1,6 @@
 use super::*;
-/// The supporting planes of a solid's outer shell. `Rejected` if any face is
-/// non-planar or lacks three non-collinear loop points.
+/// One row per face of a solid's outer shell: a plane's or a cylinder's. `DegenerateFace` where an
+/// outer loop's points never turn and no curved edge on a stated plane gives it area.
 pub(crate) fn collect_planes(
     model: &Model,
     solid: Handle<Solid>,
@@ -62,67 +62,28 @@ pub(crate) fn collect_planes(
             // not as the answer.
             let orient_sign = face.orientation.sign();
             let n_out = plane.normal() * f64::from(orient_sign);
-            // **Which way this face's outward runs against its plane's own points** — the truth
-            // says, exactly: the plane faces `sense` against its points' turn, and the face faces
-            // `orientation` against the plane. So any triangle of the truth's own points, in the
-            // truth's own order, turns toward the outward exactly when this product is `+1` — and
-            // a motion carries the points and the plane's direction alike (a reflection reverses
-            // both), so the product holds through it. A witness that *is* those points is wound by
-            // it; none is wound by a cross of rounded coordinates against the cache.
-            let facing = match model.surface(face.surface) {
-                nacre_topo::Surface::Plane { sense, .. } => sense.sign() * orient_sign,
-                nacre_topo::Surface::Cylinder { .. } => {
-                    unreachable!("a plane cache cannot carry a cylinder truth")
-                }
-            };
-            let tri = match outer_tri(model, face) {
-                Some((tri, _)) => tri,
-                // **A face bounded by a circle-curve edge has area whatever its vertices do.**
-                // A disk cap's outer loop is one circle edge with a single seam vertex; a
-                // half-disk's is an arc and its chord with two. Neither spreads three loop
-                // points, and neither is degenerate — the plane's own truth points state the
-                // triangle instead (the cap's construction points, realized), wound to this
-                // face's stated outward like every other `tri`. A loop with no curved edge that
-                // spreads nothing is still `DegenerateFace`: it bounds no area.
-                None if face.outer.half_edges.iter().any(|he| {
-                    matches!(model.edge_curve(he.edge), nacre_geom::Curve::Ellipse(_))
-                }) =>
-                {
-                    let nacre_topo::Surface::Plane {
-                        points: nacre_topo::PlanePoints::Known(pts),
-                        motion: disk_motion,
+            // **A face bounded by a circle-curve edge has area whatever its vertices do.** A disk
+            // cap's outer loop is one circle edge with a single seam vertex; a half-disk's is an arc
+            // and its chord with two. Neither spreads three loop points, and neither is degenerate.
+            // A loop with no curved edge that spreads nothing is `DegenerateFace`: it bounds no area.
+            // So is a curved loop on a plane whose points are not stated, though the area vector
+            // needs none; no input reaches that refusal over the suite, the census and the sweeps.
+            if !outer_loop_turns(model, face) {
+                let curved =
+                    face.outer.half_edges.iter().any(|he| {
+                        matches!(model.edge_curve(he.edge), nacre_geom::Curve::Ellipse(_))
+                    });
+                let stated = matches!(
+                    model.surface(face.surface),
+                    nacre_topo::Surface::Plane {
+                        points: nacre_topo::PlanePoints::Known(_),
                         ..
-                    } = model.surface(face.surface)
-                    else {
-                        return Err(reject(RejectReason::DegenerateFace));
-                    };
-                    // The points are stated in the frame the plane's motion names — a disk cap
-                    // on a slanted wall's frame is in that frame's coordinates. Realized through
-                    // the motion, as every other witness here is, before being wound to the
-                    // face's *world* outward; naive f64 of the frame-stated points would compare a
-                    // frame triangle against a world normal and assert on the first such face
-                    // (a circle padded on a slanted wall).
-                    let mut tri = match disk_motion {
-                        None => pts.map(|p| Point3::from_array(p.map(|x| x.to_f64()))),
-                        Some(m) => {
-                            let chain = crate::rotated_vertex::motion_chain(model, *m)
-                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                            let mut out = [Point3::origin(); 3];
-                            for (o, p) in out.iter_mut().zip(pts.iter()) {
-                                let q = crate::rotated_vertex::replay(WitnessPoint::at(*p), &chain)
-                                    .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                *o = Point3::from_array(q.coord_approx());
-                            }
-                            out
-                        }
-                    };
-                    if facing < 0 {
-                        tri.swap(1, 2);
                     }
-                    tri
+                );
+                if !(curved && stated) {
+                    return Err(reject(RejectReason::DegenerateFace));
                 }
-                None => return Err(reject(RejectReason::DegenerateFace)),
-            };
+            }
             // **The plane's exact definition comes from the surface, not from the vertices.**
             //
             // Both are decided per surface, not per *solid* ("is this solid rotated?"): a
@@ -170,21 +131,14 @@ pub(crate) fn collect_planes(
                     unreachable!("a plane cache cannot carry a cylinder truth")
                 }
             };
-            // The loop's winding, cross-checked against the flag it stated. `validate`
-            // pins this same invariant as `FaceMisoriented`; here it runs at every
-            // boolean in debug, on its own reading — that separate check is why it
-            // exists. A failure is a producer bug — a lying flag or a mis-wound loop —
-            // never a conditioning artifact (`outer_tri` picks the widest corner) and
-            // never an arc: `outer_tri` winds by the loop's chords and arcs together, as
-            // `validate` does, from the one spelling of the numbers in `nacre-geom`.
-            //
-            // This assertion needs three points, so it says nothing about a **disk**
-            // face (one closed rim) or about a face's **holes**. Those belong to the
-            // same invariant and `validate` owns them — it reads a rim's circle and
-            // every inner loop.
+            // The loop's winding, cross-checked against the flag it stated. `validate` pins this
+            // same invariant as `FaceMisoriented`; here it runs at every boolean in debug, on its
+            // own reading — that separate check is why it exists. A failure is a producer bug — a
+            // lying flag or a mis-wound loop — never a conditioning artifact: it reads the whole
+            // loop's area vector, whose arcs carry a half-disk whose chord spans none. A face's
+            // holes belong to the same invariant and `validate` owns them.
             debug_assert!(
-                (tri[1] - tri[0])
-                    .cross(tri[2] - tri[0])
+                outer_area(model, face)
                     .normalize()
                     .is_some_and(|w| w.dot(n_out) > 0.5),
                 "a face's outer winding must agree with its stated orientation: face {fh:?} on {:?}, {} outer half-edges, {} inner loops, orientation {:?}",

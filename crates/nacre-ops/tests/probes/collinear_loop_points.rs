@@ -188,7 +188,7 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
         }
     }
 
-    // With `outer_tri` taking the first corner whose triangle is not exactly flat, 32 cells would
+    // With the winding read off the first corner whose triangle is not exactly flat, 32 cells would
     // build and **14 of them would come back with a volume a pad cannot produce** —
     // `Z/5deg/inset0.5` would go 5.0 → 3.21, a boss that eats 1.79 of material, with `validate`
     // clean (measured). That is what this file is for, and it is why the volume bound above is not

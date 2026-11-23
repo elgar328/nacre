@@ -1222,10 +1222,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
         .iter()
         .filter(|&&f| {
             let face = m.face(f);
-            let Some((tri, _)) = crate::planes::outer_tri(&m, face) else {
-                return false;
-            };
-            let Some(n_out) = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize() else {
+            let Some(n_out) = crate::planes::outer_area(&m, face).normalize() else {
                 return false;
             };
             let Some(pl) = m.surface_cache(face.surface).plane() else {

@@ -305,7 +305,7 @@ impl Model {
     ///   the whole circle either way. Every consumer reads it the same way: tessellation
     ///   samples from `θ(v0)` round to `θ(v1)` (`sample_curve`), and the three that add each arc's circular segment to a chord polygon take Δθ from the
     ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
-    ///   `outer_tri`. **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
+    ///   `outer_area`. **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
     ///   runs is its half-edge's `forward` — its ends, being one vertex, say neither. Every one of
     ///   those readers branches on `v0 == v1` for it (a groove's tip touching a cap's rim puts such
     ///   an edge in a loop of several).

@@ -379,7 +379,7 @@ impl Ellipse {
     /// the circle's affine image along the axis, so its segment is the circle's times
     /// `|U × V| / r² = a/r` (`a` the semi-major). This is the one spelling of the number every arc
     /// consumer adds to a chord polygon (props' integrals, validate's winding witness, the
-    /// boolean's `outer_tri`), about [`Ellipse::plane_normal`]; the sign — does this traversal add
+    /// boolean's `outer_area`), about [`Ellipse::plane_normal`]; the sign — does this traversal add
     /// or remove the bulge — is the caller's, read from the `[from, to]`-CCW convention.
     #[inline]
     pub fn segment_area(self, dtheta: f64) -> f64 {
