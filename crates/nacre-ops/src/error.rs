@@ -738,10 +738,10 @@ pub enum RejectReason {
     //   corner (`combinatorics::pierce_name_from_def`) and writes a curved carrier, so the curved
     //   rings of the corpus are **described** rather than declined. What can reach it: a corner
     //   whose def is not `Pierce`, a plane with no *narrow* world description (a wide or rotated
-    //   chain), a definition plane that is none of the corner's incident classes, and two laterals
-    //   meeting at one corner. Measured with the restatement switched off: the ring **declines by
-    //   this name** and nothing panics, which is the whole reason the backstop is under the road
-    //   rather than trusted away.
+    //   chain), a definition plane that is none of the corner's incident classes, a lateral of a
+    //   cylinder other than the corner's own, and an arc two laterals of one cylinder share.
+    //   Measured with the restatement switched off: the ring **declines by this name** and nothing
+    //   panics, which is the whole reason the backstop is under the road rather than trusted away.
     //
     // The two ask the same question of a face in two vocabularies — the gate reads the edge's
     // **carriers** from the model, the road reads the far face's **class** — and they were measured

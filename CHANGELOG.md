@@ -124,6 +124,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A boolean on a solid with a flat face along a line of a cylinder where the solid's side face on that cylinder across the line changes — a block notched by a pin with a shorter rod of the pin fused back into the notch — builds; it was refused with `ops::RejectReason::TraceDeclined`, whatever the other solid, even one far away.
 - A boolean on a solid whose cylindrical side face stops on one of its straight lines over part of its height — a rod notched from one side, or a rod whose side a box buries — with another flat face through that line builds; it was refused with `ops::RejectReason::EdgeOccupancyConflict` or `ops::RejectReason::LabelConflict`.
 - A boolean of two solids with side faces on two parallel cylinders whose axes are written opposite ways no longer passes them as apart where the faces meet: it built the union as two bodies and the intersection as none, and is refused with `ops::RejectReason::CylinderPairContact` as the same pair with like axes is.
 - A boolean that leaves lumps meeting only along lines where a cylinder is tangent to a wall returns them as separate bodies also where the cylinder's side face has an edge or a corner on such a line beyond the contact — an L-shaped block less a cylinder notched above it, whose two ends and one side touch the cylinder along three lines, returns its three lumps; it was refused with `ops::RejectReason::SelfTouchingResult`.

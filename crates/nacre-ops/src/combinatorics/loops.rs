@@ -326,18 +326,17 @@ fn loop_triples(
         // is there on valid input — a definition naming a surface no face at the vertex lies on
         // is `VertexNamesAbsentSurface`.
         let classes = incident_plane_classes(corner, inc, plane_ix);
-        // The laterals among this visit's face and neighbours. Two of them — a lateral's loop
-        // along a second lateral, or a plane face's corner between two — are the cylinder pair's
-        // road (`Vertex::CylinderPair`), not this one's; so is a lateral of a cylinder other than
-        // the one the corner's definition names.
+        // The laterals among this visit's face and neighbours. A lateral of a cylinder other than
+        // the one the corner's definition names — a lateral's loop along a second lateral, a plane
+        // face's corner beside two cylinders — is the cylinder pair's road (`Vertex::CylinderPair`),
+        // not this one's, and the arms below refuse it. A plane face may pass between two laterals
+        // of the corner's own cylinder: along a ruling where the lateral across it changes face, as
+        // where a rod fills part of the notch its cylinder cut, and on the rod cap's rim there.
         let [lp, la, lb] = [p, a, b].map(|x| match plane_ix[x] {
             ClassIx::Cyl(k) => Some(k),
             ClassIx::Plane(_) => None,
         });
         let laterals = [lp, la, lb].into_iter().flatten();
-        if laterals.clone().count() > 1 {
-            return Err(reject(RejectReason::CurvedOperandBoundary));
-        }
         let pierce = match *model.vertex(corner) {
             Vertex::Pierce { cylinder, .. } => {
                 let k = cyls
@@ -375,8 +374,11 @@ fn loop_triples(
                 let end = pierce.expect("a curved edge's corner is a pierce point");
                 curved_wall(model, jd, cyls, &hes[i], k, near, end)?
             }
+            // A lateral's edge whose far face is another lateral of its cylinder — an arc the two
+            // share, which validate accepts — has no plane to write its wall against. No input of
+            // the suite, the census, the ignored sweep or the kit reaches this arm.
             (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
-                unreachable!("a lateral face beside a lateral neighbour was rejected above")
+                return Err(reject(RejectReason::CurvedOperandBoundary));
             }
         });
         // A pierce name is the corner's whole name: independence, the straight run through a

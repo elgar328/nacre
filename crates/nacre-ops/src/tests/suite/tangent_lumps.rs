@@ -17,7 +17,12 @@
 //!   block's lower half — the slab's face there ending on the line — with or without a wedge on the
 //!   slab whose walls run from the line: above the slab the plane has no face on the line, and the
 //!   wedge's walls are a station's chords there. The block's top joins the line's two sides over
-//!   the bore, so it touches itself; notched to the axis's height, with the wedge it is two bodies.
+//!   the bore, so it touches itself; notched to the axis's height, with the wedge it is two bodies;
+//! - that notched block with a shorter rod of its pin fused back into the notch — below the block's
+//!   floor, past the slab's top, inside — and the slab, with or without the wedge: the block's top
+//!   runs along the ruling where the lateral across it passes from the notch's to the rod's. With
+//!   it, the filled block and a far box, and a blind notch half filled, whose top's hole is bounded
+//!   by the same ruling.
 
 use super::scoreboard::{OPS, Want, check, counted, refused, run};
 use super::*;
@@ -121,25 +126,41 @@ fn stepped_plate_and_pin_on_three_walls(m: &mut Model) -> (Handle<Solid>, Handle
     )
 }
 
-/// The block `[−1, 3] × [−2, top]`, two tall, less the unit pin about `(1, 1)` — tangent to the
-/// plane `y = 0` along `(1, 0)` — and beyond that plane the slab `[−2, 4] × [−3, 0]` on
-/// `z ∈ [−1, 1]`, with the wedge `(1, 0), (0, −3), (2, −3)` on `z ∈ [1, 3]` fused on it where
-/// `wedge`: its walls `3x ± y = 3` run from the line down through the block's floor `y = −2`. The
-/// block less the slab keeps the two cusps beside the line below `z = 1`, and the slab's face
-/// `y = 0` ends there; above it the wall's plane has no face on the line, and the wedge empties a
-/// room between its walls below it.
-fn bored_block_and_slab(m: &mut Model, top: f64, wedge: bool) -> (Handle<Solid>, Handle<Solid>) {
+/// The block `[−1, 3] × [−2, top]`, two tall, less the unit pin about `(1, 1)` over `pin` —
+/// tangent to the plane `y = 0` along `(1, 0)` — with the pin's rod over `rod` fused back in.
+fn bored_block(m: &mut Model, top: f64, pin: [f64; 2], rod: Option<[f64; 2]>) -> Handle<Solid> {
     let block = sweep_from(m, rect(-1.0, -2.0, 3.0, top), 0.0, 2.0);
-    let pin = sweep_from(m, circle_profile([1.0, 1.0], 1.0), -1.0, 4.0);
-    let bored = crate::boolean(m, BoolKind::Cut, block, pin).expect("the bore")[0];
+    let cutter = sweep_from(m, circle_profile([1.0, 1.0], 1.0), pin[0], pin[1] - pin[0]);
+    let bored = crate::boolean(m, BoolKind::Cut, block, cutter).expect("the bore")[0];
+    let Some([z0, z1]) = rod else {
+        return bored;
+    };
+    let filler = sweep_from(m, circle_profile([1.0, 1.0], 1.0), z0, z1 - z0);
+    crate::boolean(m, BoolKind::Fuse, bored, filler).expect("the rod")[0]
+}
+
+/// Beyond the plane `y = 0` the slab `[−2, 4] × [−3, 0]` on `z ∈ [−1, 1]`, with the wedge
+/// `(1, 0), (0, −3), (2, −3)` on `z ∈ [1, 3]` fused on it where `wedge`: its walls `3x ± y = 3`
+/// run from the line down through a [`bored_block`]'s floor `y = −2`.
+fn slab_beyond(m: &mut Model, wedge: bool) -> Handle<Solid> {
     let slab = sweep_from(m, rect(-2.0, -3.0, 4.0, 0.0), -1.0, 2.0);
     if !wedge {
-        return (bored, slab);
+        return slab;
     }
     let walls = Profile2d::polygon(vec![p(1.0, 0.0), p(0.0, -3.0), p(2.0, -3.0)]).expect("a wedge");
     let w = sweep_from(m, walls, 1.0, 2.0);
-    let wedged = crate::boolean(m, BoolKind::Fuse, slab, w).expect("the wedge")[0];
-    (bored, wedged)
+    crate::boolean(m, BoolKind::Fuse, slab, w).expect("the wedge")[0]
+}
+
+/// A [`bored_block`] through its height and the [`slab_beyond`] it. The block less the slab
+/// keeps the two cusps beside the line below `z = 1`, and the slab's face `y = 0` ends there;
+/// above it the wall's plane has no face on the line, and the wedge empties a room between its
+/// walls below it.
+fn bored_block_and_slab(m: &mut Model, top: f64, wedge: bool) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bored_block(m, top, [-1.0, 3.0], None),
+        slab_beyond(m, wedge),
+    )
 }
 
 /// [`bored_block_and_slab`] three high with the wedge: the block's top joins the two sides of the
@@ -164,7 +185,62 @@ fn notched_block_and_slab_alone(m: &mut Model) -> (Handle<Solid>, Handle<Solid>)
     bored_block_and_slab(m, 1.0, false)
 }
 
-const FAMILIES: [(&str, Build); 8] = [
+/// The notched block with the pin's rod over `rod` fused back into the notch, and the slab: the
+/// block's top `y = 1` runs along the ruling `x = 2` where the lateral across it passes from the
+/// notch's to the rod's and back, and the rod's caps' rims pass there from one to the other.
+fn filled_notch_and_slab(
+    m: &mut Model,
+    rod: [f64; 2],
+    wedge: bool,
+) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bored_block(m, 1.0, [-1.0, 3.0], Some(rod)),
+        slab_beyond(m, wedge),
+    )
+}
+
+fn filled_low_and_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    filled_notch_and_slab(m, [-0.5, 0.7], false)
+}
+
+fn filled_low_and_slab_with_a_wedge(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    filled_notch_and_slab(m, [-0.5, 0.7], true)
+}
+
+fn filled_high_and_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    filled_notch_and_slab(m, [0.3, 1.5], false)
+}
+
+fn filled_high_and_slab_with_a_wedge(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    filled_notch_and_slab(m, [0.3, 1.5], true)
+}
+
+fn filled_inside_and_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    filled_notch_and_slab(m, [0.5, 1.0], false)
+}
+
+fn filled_inside_and_slab_with_a_wedge(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    filled_notch_and_slab(m, [0.5, 1.0], true)
+}
+
+/// The notch filled over `[1/2, 1]` and a box far from it: what this family asks is only whether
+/// the filled block is read as an operand.
+fn filled_inside_and_a_far_box(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let filled = bored_block(m, 1.0, [-1.0, 3.0], Some([0.5, 1.0]));
+    let far = crate::fixtures::cuboid(m, [10.0, 10.0, 10.0], [11.0, 11.0, 11.0]);
+    (filled, far)
+}
+
+/// The block notched by the pin over `[1/2, 3/2]` only — the ruling bounds a hole in the top —
+/// with the rod over `[1/2, 1]` filling the notch's lower half, and the slab.
+fn blind_notch_half_filled_and_slab(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    (
+        bored_block(m, 1.0, [0.5, 1.5], Some([0.5, 1.0])),
+        slab_beyond(m, false),
+    )
+}
+
+const FAMILIES: [(&str, Build); 16] = [
     (
         "a lidded plate and the pin on three of its walls",
         lidded_plate_and_pin_on_three_walls,
@@ -196,6 +272,35 @@ const FAMILIES: [(&str, Build); 8] = [
     (
         "a notched block and a slab beyond its tangent wall",
         notched_block_and_slab_alone,
+    ),
+    (
+        "a notch filled below the block's floor and a slab",
+        filled_low_and_slab,
+    ),
+    (
+        "a notch filled below the block's floor and a slab with a wedge",
+        filled_low_and_slab_with_a_wedge,
+    ),
+    (
+        "a notch filled past the slab's top and a slab",
+        filled_high_and_slab,
+    ),
+    (
+        "a notch filled past the slab's top and a slab with a wedge",
+        filled_high_and_slab_with_a_wedge,
+    ),
+    ("a notch filled inside and a slab", filled_inside_and_slab),
+    (
+        "a notch filled inside and a slab with a wedge",
+        filled_inside_and_slab_with_a_wedge,
+    ),
+    (
+        "a notch filled inside and a far box",
+        filled_inside_and_a_far_box,
+    ),
+    (
+        "a blind notch half filled and a slab",
+        blind_notch_half_filled_and_slab,
     ),
 ];
 
@@ -278,6 +383,66 @@ fn wants(name: &str) -> [Want; 4] {
         "a notched block and a slab beyond its tangent wall" => [
             counted(&[52.0 - PI], &[15]),
             refused(RejectReason::NonManifoldResultEdge),
+            counted(&[28.0], &[10]),
+            counted(&[8.0], &[6]),
+        ],
+        // The rod fused into the notch over `[z0, z1]` adds its whole disk there: the filled block
+        // is `24 − π + π(z1 − z0)`, and it meets the slab in the block's lower half, `8`, or with
+        // the wedge also its tip in the block, `28/3`; the slab alone is `36`, with the wedge `42`.
+        // Where the rod leaves part of the notch below the slab's top empty, the cut keeps the two
+        // cusps there touching along the line and joined through the rod: one body touching
+        // itself. Below the block the rod touches the slab along the line, so the union touches
+        // itself too. The slab families' volumes match OCCT 7.9, and an independent reading of
+        // the sections finds the bodies counted and the touches refused.
+        "a notch filled below the block's floor and a slab" => [
+            refused(RejectReason::SelfTouchingResult),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[28.0], &[10]),
+            counted(&[8.0], &[6]),
+        ],
+        "a notch filled below the block's floor and a slab with a wedge" => [
+            refused(RejectReason::SelfTouchingResult),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[98.0 / 3.0], &[15]),
+            counted(&[28.0 / 3.0], &[10]),
+        ],
+        "a notch filled past the slab's top and a slab" => [
+            counted(&[52.0 + 0.2 * PI], &[19]),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[28.0], &[10]),
+            counted(&[8.0], &[6]),
+        ],
+        "a notch filled past the slab's top and a slab with a wedge" => [
+            counted(&[66.0 + 0.2 * PI - 28.0 / 3.0], &[25]),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[98.0 / 3.0], &[15]),
+            counted(&[28.0 / 3.0], &[10]),
+        ],
+        "a notch filled inside and a slab" => [
+            counted(&[52.0 - PI / 2.0], &[19]),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[28.0], &[10]),
+            counted(&[8.0], &[6]),
+        ],
+        "a notch filled inside and a slab with a wedge" => [
+            counted(&[66.0 - PI / 2.0 - 28.0 / 3.0], &[25]),
+            refused(RejectReason::SelfTouchingResult),
+            counted(&[98.0 / 3.0], &[15]),
+            counted(&[28.0 / 3.0], &[10]),
+        ],
+        "a notch filled inside and a far box" => [
+            counted(&[1.0, 24.0 - PI / 2.0], &[6, 12]),
+            counted(&[24.0 - PI / 2.0], &[12]),
+            counted(&[1.0], &[6]),
+            none(),
+        ],
+        // The notch over `[1/2, 3/2]` takes `π/2` and the rod gives it back: the block is `24`.
+        // Its cut keeps the rod, which fills the notch up to the slab's top, and the notch empty
+        // above it: the two rooms beside the line — the slab's below `z = 1`, the notch's above —
+        // meet only at `(1, 0, 1)`, and the vertex is not a manifold's.
+        "a blind notch half filled and a slab" => [
+            counted(&[52.0], &[17]),
+            refused(RejectReason::NonManifoldVertex),
             counted(&[28.0], &[10]),
             counted(&[8.0], &[6]),
         ],
