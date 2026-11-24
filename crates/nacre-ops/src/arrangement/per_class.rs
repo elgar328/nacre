@@ -281,11 +281,11 @@ fn knife_can_part(kind: BoolKind, merged: &[(SolidSide, SegKind)]) -> bool {
 /// Which knives part the material is read off the labels of the cells beside them, so the walk
 /// that carries a knife is the one that answers it: the knives that can be edges at all are walked
 /// with the pieces, and the class is walked again with only those that part the material when some
-/// do not ([`rewalk`]). A knife that cannot be an edge — one that ends inside a face, or one
-/// joining two pieces of the skeleton no path of edges joins ([`knives_as_edges`]) — is not walked:
-/// a knife that parts the material there is the result touching itself, the material passing round
-/// its end or between the two boundaries, which the self-touch verdict names. A class with no knife
-/// to carry is walked once.
+/// do not ([`rewalk`]). A knife that cannot be an edge — a bridge of the class's edges: one that
+/// ends inside a face, or the one path joining two pieces of the skeleton ([`knives_as_edges`]) — is
+/// not walked: a knife that parts the material there is the result touching itself, the material
+/// passing round its end or between the two boundaries, which the self-touch verdict names. A class
+/// with no knife to carry is walked once.
 ///
 /// **The second walk's knives all part.** A cell's label is the seed turned over by the masks on a
 /// path to it, and a knife's mask is zero — so the label beside a knife is the same whichever
@@ -350,8 +350,8 @@ enum Rewalk {
 
 /// **The knives the class is walked with: those that part the material and can be edges** —
 /// `carried` the knives the first walk carried, `knife_cuts` its answer per knife. The knives that
-/// part go through [`knives_as_edges`] again: one of them can be left with a free end when a knife
-/// beside it does not part.
+/// part go through [`knives_as_edges`] again: one of them can be left a bridge (a free end, or the one
+/// path left between two pieces of the skeleton) when a knife beside it does not part.
 fn rewalk(split: &ClassSplit, carried: &[usize], knife_cuts: &[bool]) -> Rewalk {
     let parting: Vec<usize> = carried
         .iter()
@@ -369,16 +369,18 @@ fn rewalk(split: &ClassSplit, carried: &[usize], knife_cuts: &[bool]) -> Rewalk 
 }
 
 /// **The knives among `candidates` that can be edges of the class's faces** — indices into
-/// `split.knives`: those whose every end is a vertex of the skeleton or of another such knife, and
-/// whose knives join no two pieces of the skeleton that are not already one. A knife with a free
-/// end ends inside a face and cannot cut it; a chain of knives between two separate pieces of the
-/// skeleton (a face's outer boundary and a hole's) joins them rather than cutting a face in two.
-/// The answer is its own fixed point: a chain dropped as a bridge shares no vertex with the chains
-/// kept.
+/// `split.knives`: those that are no bridge of the graph the skeleton's pieces and the candidates
+/// make. An edge of a plane graph bounds two different faces exactly when it lies on a cycle; a
+/// bridge has one face on both sides and cuts nothing. A knife with a free end is a bridge, and so is
+/// a chain of knives that is the only path between two pieces of the skeleton (a face's outer
+/// boundary and a hole's) — it joins them rather than cutting a face in two. Two such chains close a
+/// cycle together and part the face between them; a chain running from one piece onto another and
+/// back has the stretch along the second piece on a cycle of its own. Each knife is asked of the
+/// graph with every other candidate in it, and the answer is its own fixed point: a cycle holds no
+/// bridge, so dropping the bridges leaves every kept knife on its cycle.
 fn knives_as_edges(split: &ClassSplit, candidates: Vec<usize>) -> Vec<usize> {
-    let mut carried = candidates;
-    if carried.is_empty() {
-        return carried;
+    if candidates.is_empty() {
+        return candidates;
     }
     // Vertex ids over the skeleton's ends and the knives'.
     let mut id: HashMap<NodeId, usize> = HashMap::new();
@@ -389,59 +391,25 @@ fn knives_as_edges(split: &ClassSplit, candidates: Vec<usize>) -> Vec<usize> {
     let skel: Vec<[usize; 2]> = split.pieces.iter().map(|p| p.end.map(&mut of)).collect();
     let knife: Vec<[usize; 2]> = split.knives.iter().map(|p| p.end.map(&mut of)).collect();
     let n = id.len();
-    let mut deg_skel = vec![0usize; n];
-    for e in &skel {
-        for &v in e {
-            deg_skel[v] += 1;
+    // No bridge: the knife's two ends are joined without it.
+    let on_a_cycle = |k: usize| {
+        let mut part: Vec<usize> = (0..n).collect();
+        let others = candidates.iter().filter(|&&o| o != k).map(|&o| &knife[o]);
+        for e in skel.iter().chain(others) {
+            let (a, b) = (
+                crate::planes::uf_find(&mut part, e[0]),
+                crate::planes::uf_find(&mut part, e[1]),
+            );
+            part[a] = b;
         }
-    }
-    // A free end, again and again: removing a knife can free its neighbour's end.
-    loop {
-        let mut deg = deg_skel.clone();
-        for &k in &carried {
-            for &v in &knife[k] {
-                deg[v] += 1;
-            }
-        }
-        let before = carried.len();
-        carried.retain(|&k| knife[k].iter().all(|&v| deg[v] >= 2));
-        if carried.len() == before {
-            break;
-        }
-    }
-    // Which piece of the skeleton each vertex is on, and the knives' own chains.
-    let mut skel_part: Vec<usize> = (0..n).collect();
-    for e in &skel {
-        let (a, b) = (
-            crate::planes::uf_find(&mut skel_part, e[0]),
-            crate::planes::uf_find(&mut skel_part, e[1]),
-        );
-        skel_part[a] = b;
-    }
-    let mut chain: Vec<usize> = (0..n).collect();
-    for &k in &carried {
-        let (a, b) = (
-            crate::planes::uf_find(&mut chain, knife[k][0]),
-            crate::planes::uf_find(&mut chain, knife[k][1]),
-        );
-        chain[a] = b;
-    }
-    // Per chain, the skeleton pieces its ends rest on; a chain resting on two joins them.
-    let mut rests: HashMap<usize, Vec<usize>> = HashMap::new();
-    for &k in &carried {
-        for &v in &knife[k] {
-            let c = crate::planes::uf_find(&mut chain, v);
-            let on = rests.entry(c).or_default();
-            if deg_skel[v] > 0 {
-                on.push(crate::planes::uf_find(&mut skel_part, v));
-            }
-        }
-    }
-    carried.retain(|&k| {
-        let c = crate::planes::uf_find(&mut chain, knife[k][0]);
-        rests[&c].windows(2).all(|w| w[0] == w[1])
-    });
-    carried
+        crate::planes::uf_find(&mut part, knife[k][0])
+            == crate::planes::uf_find(&mut part, knife[k][1])
+    };
+    candidates
+        .iter()
+        .copied()
+        .filter(|&k| on_a_cycle(k))
+        .collect()
 }
 
 /// **Does this circle actually meet that ruling?** — asked of the class's own tables: `Ok` is the

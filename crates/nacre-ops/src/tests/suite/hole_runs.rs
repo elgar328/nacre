@@ -26,10 +26,10 @@ use super::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 
 /// `[x0, y0, x1, y1]`.
-type Rect = [f64; 4];
+pub(super) type Rect = [f64; 4];
 
-const WHOLE: Rect = [-2.0, -2.0, 2.0, 2.0];
-const BELOW: Rect = [-3.0, -3.0, 3.0, 0.0];
+pub(super) const WHOLE: Rect = [-2.0, -2.0, 2.0, 2.0];
+pub(super) const BELOW: Rect = [-3.0, -3.0, 3.0, 0.0];
 const BELOW_HALF: Rect = [-3.0, -3.0, 3.0, -0.5];
 const PAST: Rect = [-3.0, -3.0, -0.5, 3.0];
 const LEFT: Rect = [-3.0, -3.0, -0.4, 0.0];
@@ -40,9 +40,9 @@ const SLABS: [[f64; 2]; 4] = [[0.0, 1.0], [1.0, 2.0], [2.0, 3.0], [3.0, 5.0]];
 
 /// A body: the prisms cut from the rod (`rect`, from `z`, for `h`), and the rectangles its section
 /// keeps of the disk on each of [`SLABS`].
-struct Body {
-    cuts: &'static [(Rect, f64, f64)],
-    kept: [&'static [Rect]; 4],
+pub(super) struct Body {
+    pub(super) cuts: &'static [(Rect, f64, f64)],
+    pub(super) kept: [&'static [Rect]; 4],
 }
 
 const STEPPED: Body = Body {
@@ -113,13 +113,13 @@ fn clip(a: Rect, b: Rect) -> Rect {
     ]
 }
 
-fn area(r: Rect) -> f64 {
+pub(super) fn area(r: Rect) -> f64 {
     (r[2] - r[0]).max(0.0) * (r[3] - r[1]).max(0.0)
 }
 
 impl Body {
     /// The body's volume inside `rect × z`, or the volume of the bore it leaves in the block.
-    fn within(&self, bore: bool, rect: Rect, z: [f64; 2]) -> f64 {
+    pub(super) fn within(&self, bore: bool, rect: Rect, z: [f64; 2]) -> f64 {
         SLABS
             .iter()
             .zip(self.kept)
@@ -139,7 +139,13 @@ impl Body {
     /// turn about `y`, a quarter about `z`), `4..=6` (in `x = 0`, `y = 0`, `z = 5/2`). `Mirror` does
     /// not take a curved solid, so a reflected body is built reflected. `down` states the rod's axis
     /// along `−z`.
-    fn build(&self, m: &mut Model, bore: bool, down: bool, place: usize) -> Handle<Solid> {
+    pub(super) fn build(
+        &self,
+        m: &mut Model,
+        bore: bool,
+        down: bool,
+        place: usize,
+    ) -> Handle<Solid> {
         let (base, axis) = if down {
             ([0.0, 0.0, 5.0], [0.0, 0.0, -1.0])
         } else {

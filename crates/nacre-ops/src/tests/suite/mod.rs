@@ -1224,5 +1224,6 @@ mod shared_cylinder;
 mod sketch_models;
 mod tangent_junction;
 mod tangent_lumps;
+mod tangent_walls;
 mod unstated_classes;
 mod user_models;

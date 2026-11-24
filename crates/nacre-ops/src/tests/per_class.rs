@@ -162,17 +162,27 @@ fn split_by_hand(rings: usize, knives: &[[usize; 2]]) -> ClassSplit {
     }
 }
 
-/// **A knife is an edge only where both its ends rest on edges, and it joins no two parts of the
-/// skeleton.** A square `0-1-2-3` and a chain of two knives `0–9–2` across it: both are edges
-/// together, neither alone (the other's end is free). A knife from the square to a second square
-/// `4-5-6-7` joins the two and is no edge.
+/// **A knife is an edge of the class's faces exactly where it lies on a cycle of the class's edges.**
+/// A square `0-1-2-3` and a chain of two knives `0–9–2` across it: both are edges together, neither
+/// alone (the other's end is free). A knife from the square to a second square `4-5-6-7` is the one
+/// path between them and no edge; two such knives (`0–4`, `2–6`) close a cycle and are edges
+/// together. A chain `0–4–6–2` running from the first square onto the second and back keeps all three
+/// together, and its middle knife `4–6` alone on the second square. red: unioning the knives into
+/// chains through the squares' corners and dropping a chain that rests on two → `[]` for the pair and
+/// for the chain of three; cutting the chains at the corners → `[1]` for the chain of three.
 #[test]
-fn a_knife_is_an_edge_where_it_ends_on_edges_and_bridges_nothing() {
+fn a_knife_is_an_edge_where_it_lies_on_a_cycle() {
     let chain = split_by_hand(1, &[[0, 9], [9, 2]]);
     assert_eq!(knives_as_edges(&chain, vec![0, 1]), vec![0, 1]);
     assert_eq!(knives_as_edges(&chain, vec![0]), Vec::<usize>::new());
     let bridge = split_by_hand(2, &[[0, 4]]);
     assert_eq!(knives_as_edges(&bridge, vec![0]), Vec::<usize>::new());
+    let pair = split_by_hand(2, &[[0, 4], [2, 6]]);
+    assert_eq!(knives_as_edges(&pair, vec![0, 1]), vec![0, 1]);
+    assert_eq!(knives_as_edges(&pair, vec![0]), Vec::<usize>::new());
+    let through = split_by_hand(2, &[[0, 4], [4, 6], [6, 2]]);
+    assert_eq!(knives_as_edges(&through, vec![0, 1, 2]), vec![0, 1, 2]);
+    assert_eq!(knives_as_edges(&through, vec![1]), vec![1]);
 }
 
 /// **The second walk carries the knives that part and can still be edges.** On the chain `0–9–2`
