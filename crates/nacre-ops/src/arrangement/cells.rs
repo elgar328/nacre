@@ -430,8 +430,8 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
 /// Where a knife edge coincides with the *other* solid's real boundary, that solid's
 /// contributions make the mask non-false and the edge is no knife — a true boundary cannot be set
 /// apart this way. Where that boundary is a lateral's ruling, it is a ruling piece rather than a
-/// segment, and the knife edge goes ([`split_rulings`]); its ends do not — they are vertices of
-/// the line, and the class skeleton cuts the ruling pieces at them first.
+/// segment, and the knife folds onto it there (`crossings::fold_onto_rulings`); its ends are
+/// vertices of the line either way, and the class skeleton cuts the ruling pieces at them first.
 pub(super) fn is_knife(merged: &[(SolidSide, SegKind)]) -> Result<bool, BoolError> {
     if edge_mask(merged)? != [false; 4] {
         return Ok(false);

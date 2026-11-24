@@ -776,8 +776,8 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// **Cut every ruling a segment crosses into pieces, and the segments with it** — the straight
 /// twin of [`split_circles`](fn@split_circles), run after it, over every segment, knives included.
 /// The ends of the segments lying *along* a ruling, which meet it at no crossing, have cut it
-/// already ([`cut_lines_at_their_vertices`], pass A); a knife among those is then dropped, not
-/// folded onto the ruling.
+/// already ([`cut_lines_at_their_vertices`], pass A); a knife among those then goes to the fold like
+/// every segment on a recorded line ([`fold_onto_rulings`]).
 ///
 /// **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
 /// circles against segments and not against rulings. One class *can* carry both populations
@@ -853,7 +853,7 @@ pub(super) fn split_rulings(
         |_si, sg, cyl| {
             // A knife whose line lies on the cylinder runs along a ruling and crosses none, as a
             // recorded shared line does: what a knife says to a curve is where it crosses it, and
-            // the knife along a lateral is no edge here (dropped below, its ends cut in pass A).
+            // its ends were cut in pass A.
             let knife = is_knife(&sg.merged)?;
             let shared = knife
                 || combinatorics::line_along(&shared_here, sg.wall)
@@ -949,20 +949,7 @@ pub(super) fn split_rulings(
         aliases,
     )?;
     let out_segs = if folds {
-        // **A knife along a lateral's ruling is no edge of this class, and it is not folded.** Its
-        // ends already cut the ruling pieces (`cut_lines_at_their_vertices`) — that is all it says
-        // about the line. Folding its grazes onto the ruling piece instead takes two exceptions
-        // downstream (design's «가지 말 것», the knife-on-a-ruling row).
-        let mut kept = Vec::with_capacity(out_segs.len());
-        for sg in out_segs {
-            let along = combinatorics::line_along(&shared_here, sg.wall)
-                .map_err(reject)?
-                .is_some();
-            if !(along && is_knife(&sg.merged)?) {
-                kept.push(sg);
-            }
-        }
-        fold_onto_rulings(jd, cyls, kept, &mut out_rulings, &shared_here, aliases)?
+        fold_onto_rulings(jd, cyls, out_segs, &mut out_rulings, &shared_here, aliases)?
     } else {
         out_segs
     };
@@ -981,8 +968,8 @@ pub(super) fn split_rulings(
 /// round ([`Aliases::record_same_point`]). **A segment's end is not placed on another segment**:
 /// two segments on one wall are the overlay's ([`split_at_crossings`]), and two walls are one line
 /// to it only where the alias table has learnt the pencil, which the gate's record does not teach.
-/// A knife is cut like any segment — with no ruling piece on the class [`split_rulings`] returns
-/// before dropping it and it reaches [`split_class_edges`].
+/// A knife is cut like any segment and reaches [`split_class_edges`] as one, unless it folds onto
+/// a ruling piece of the same two ends ([`fold_onto_rulings`]).
 ///
 /// Which statements a vertex is asked of is settled on the names as they came in, so what this step
 /// asks does not hang on the order its ties are recorded in; a coordinate is asked only of a point
@@ -1296,6 +1283,22 @@ fn cut_rulings(
 /// own edge (`cycle_on_wall`'s `quiet` runs: there the plane vocabulary states it, the other half
 /// of the one rule) — and it stays a segment. A stretch shared without a match is a shape the
 /// splits did not cut, and is refused by name rather than stated twice.
+///
+/// **A knife folds like any segment.** Its contributions are one solid's same-side graze pair, which
+/// flips no bit (`cells::edge_mask`), so joined to a ruling piece that carries nothing of that solid
+/// it leaves the piece's mask as it was. That the piece carries nothing of it is an argument: the
+/// knife's solid has no face filling the class plane along the line (no `Seated`, no `Tangent`); a
+/// lateral's edge on a ruling is stated once, by a ruling piece where the sweep draws it or in the
+/// plane vocabulary on a `quiet` run; and a tangent knife's piece (`rulings::tangent_knife`) lies
+/// where the lateral runs through the line, with no edge of it there. Measured: knives joined ruling
+/// pieces in the suite and the ignored sweep, never one holding its own solid, and none shared a
+/// stretch unmatched; the census and the kit fold no knife. A knife sharing no stretch stays a
+/// segment, and the knife rule decides whether it is an edge (`per_class::knives_as_edges`) — on a
+/// tangent wall where the lateral ends on the line, that segment is the only statement of the line.
+/// A knife with no piece of its ends goes through the overlap test below like any segment, so an end
+/// whose axis coordinate cannot be read or compared refuses it by width (`WitnessNotRational`);
+/// measured, no segment's coordinate read fails there and none is refused `RulingBoundNotYet` (suite,
+/// ignored sweep, census, kit).
 ///
 /// `Seated`, `Graze` and `Tangent` say which side of the class plane a face fills, so they mean
 /// the same on a ruling. `Transversal` says the face crosses the class plane along the line — a

@@ -177,10 +177,12 @@ pub(crate) struct Station {
     /// the cylinder it leaves along `±τ`, past the lateral's half on that side (the lateral bends
     /// to the axis) and before every chord's outer half, so it closes the sector beside the lateral
     /// there. One solid's wall on both sides runs through the line, with no edge there unless its
-    /// class draws the line as a knife — and that knife is a folded tangent ruling
-    /// ([`Station::tangent_rulings`]); without it the gate states the contact and the operation
-    /// judges it (`planes::TangentReading::through`). Both entries are set where each of the two
-    /// solids' walls ends on one side.
+    /// class draws the line as a knife — where the lateral runs through the line, a folded tangent
+    /// ruling ([`Station::tangent_rulings`]), and where it ends on the line, a plane segment beside
+    /// the lateral's own edge, which the fold leaves a segment (`crossings::fold_onto_rulings`);
+    /// without one the gate states the contact and the operation judges it
+    /// (`planes::TangentReading::through`). Both entries are set where each of the two solids'
+    /// walls ends on one side.
     pub(crate) tangent: [bool; 2],
     /// **The tangent rulings on the line over the station's stretch** — a tangent class's ruling
     /// piece (`side == 0`) of the same two ends, folded in rather than left as a second name for
@@ -956,8 +958,10 @@ fn tangent_records<'c>(
 /// **Which sides of the line a tangent wall ends on over the piece `[lo, hi]`** — the rule of
 /// [`tangent_ends`], over the record's halves (one entry per wall solid). Each solid's faces are
 /// read on their own: one solid covering both sides runs through the line, which has no edge there
-/// unless its class draws the knife ([`Station::tangent_rulings`] says so), while one solid ending
-/// on `+τ` and the other on `−τ` are two spokes — a union of the two would
+/// unless its class draws the knife (where the lateral runs through the line,
+/// [`Station::tangent_rulings`] says so; where it ends on the line, the knife is a plane segment
+/// beside the lateral's own edge, which the fold leaves a segment, `crossings::fold_onto_rulings`),
+/// while one solid ending on `+τ` and the other on `−τ` are two spokes — a union of the two would
 /// read them as one face running through. A face side over part of the piece is the stages
 /// disagreeing (`CylinderStagesDisagree`); `WitnessNotRational` where an end could not be compared.
 fn spokes(

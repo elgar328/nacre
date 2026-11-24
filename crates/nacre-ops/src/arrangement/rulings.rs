@@ -236,7 +236,10 @@ fn sweep_ruling(
 /// runs through, each stated twice as a graze on the axis side: the face's two halves leave the
 /// wall along it and bend to the axis on both sides, two faces of one solid leaving the plane to
 /// one side, which is a knife ([`is_knife`]). Whether it is an edge of the class's faces is the
-/// knife's rule (`arrange_class`), and the chart reads the cells beside it only where it is.
+/// knife's rule (`arrange_class`), and the chart reads the cells beside it only where it is. Where
+/// the face ends on the line instead, an edge of it held by another face of its solid, the knife
+/// there is the plane vocabulary's: the face's half of that plane-pair line and the other face's
+/// half, a segment the fold leaves a segment (`crossings::fold_onto_rulings`).
 ///
 /// **The stretches are the gate's reading** ([`crate::planes::WorkingCyl::through`]), not this
 /// road's: where the face holds the generators on both sides of the line is a question about

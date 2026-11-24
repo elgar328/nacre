@@ -323,11 +323,6 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
 `[0.5, 1.0]`)를 먼저 합친 몸은 서지만, 그 몸과 접선 벽 너머의 판을 넣은 불리언은 네 연산 모두 `TraceDeclined { OuterRing }` 이다
 (생성한 꼴 24 — 스위트·census 밖). 뿌리는 재지 않았다 — 거짓 거절인지부터.
 
-### 접선 벽이 잇는 두 몸 — `SelfTouchingResult`
-
-벽 `x = ±1` 이 홈 난 막대·보어에 접하면, 홈 벽과 옆면은 그 선에서 끝나는데 벽은 한 면으로 지나가 두 몸을 묶는다(논증;
-`self_touch_reject`, 12칸). 구멍 없는 같은 꼴은 짓는다 — 거짓 거절 후보.
-
 ### 한 선을 품는 두 벽 — 연필을 못 배운 꼴
 
 두 벽은 표가 연필(`Lines`)을 들어야 한 벽이고, 게이트 기록은 그것을 가르치지 않는다. 수렴한 표의 벽 묶음은 한 이름이다
@@ -344,6 +339,12 @@ Wide 클래스의 떨어짐을 근사로 인정해 넘기게 하자 26 배치와
   이름을 낸다 — 한 진술이 `Width`, 다른 진술이 `Unstated` 면 읽는 순서가 이름을 정한다. 한 진술 안에서는 기하가 먼저다
   (`ChainFold::plane_name`·`ChainFold::cylinder`).
 - `planes::chord_before` 는 좁은 세계 계수가 없으면 원인(`WorkingPlane::world_absent`)을 가리지 않고 `WitnessNotRational`.
+
+### 접선 벽 곁의 몸 — 재지 않은 둘
+
+- `oblique_cut_rod.rs` 의 창 낸 막대에서 창에 선으로 닿는 도구를 뺀 것은 `SelfTouchingResult` 다 — 한 몸이 제게 닿는지, 두 몸이
+  선으로 닿는지(거짓 거절)는 OCCT·복셀 모형으로 재지 않았다.
+- `tangent_walls.rs` 의 벽은 축정렬 상자뿐이다 — 돌리거나 비스듬한 벽이 옆면에 접하는 배치는 재지 않았다.
 
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
@@ -459,7 +460,7 @@ census `wf`, `frames`, `tolerant` 등 — 그 이름으로 grep) — design 「�
 Cut·Common 에서 칼날을 실은 클래스는 `per_class` 를 칼날과 함께 한 번 걷고, 그 칼날이 하나도 재료를 끊지 않으면
 칼날 없이 다시 걷는다(`arrange_class`·`rewalk`). 버려지는 걷기도 `emit_faces` 까지 돈다 — 무엇을 끊는지는
 `label_cells` 직후에 알지만 `per_class` 가 한 단계라서다. 인구(행 = `arrange_class` 호출, debug 참조 실행 포함):
-스위트 308, census 12, 무시 스윕·perf 0. census 직렬 명령어로는 칼날 단위 전체가 +0.18% 라 이 몫은 보이지 않는다.
+스위트 498, census 12, 무시 스윕·perf 0. census 직렬 명령어로는 칼날 단위 전체가 +0.18% 라 이 몫은 보이지 않는다.
 고치는 꼴은 `per_class` 를 «걷기·라벨»과 «면 내기» 둘로 쪼개 `arrange_class` 가 그 사이에서 정하는 것이다.
 
 ### 원통 판정의 상승 — 인구가 생기면

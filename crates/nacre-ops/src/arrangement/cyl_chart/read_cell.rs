@@ -137,16 +137,15 @@ impl Chart {
     /// whole or both with the wall's half-lines inside it, so no operand has a face of the wall on
     /// the line. A void beyond the wall where it has no face meets no tangent ruling: there its
     /// planes are a station's chords, which cut the lateral (`tangent_lumps.rs`'s wedge families).
-    /// Measured, the two far sectors are both kept on 172 suite calls, 36 census and 20 kit calls,
-    /// each of the suite's on a wall face's own edge; another plane holds the line on 8 of the
-    /// suite's, its faces meeting the stretch at its end alone. The lateral's continuing is the
-    /// conjunction of the two far sectors, so which cell lies on `+τ` is not asked. Two cusps whose
-    /// floors and laterals each end on the line from either side meet there alone: the floors' far
-    /// side is not kept, and the lateral is cut. A lateral keeping its inside (a fillet, a boss)
-    /// bounds one chamber between its halves and runs on. A wall running through the line where the
-    /// operation parts the material along it — its class's knife (`rulings::tangent_knife`) — is
-    /// read the same way: its two halves are the line's two spokes on that side, ending there in
-    /// the result.
+    /// Measured, the two far sectors are both kept on 310 suite calls, 36 census and 20 kit calls,
+    /// each of the suite's on a wall face's own edge (marked a tangent edge, with no graze). The
+    /// lateral's continuing is the conjunction of the two far sectors, so which cell lies on `+τ`
+    /// is not asked. Two cusps whose floors and laterals each end on the line from either side meet
+    /// there alone: the floors' far side is not kept, and the lateral is cut. A lateral keeping its
+    /// inside (a fillet, a boss) bounds one chamber between its halves and runs on. A wall running
+    /// through the line where the operation parts the material along it — its class's knife
+    /// (`rulings::tangent_knife`) — is read the same way: its two halves are the line's two spokes
+    /// on that side, ending there in the result.
     ///
     /// **Each chamber between is read off both its walls**: chord `k`'s inside cell on its far side
     /// from `τ` and chord `k + 1`'s on its near side, and outside, the vertically opposite chamber

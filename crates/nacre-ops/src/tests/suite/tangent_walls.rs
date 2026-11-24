@@ -10,7 +10,11 @@
 //!   stretch along the face parts it;
 //! - **a windowed box** — the box with a window `[1/2, 3/2] × [−w, w] × [3/2, 5/2]` (`w` two fifths of
 //!   the box's half width) through its wall `x = 1` across the line: each of the knife's two stretches
-//!   joins the face's outer ring to the window's, and only the two together part the face.
+//!   joins the face's outer ring to the window's, and only the two together part the face;
+//! - **a half notch** — the rod with `y < 0` taken over `z ∈ [1, 2]`: there the lateral ends on the
+//!   line, its edge held by the notch's wall `y = 0`, and the knife over that stretch is the plane
+//!   segment of the lateral's half and the wall's (`crossings::fold_onto_rulings`), which joins the
+//!   ruling knife's stretches below and above it.
 //!
 //! **Derived, not read back.** Volumes are closed form ([`hole_runs`](super::hole_runs)' disk–rectangle
 //! areas; a window's, the difference of two boxes'). The body counts come from a voxel model of the
@@ -19,15 +23,24 @@
 //! (308 of them). OCCT agrees with the volume and area of every cell, as built, to the six digits it
 //! prints.
 
-use super::hole_runs::{Body, Rect, WHOLE, area};
+use super::hole_runs::{BELOW, Body, Rect, WHOLE, area};
 use super::one_sided_notch::{four, scored};
-use super::scoreboard::OPS;
+use super::scoreboard::{OPS, run};
 use super::*;
 
 /// The rod as it is.
 const PLAIN: Body = Body {
     cuts: &[],
     kept: [&[WHOLE], &[WHOLE], &[WHOLE], &[WHOLE]],
+};
+
+/// The height the notch takes the half `y < 0` over — the second of the slabs a [`Body`] keeps.
+const NOTCH_Z: [f64; 2] = [1.0, 2.0];
+
+/// The rod with the half `y < 0` taken over [`NOTCH_Z`].
+const HALF: Body = Body {
+    cuts: &[(BELOW, NOTCH_Z[0], NOTCH_Z[1] - NOTCH_Z[0])],
+    kept: [&[WHOLE], &[[-2.0, 0.0, 2.0, 2.0]], &[WHOLE], &[WHOLE]],
 };
 
 /// The box's span of height, inside the rod's.
@@ -38,6 +51,8 @@ const ACROSS_X: Rect = [-1.0, -0.25, 1.0, 0.25];
 const ACROSS_Y: Rect = [-0.5, -1.0, 0.5, 1.0];
 /// Walls `x = ±1` the whole block wide.
 const WIDE_X: Rect = [-1.0, -2.0, 1.0, 2.0];
+/// All four walls touching the rod.
+const SNUG: Rect = [-1.0, -1.0, 1.0, 1.0];
 
 /// The window through the wall `x = 1` of a box over `rect`, and the part of it inside the box.
 fn window(rect: Rect) -> (Rect, Rect) {
@@ -48,7 +63,9 @@ const WINDOW_Z: [f64; 2] = [1.5, 2.5];
 
 /// **Every boolean of `body` (or its bore) with the box over `rect × SPAN`, windowed or not** — each
 /// at its closed-form volume, `validate` and the mesh (`scored`). `bodies` is the model's count per
-/// boolean, in the order of [`OPS`].
+/// boolean, in the order of [`OPS`]; `x` is a body touching itself along `(0, −1)` above and below
+/// the notch, which the boolean refuses (`SelfTouchingResult`) with a witness on that line there —
+/// over the notch the slab under it fills the line.
 fn against(body: &Body, bore: bool, rect: Rect, windowed: bool, bodies: &str) {
     let dz = |z: [f64; 2]| z[1] - z[0];
     let va = body.within(bore, [-9.0, -9.0, 9.0, 9.0], [-9.0, 9.0]);
@@ -72,6 +89,27 @@ fn against(body: &Body, bore: bool, rect: Rect, windowed: bool, bodies: &str) {
             b = out[0];
         }
         let label = format!("bore = {bore}, {rect:?}, windowed = {windowed}, {op:?}");
+        if bodies.as_bytes().get(got.len()) == Some(&b'x') {
+            let Err(BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                at: Some(crate::RejectWhere::Point(p)),
+            }) = run(&mut m, op, a, b)
+            else {
+                panic!("{label}: not refused as touching itself");
+            };
+            let [x, y, z] = p.as_array();
+            assert!(
+                x.abs() < 1e-9 && (y + 1.0).abs() < 1e-9,
+                "{label}: the witness {p:?}"
+            );
+            let over_notch = NOTCH_Z[0] < z && z < NOTCH_Z[1];
+            assert!(
+                (SPAN[0]..=SPAN[1]).contains(&z) && !over_notch,
+                "{label}: the witness {p:?}"
+            );
+            got.push('x');
+            continue;
+        }
         let n =
             scored(&label, &mut m, op, a, b, want).unwrap_or_else(|| panic!("{label}: refused"));
         got.push_str(&n.to_string());
@@ -100,4 +138,23 @@ fn a_window_across_the_line_parts_the_face_on_both_sides_of_it() {
     against(&PLAIN, false, ACROSS_X, true, "1241");
     against(&PLAIN, true, WIDE_X, true, "1112");
     against(&PLAIN, true, ACROSS_X, true, "1114");
+}
+
+/// The notch's wall ends the lateral on the line over `z ∈ [1, 2]`, and the wall `x = 1` parts there
+/// as well as above and below: two bodies, or three where the walls `y = ±1/4` cut the slivers off.
+#[test]
+fn a_notch_ending_the_lateral_on_the_line_parts_the_face_there_too() {
+    against(&HALF, false, WIDE_X, false, "1221");
+    against(&HALF, false, ACROSS_X, false, "1131");
+    against(&HALF, true, WIDE_X, false, "1112");
+    against(&HALF, true, ACROSS_X, false, "1113");
+}
+
+/// With the walls `y = ±1` touching too, the slab under the notch joins the two slivers by
+/// `y = −1`, which then touch each other along `(0, −1)` above and below it: one body touching
+/// itself, refused there; the other booleans build.
+#[test]
+fn a_notch_that_joins_the_slivers_by_a_tangent_wall_is_refused_on_that_line() {
+    against(&HALF, false, SNUG, false, "12x1");
+    against(&HALF, true, SNUG, false, "111x");
 }
