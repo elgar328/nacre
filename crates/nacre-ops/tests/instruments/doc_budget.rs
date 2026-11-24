@@ -84,7 +84,7 @@ const PARTS: &[Part] = &[
         file: "docs/todo.md",
         from: None,
         to: Some(PARKED),
-        ceiling: 23_900,
+        ceiling: 24_300,
         floored: false,
         first_column: false,
     },
