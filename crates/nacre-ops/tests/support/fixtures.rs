@@ -1232,18 +1232,32 @@ pub fn face_count(m: &Model, s: Handle<Solid>) -> usize {
 
 /// **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
 /// (`tess_census`), which the front-door tests do not pass through. The mesh exists, is the drawing
-/// of its b-rep (`nacre_tess::drawing_faults`), and its signed volume is the solids' own up to what
-/// sampling cuts off a curved face:
-/// at most the face's area times the sagitta the budget allows, the smaller of `TessConfig::tol`
-/// and `r(1 − cos(max_angle / 2))` — the two budgets `TessConfig` states. The slack comes from the
-/// budget, not from the fixture: `tol` alone would allow `0.126` on the unit cylinder's lateral,
-/// more than a groove filled in on a cap costs (`0.1`).
+/// of its b-rep (`nacre_tess::drawing_faults`), and its signed volume is the solids' own up to
+/// [`chord_slack`].
 pub fn drawn(c: &dyn std::fmt::Display, m: &Model, solids: &[Handle<Solid>], volume: f64) {
     let cfg = nacre_tess::TessConfig::default();
     let t = nacre_tess::tessellate(m, &cfg)
         .unwrap_or_else(|e| panic!("{c}: the mesher refuses it: {e:?}"));
     let faults = nacre_tess::drawing_faults(m, &t, &cfg);
     assert!(faults.is_empty(), "{c}: {faults:?}");
+    let slack = chord_slack(m, solids, &cfg);
+    let got = mesh_volume(&t);
+    assert!(
+        (got - volume).abs() <= slack + 1e-9,
+        "{c}: mesh volume {got}, solids {volume}, slack {slack}"
+    );
+}
+
+/// **How far a mesh of `solids` may enclose a volume other than theirs** — what sampling cuts off a
+/// curved face: at most the face's area times the sagitta the budget allows, the smaller of
+/// `TessConfig::tol` and `r(1 − cos(max_angle / 2))` — the two budgets `TessConfig` states. A plane
+/// face's mesh meets its curved edges on the same chords as the lateral beside it, so the curved
+/// faces' sag is all the enclosed volume can miss. The slack follows the curved area, not the
+/// volume: a body thin beside its lateral loses to the chords a share of its volume far above any
+/// fixed fraction (the wedge between a rod and a wall tangent to it). It comes from the budget, not
+/// from the fixture: `tol` alone would allow `0.126` on the unit cylinder's lateral, more than a
+/// groove filled in on a cap costs (`0.1`).
+pub fn chord_slack(m: &Model, solids: &[Handle<Solid>], cfg: &nacre_tess::TessConfig) -> f64 {
     let mut slack = 0.0;
     for &s in solids {
         let solid = m.solid(s);
@@ -1261,9 +1275,5 @@ pub fn drawn(c: &dyn std::fmt::Display, m: &Model, solids: &[Handle<Solid>], vol
             }
         }
     }
-    let got = mesh_volume(&t);
-    assert!(
-        (got - volume).abs() <= slack + 1e-9,
-        "{c}: mesh volume {got}, solids {volume}, slack {slack}"
-    );
+    slack
 }

@@ -367,8 +367,9 @@ fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
 /// area undercounts it for a face thin beside its arcs: the sliver between a rod's arc and the
 /// wall tangent to it (`tangent_junction`), `0.0217` of area and `5.3e-5` of chord ground, every
 /// digit of it the 2° segments of its 30° arc. A curved face's mesh misses by its facets' sag
-/// across the surface, a share of its area: the relative budget, which the solid's volume is
-/// held to as well.
+/// across the surface, a share of its area: the relative budget. The solid's volume is held to
+/// its curved faces' sag ([`fixtures::chord_slack`], what the integration tests' `drawn` reads), not
+/// to a share of the volume, for the same reason as a plane face: a body thin beside its lateral.
 pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>]) {
     // 5 × the derived worst case (2.0e-4, a full disk at the angular budget).
     const BUDGET: f64 = 1e-3;
@@ -438,9 +439,10 @@ pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>])
             }
         }
         let exact = nacre_props::mass_props(m, s).expect("mass_props").volume;
+        let slack = fixtures::chord_slack(m, &[s], &config);
         assert!(
-            (mesh_volume - exact).abs() <= BUDGET * exact,
-            "{name}: the mesh encloses {mesh_volume}, the solid is {exact}"
+            (mesh_volume - exact).abs() <= slack + 1e-9,
+            "{name}: the mesh encloses {mesh_volume}, the solid is {exact} (slack {slack})"
         );
     }
 }
