@@ -550,7 +550,10 @@ fn the_scoreboards_commons_are_what_the_forward_road_builds() {
 /// cylinder gate (`ClassMeet::Undrawable`). Every other cell builds, at its derived volume — a plane
 /// across the axis crossing the slanted rim included, and the wall box that seals the window's rest
 /// into a cavity, in either order — but the windowed rod less a tool touching its window along a
-/// line, which touches itself (`SelfTouchingResult`).
+/// line, which touches itself (`SelfTouchingResult`). That tool is the coaxial bore, and what is
+/// left is one body, not two meeting on the line: at the window's height the section alone is the
+/// ring about the bore, cut only where the window takes its side, so the two sides of the line join
+/// round the far side.
 #[test]
 fn a_cut_rod_fed_back_builds_but_where_a_plane_touches_its_slanted_rim() {
     for windowed in [false, true] {
