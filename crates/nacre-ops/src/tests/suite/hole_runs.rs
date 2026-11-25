@@ -45,6 +45,57 @@ pub(super) struct Body {
     pub(super) kept: [&'static [Rect]; 4],
 }
 
+/// The plane similarity `p ↦ (a·x − b·y, b·x + a·y) / k` — a turn and a scale whose images of
+/// decimal points are rational, and decimals while `k` has no prime factor but 2 and 5, so a
+/// picture it moves is stated exactly ([`Self::corners`] checks it). `a² + b² > 0`, so the
+/// determinant is positive: a ring keeps its winding.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Similar {
+    pub(super) a: i128,
+    pub(super) b: i128,
+    pub(super) k: i128,
+}
+
+/// The identity.
+pub(super) const SAME: Similar = Similar { a: 1, b: 0, k: 1 };
+
+impl Similar {
+    /// The image of the decimal point `p`, exact.
+    pub(super) fn point(self, p: [f64; 2]) -> [Rat; 2] {
+        let [x, y] = p.map(|v| Rat::from_decimal(v).expect("a decimal"));
+        let (a, b) = (Rat::from_int(self.a), Rat::from_int(self.b));
+        let over_k = Rat::new(1, self.k).expect("k ≠ 0");
+        let mul = |u: Rat, v: Rat| u.checked_mul(v).expect("inside `Rat`");
+        let u = mul(a, x).checked_sub(mul(b, y)).expect("inside `Rat`");
+        let v = mul(b, x).checked_add(mul(a, y)).expect("inside `Rat`");
+        [mul(u, over_k), mul(v, over_k)]
+    }
+
+    /// The images of `r`'s corners, counter-clockwise from `(x0, y0)` — the nearest `f64` of each
+    /// exact image, whose shortest decimal is that image, or a panic where it is not (a `k` with
+    /// another prime factor, or too many digits): the polygon would not be the picture's image.
+    pub(super) fn corners(self, [x0, y0, x1, y1]: Rect) -> Vec<[f64; 2]> {
+        [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+            .into_iter()
+            .map(|p| {
+                let exact = self.point(p);
+                let near = exact.map(Rat::to_f64);
+                assert_eq!(
+                    near.map(Rat::from_decimal),
+                    exact.map(Some),
+                    "{self:?}: the image of {p:?} is not a short decimal"
+                );
+                near
+            })
+            .collect()
+    }
+
+    /// The factor on areas: `(a² + b²) / k²`.
+    pub(super) fn scale2(self) -> f64 {
+        (self.a * self.a + self.b * self.b) as f64 / (self.k * self.k) as f64
+    }
+}
+
 const STEPPED: Body = Body {
     cuts: &[(BELOW, 1.0, 1.0), (BELOW_HALF, 2.0, 1.0)],
     kept: [
@@ -139,19 +190,13 @@ impl Body {
     /// turn about `y`, a quarter about `z`), `4..=6` (in `x = 0`, `y = 0`, `z = 5/2`). `Mirror` does
     /// not take a curved solid, so a reflected body is built reflected. `down` states the rod's axis
     /// along `−z`.
-    pub(super) fn build(
-        &self,
-        m: &mut Model,
-        bore: bool,
-        down: bool,
-        place: usize,
-    ) -> Handle<Solid> {
+    fn build(&self, m: &mut Model, bore: bool, down: bool, place: usize) -> Handle<Solid> {
         let (base, axis) = if down {
             ([0.0, 0.0, 5.0], [0.0, 0.0, -1.0])
         } else {
             ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0])
         };
-        let mut x = crate::fixtures::cylinder_with_seam(
+        let rod = crate::fixtures::cylinder_with_seam(
             m,
             Point3::from_array(base),
             nacre_math::Vector3::from_array(axis),
@@ -160,24 +205,15 @@ impl Body {
             5.0,
         )
         .solid;
-        for &([x0, y0, x1, y1], z, h) in self.cuts {
+        let x = self.carve(m, rod, bore, |[x0, y0, x1, y1], z, h| {
             let [x0, y0, x1, y1] = match place {
                 4 => [-x1 + 0.0, y0, -x0 + 0.0, y1],
                 5 => [x0, -y1 + 0.0, x1, -y0 + 0.0],
                 _ => [x0, y0, x1, y1],
             };
             let z = if place == 6 { 5.0 - (z + h) } else { z };
-            let t = prism(m, &[[x0, y0], [x1, y0], [x1, y1], [x0, y1]], z, h);
-            let out = crate::boolean(m, BoolKind::Cut, x, t).expect("the cut");
-            assert_eq!(out.len(), 1, "the rod stays one body");
-            x = out[0];
-        }
-        if bore {
-            let block = crate::fixtures::cuboid(m, [-2.0, -2.0, 0.0], [2.0, 2.0, 5.0]);
-            let out = crate::boolean(m, BoolKind::Cut, block, x).expect("the bore");
-            assert_eq!(out.len(), 1, "the block stays one body");
-            x = out[0];
-        }
+            (vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]], z)
+        });
         let turn = |axis, deg| Operation::Transform {
             solid: x,
             isometry: Isometry::rotation(Rotation {
@@ -196,6 +232,53 @@ impl Body {
             OpOutput::Transform { solid } => solid,
             other => panic!("{other:?}"),
         }
+    }
+
+    /// The body's image under the plane similarity `sim`, built so: the rod is the image of the
+    /// unit circle — about the origin through `sim`'s image of `(1, 0)`, so its `r²` and its seam
+    /// are `sim`'s ([`crate::fixtures::cylinder_through`]) — and every cut and the block are the
+    /// images of their corners. [`Self::build`] states the rod by its radius and turns or reflects
+    /// the body carved from it; a similarity changes the circle's statement itself (its `r²` and
+    /// its seam), hence a door of its own. Its common parts are [`Self::within`]'s times
+    /// [`Similar::scale2`], its bodies the same.
+    pub(super) fn image(&self, m: &mut Model, bore: bool, sim: Similar) -> Handle<Solid> {
+        let rod = crate::fixtures::cylinder_through(
+            m,
+            0.0,
+            5.0,
+            [Rat::from_int(0); 2],
+            sim.point([1.0, 0.0]),
+        )
+        .solid;
+        self.carve(m, rod, bore, |r, z, _| (sim.corners(r), z))
+    }
+
+    /// `rod` less each of the cuts and, for the bore, the block less the result — each prism over
+    /// the polygon and from the height `place` gives a cut's rectangle (the block is `WHOLE` from
+    /// `0` for `5`).
+    fn carve(
+        &self,
+        m: &mut Model,
+        rod: Handle<Solid>,
+        bore: bool,
+        place: impl Fn(Rect, f64, f64) -> (Vec<[f64; 2]>, f64),
+    ) -> Handle<Solid> {
+        let mut x = rod;
+        for &(rect, z, h) in self.cuts {
+            let (pts, z) = place(rect, z, h);
+            let t = prism(m, &pts, z, h);
+            let out = crate::boolean(m, BoolKind::Cut, x, t).expect("the cut");
+            assert_eq!(out.len(), 1, "the rod stays one body");
+            x = out[0];
+        }
+        if bore {
+            let (pts, z) = place(WHOLE, 0.0, 5.0);
+            let block = prism(m, &pts, z, 5.0);
+            let out = crate::boolean(m, BoolKind::Cut, block, x).expect("the bore");
+            assert_eq!(out.len(), 1, "the block stays one body");
+            x = out[0];
+        }
+        x
     }
 }
 

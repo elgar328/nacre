@@ -14,9 +14,9 @@
 
 use super::*;
 
-/// A cylinder built by [`cylinder`] or [`cylinder_with_seam`], with its faces **named** — the
-/// extrude's `[base, top, sides…]` order is a fact of `OpOutput::Extrude`, and a caller reading
-/// a face by index would be guessing it.
+/// A cylinder built by [`cylinder`], [`cylinder_with_seam`] or [`cylinder_through`], with its
+/// faces **named** — the extrude's `[base, top, sides…]` order is a fact of `OpOutput::Extrude`,
+/// and a caller reading a face by index would be guessing it.
 #[derive(Clone, Copy, Debug)]
 pub struct CylinderSolid {
     pub solid: Handle<Solid>,
@@ -41,7 +41,7 @@ pub fn cylinder(
     height: f64,
 ) -> CylinderSolid {
     let plane = SketchPlane::from_origin_normal(base, axis).expect("a nonzero cylinder axis");
-    extruded_circle(m, plane, radius, height)
+    extruded_circle(m, plane, origin_circle(radius), height)
 }
 
 /// [`cylinder`] with the seam written out — for a test whose proposition involves **where the
@@ -61,12 +61,48 @@ pub fn cylinder_with_seam(
     extruded_circle(
         m,
         SketchPlane::from_axes(base, seam, axis.cross(seam)),
-        radius,
+        origin_circle(radius),
         height,
     )
 }
 
-fn extruded_circle(m: &mut Model, plane: SketchPlane, radius: f64, height: f64) -> CylinderSolid {
+/// A cylinder about `z` stated by a point of its circle: on the world plane `z = z0`, the circle
+/// about `center` through `seam` — one arc whose vertex is `seam`, of `r² = |seam − center|²` —
+/// extruded `height` along `+z`. For a test whose radius is known only by its square (`r² = 2`)
+/// or whose seam stands off the axes; [`cylinder_with_seam`] states a radius and a seam direction.
+pub fn cylinder_through(
+    m: &mut Model,
+    z0: f64,
+    height: f64,
+    center: [Rat; 2],
+    seam: [Rat; 2],
+) -> CylinderSolid {
+    let d = |i: usize| {
+        seam[i]
+            .checked_sub(center[i])
+            .expect("an offset inside `Rat`")
+    };
+    let sq = |v: Rat| v.checked_mul(v).expect("a square inside `Rat`");
+    let r2 = sq(d(0)).checked_add(sq(d(1))).expect("r² inside `Rat`");
+    let arc = Edge2d::Arc {
+        center,
+        r2,
+        ccw: true,
+    };
+    let ring = Ring2d::new(vec![seam], vec![arc]).expect("a whole circle through its seam");
+    let plane = SketchPlane::from_axes(
+        Point3::from_array([0.0, 0.0, z0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
+    );
+    extruded_circle(m, plane, ring, height)
+}
+
+fn origin_circle(radius: f64) -> Ring2d {
+    Ring2d::circle(Point2::from_array([0.0, 0.0]), radius).expect("a stated radius")
+}
+
+fn extruded_circle(m: &mut Model, plane: SketchPlane, ring: Ring2d, height: f64) -> CylinderSolid {
     let frame = match apply(
         m,
         &Operation::DatumPlane {
@@ -76,7 +112,6 @@ fn extruded_circle(m: &mut Model, plane: SketchPlane, radius: f64, height: f64) 
         Ok(OpOutput::DatumPlane { frame, .. }) => frame,
         other => panic!("stating the cylinder's base plane: {other:?}"),
     };
-    let ring = Ring2d::circle(Point2::from_array([0.0, 0.0]), radius).expect("a stated radius");
     let profile = Profile2d::from_normalized_rings(ring, vec![]);
     match apply(
         m,
