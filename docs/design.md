@@ -1872,12 +1872,12 @@ f64 의 프리즘 좌표(`origin + x·u + y·v`, `+ normal·dist`)는 결합법�
 - **구간 돌출은 «스케치가 여기서 시작한다»다** — `[lo, hi]` 를 한 번 쓸고 프레임의 원점을 구간의 시작에 둔다(kit `build.rs`
   의 `Dist::Both`): 불리언도, 쓸고 옮기면 남을 모션도 없다. 계약은 `lo < hi` 만 요구한다.
 - **원 셀은 «클래스가 축에 수직일 때만» 원이다** — 이름은 `class_carries_circle` 하나이고, 원을 읽는 소비자 목록과 비스듬한
-  호를 그 도로들 안에 묶는 게이트의 논증(앉은 원 생산자의 더 강한 근거 포함)은 그 doc. 비스듬한 클래스의 자취는
+  호를 그 도로들 안에 묶는 게이트의 논증은 그 doc. 비스듬한 클래스의 자취는
   **단면**(타원)이고 게이트가 `CylRecord::Sections` 로 기록한 쌍에만 선다. 이 쓰임이 서는 까닭은 **평면 단면이 모두 θ 의
   그래프**라는 것이다(`cyl_chart` 모듈 doc): θ 순서(`circular_order_about_seam`)·호 포함(`theta_between`)은 단면에도 참이고,
   원에만 맞던 «점에서의 반경에 축 성분이 없다»는 `nacre_exact::quad::axial_side`·`ccw_tangent_side` 한 술어로 묻는다
   (극점 평면의 `g*` 는 `combinatorics::winding` 의 그 주석). 호의 상자는 `trace_band`. 추적은 ⊥ 클래스와 한
-  덜어내기(`trace_on_face`; 꼭짓점은 `corner_on_section`, 깎이지 않은 자취는 `outer_by_witness`)이고, 그리지 못하는
+  덜어내기(`trace_on_face`; 꼭짓점은 `ruling_hole`·`corner_on_section`, 깎이지 않은 자취는 `outer_by_witness`)이고, 그리지 못하는
   단면은 기권 하나(`DeclineKind::ObliqueSection`)라 불리언은 게이트와 같은 이름 `ObliqueCylinderCut` 으로 거절한다 — 기권의
   목록은 `trace_on_face`·`cycle_on_class` doc. 게이트는 평면이 옆면 경계의 어느 단면에도 한 점으로 접하지 않을 때 단면을 들이고(면이 옆면에
   닿는지는 묻지 않는다 — `oblique_section_meet`), 단면의 딱지와 절단점(`CutRim`)은 차트로 가 다른 선처럼 칸을 가른다. 결과 면이 단면을

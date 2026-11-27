@@ -362,17 +362,23 @@ struct ArcMeet {
 /// - a **crossing** inside an arc toggles the face there;
 /// - a **corner** on a ruling — one node, two arcs meeting there — toggles it exactly when the
 ///   walk's flanks differ, named by the arriving arc's end;
-/// - a **run** of the cycle's own edges held by the class is a `Graze` over its extent, the side
-///   the face occupies along it `σ·τ·κ·side` (`body_side`), toggling the face exactly when its
-///   flanks differ — a panel's arcs both lie on its own side (no toggle: absent above and below);
-///   a chain's arrive from the outer half and leave into the inner (toggle: transversal below,
-///   absent above); a band's notch hole has both on the hole's side (no toggle);
-/// - a **run** held by another plane `t` is the plane pair `wc ∩ t`, which `t`'s own trace states
-///   as a graze run on this class: its edges go out as `quiet` for the lateral's half in the plane
-///   vocabulary. Along it the face holds one side, and it toggles at each end whose off-line
-///   neighbour lies on the side it does not hold, past which it holds both: the two ends of a
-///   notch in the face, one end of a lateral climbing a box's edge on its own rod's tangent line
-///   (the `tangent_junction` scoreboard), neither end of a panel.
+/// - a **run** of the cycle's edges along the ruling holds the face on one side, `σ·τ·κ·side`
+///   (`body_side`), and past each of its ends the face holds both sides exactly where the off-line
+///   neighbour leaves to the side it does not hold ([`combinatorics::past_run_ends`]). Each stretch
+///   of it is stated by whoever holds its edges, and where the holder changes the run goes on, the
+///   face still on one side:
+///   - a stretch held by the class is a `Graze` over its extent, toggling the face exactly when what
+///     lies past its two ends differs — over a whole run, when its flanks differ: a panel's arcs
+///     both lie on its own side (no toggle: absent above and below); a chain's arrive from the
+///     outer half and leave into the inner (toggle: transversal below, absent above); a band's
+///     notch hole has both on the hole's side (no toggle);
+///   - a stretch held by another plane `t` is the plane pair `wc ∩ t`, which `t`'s own trace states
+///     as a graze run on this class: its edges go out as `quiet` for the lateral's half in the plane
+///     vocabulary, and it toggles the face at each end past which the face holds both — the two
+///     ends of a notch in the face, one end of a lateral climbing a box's edge on its own rod's
+///     tangent line (the `tangent_junction` scoreboard), neither end of a panel, neither end that
+///     meets a stretch the class holds (the `ruling_holders` scoreboard: a hole whose wall changes
+///     on the ruling).
 ///
 /// Past every feature, then, the face differs exactly when its flanks do; who holds a run says
 /// only who states its line.
@@ -380,7 +386,7 @@ struct ArcMeet {
 /// Declined by name: wherever a point, an order or a side cannot be formed exactly — an arc's
 /// meeting with a ruling, a node's ruling, two points on a generator or about the axis — and a
 /// cycle the walk cannot read or that lies wholly in the class (`Ruling`); a run whose nodes stand
-/// on two rulings, whose edges mix the two holders, or of no length (`CylHoleFeature`).
+/// on two rulings or of no length (`CylHoleFeature`).
 #[allow(clippy::too_many_arguments)]
 fn cycle_on_wall(
     jd: &Judge<'_, WorkingPlane>,
@@ -551,61 +557,83 @@ fn cycle_on_wall(
                 let edges: Vec<usize> = (0..len - 1).map(|j| (first + j) % n).collect();
                 let nodes: Vec<NodeId> = (0..len).map(|j| ring[(first + j) % n]).collect();
                 let (start, end) = (nodes[0], nodes[len - 1]);
-                if edges.iter().all(|&i| held(i)) {
-                    // A tangent class seated on the lateral states its edge itself
-                    // (`trace_plane`'s tangent ruling); nothing to add here.
-                    if tangent {
-                        continue;
-                    }
+                // The run lies on one generator and is travelled one way, so its ruling, its travel
+                // `τ` and the side the face holds are the run's, and what the face holds past each
+                // of its two ends is read once ([`combinatorics::past_run_ends`]). A tangent class
+                // reads none of a cycle's stations, only its `quiet` edges and `touches`.
+                let reading = if tangent {
+                    None
+                } else {
                     let side = run_side(&nodes)?;
                     let (tau, body_above) = body_side(jd, cf, def, wc, k, side, start, end)?;
-                    let (n_lo, n_hi) = if tau > 0 { (start, end) } else { (end, start) };
-                    #[cfg(test)]
-                    ruling_probe::GRAZE_SIDE.push(ruling_probe::GrazeSide {
-                        inner,
+                    let past = combinatorics::past_run_ends(
                         body_above,
-                        ny: jd.planes[wc].plane.normal().as_array()[1],
-                        origin: def.origin().map(|x| x.to_f64()),
-                        span: [
-                            ruling_probe::height(jd, def, n_lo),
-                            ruling_probe::height(jd, def, n_hi),
-                        ],
-                    });
-                    read.stations
-                        .push((side, LineEvent::GrazeStart { body_above }, n_lo));
-                    read.stations.push((
-                        side,
-                        LineEvent::GrazeEnd {
-                            toggle: flanks_differ,
-                        },
-                        n_hi,
-                    ));
-                    run_ends.extend([(side, start), (side, end)]);
-                } else if edges.iter().any(|&i| held(i)) {
-                    return Err(DeclineKind::CylHoleFeature);
-                } else {
-                    // Another plane holds the run: it is that plane's line (`quiet`). The face
-                    // toggles at each end past which it holds both sides
-                    // ([`combinatorics::past_run_ends`]). A tangent class reads none of a cycle's
-                    // stations, only its `quiet` edges and `touches`.
-                    let side = if tangent { 0 } else { run_side(&nodes)? };
-                    if !tangent {
-                        let (_, body_above) = body_side(jd, cf, def, wc, k, side, start, end)?;
-                        let frame_sign = jd.planes[wc].frame_sign;
-                        let past = combinatorics::past_run_ends(
-                            body_above,
-                            flank,
-                            frame_sign,
-                            flanks_differ,
-                        );
-                        for (past, at) in past.into_iter().zip([start, end]) {
-                            if past == PastRun::Both {
-                                read.stations.push((side, LineEvent::Toggle, at));
+                        flank,
+                        jd.planes[wc].frame_sign,
+                        flanks_differ,
+                    );
+                    Some((side, tau, body_above, past))
+                };
+                let side = reading.map_or(0, |r| r.0);
+                // **Each stretch of the run is stated by whoever holds its edges**: the class's own
+                // (`held`) is a `Graze`, another plane's `t` is the plane pair `wc ∩ t` as `quiet`.
+                // Where the holder changes the run goes on, so the face holds one side past that
+                // node; past an end of the run it holds what `past_run_ends` read. A stretch the
+                // class holds toggles the face exactly when what lies past its two ends differs; one
+                // another plane holds toggles it at each end past which the face holds both sides.
+                let mut j0 = 0;
+                while j0 < len - 1 {
+                    let holds = held(edges[j0]);
+                    let j1 = (j0..len - 1)
+                        .find(|&j| held(edges[j]) != holds)
+                        .unwrap_or(len - 1);
+                    let (a, b) = (nodes[j0], nodes[j1]);
+                    // A tangent class seated on the lateral states its edge itself
+                    // (`trace_plane`'s tangent ruling); nothing to add here.
+                    if holds && tangent {
+                        j0 = j1;
+                        continue;
+                    }
+                    if let Some((side, tau, body_above, past)) = reading {
+                        let both = [
+                            j0 == 0 && past[0] == PastRun::Both,
+                            j1 == len - 1 && past[1] == PastRun::Both,
+                        ];
+                        if holds {
+                            let (n_lo, n_hi) = if tau > 0 { (a, b) } else { (b, a) };
+                            #[cfg(test)]
+                            ruling_probe::GRAZE_SIDE.push(ruling_probe::GrazeSide {
+                                inner,
+                                body_above,
+                                ny: jd.planes[wc].plane.normal().as_array()[1],
+                                origin: def.origin().map(|x| x.to_f64()),
+                                span: [
+                                    ruling_probe::height(jd, def, n_lo),
+                                    ruling_probe::height(jd, def, n_hi),
+                                ],
+                            });
+                            read.stations
+                                .push((side, LineEvent::GrazeStart { body_above }, n_lo));
+                            read.stations.push((
+                                side,
+                                LineEvent::GrazeEnd {
+                                    toggle: both[0] != both[1],
+                                },
+                                n_hi,
+                            ));
+                        } else {
+                            for (both, at) in both.into_iter().zip([a, b]) {
+                                if both {
+                                    read.stations.push((side, LineEvent::Toggle, at));
+                                }
                             }
                         }
                     }
-                    read.quiet.extend(edges.iter().map(|&i| (side, i)));
-                    run_ends.extend([(side, start), (side, end)]);
+                    if !holds {
+                        read.quiet.extend(edges[j0..j1].iter().map(|&i| (side, i)));
+                    }
+                    run_ends.extend([(side, a), (side, b)]);
+                    j0 = j1;
                 }
             }
         }

@@ -761,13 +761,21 @@ fn assemble_spans(
 ///
 /// so the answer is `−σ·τ`: the θ direction the face occupies. Two readers need it — the roads
 /// across the axis, where a ruling edge crossing the class or meeting it at a corner puts the
-/// **hole** in the opposite θ direction ([`cycle_on_class`], [`corner_on_section`]), and the ∥
+/// **hole** in the opposite θ direction ([`ruling_hole`]), and the ∥
 /// road, where a ruling edge lying on the class puts the **face** to one side of the wall — and
 /// they must not spell it twice.
 ///
 /// Flipping this sign turns the ⊥ road's lock and the ∥ road's lock red together.
 pub(super) fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
     -(orient_sign * travel_up)
+}
+
+/// **The θ direction a hole runs in from a point where a cycle crosses a class on a ruling** —
+/// inside a ruling edge, or at a node a ruling of the cycle arrives at or leaves: the side opposite
+/// the one the face occupies beside the ruling ([`material_theta_sign`] of its travel `up`), `±1`.
+/// Every crossing on a ruling reads it here, so a corner and an edge's interior cannot disagree.
+fn ruling_hole(orient_sign: i8, ruling_up: bool) -> i8 {
+    -material_theta_sign(orient_sign, if ruling_up { 1 } else { -1 })
 }
 
 /// The θ side a cycle's arc lies on, seen from the node where it meets a ruling: an arc arriving
@@ -780,13 +788,14 @@ fn arc_flank(ccw: bool, arriving: bool) -> i8 {
 
 /// **A corner of a lateral face's boundary — a ruling meeting an arc — lying on an oblique
 /// section**: `(hole, convex)`, the θ direction the face is absent in beside the ruling (`hole`,
-/// `±1`) and whether the face fills only the quarter between the two edges there (`convex`).
+/// `±1`, [`ruling_hole`]) and whether the face fills only the quarter between the two edges there
+/// (`convex`).
 ///
 /// In the chart `(θ, z)` the ruling runs along `z` and the arc along `θ`, so they meet square: the
 /// face at the corner is the quarter the two edges span or its complement. The ruling's own travel
-/// (`Wall::Ruling`'s `up`, the producer's) puts the material on the θ side
-/// [`material_theta_sign`] names, and the arc leaves the corner on the θ side [`arc_flank`] names;
-/// the face is that quarter exactly when the two agree.
+/// (`Wall::Ruling`'s `up`, the producer's) puts the material on the θ side opposite `hole`, and the
+/// arc leaves the corner on the θ side [`arc_flank`] names; the face is that quarter exactly when
+/// the two agree.
 ///
 /// Where the section passes the corner transversally, one half of it runs into the quarter the
 /// edges span or into the opposite one when the ring crosses it there (the walk's flanks differ),
@@ -802,8 +811,8 @@ pub(super) fn corner_on_section(
     arc_ccw: bool,
     arc_arriving: bool,
 ) -> (i8, bool) {
-    let material = material_theta_sign(orient_sign, if ruling_up { 1 } else { -1 });
-    (-material, material == arc_flank(arc_ccw, arc_arriving))
+    let hole = ruling_hole(orient_sign, ruling_up);
+    (hole, -hole == arc_flank(arc_ccw, arc_arriving))
 }
 
 /// **One boundary cycle — a hole, a panel, a chain rim — read against one class crossing the
@@ -846,11 +855,13 @@ pub(super) fn corner_on_section(
 ///   `σ·ν·m̂`; the section, going counter-clockwise from the crossing, climbs along `m̂` by the sign
 ///   of its tangent's axial part ([`climb_over`]) — into the material when the two agree, so the
 ///   hole then runs clockwise.
-/// - **A corner on the trace** — a node of the ring on the class, where a ruling meets an
-///   arc — is a crossing when the walk's flanks differ and a touch when they agree; the ruling's
-///   material side and the arc's side read which ([`corner_on_section`]). A crossing is a cut at the
-///   corner's own name, the hole on the ruling's empty side; a touch outside a convex corner takes
-///   nothing away.
+/// - **A corner on the trace** — a node of the ring on the class, where a ruling meets an arc or
+///   another ruling — is a crossing when the walk's flanks differ and a touch when they agree. A
+///   crossing is a cut at the corner's own name, the hole on the ruling's empty side, as inside a
+///   ruling edge ([`ruling_hole`]). Where a ruling meets an arc, the ruling's material side and the
+///   arc's side read a touch ([`corner_on_section`]): one outside a convex corner takes nothing
+///   away. Two rulings meet only on one generator, which crosses the class: a ring going on along it
+///   (the planes holding the boundary change there) crosses, one turning back on it touches.
 ///
 /// `up` is `plus_t_is_above`: whether the class's **stored** normal points along `+m̂` — the frame
 /// a graze's `body_above` is a label in.
@@ -948,13 +959,36 @@ fn cycle_on_class(
                 ..
             } if len < 2 => {
                 // **A corner of the boundary on the trace**, one node: the walk's flanks say
-                // whether the ring crosses the trace there or touches it. A ruling meeting an arc is
-                // read by [`corner_on_section`] — a crossing is a cut at the corner's own name, the
-                // hole on the ruling's empty side; a touch outside a convex corner takes nothing
-                // away, and one from inside the face is past this road. Any other corner has no
-                // fixture: crossing there is declined rather than guessed at, and a touch takes no
-                // extent away.
+                // whether the ring crosses the trace there or touches it. A crossing on a ruling is a
+                // cut at the corner's own name, the hole on the ruling's empty side ([`ruling_hole`]).
+                // A ruling meeting an arc is read by [`corner_on_section`]: a touch outside a convex
+                // corner takes nothing away, and one from inside the face is past this road. Any
+                // other corner has no fixture: crossing there is declined rather than guessed at,
+                // and a touch takes no extent away.
                 let corner = match (nr.walls[(first + n - 1) % n], nr.walls[first]) {
+                    // Two ruling edges meeting at a node lie on one generator, which crosses every
+                    // class across the axis: where the ring goes on along it the planes holding the
+                    // boundary change there, its neighbours lie on both sides and the two edges
+                    // travel one way. A ring turning back on the generator touches the class and
+                    // takes no extent away, like any touch; two travels with the flanks differing
+                    // is no such ring, and is declined rather than read off either edge.
+                    (
+                        Wall::Ruling {
+                            cyl: a, up: a_up, ..
+                        },
+                        Wall::Ruling {
+                            cyl: b, up: b_up, ..
+                        },
+                    ) if a == cyl && b == cyl => {
+                        match (flanks_differ, a_up == b_up) {
+                            (true, true) => {
+                                cuts.push((ring[first], ruling_hole(cf.orient_sign, a_up) > 0));
+                            }
+                            (true, false) => return Err(DeclineKind::CylHoleFeature),
+                            (false, _) => {}
+                        }
+                        continue;
+                    }
                     (
                         Wall::Ruling {
                             cyl: rc, up: r_up, ..
@@ -1082,10 +1116,9 @@ fn cycle_on_class(
                 let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
                 let cut = combinatorics::crossing_on_ruling(jd, wdef, wc, j, ncyl, side)
                     .map_err(|_| DeclineKind::CylHoleFeature)?;
-                // Which way the hole runs from here: the face occupies `material_theta_sign` of the
-                // ruling's own travel (the producer's, as for an arc), and the hole is the other way.
-                let hole_ccw = material_theta_sign(cf.orient_sign, if r_up { 1 } else { -1 }) < 0;
-                cuts.push((cut, hole_ccw));
+                // Which way the hole runs from here: off the ruling's own travel (the producer's, as
+                // for an arc).
+                cuts.push((cut, ruling_hole(cf.orient_sign, r_up) > 0));
             }
         }
     }

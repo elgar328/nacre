@@ -986,9 +986,8 @@ pub enum DeclineKind {
     /// counter-clockwise extent that fails — a run of arcs that turns back, a crossing on a carrier
     /// that is not a ruling, an odd number of crossings, two holes claiming one extent, or
     /// boundaries that do not alternate around the circle. On a wall's ruling it says the same of a
-    /// cycle's run of edges along the ruling: an edge of no length, nodes on two rulings, or edges
-    /// held by the class and by another plane at once. Every one of them is a fact about the
-    /// *shape*.
+    /// cycle's run of edges along the ruling: an edge of no length, or nodes on two rulings. Every
+    /// one of them is a fact about the *shape*.
     CylHoleFeature,
     // Not its population: a class plane that holds a **tangent ruling** together with the wall
     // tangent there — a gusset's side plane exactly through a fillet's axis (`arcwalls p1p3`), or a

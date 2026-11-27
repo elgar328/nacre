@@ -120,9 +120,11 @@ pub(crate) use traces::*;
 /// `(position, event)`, read the same order from this one `Ord`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum LineEvent {
-    /// An on-line run of the boundary ends here. `toggle` when the boundary goes on to the far side
-    /// of the line (the run's flanks differ): the face is present on one side of the run's end and
-    /// not the other.
+    /// An on-line run of the boundary ends here. `toggle` when what the face holds past the run's
+    /// two ends differs: the face is present on one side of the run and not the other. Over a whole
+    /// run that is the boundary going on to the far side of the line (its flanks differ — the plane
+    /// road's reading); a stretch of a run on a ruling can end where another plane takes the run
+    /// on, past which the face still holds one side (`rulings::cycle_on_wall`).
     GrazeEnd { toggle: bool },
     /// The face starts or stops holding both sides of the line here: the boundary crosses it, or
     /// leaves a run another plane holds to the side the face does not.
