@@ -11,10 +11,13 @@
 //! - a half disk prism whose flat fills the window of a slab (the contact runs along two of the
 //!   cylinder's rulings, where the window's side walls are tangent to it, and along two chords);
 //! - a cube and a triangular prism touching along one edge line that three plane classes hold;
+//! - the same with the prism turned `37°` about that line, so four classes hold it and two of them
+//!   carry a motion the cube's do not — the order round the line reads those two off their
+//!   witnesses;
 //! - a rod bored through by the half disk and the half's pin below it, whose diameter no plane
-//!   class crosses: the order round it is not read, and the Fuse is refused (`UnorderedEdges`).
+//!   class crosses: the order round it is read about the line itself.
 
-use super::scoreboard::{OPS, Want, check, counted, refused, run};
+use super::scoreboard::{OPS, Want, check, counted, run};
 use super::*;
 
 type Build = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
@@ -104,6 +107,27 @@ fn three_planes_on_a_line(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     (cube, sweep(m, triangle, 1.0))
 }
 
+/// [`three_planes_on_a_line`] with the prism turned `37°` about the line `x = y = 1` — its
+/// triangle goes to about `(1, 1)`, `(1.39, 3.80)`, `(−0.20, 2.60)`, the wedge from `45°–90°` to
+/// `82°–127°` about the line, clear of the cube's `180°–270°`, and the caps stay put — so every
+/// answer is the unturned family's.
+fn three_planes_on_a_line_turned(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let (cube, prism) = three_planes_on_a_line(m);
+    let r = |n| nacre_exact::Rat::from_int(n);
+    let turn = Operation::Transform {
+        solid: prism,
+        isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+            axis: nacre_exact::Axis::Z,
+            pivot: [r(1), r(1), r(0)],
+            angle: nacre_exact::Angle::from_deg(r(37)).expect("an angle"),
+        }),
+    };
+    match crate::apply(m, &turn).expect("the turn") {
+        OpOutput::Transform { solid } => (cube, solid),
+        other => panic!("{other:?}"),
+    }
+}
+
 /// A rod of radius 2 on `z ∈ [2, 4]` bored through by the unit circle's upper half, and the half's
 /// pin below it — one half-disk cylinder handle, and no plane class across the diameter.
 fn d_pin_in_a_rod(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
@@ -120,7 +144,7 @@ fn d_pin_in_a_rod(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     (bored, sweep(m, upper_half(), 2.0))
 }
 
-const FAMILIES: [(&str, Build); 6] = [
+const FAMILIES: [(&str, Build); 7] = [
     ("a square pin under its bore", square_pin),
     ("a half-disk pin under its bore", d_pin),
     ("a pocketed square pin under its bore", pocketed_pin),
@@ -128,6 +152,10 @@ const FAMILIES: [(&str, Build); 6] = [
     (
         "two prisms on a line of three planes",
         three_planes_on_a_line,
+    ),
+    (
+        "two prisms on a line of three planes, one turned about it",
+        three_planes_on_a_line_turned,
     ),
     ("a half-disk pin under its bore in a rod", d_pin_in_a_rod),
 ];
@@ -166,15 +194,16 @@ fn wants(name: &str) -> [Want; 4] {
             counted(&[PI], &[4]),
             none(),
         ],
-        "two prisms on a line of three planes" => [
+        "two prisms on a line of three planes"
+        | "two prisms on a line of three planes, one turned about it" => [
             counted(&[1.0, 2.0], &[6, 5]),
             counted(&[1.0], &[6]),
             counted(&[2.0], &[5]),
             none(),
         ],
-        // The Fuse is two bodies, `π` and `7π`, once the order round the diameter is read.
+        // Two bodies: the pin's four faces, the bored rod's five.
         "a half-disk pin under its bore in a rod" => [
-            refused(RejectReason::UnorderedEdges),
+            counted(&[PI, 7.0 * PI], &[4, 5]),
             counted(&[7.0 * PI], &[5]),
             counted(&[PI], &[4]),
             none(),

@@ -224,9 +224,7 @@ pub enum RejectReason {
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
     /// The same is said of two result faces leaving one curve of the result along one direction:
-    /// the component join reads its pairs off that curve's cyclic order. And of a line of the result
-    /// only plane faces hold when no plane class of the boolean crosses it: that order is read on
-    /// such a cut, and without one it is not read.
+    /// the component join reads its pairs off that curve's cyclic order.
     ///
     /// A line and an arc **tangent** at the vertex are not this when the arc leaves the other way
     /// (a fillet's smooth corner is a half turn, read by geometry). What is this: the same way —

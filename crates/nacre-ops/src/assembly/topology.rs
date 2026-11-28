@@ -443,23 +443,24 @@ fn line_star(
 }
 
 /// **The spokes round a line only planes hold, in order** — each face with whether its material
-/// lies counter-clockwise after it.
-///
-/// Cut the star by a plane class `t` the line `L = n_p × n_q` crosses, and each face's half-plane
-/// is a ray on `t` from the line's point: along `n_t × n_a` for a face on class `a`, the way that
-/// enters the face's half — so the half-planes' cyclic order about `L` is the rays' about `t`'s
-/// outward normal ([`combinatorics::angular_order`], which also names two faces leaving one way).
-/// Which `t` serves does not matter — the cut keeps the order, and `sign(n_t·L)` is in each ray's
-/// sense — so the first class in the table that crosses the line is taken.
+/// lies counter-clockwise after it, about the line's own direction `L = n_p × n_q`.
 ///
 /// The signs, stored normals throughout (`EdgeDir`'s convention). A face on `a` lies left of its
 /// travel `τ·L` about its frame normal `f_a·n_a` (its ring before `flip`, `arrangement::emit`), so
-/// its half runs along `f_a·τ·(n_a × L)`. Against that, `(n_t × n_a)·(n_a × L) = −(n_t·L)·|n_a|²`,
-/// so the ray's sense is `s = −sign(n_t·L)·f_a·τ`. Its material is on the side `−f_a·φ·n_a` of
-/// `a` (`φ = −1` flipped), and the side counter-clockwise after the ray about `f_t·n_t` is
-/// `−f_t·s`'s — so the material lies counter-clockwise after it exactly when `f_t·s = f_a·φ`.
-/// `τ` is the first face's edge direction ([`combinatorics::dir_at`], `+1` along `n_p × n_q`) and,
-/// for the others, how they walk the edge against it.
+/// its half-plane leaves the line along `s·(n_a × L)`, `s = f_a·τ`. Two halves turn about `L` by
+/// `(n_a × L) × (n_b × L) = det(L, n_a, n_b)·L`, so the turn from `a`'s to `b`'s is
+/// `s_a·s_b·sign((n_p × n_q)·(n_a × n_b))` ([`nacre_judge::predicate::Judge::line_pair_dir_sign`]).
+/// The material is on the side `−f_a·φ·n_a` of `a` (`φ = −1` flipped), and the side
+/// counter-clockwise after the half is `L × s(n_a × L) = s·|L|²·n_a`'s — so the material lies
+/// counter-clockwise after it exactly when `s = −f_a·φ`, that is `τ = −φ`. `τ` is the first face's
+/// edge direction ([`combinatorics::dir_at`], `+1` along `n_p × n_q`) and, for the others, how they
+/// walk the edge against it.
+///
+/// Two halves of one class are a half turn apart where their `s` differ
+/// ([`combinatorics::antiparallel`]), and halves of two classes never turn `0`: both classes hold
+/// the line, so `n_a × n_b` runs along it, and two classes are two planes. Two faces of one class
+/// leaving on one side use one half-plane twice and have no order between them —
+/// [`combinatorics::cyclic_order`] names that (`UnorderedEdges`).
 fn plane_spokes(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -478,31 +479,31 @@ fn plane_spokes(
     else {
         return Err(stages());
     };
-    // A table with no class across the line has no cut to read the order on — the order is not
-    // read, and the refusal says so: the half-disk pin under its bore through a rod
-    // (`contact_faces`), whose diameter only planes along it hold. The order about the line itself
-    // needs no cut and no predicate answers it yet.
-    let t = (0..jd.planes.len())
-        .find(|&t| jd.plane_pair_dir_sign(t, p, q) != 0)
-        .ok_or_else(|| reject(RejectReason::UnorderedEdges))?;
-    let across = jd.plane_pair_dir_sign(t, p, q);
-    let ft = jd.planes[t].frame_sign;
-    let mut dirs = Vec::with_capacity(us.len());
+    let mut halves = Vec::with_capacity(us.len());
     let mut material = Vec::with_capacity(us.len());
     for u in us {
         let ClassIx::Plane(a) = faces[u.face].surf else {
             return Err(stages());
         };
-        let fa = jd.planes[a].frame_sign;
-        let s = -across * fa * sense * u.along(first);
+        let tau = sense * u.along(first);
         let phi = if faces[u.face].flip { -1 } else { 1 };
-        dirs.push(combinatorics::EdgeDir::Line {
-            carrier: a,
-            sense: s,
-        });
-        material.push(ft * s == fa * phi);
+        halves.push((a, jd.planes[a].frame_sign * tau));
+        material.push(tau == -phi);
     }
-    let order = combinatorics::angular_order(jd, t, &dirs)?;
+    let dir = |(carrier, sense): (usize, i8)| combinatorics::EdgeDir::Line { carrier, sense };
+    let order = combinatorics::cyclic_order(
+        halves.len(),
+        |i, j| {
+            let ((a, sa), (b, sb)) = (halves[i], halves[j]);
+            Ok(sa * sb * jd.line_pair_dir_sign(p, q, a, b))
+        },
+        |i, j| {
+            Ok(combinatorics::antiparallel(
+                &dir(halves[i]),
+                &dir(halves[j]),
+            ))
+        },
+    )?;
     Ok(order
         .into_iter()
         .map(|j| (us[j].face, material[j]))
