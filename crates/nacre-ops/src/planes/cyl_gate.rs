@@ -962,6 +962,19 @@ fn ruling_on_a_face(
     Some(false)
 }
 
+/// **Does the named plane `w` hold the line through `at` along `dir`?** — its normal square to the
+/// line and the point on it, both exact. The one spelling of «a named class holds this ruling»: the
+/// hinge proof asks it of a cutting class ([`hinge_ruling`]), and the alias table's seed of every
+/// class a recorded line lies on (`Aliases::record_shared_ruling`).
+pub(crate) fn plane_holds_ruling(
+    w: &[nacre_exact::Rat; 4],
+    at: [nacre_exact::Rat; 3],
+    dir: &[nacre_exact::Rat; 3],
+) -> bool {
+    nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], dir) == nacre_exact::Orient::Zero
+        && nacre_exact::plane_residual_sign(&nacre_exact::PlaneName::Narrow(*w), at) == 0
+}
+
 /// **The ruling a sectioned class `c` shares with the cutting class `x`, as a proof** — `c`'s
 /// plane holds the line its chain turns it about ([`Model::plane_hinge`]), and that line lies on
 /// `x`'s plane and on the cylinder `def`: then `c ∩ x` is that ruling. `None` where any of it is
@@ -980,8 +993,7 @@ fn hinge_ruling(
     let along = nacre_exact::cross3_rat(&d, &m)?
         .iter()
         .all(|v| *v == nacre_exact::Rat::from_int(0));
-    let on_x = nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &d) == Zero
-        && nacre_exact::plane_residual_sign(&nacre_exact::PlaneName::Narrow(w), p) == 0;
+    let on_x = plane_holds_ruling(&w, p, &d);
     let on_cyl = nacre_exact::quad::cylinder_radial_side(&p, &o, &m, def.r2()) == Zero;
     (along && on_x && on_cyl).then_some(p)
 }

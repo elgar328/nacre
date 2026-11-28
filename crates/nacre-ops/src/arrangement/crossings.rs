@@ -967,7 +967,9 @@ pub(super) fn split_rulings(
 /// names are one point (the axis coordinates are exact where they meet), recorded for the next
 /// round ([`Aliases::record_same_point`]). **A segment's end is not placed on another segment**:
 /// two segments on one wall are the overlay's ([`split_at_crossings`]), and two walls are one line
-/// to it only where the alias table has learnt the pencil, which the gate's record does not teach.
+/// to it only where the alias table has learnt the pencil — at the seed, for a line the gate records
+/// and a named class cuts ([`Aliases::record_shared_ruling`]), or where a round's record of a
+/// point's planes holds it ([`Aliases::record`]).
 /// A knife is cut like any segment and reaches [`split_class_edges`] as one, unless it folds onto
 /// a ruling piece of the same two ends ([`fold_onto_rulings`]).
 ///

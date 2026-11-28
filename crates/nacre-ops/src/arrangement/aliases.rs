@@ -91,8 +91,8 @@ pub(super) fn seed_from_operands(
     // — a round that declines returns, and there is no next. `side_of` is exact (the quad tower),
     // and the question is corners × classes, both small.
     // **And the dual: a line of two classes lying on a cylinder** — the gate's record, one
-    // entry per such line, folded before any class is traced for the same reason as the corners
-    // below.
+    // entry per pair of classes holding such a line, folded before any class is traced for the
+    // same reason as the corners below; a line three classes hold is learnt there as their pencil.
     for (ci, cyl) in cyls.iter().enumerate() {
         for sr in &cyl.shared {
             aliases.record_shared_ruling(jd, cyls, ci, sr);
@@ -182,11 +182,12 @@ impl From<TwoCylinders> for RejectReason {
 ///
 /// The table has **two sources**. The operands seed it before any class is traced
 /// ([`seed_from_operands`] — every vertex with four or more incident plane classes, which the
-/// operand's own topology knows), and each round adds what its traces and splits prove
-/// (`{wc} ∪ t` at a run vertex, a tie on a line, a wall family's line). Among plane names the
-/// representative is [`combinatorics::canonical_triple`]'s answer, which is also the name the
-/// operand's ring already gave the point; with four planes through a point every record is the
-/// whole set, so the two sources land in one component.
+/// operand's own topology knows, and the gate's records of lines on a cylinder,
+/// [`Aliases::record_shared_ruling`] and [`Aliases::record_graze_line`]), and each round adds
+/// what its traces and splits prove (`{wc} ∪ t` at a run vertex, a tie on a line, a wall
+/// family's line). Among plane names the representative is [`combinatorics::canonical_triple`]'s
+/// answer, which is also the name the operand's ring already gave the point; with four planes
+/// through a point every record is the whole set, so the two sources land in one component.
 ///
 /// A point of the table need not be a plane name at all. The seed also learns every
 /// **pierce corner** an operand carries that some further class passes through
@@ -367,11 +368,24 @@ impl Aliases {
     /// [`Aliases::record`], read off the gate's record ([`crate::planes::SharedRuling`]) rather
     /// than off an operand's corners. Every named class that cuts the line `t1 ∩ t2` — across the
     /// axis or slanted to it — meets it in one point, and every name that point has is folded here
-    /// ([`Aliases::record_cylinder_point`]): the three-plane `{c, t1, t2}`, each secant's crossing
-    /// with `c` (the root on the recorded line), a tangent partner's double root, and a sectioned
-    /// partner's root, the one the intervals leave. Asked of every class cutting the line, not of
-    /// the operands' corners: where the prism reaches past the cylinder's cap, the point on the cap
-    /// is no corner of either operand, and it is the same point all the same.
+    /// ([`Aliases::record_cylinder_point`]): the three-plane name of the set's canonical triple,
+    /// each secant's crossing with `c` (the root on the recorded line), a tangent partner's double
+    /// root, and a sectioned partner's root, the one the intervals leave. Asked of every class
+    /// cutting the line, not of the operands' corners: where the prism reaches past the cylinder's
+    /// cap, the point on the cap is no corner of either operand, and it is the same point all the
+    /// same.
+    ///
+    /// **The set is every class through the point** — `c`, the pair, and every other named class
+    /// that holds the line ([`crate::planes::plane_holds_ruling`]: a recorded line is a ruling,
+    /// along the axis through `at`), which the point lies on as well. Three classes holding one line
+    /// are a pencil, so the table learns the line where [`Aliases::record`] reads the set: a box's
+    /// wall along a ruling two walls of the other solid share is one line with them before any
+    /// class is traced. A class with no world statement is not asked. One holding a recorded line
+    /// is a sectioned class whose hinge it is, which the gate records with each named partner of
+    /// that line or refuses (`cyl_gate`'s paragraph on a sectioned class sharing a line), and that
+    /// record's call gathers the named classes holding it; or a grazing class, which the gate
+    /// refuses beside a named partner on the line; or an apart class along the axis, which the
+    /// same paragraph leaves a risk (population 0).
     pub(super) fn record_shared_ruling(
         &mut self,
         jd: &Judge<'_, WorkingPlane>,
@@ -380,11 +394,20 @@ impl Aliases {
         sr: &crate::planes::SharedRuling,
     ) {
         let (t1, t2) = sr.line;
+        let axis = cyls[cyl].def.dir();
+        let holders: Vec<usize> = (0..jd.planes.len())
+            .filter(|&h| h != t1 && h != t2)
+            .filter(|&h| {
+                jd.world_rat(h)
+                    .is_some_and(|w| crate::planes::plane_holds_ruling(&w, sr.at, &axis))
+            })
+            .collect();
         for c in 0..jd.planes.len() {
             if jd.world_rat(c).is_none() || jd.plane_pair_dir_sign(t1, t2, c) == 0 {
                 continue; // only a named class that cuts the line meets it in a point it can state
             }
-            let mut s = [c, t1, t2];
+            let mut s = vec![c, t1, t2];
+            s.extend_from_slice(&holders);
             s.sort_unstable();
             let Some(t) = combinatorics::canonical_triple(jd, &s) else {
                 continue;

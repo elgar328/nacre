@@ -36,10 +36,7 @@
 //! there or a box's corner standing on a wall). The roof's sections move with height: its cells are
 //! held instead to the box (`B − A` with `A ∩ B`), to the three parts of `A ∪ B` and to the same
 //! cells turned, and its body counts are the kernel's; an `o` or `g` cell is the refusal its cuts
-//! make without the change. A `u` cell is the name the kernel gives, which no model outside it
-//! supplies: the box's wall holds the ruling with the two wedge walls, a pencil the class table has
-//! not learned, so the class's order around a node of that line sees two edges leave along one ray
-//! (`UnorderedEdges` — todo «한 선을 품는 두 벽»).
+//! make without the change.
 
 use super::one_sided_notch::{four, prism};
 use super::scoreboard::{BoolResult, OPS, run};
@@ -313,9 +310,9 @@ fn disk_in(p: &[[f64; 2]]) -> f64 {
 
 /// One cell: the body count, or `s` for a result touching itself (`SelfTouchingResult`,
 /// `NonManifoldResultEdge`, `NonManifoldVertex`), `r` for `NoClearRay` (the corner of a box on a
-/// wall, where the result touches itself and no ray finds a clear way), `u` for `UnorderedEdges`,
-/// `o` for `ObliqueCylinderCut`, `g` for `CylinderGateUndecided`. A built cell is valid, covered by
-/// its mesh and, where `want` is given, of that volume.
+/// wall, where the result touches itself and no ray finds a clear way), `o` for
+/// `ObliqueCylinderCut`, `g` for `CylinderGateUndecided`. A built cell is valid, covered by its
+/// mesh and, where `want` is given, of that volume.
 fn cell(label: &str, m: &Model, got: BoolResult, want: Option<f64>) -> (char, f64) {
     match got {
         Ok(out) => {
@@ -343,10 +340,6 @@ fn cell(label: &str, m: &Model, got: BoolResult, want: Option<f64>) -> (char, f6
             reason: RejectReason::NoClearRay,
             ..
         }) => ('r', f64::NAN),
-        Err(BoolError::Rejected {
-            reason: RejectReason::UnorderedEdges,
-            ..
-        }) => ('u', f64::NAN),
         Err(BoolError::Rejected {
             reason: RejectReason::ObliqueCylinderCut,
             ..
@@ -500,14 +493,15 @@ fn a_wall_changing_the_other_way_up_takes_a_boolean() {
     );
 }
 
-/// Tools 4 and 5 hold a ruling with both wedge walls (`u`, the unlearned pencil).
+/// Tools 4 and 5 hold a ruling with both wedge walls, a pencil the seed learns from the gate's
+/// record of the line.
 #[test]
 fn kinked_wedges_changing_both_rulings_are_read_wherever_the_rod_is_placed() {
     alike_placed(
         KINKS,
         false,
         false,
-        "2110 1111 1111 1211 uu1u uu1u 1s01 1111 2110 2110",
+        "2110 1111 1111 1211 1111 2110 1s01 1111 2110 2110",
     );
 }
 
@@ -517,7 +511,7 @@ fn kinked_wedges_changing_both_rulings_take_a_boolean_as_a_bore() {
         KINKS,
         true,
         false,
-        "2110 1111 1111 1211 uu1u uu0u 2110 1111 1s01 1s01",
+        "2110 1111 1111 1211 1111 1101 2110 1111 1s01 1s01",
     );
 }
 

@@ -1022,9 +1022,10 @@ impl Canon3 {
 ///
 /// **Completeness** — why an operand's set plus the arrangement's `{wc} ∪ t` records make one
 /// component: with `|F| = 4` planes through a point every record *is* `F`, so the union-find has
-/// one component whose minimum is this triple. Five or more is not in the corpus
+/// one component whose minimum is this triple. Five or more is not in that test's fixtures
 /// (`concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them`) and is the recorded
-/// stop condition.
+/// stop condition; a class cutting a ruling four classes hold meets it in a point of five, and the
+/// seed records that whole set (`Aliases::record_shared_ruling`).
 pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Option<Canon3> {
     debug_assert!(
         s.windows(2).all(|w| w[0] < w[1]),
