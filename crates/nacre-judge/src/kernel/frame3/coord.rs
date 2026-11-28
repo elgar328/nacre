@@ -201,18 +201,60 @@ pub fn normals_agree_judge(
     if let Some(pos) = dot.sign() {
         return Decision::Sign(orient_of(pos));
     }
+    parallel_dot_climb(
+        |prec| {
+            let (ha, hb) = (plane_hp(a.0, a.1, a.2, prec), plane_hp(b.0, b.1, b.2, prec));
+            let ([na @ .., _], [nb @ .., _]) = (&ha, &hb);
+            nacre_exact::dot3_hp(na, nb, prec)
+        },
+        j,
+    )
+}
+
+/// **Do two directions along one line run the same way?** — the sign of `a · b`, each direction
+/// an interval the caller builds at the precision asked (`dirs(prec)`). `Positive` when they
+/// agree.
+///
+/// Asked of two directions along **one line** — the stored directions of two plane pairs that
+/// hold it ([`crate::predicate::Judge::line_pair_dir_sign`]) — so the dot is `±|a||b|` and, as in
+/// [`normals_agree_judge`], there is no «nearly zero» to call a coincidence and no limit to hold it
+/// to: the operation's precision answers unless a direction is itself barely separated from zero,
+/// and then this climbs until the sign stands. A dot whose midpoint is exactly zero is
+/// `Degenerate` (a direction with no length, or two that are not along one line); the budget
+/// running out is `Exhausted`. Never a sign it has not proved.
+///
+/// The first evaluation, at the operation's precision, plays the part the interval filter plays in
+/// the other judges — the directions are built at a precision, so there is no `f64` stage to run
+/// first — and only a dot it leaves straddling zero enters [`escalate`], which is what the climb
+/// census counts.
+pub fn lines_agree_judge(
+    mut dirs: impl FnMut(usize) -> ([HpBounded; 3], [HpBounded; 3]),
+    j: ProofStandard,
+) -> Decision {
+    let mut dot_at = |prec: usize| {
+        let (a, b) = dirs(prec);
+        nacre_exact::dot3_hp(&a, &b, prec)
+    };
+    if let Some(pos) = dot_at(j.prec).sign() {
+        return Decision::Sign(orient_of(pos));
+    }
+    parallel_dot_climb(dot_at, j)
+}
+
+/// **The climb for the sign of a dot of two parallel directions**, neither of them zero —
+/// `dot(prec)` that dot as an interval at `prec`, asked once a first stage has left it straddling
+/// zero.
+fn parallel_dot_climb(mut dot: impl FnMut(usize) -> HpBounded, j: ProofStandard) -> Decision {
     // No `Gap::Of` is ever reported, so the limit is never read; the angle limit
     // `dir_sign_judge` uses is the honest one to name.
     let Some(limit) = j.coincidence.over(j.scale) else {
         return Decision::Degenerate;
     };
     escalate(j, limit, |prec| {
-        let (ha, hb) = (plane_hp(a.0, a.1, a.2, prec), plane_hp(b.0, b.1, b.2, prec));
-        let ([na @ .., _], [nb @ .., _]) = (&ha, &hb);
-        let dot = nacre_exact::dot3_hp(na, nb, prec);
-        match dot.sign() {
+        let d = dot(prec);
+        match d.sign() {
             Some(pos) => Ok(orient_of(pos)),
-            None => Err(denom_lo(&dot).err().unwrap_or(Gap::Unresolved { short: 1 })),
+            None => Err(denom_lo(&d).err().unwrap_or(Gap::Unresolved { short: 1 })),
         }
     })
 }

@@ -694,6 +694,44 @@ fn normals_agree_judge_reads_two_witnesses_of_one_plane() {
     }
 }
 
+/// **Two directions along one line are read for which way they run**: `(1, 2, 3)` against twice
+/// itself agrees and against its negation disagrees; a direction of no length has no sign.
+#[test]
+fn lines_agree_judge_reads_two_directions_along_one_line() {
+    let v = |x: [i128; 3], prec: usize| x.map(|k| HpBounded::of_rat(Rat::from_int(k), prec));
+    let ask = |a: [i128; 3], b: [i128; 3]| lines_agree_judge(|p| (v(a, p), v(b, p)), fixture());
+    assert_eq!(ask([1, 2, 3], [2, 4, 6]).orient(), Orient::Positive);
+    assert_eq!(ask([1, 2, 3], [-1, -2, -3]).orient(), Orient::Negative);
+    assert!(matches!(ask([1, 2, 3], [0, 0, 0]), Decision::Degenerate));
+}
+
+/// **A dot the operation's precision leaves straddling zero climbs until its sign stands.** One
+/// direction is `2⁻²⁰⁰` along `x` with a radius of `2^(−prec/2)` — wider than the value at the
+/// fixture's 256 bits, narrower from 402 bits on — so the sign is proved only past the first
+/// evaluation, and proved the way the value says.
+#[test]
+fn lines_agree_judge_climbs_past_a_straddling_dot() {
+    let deepest = std::cell::Cell::new(0usize);
+    let dirs = |prec: usize| {
+        deepest.set(deepest.get().max(prec));
+        let tiny = HpBounded::new(
+            astro_float::BigFloat::from_f64(2f64.powi(-200), prec),
+            Mag::pow2(-((prec / 2) as i64)),
+        );
+        let zero = || HpBounded::of_rat(Rat::from_int(0), prec);
+        let one = HpBounded::of_rat(Rat::from_int(1), prec);
+        ([tiny, zero(), zero()], [one, zero(), zero()])
+    };
+    assert_eq!(
+        lines_agree_judge(dirs, fixture()).orient(),
+        Orient::Positive
+    );
+    assert!(
+        deepest.get() > fixture().prec,
+        "the sign needed more than the operation's precision"
+    );
+}
+
 /// `dir_sign` is a determinant of normals, invariant under a shared rotation
 /// (`det(R·n) = det(R)·det(n) = det(n)`).
 #[test]

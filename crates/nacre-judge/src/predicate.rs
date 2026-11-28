@@ -64,6 +64,14 @@ pub enum Site {
     /// (`normals_agree_judge` on the two witnesses) — asked where no shared surface or world name
     /// answers it.
     FacesAgree { face: usize, class: usize },
+    /// Whether the line `p ∩ q` runs the way the line `a ∩ b` does, the two plane pairs holding
+    /// one line.
+    LinePairDir {
+        p: usize,
+        q: usize,
+        a: usize,
+        b: usize,
+    },
 }
 
 /// One judgement that did **not** come back with a proved sign, and what it did establish.
@@ -413,7 +421,7 @@ impl<'a, W> Judge<'a, W> {
     /// reporting. A coincidence, an exhausted judgement or a degenerate witness is a statement
     /// about *this model* that the caller cannot recover afterwards, because by then it is just a
     /// `0`.
-    fn record(&self, site: Site, d: Decision) -> i8 {
+    pub(crate) fn record(&self, site: Site, d: Decision) -> i8 {
         if !matches!(d, Decision::Sign(_)) {
             self.notes.push(Evidence { site, outcome: d });
         }

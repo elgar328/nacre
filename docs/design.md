@@ -2367,9 +2367,9 @@ topo 의 `Motion` 노드를 펼치는 문은 `nacre-ops::rotated_vertex::motion_
 ### 판정 = 필터 + 계산된 상승 + 실현 캐시
 
 `nacre-judge` 의 `predicate`(`Judge::orient3d`·`Judge::cmp_coord`·`Judge::plane_pair_dir_sign`·`Judge::planes_coplanar`·
-`Judge::name_rows`)와 `kernel::frame3`(`orient3d_judge`·`indirect_orient3d_judge`·`indirect_cmp_coord_judge`·
-`dir_sign_judge`·`escalate`·`WitnessPoint::coord_hp`), 이름 정수 도로의 필터 `nacre-predicates`(`indirect_plane_side_filter`·
-`indirect_cmp_coord_filter`·`det3_sign_filter`)와 정수 쌍둥이 `nacre-exact`(`int_plane_side`·`int_cmp_coord`·`int_dir_sign`),
+`Judge::name_rows`)와 `Judge::line_pair_dir_sign`, `kernel::frame3`(`orient3d_judge`·`indirect_orient3d_judge`·
+`indirect_cmp_coord_judge`·`dir_sign_judge`·`lines_agree_judge`·`escalate`·`WitnessPoint::coord_hp`), 이름 정수 도로의
+필터 `nacre-predicates`(`indirect_plane_side_filter`·`indirect_cmp_coord_filter`·`det3_sign_filter`)와 정수 쌍둥이 `nacre-exact`(`int_plane_side`·`int_cmp_coord`·`int_dir_sign`),
 표를 짓는 `nacre-ops`(`planes::collect_planes`·`rotated_vertex::plane_witness`·`tolerant`). 타입은 「판정 (연산 동안만 산다)」.
 
 **길은 tol 이 아니라 이름과 모션이 고른다.** 술어마다 자기가 닿는 평면만 보고(`predicate` 모듈 doc): ① 산술 없이 답이
@@ -2384,9 +2384,8 @@ topo 의 `Motion` 노드를 펼치는 문은 `nacre-ops::rotated_vertex::motion_
 **이름 정수 도로.** 이름 있는 평면의 질문을 그 이름의 정수로 정확히 답한다 — 폭과 무관하게 한 길이다: 정수의 최근접
 f64 로 `nacre-predicates` 의 필터를 돌리고(입력이 반올림이어도 답하면 옳다 — 여유는 그 필터 doc 의 유도 표), 못 가르면
 `nacre-exact` 의 BigInt 쌍둥이가 답한다. 같은 좌표의 두 점(어떤 필터도 못 넘는 정확한 0)은 대부분 이 도로에 오지
-않는다 — 조합 항등식이 먼저 답한다(lib 스위트(순차)에서 이 도로에 온 `cmp_coord` 질문의 0 은 2.52M 중 10,514, 항등식을 끄면
-4.98M 중 2.47M — `Judge::cmp_coord` 본문). 게이트는 `Judge::name_rows`, 이름을 저장 방향(σ × `frame_sign`)과 정준
-손잡이(홀수 반사 사슬의 `parity·C`)로 접는 것은 구성 때 한 번 `name_stored_ints`, 한 사슬을 든 질문이 모션 전 이름으로
+않는다 — 조합 항등식이 먼저 답한다(측정은 `Judge::cmp_coord` 본문). 게이트는 `Judge::name_rows`, 이름을 저장
+방향(σ × `frame_sign`)과 정준 손잡이(홀수 반사 사슬의 `parity·C`)로 접는 것은 구성 때 한 번 `name_stored_ints`, 한 사슬을 든 질문이 모션 전 이름으로
 정확히 답하는 까닭은 `PlaneWitness::chain_id`·`PlaneWitness::name_ints` 의 doc(이름이 없을 때 오르는 측정 포함).
 
 **필터의 모양은 입력이 정한다.** 이름 정수 도로의 입력은 정수의 최근접 f64 라 술어마다 상수 오차 한계(`32·U` 류)를
@@ -2396,8 +2395,8 @@ f64 로 `nacre-predicates` 의 필터를 돌리고(입력이 반올림이어도 
 
 **조합 항등식이 먼저다.** `orient3d` 는 `j ∈ {p, q, r}`, `cmp_coord` 는 두 점이 공유하는 평면이 그 좌표를 고정할 때
 (`Judge::shared_planes_hold` — `forced_rank_deficient`, Frobenius–König), `plane_pair_dir_sign` 은 법선이 번호나 알려진
-0 만으로 종속일 때(`Judge::normals_forced_dependent`) 0 이다 — 알려진 0 은 `Judge::world_normal_zeros`. 논증·전제·측정과,
-0 을 술어에 보내면 무엇이 되는지는 그 함수들과 `Judge::orient3d` 의 doc.
+0 만으로 종속일 때(`Judge::normals_forced_dependent`) 0, `line_pair_dir_sign` 은 두 쌍이 같으면 ±1 이다 — 알려진
+0 은 `Judge::world_normal_zeros`. 논증·전제·측정과, 0 을 술어에 보내면 무엇이 되는지는 그 함수들과 `Judge::orient3d` 의 doc.
 
 **상승은 계산하고, 캐시는 값이다.** 다음 정밀도는 모자란 비트 `log₂(간격/목표)` 로 한 번에 점프하고(`escalate` doc; 배증은
 「가지 말 것」), 상승 중에 구별하는 상태들은 `Gap` doc. 캐시는 판정 결과가 아니라 **점의 값**이다 — 연산의 정밀도에서 한 번

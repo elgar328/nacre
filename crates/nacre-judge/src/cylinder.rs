@@ -1,6 +1,8 @@
 //! **Where a point on a cylinder is, and which side of a plane it lies on** — the pierce point
 //! `p ∩ q ∩ cylinder` and the questions asked of it, beside the plane predicates of
-//! [`crate::predicate`].
+//! [`crate::predicate`]. The questions about a meet line's stored direction live here too
+//! ([`Judge::stored_line_along`], [`Judge::line_pair_dir_sign`]), on the stored facings the pierce
+//! names are ordered along.
 //!
 //! A cylinder that reaches a judgement is always stated exactly (`nacre-ops`' gate refuses one
 //! with no world statement before the arrangement starts), so what can be irrational is a plane:
@@ -12,8 +14,8 @@
 //! ([`PlaneWitness`]): the world name's narrow coefficients, its sense, the witness triangle and
 //! `frame_sign`. Nothing here reads a cached coordinate.
 
-use crate::kernel::frame3::{meet_hp, plane_hp};
-use crate::predicate::{Judge, PlaneWitness};
+use crate::kernel::frame3::{lines_agree_judge, meet_hp, plane_hp};
+use crate::predicate::{Judge, PlaneWitness, Site};
 use nacre_exact::quad::{MeetLine, QuadRoot, QuadVal};
 use nacre_exact::{CylinderDef, HpBounded, Orient, Rat};
 
@@ -379,6 +381,40 @@ impl<W: PlaneWitness> Judge<'_, W> {
         let d = self.stored_cross_hp(p, q, prec);
         let m = m.map(|x| HpBounded::of_rat(x, prec));
         sign_i8(&nacre_exact::dot3_hp(&d, &m, prec))
+    }
+
+    /// **Do the lines `p ∩ q` and `a ∩ b` run the same way?** — the sign of
+    /// `(n_p × n_q) · (n_a × n_b)` over the stored facings ([`Self::stored_hp`]): `+1` the same
+    /// way, `-1` the other way, and `0` where it is not proved, recorded in [`Judge::notes`] as
+    /// [`Site::LinePairDir`].
+    ///
+    /// Asked of **two plane pairs that hold one line**, `p` not parallel to `q` — the planes a
+    /// line's faces lie on. The two directions are then parallel and neither is zero, so the sign
+    /// exists ([`lines_agree_judge`]). The pairs answer with no arithmetic where they are one pair:
+    /// `(p, q)` runs the way it runs, `(q, p)` the other way, and a pair of one plane twice has no
+    /// direction (`0`).
+    pub fn line_pair_dir_sign(&self, p: usize, q: usize, a: usize, b: usize) -> i8 {
+        if p == q || a == b {
+            return 0;
+        }
+        if (a, b) == (p, q) {
+            return 1;
+        }
+        if (a, b) == (q, p) {
+            return -1;
+        }
+        self.record(
+            Site::LinePairDir { p, q, a, b },
+            lines_agree_judge(
+                |prec| {
+                    (
+                        self.stored_cross_hp(p, q, prec),
+                        self.stored_cross_hp(a, b, prec),
+                    )
+                },
+                self.standard,
+            ),
+        )
     }
 
     /// `n_p × n_q` over the stored facings at `prec` — the stored direction of the line `p ∩ q`.

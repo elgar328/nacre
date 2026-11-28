@@ -486,3 +486,73 @@ fn the_meet_of_two_planes_along_the_axis_is_off_by_its_direction_or_its_distance
         );
     }
 }
+
+/// **Two plane pairs on one line are read for which way the line runs, on every road.** The planes
+/// `x = 0`, `y = 0`, `x = y` and `x + y = 0` all hold the `z` axis; every ordered pair of two of
+/// them asked against every other pair answers the sign of `(n_p × n_q) · (n_a × n_b)` on the
+/// stored facings — stated in the world or not, each plane facing either way, and with the last
+/// two turned `37.123°` about the axis itself (the line stays put; their witnesses carry the
+/// rotation's tol, so the dot is read off intervals). Expectations come from the fixture's own
+/// stored coefficients, never from the code under test, and nothing is left unproved.
+#[test]
+fn two_plane_pairs_on_one_line_answer_which_way_it_runs() {
+    let turn = |p: crate::kernel::frame3::WitnessPoint| {
+        p.rotate_about(
+            nacre_exact::Axis::Z,
+            nacre_exact::Angle::from_deg(Rat::new(37_123, 1000).expect("a ratio"))
+                .expect("an angle"),
+            [Rat::from_int(0); 3],
+        )
+    };
+    let rows = [
+        [[0, 0, 0], [0, 1, 0], [0, 0, 1]],
+        [[0, 0, 0], [0, 0, 1], [1, 0, 0]],
+        [[0, 0, 0], [1, 1, 0], [0, 0, 1]],
+        [[0, 0, 0], [1, -1, 0], [0, 0, 1]],
+    ];
+    let cross = |a: [f64; 4], b: [f64; 4]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    for (stated, turned) in [(true, false), (false, false), (false, true)] {
+        for mask in 0..16u8 {
+            let ps: Vec<RW> = rows
+                .iter()
+                .enumerate()
+                .map(|(k, &pts)| {
+                    let w = if turned && k >= 2 {
+                        RW::moved(pts, turn)
+                    } else {
+                        RW::moved(pts, |p| p)
+                    };
+                    let w = if mask & (1 << k) == 0 { w } else { w.flipped() };
+                    if stated { w.stated() } else { w }
+                })
+                .collect();
+            let j = jd(&ps);
+            let pairs: Vec<(usize, usize)> = (0..4)
+                .flat_map(|p| (0..4).filter(move |&q| q != p).map(move |q| (p, q)))
+                .collect();
+            for &(p, q) in &pairs {
+                for &(a, b) in &pairs {
+                    let (l, m) = (
+                        cross(ps[p].coeffs(), ps[q].coeffs()),
+                        cross(ps[a].coeffs(), ps[b].coeffs()),
+                    );
+                    let dot = l[0] * m[0] + l[1] * m[1] + l[2] * m[2];
+                    assert_eq!(
+                        j.line_pair_dir_sign(p, q, a, b),
+                        sgn(dot),
+                        "({p}, {q}) against ({a}, {b}): stated {stated}, turned {turned}, mask {mask}"
+                    );
+                }
+            }
+            assert!(j.notes.sorted().is_empty(), "every sign proved");
+            assert_eq!(j.line_pair_dir_sign(0, 0, 1, 2), 0, "one plane twice");
+            assert_eq!(j.line_pair_dir_sign(0, 1, 2, 2), 0, "one plane twice");
+        }
+    }
+}
