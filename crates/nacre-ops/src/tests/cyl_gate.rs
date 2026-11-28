@@ -361,7 +361,8 @@ fn the_tangent_wall_states_itself_exactly() {
     let coeffs = jd.world_rat(c).expect("checked above");
     // No other plane of either operand holds the line `x = 0, y = 1` (a plane that did would
     // have to contain `+Z` and pass through `(0, 1)`).
-    let holders = classes_holding_the_line(&jd, c, &coeffs, &def).expect("exact");
+    let at = tangent_point(&coeffs, &def).expect("rational");
+    let holders = classes_holding_the_line(&jd, c, &at, &def.dir());
     assert!(holders.is_empty(), "{holders:?}");
     let rows = tangency_rows(
         &m,
@@ -371,6 +372,7 @@ fn the_tangent_wall_states_itself_exactly() {
         c,
         0,
         &coeffs,
+        &at,
         &def,
         SolidSide::B.bit(), // the cylinder is the second operand; the wall face is the cube's
         &jd,
@@ -1258,6 +1260,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
                 "{order}: {class_wide:?}"
             );
         }
+        let at = tangent_point(&coeffs, &def).expect("rational");
         let rows = tangency_rows(
             &m,
             &setup.planes,
@@ -1266,6 +1269,7 @@ fn an_unread_wall_face_rides_its_tangency_row() {
             c,
             ci,
             &coeffs,
+            &at,
             &def,
             rod_side.bit(),
             &jd,
@@ -1338,6 +1342,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
         if let FaceRow::Plane(fi) = &mut judged[wall] {
             fi.world = Err(nacre_topo::WorldFail::Unstated);
         }
+        let at = tangent_point(&coeffs, &def).expect("rational");
         let rows_of = |faces: &[FaceRow]| {
             assert_eq!(face_facing(&jd, faces, wall, c), Ok(facing), "{lo:?}");
             tangency_rows(
@@ -1348,6 +1353,7 @@ fn a_wall_face_reads_its_material_side_from_its_facing() {
                 c,
                 ci,
                 &coeffs,
+                &at,
                 &def,
                 SolidSide::A.bit(),
                 &jd,
@@ -1437,14 +1443,12 @@ fn fillet_against_block(
 ///    leaves `Rat`: no witness, `WitnessNotRational` with no place;
 /// 3. and the wall face on another handle with no world name and a degenerate witness triangle —
 ///    its facing is the judge's `Degenerate`: `DegenerateWitness`;
-/// 4. and the class with no world statement — no lens' side: `CylinderGateUndecided`;
-/// 5. and the class's coefficients scaled by `2⁶⁴` (the same plane), whose `n·n` leaves `Rat`: no
-///    foot, `WitnessNotRational`.
+/// 4. and the class with no world statement — no lens' side: `CylinderGateUndecided`.
 ///
 /// Alone: the axis direction scaled by `2⁴⁰` stops the lateral's reading for its width, which the
 /// stretches through the line carry to the witness; by `2⁶⁴ + 1` it stops the reading of whether
 /// the line lies on the lateral at all. And the D rod's bitten slab face, which the footprint
-/// reader cannot spell, carries its own refusal under the last two edits of the stack.
+/// reader cannot spell, carries its own refusal under the stack's last edit.
 #[test]
 fn a_tangency_row_refuses_by_its_first_cause() {
     let z = Rat::from_int;
@@ -1477,6 +1481,9 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         )
         .expect("a cylinder")
     };
+    // The line's point is the gate's, built from the class and the cylinder as stated; the axis
+    // edits below turn its direction only.
+    let at = tangent_point(&coeffs, &def).expect("rational");
     // The rows of an edited setup: the first `steps` edits of the stack, and the axis `dir`.
     let rows = |steps: usize, dir: &nacre_topo::CylinderDef| {
         let mut faces = setup.planes.clone();
@@ -1487,7 +1494,6 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             cf.def = Some(dir.clone());
         }
         let mut geom = setup.geom.clone();
-        let mut coeffs = coeffs;
         if steps >= 1
             && let FaceRow::Cylinder(cf) = &mut faces[lateral]
         {
@@ -1513,9 +1519,6 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         if steps >= 4 {
             geom[c].world = Err(nacre_topo::WorldFail::Unstated);
         }
-        if steps >= 5 {
-            coeffs = coeffs.map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
-        }
         let jd = Judge::new(&geom, setup.standard, &setup.notes);
         tangency_rows(
             &m,
@@ -1525,6 +1528,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
             c,
             ci,
             &coeffs,
+            &at,
             dir,
             SolidSide::A.bit(),
             &jd,
@@ -1550,7 +1554,6 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         (2, refused(Width, None)),
         (3, refused(DegenerateWitness, None)),
         (4, refused(Undecided, None)),
-        (5, refused(Width, None)),
     ] {
         assert_eq!(rows(steps, &def), want, "the first {steps} edits");
     }
@@ -1570,8 +1573,8 @@ fn a_tangency_row_refuses_by_its_first_cause() {
     let (setup, c, ci, _, def) = rod_against(&m, rod, slab);
     let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
         .world_rat(c)
-        .expect("narrow")
-        .map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
+        .expect("narrow");
+    let at = tangent_point(&coeffs, &def).expect("rational");
     let mut geom = setup.geom.clone();
     geom[c].world = Err(nacre_topo::WorldFail::Unstated);
     let jd = Judge::new(&geom, setup.standard, &setup.notes);
@@ -1583,6 +1586,7 @@ fn a_tangency_row_refuses_by_its_first_cause() {
         c,
         ci,
         &coeffs,
+        &at,
         &def,
         SolidSide::A.bit(),
         &jd,
@@ -1636,7 +1640,8 @@ fn a_shared_line_gathers_its_rows_halves() {
                 == nacre_exact::Orient::Zero
         })
         .expect("the fillet is tangent to x = 45");
-    let holders = classes_holding_the_line(&jd, t, &coeffs, &setup.cyls[ci].def).expect("rational");
+    let at = tangent_point(&coeffs, &setup.cyls[ci].def).expect("rational");
+    let holders = classes_holding_the_line(&jd, t, &at, &setup.cyls[ci].def.dir());
     assert_eq!(holders.len(), 1, "y = −20 holds the line: {holders:?}");
     let meets: Vec<Vec<ClassMeet>> = (0..setup.cyls.len())
         .map(|i| {
@@ -1646,6 +1651,7 @@ fn a_shared_line_gathers_its_rows_halves() {
                     _ if k == holders[0] => ClassMeet::Cuts,
                     _ if k == t => ClassMeet::Tangent {
                         holders: holders.clone(),
+                        at,
                     },
                     _ => ClassMeet::Across,
                 })
@@ -1725,6 +1731,70 @@ fn a_shared_line_gathers_its_rows_halves() {
     );
 }
 
+/// **A tangent wall whose line's point leaves `Rat` is refused by the gate, by width, with no
+/// place.** The class `x = 45` beside the rounded plate is tangent to the fillet (the gate passes
+/// the pair as built: [`a_shared_line_gathers_its_rows_halves`]); its world name scaled by `2⁶⁴`
+/// is the same plane, but the point's `n·n` leaves `i128` ([`tangent_point`]). [`class_meet`]
+/// builds that point once for the pair, so the gate raises `WitnessNotRational` there — the
+/// readers after it ([`shared_rulings`], [`tangency_rows`]) are handed a point and have no width
+/// of their own to refuse it by.
+#[test]
+fn a_tangent_point_leaving_rat_is_refused_by_the_gate() {
+    let z = Rat::from_int;
+    let mut m = Model::new();
+    let plate = crate::tests::rounded_plate(&mut m, 1, 0);
+    let block = crate::fixtures::cuboid(&mut m, [45.0, -20.0, 0.0], [50.0, -10.0, 12.0]);
+    let (setup, cyl_surfs) =
+        crate::arrangement::plane_index_setup_inner(&m, plate, block).expect("setup");
+    let gate = |geom: &[WorkingPlane]| {
+        let jd = Judge::new(geom, setup.standard, &setup.notes);
+        cylinder_gate(
+            &m,
+            &cyl_surfs,
+            &setup.planes,
+            &setup.plane_ix,
+            setup.n_a,
+            &jd,
+        )
+        .map(|_| ())
+    };
+    assert_eq!(gate(&setup.geom), Ok(()), "as built");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let t = (0..setup.geom.len())
+        .find(|&k| {
+            jd.world_rat(k).is_some_and(|w| {
+                w[0] != z(0)
+                    && w[1] == z(0)
+                    && w[2] == z(0)
+                    && w[0].checked_mul(z(45)).and_then(|a| a.checked_add(w[3])) == Some(z(0))
+            })
+        })
+        .expect("the class x = 45");
+    let scaled = jd
+        .world_rat(t)
+        .expect("checked above")
+        .map(|v| v.checked_mul(z(1 << 64)).expect("fits"));
+    let def = cyl_surfs
+        .iter()
+        .filter_map(|&s| m.world_cylinder_def(s).ok())
+        .find(|d| {
+            nacre_exact::point_plane_clearance_rat(&scaled, &d.origin(), d.r2())
+                == nacre_exact::Orient::Zero
+        })
+        .expect("the scaled name is the same tangent plane");
+    assert_eq!(tangent_point(&scaled, &def), None, "its point leaves Rat");
+    let mut geom = setup.geom.clone();
+    let world = geom[t].world.as_mut().expect("stated");
+    world.name = nacre_exact::PlaneName::Narrow(scaled);
+    assert_eq!(
+        gate(&geom),
+        Err(BoolError::Rejected {
+            reason: RejectReason::WitnessNotRational,
+            at: None,
+        })
+    );
+}
+
 /// The class `x = 1`, the D rod's cylinder and the gate's setup for one of the bitten slabs —
 /// the rod is the first operand.
 fn rod_against(
@@ -1779,9 +1849,7 @@ fn the_line_reader_names_what_stopped_it() {
     let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
         .world_rat(c)
         .expect("narrow");
-    let foot =
-        nacre_exact::axis_plane_meet(&coeffs, &def.origin(), &[coeffs[0], coeffs[1], coeffs[2]])
-            .expect("rational");
+    let foot = tangent_point(&coeffs, &def).expect("rational");
     let face_of = |slab_side: bool| {
         (0..setup.planes.len())
             .find_map(|i| match &setup.planes[i] {
@@ -1891,6 +1959,7 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         reads.contains(&Ok(false)) && reads.contains(&Err(unread)),
         "{reads:?}"
     );
+    let at = tangent_point(&coeffs, &def).expect("rational");
     let rows = tangency_rows(
         &m,
         &setup.planes,
@@ -1899,6 +1968,7 @@ fn a_sibling_wall_face_refuses_a_row_by_its_own_refusal() {
         c,
         ci,
         &coeffs,
+        &at,
         &def,
         SolidSide::A.bit(),
         &jd,
